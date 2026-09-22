@@ -1,0 +1,52 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Rune Studio",
+  "version": "../package.json",
+  "identifier": "dev.shirsendu-bairagi.rune-studio",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "dotenvx run -f .env.native -- vp dev",
+    "beforeBuildCommand": "dotenvx run -f .env.native -- vp build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "visible": true,
+        "url": "/",
+        "title": "Rune Studio",
+        "width": 1400,
+        "height": 720,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "android": {
+      "debugApplicationIdSuffix": ".debug"
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "",
+      "endpoints": [
+        "https://github.com/shba007/rune-studio/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}
