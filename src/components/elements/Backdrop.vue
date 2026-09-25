@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { DoubleSide } from 'three'
-import { globalTools } from '@/services/toolRegistry';
+import { globalTools } from '@/services/toolRegistry'
 
 const props = withDefaults(
   defineProps<{
@@ -17,7 +17,12 @@ const props = withDefaults(
 )
 
 const currentColor = ref(props.color)
-watch(() => props.color, (c) => { currentColor.value = c })
+watch(
+  () => props.color,
+  (c) => {
+    currentColor.value = c
+  },
+)
 
 let unregister: (() => void) | null = null
 
@@ -39,7 +44,9 @@ onMounted(() => {
   })
 })
 
-onUnmounted(() => { unregister?.() })
+onUnmounted(() => {
+  unregister?.()
+})
 </script>
 
 <template>

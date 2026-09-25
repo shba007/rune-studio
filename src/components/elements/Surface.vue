@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue'
-import { globalTools } from '@/services/toolRegistry';
+import { globalTools } from '@/services/toolRegistry'
 
 const props = withDefaults(
   defineProps<{
@@ -16,7 +16,12 @@ const props = withDefaults(
 )
 
 const currentColor = ref(props.color)
-watch(() => props.color, (c) => { currentColor.value = c })
+watch(
+  () => props.color,
+  (c) => {
+    currentColor.value = c
+  },
+)
 
 let unregister: (() => void) | null = null
 
@@ -28,7 +33,10 @@ onMounted(() => {
     parameters: {
       type: 'object',
       properties: {
-        color: { type: 'string', description: 'Color name (e.g. coral, darkgreen, #064e3b) or hex' },
+        color: {
+          type: 'string',
+          description: 'Color name (e.g. coral, darkgreen, #064e3b) or hex',
+        },
       },
       required: ['color'],
     },
@@ -38,7 +46,9 @@ onMounted(() => {
   })
 })
 
-onUnmounted(() => { unregister?.() })
+onUnmounted(() => {
+  unregister?.()
+})
 </script>
 
 <template>
@@ -48,7 +58,10 @@ onUnmounted(() => { unregister?.() })
       <TresMeshStandardMaterial :color="currentColor" />
     </TresMesh>
 
-    <TresGridHelper v-if="props.showGrid" :args="[props.size[0], props.size[1], '#475569', '#334155']"
-      :position="[0, 0.01, 0]" />
+    <TresGridHelper
+      v-if="props.showGrid"
+      :args="[props.size[0], props.size[1], '#475569', '#334155']"
+      :position="[0, 0.01, 0]"
+    />
   </TresGroup>
 </template>

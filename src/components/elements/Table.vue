@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref, shallowRef, onMounted, onUnmounted } from 'vue'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
-import { Group } from 'three'
-import { normalizeModel } from '@/utils/normalizeModel';
-import { globalTools } from '@/services/toolRegistry';
+import { Group, Mesh, type Object3D } from 'three'
+import { normalizeModel } from '@/utils/normalizeModel'
+import { globalTools } from '@/services/toolRegistry'
 
 const props = withDefaults(
   defineProps<{
@@ -22,24 +22,23 @@ const groupRef = shallowRef<Group | null>(null)
 let loadedModel: Group | null = null
 let unregister: (() => void) | null = null
 
-// Table state
 const tableColor = ref<string | null>(null)
 
-// Function to tint table materials
 function applyTableColor(colorHex: string) {
   if (!loadedModel) return
-  loadedModel.traverse((node: any) => {
-    if (node.isMesh && node.material) {
-      if (!node.material.userData.originalColor) {
-        node.material.userData.originalColor = node.material.color.clone()
+  loadedModel.traverse((node: Object3D) => {
+    if (node instanceof Mesh && node.material) {
+      const materials = Array.isArray(node.material) ? node.material : [node.material]
+      for (const mat of materials) {
+        if ('color' in mat && mat.color) {
+          mat.color.set(colorHex)
+        }
       }
-      node.material.color.set(colorHex)
     }
   })
 }
 
 onMounted(() => {
-  // 1. Register Co-Located Tools for Needle 3
   unregister = globalTools.registerMany([
     {
       name: 'set_table_color',
@@ -63,23 +62,24 @@ onMounted(() => {
           black: '#18181b',
           dark: '#27272a',
         }
-        const resolvedColor = colorMap[args.color?.toLowerCase()] || args.color
+        const inputColor = typeof args.color === 'string' ? args.color : ''
+        const resolvedColor = colorMap[inputColor.toLowerCase()] || inputColor
         if (resolvedColor) {
           tableColor.value = resolvedColor
           applyTableColor(resolvedColor)
-          console.log(`[TableItem] Table finish changed to: ${resolvedColor}`)
         }
       },
     },
   ])
 
-  // 2. Load table.glb via Three.js native GLTFLoader
   const loader = new GLTFLoader()
   loader.load('/models/table.glb', (gltf) => {
     const model = gltf.scene
-    const normalizedSize = normalizeModel(model)
-
-    console.log('Model normalized to 1m width. Base height is:', normalizedSize.y)
+    normalizeModel(model)
+    loadedModel = model
+    if (tableColor.value) {
+      applyTableColor(tableColor.value)
+    }
     groupRef.value?.add(model)
   })
 })
@@ -93,5 +93,10 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <TresGroup ref="groupRef" :position="props.position" :rotation="props.rotation" :scale="props.scale" />
+  <TresGroup
+    ref="groupRef"
+    :position="props.position"
+    :rotation="props.rotation"
+    :scale="props.scale"
+  />
 </template>

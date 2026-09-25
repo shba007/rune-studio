@@ -10,7 +10,7 @@ export type InferenceTaskRequest =
       type: 'ToolCall'
       payload: {
         prompt: string
-        schema: Record<string, any>[]
+        schema: Record<string, unknown>[]
       }
     }
   | {
@@ -35,7 +35,7 @@ export type InferenceTaskRequest =
       }
     }
 
-export interface InferenceTaskResponse<T = any> {
+export interface InferenceTaskResponse<T = unknown> {
   status: 'ToolCall' | 'Text' | 'ImageBase64' | 'AudioBuffer' | 'Error'
   data: T
 }

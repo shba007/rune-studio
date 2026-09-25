@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { globalTools } from '@/services/toolRegistry';
+import { globalTools } from '@/services/toolRegistry'
 
 const props = withDefaults(
   defineProps<{
@@ -52,7 +52,11 @@ onUnmounted(() => {
 <template>
   <TresGroup>
     <TresAmbientLight :color="props.color" :intensity="isLightOn ? dynamicIntensity : 0.1" />
-    <TresDirectionalLight :color="props.color" :position="props.directionalPosition"
-      :intensity="isLightOn ? props.directionalIntensity : 0.0" cast-shadow />
+    <TresDirectionalLight
+      :color="props.color"
+      :position="props.directionalPosition"
+      :intensity="isLightOn ? props.directionalIntensity : 0.0"
+      cast-shadow
+    />
   </TresGroup>
 </template>

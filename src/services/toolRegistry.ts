@@ -4,10 +4,16 @@ export interface ToolDefinition {
   aliases?: string[]
   parameters: {
     type: 'object'
-    properties: Record<string, any>
+    properties: Record<string, unknown>
     required?: string[]
   }
-  handler: (args: Record<string, any>) => void | Promise<void>
+  handler: (args: Record<string, unknown>) => void | Promise<void>
+}
+
+interface RawToolCallItem {
+  name?: string
+  arguments?: string | Record<string, unknown>
+  parameters?: string | Record<string, unknown>
 }
 
 class ToolRegistry {
@@ -18,7 +24,6 @@ class ToolRegistry {
     return () => this.tools.delete(tool.name)
   }
 
-  // Register multiple tools for a single 3D item
   registerMany(tools: ToolDefinition[]): () => void {
     const unregs = tools.map((t) => this.register(t))
     return () => unregs.forEach((fn) => fn())
@@ -49,20 +54,26 @@ class ToolRegistry {
       }
     }
 
-    // Heuristic fallbacks for small models
     for (const tool of this.tools.values()) {
-      if ((clean.includes('print') || clean.includes('paper')) && tool.name === 'print_document') return tool
+      if ((clean.includes('print') || clean.includes('paper')) && tool.name === 'print_document')
+        return tool
       if (clean.includes('scan') && tool.name === 'scan_document') return tool
-      if ((clean.includes('lamp') || clean.includes('light')) && tool.name === 'set_lighting') return tool
-      if ((clean.includes('rotate') || clean.includes('chair')) && tool.name === 'rotate_item') return tool
+      if ((clean.includes('lamp') || clean.includes('light')) && tool.name === 'set_lighting')
+        return tool
+      if ((clean.includes('rotate') || clean.includes('chair')) && tool.name === 'rotate_item')
+        return tool
     }
 
     return undefined
   }
 
-  async dispatch(rawToolCall: any): Promise<void> {
-    const item = Array.isArray(rawToolCall) ? rawToolCall[0] : rawToolCall
-    if (!item || !item.name) throw new Error('Invalid tool call structure received')
+  async dispatch(rawToolCall: unknown): Promise<void> {
+    const item = (Array.isArray(rawToolCall) ? rawToolCall[0] : rawToolCall) as
+      | RawToolCallItem
+      | null
+      | undefined
+    if (!item || typeof item.name !== 'string')
+      throw new Error('Invalid tool call structure received')
 
     const tool = this.resolveTool(item.name)
     if (!tool) {
@@ -70,7 +81,18 @@ class ToolRegistry {
       return
     }
 
-    const args = item.arguments || item.parameters || {}
+    let args: Record<string, unknown> = {}
+    const rawArgs = item.arguments || item.parameters || {}
+    if (typeof rawArgs === 'string') {
+      try {
+        args = JSON.parse(rawArgs) as Record<string, unknown>
+      } catch {
+        console.error('[ToolRegistry] Failed to parse tool call arguments:', rawArgs)
+      }
+    } else if (typeof rawArgs === 'object' && rawArgs !== null) {
+      args = rawArgs as Record<string, unknown>
+    }
+
     await tool.handler(args)
   }
 }

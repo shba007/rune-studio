@@ -1,11 +1,11 @@
 export type EntityType =
   | 'lighting'
-  | 'surface'       // Floor, PCB board, terrain
-  | 'backdrop'      // Walls, device casing, skybox
+  | 'surface'
+  | 'backdrop'
   | 'printer'
   | 'monitor'
-  | 'microchip'     // Inside electronic device
-  | 'satellite'     // Space
+  | 'microchip'
+  | 'satellite'
   | 'desk'
   | 'chair'
   | (string & {})
@@ -16,7 +16,7 @@ export interface SceneEntity {
   position?: [number, number, number]
   rotation?: [number, number, number]
   scale?: [number, number, number] | number
-  props?: Record<string, any>
+  props?: Record<string, unknown>
 }
 
 export interface ScenePreset {

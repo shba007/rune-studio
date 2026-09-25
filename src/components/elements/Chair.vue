@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref, shallowRef, onMounted, onUnmounted } from 'vue'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
-import type { Group } from 'three'
-import { globalTools } from '@/services/toolRegistry';
-import { normalizeModel } from '@/utils/normalizeModel';
+import { Group, Mesh, type Object3D } from 'three'
+import { globalTools } from '@/services/toolRegistry'
+import { normalizeModel } from '@/utils/normalizeModel'
 
 const props = withDefaults(
   defineProps<{
@@ -38,31 +38,20 @@ onMounted(() => {
       },
     },
     handler: (args) => {
-      const deg = parseFloat(args.degrees) || 45
+      const deg = parseFloat(String(args.degrees)) || 45
       dynamicRotation.value += (deg * Math.PI) / 180
-      console.log(`[ChairItem] Swiveled chair by ${deg}°. Total: ${(dynamicRotation.value * 180 / Math.PI).toFixed(0)}°`)
     },
   })
 
-  // 2. Load chair.glb and normalize with reusable utility
   const loader = new GLTFLoader()
   loader.load(
     '/models/chair.glb',
     (gltf) => {
       const model = gltf.scene
+      normalizeModel(model)
 
-      // Normalizes width (X) to 1.0m, centers X/Z, snaps bottom to Y = 0
-      const baseDimensions = normalizeModel(model)
-
-      console.log('[ChairItem] Loaded and normalized chair.glb! Base dimensions:', {
-        width: baseDimensions.x.toFixed(2), // 1.00m
-        height: baseDimensions.y.toFixed(2),
-        depth: baseDimensions.z.toFixed(2),
-      })
-
-      // Enable shadows on all child meshes
-      model.traverse((node: any) => {
-        if (node.isMesh) {
+      model.traverse((node: Object3D) => {
+        if (node instanceof Mesh) {
           node.castShadow = true
           node.receiveShadow = true
         }
@@ -72,7 +61,6 @@ onMounted(() => {
 
       if (groupRef.value) {
         groupRef.value.add(model)
-        console.log('[ChairItem] Attached chair.glb to scene!')
       }
     },
     undefined,
@@ -91,6 +79,10 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <TresGroup ref="groupRef" :position="props.position"
-    :rotation="[props.rotation[0], props.rotation[1] + dynamicRotation, props.rotation[2]]" :scale="props.scale" />
+  <TresGroup
+    ref="groupRef"
+    :position="props.position"
+    :rotation="[props.rotation[0], props.rotation[1] + dynamicRotation, props.rotation[2]]"
+    :scale="props.scale"
+  />
 </template>

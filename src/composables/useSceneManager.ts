@@ -1,12 +1,16 @@
-import { ref, computed } from "vue"
-import { SCENE_PRESETS } from "@/config/scenes"
-import type { ScenePreset } from "@/types/scene"
+import { ref, computed } from 'vue'
+import { SCENE_PRESETS } from '@/config/scenes'
+import type { ScenePreset } from '@/types/scene'
 
 const currentSceneId = ref<string>('developer-studio')
 
 export function useSceneManager() {
   const currentScene = computed<ScenePreset>(() => {
-    return SCENE_PRESETS[currentSceneId.value] || SCENE_PRESETS['developer-studio']
+    const preset = SCENE_PRESETS[currentSceneId.value] ?? SCENE_PRESETS['developer-studio']
+    if (!preset) {
+      throw new Error('Scene preset not found')
+    }
+    return preset
   })
 
   function setScene(sceneId: string) {

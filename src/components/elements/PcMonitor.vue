@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref, shallowRef, computed, onMounted, onUnmounted } from 'vue'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
-import { Group } from 'three'
-import { normalizeModel } from '@/utils/normalizeModel';
-import { globalTools } from '@/services/toolRegistry';
+import { Group, Mesh, type Object3D } from 'three'
+import { normalizeModel } from '@/utils/normalizeModel'
+import { globalTools } from '@/services/toolRegistry'
 
 const props = withDefaults(
   defineProps<{
@@ -20,20 +20,18 @@ const props = withDefaults(
 
 const groupRef = shallowRef<Group | null>(null)
 let loadedModel: Group | null = null
-let screenMesh: any = null
+let screenMesh: Mesh | null = null
 let unregister: (() => void) | null = null
 
-// Monitor reactive state
 const isOn = ref(true)
 const screenTheme = ref('code')
-const screenColor = ref('#06b6d4') // Cyan code editor default
+const screenColor = ref('#06b6d4')
 
-// Theme presets mapped to emissive glow colors
 const THEME_COLORS: Record<string, string> = {
-  code: '#06b6d4',      // Cyan glow
-  matrix: '#22c55e',    // Hacker green
+  code: '#06b6d4',
+  matrix: '#22c55e',
   terminal: '#22c55e',
-  cyberpunk: '#ec4899', // Hot pink
+  cyberpunk: '#ec4899',
   blue: '#3b82f6',
   white: '#f8fafc',
   amber: '#f59e0b',
@@ -46,18 +44,25 @@ const activeGlowColor = computed(() => {
 
 function updateScreenMaterial() {
   if (!screenMesh || !screenMesh.material) return
-  screenMesh.material.emissive.set(activeGlowColor.value)
-  screenMesh.material.emissiveIntensity = isOn.value ? 0.8 : 0.0
-  screenMesh.material.needsUpdate = true
+  const mat = screenMesh.material
+  if ('emissive' in mat && 'emissiveIntensity' in mat) {
+    mat.emissive.set(activeGlowColor.value)
+    mat.emissiveIntensity = isOn.value ? 0.8 : 0.0
+    mat.needsUpdate = true
+  }
 }
 
 onMounted(() => {
-  // 1. Register Co-Located Tools for Needle 3
   unregister = globalTools.registerMany([
-    // Tool 1: Monitor Power
     {
       name: 'set_monitor_power',
-      aliases: ['toggle_monitor', 'turn_on_monitor', 'turn_off_monitor', 'power_monitor', 'set_pc_power'],
+      aliases: [
+        'toggle_monitor',
+        'turn_on_monitor',
+        'turn_off_monitor',
+        'power_monitor',
+        'set_pc_power',
+      ],
       description: 'Switch the PC monitor screen on or off',
       parameters: {
         type: 'object',
@@ -69,21 +74,26 @@ onMounted(() => {
       handler: async (args) => {
         isOn.value = String(args.state).toLowerCase() === 'on'
         updateScreenMaterial()
-        console.log(`[PcMonitor] Power set to: ${isOn.value ? 'ON' : 'OFF'}`)
       },
     },
-
-    // Tool 2: Screen Theme / Content
     {
       name: 'set_screen_display',
-      aliases: ['set_screen_theme', 'display_on_monitor', 'change_wallpaper', 'open_editor', 'matrix_mode'],
-      description: 'Change the display theme or color on the monitor (e.g. matrix, code, cyberpunk, red, blue)',
+      aliases: [
+        'set_screen_theme',
+        'display_on_monitor',
+        'change_wallpaper',
+        'open_editor',
+        'matrix_mode',
+      ],
+      description:
+        'Change the display theme or color on the monitor (e.g. matrix, code, cyberpunk, red, blue)',
       parameters: {
         type: 'object',
         properties: {
           theme: {
             type: 'string',
-            description: 'Theme name ("matrix", "code", "cyberpunk") or color name ("green", "purple", "#3b82f6")',
+            description:
+              'Theme name ("matrix", "code", "cyberpunk") or color name ("green", "purple", "#3b82f6")',
           },
         },
         required: ['theme'],
@@ -92,20 +102,23 @@ onMounted(() => {
         const theme = String(args.theme || 'code').toLowerCase()
         screenTheme.value = theme
         screenColor.value = THEME_COLORS[theme] || theme
-        isOn.value = true // Automatically power on when changing theme
+        isOn.value = true
         updateScreenMaterial()
-        console.log(`[PcMonitor] Display changed to: ${theme}`)
       },
     },
   ])
 
-  // 2. Load GLB via Three.js native loader (bypasses Suspense)
   const loader = new GLTFLoader()
   loader.load('/models/pc-monitor.glb', (gltf) => {
     const model = gltf.scene
-    const normalizedSize = normalizeModel(model)
-
-    console.log('Model normalized to 1m width. Base height is:', normalizedSize.y)
+    normalizeModel(model)
+    loadedModel = model
+    model.traverse((child: Object3D) => {
+      if (child instanceof Mesh && (!screenMesh || child.name.toLowerCase().includes('screen'))) {
+        screenMesh = child
+      }
+    })
+    updateScreenMaterial()
     groupRef.value?.add(model)
   })
 })
@@ -119,16 +132,26 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <TresGroup ref="groupRef" :position="props.position" :rotation="props.rotation" :scale="props.scale">
-    <!-- Screen Ambient Glow onto Desk surface -->
-    <TresPointLight :position="[0, 0.45, 0.25]" :intensity="isOn ? 2.2 : 0.0" :color="activeGlowColor"
-      :distance="2.2" />
+  <TresGroup
+    ref="groupRef"
+    :position="props.position"
+    :rotation="props.rotation"
+    :scale="props.scale"
+  >
+    <TresPointLight
+      :position="[0, 0.45, 0.25]"
+      :intensity="isOn ? 2.2 : 0.0"
+      :color="activeGlowColor"
+      :distance="2.2"
+    />
 
-    <!-- Standby Power LED on bottom bezel -->
     <TresMesh :position="[0.2, 0.04, 0.08]">
       <TresSphereGeometry :args="[0.015, 12, 12]" />
-      <TresMeshStandardMaterial :color="isOn ? '#22c55e' : '#ef4444'" :emissive="isOn ? '#22c55e' : '#ef4444'"
-        :emissive-intensity="0.8" />
+      <TresMeshStandardMaterial
+        :color="isOn ? '#22c55e' : '#ef4444'"
+        :emissive="isOn ? '#22c55e' : '#ef4444'"
+        :emissive-intensity="0.8"
+      />
     </TresMesh>
   </TresGroup>
 </template>
