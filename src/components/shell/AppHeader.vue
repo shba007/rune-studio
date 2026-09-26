@@ -3,7 +3,7 @@ import { useMediaStore } from '@/stores/mediaStore'
 import { useMediaComparator } from '@/composables/useMediaComparator'
 
 const mediaStore = useMediaStore()
-const { checkVisionCapability } = useMediaComparator()
+const { checkVisionCapability, checkServerHealth } = useMediaComparator()
 
 async function handleModelChange(e: Event) {
   const target = e.target as HTMLSelectElement
@@ -13,6 +13,7 @@ async function handleModelChange(e: Event) {
 }
 
 async function handleRefreshModels() {
+  await checkServerHealth()
   if (mediaStore.detectedModelName) {
     await checkVisionCapability()
   }
@@ -55,14 +56,14 @@ async function handleRefreshModels() {
           </option>
         </select>
         <span v-else class="text-xs text-neutral-400 italic">
-          {{ mediaStore.isFetchingModels ? 'Querying endpoint...' : 'No models detected' }}
+          {{ mediaStore.isFetchingModels ? 'Querying /health...' : 'No models detected' }}
         </span>
 
         <button
           type="button"
           @click="handleRefreshModels"
           :disabled="mediaStore.isFetchingModels"
-          title="Query endpoint for available models"
+          title="Query /health and models endpoint"
           class="p-0.5 hover:text-neutral-200 text-neutral-500 transition-colors"
         >
           <svg
@@ -81,9 +82,11 @@ async function handleRefreshModels() {
           </svg>
         </button>
 
-        <span class="text-[10px] text-neutral-500 font-mono border-l border-[#2e2e38] pl-2"
-          >llama.cpp</span
-        >
+        <span class="text-[10px] text-neutral-500 font-mono border-l border-[#2e2e38] pl-2">
+          {{
+            mediaStore.serverHealth?.version ? `v${mediaStore.serverHealth.version}` : 'Rune Infer'
+          }}
+        </span>
       </div>
 
       <button
@@ -97,7 +100,7 @@ async function handleRefreshModels() {
         "
       >
         <span>💡</span>
-        <span>Thinking • {{ mediaStore.isThinkingEnabled ? 'Deep' : 'Off' }}</span>
+        <span>Thinking • {{ mediaStore.isThinkingEnabled ? 'Deep (0.6)' : 'Strict (0.2)' }}</span>
       </button>
     </div>
 

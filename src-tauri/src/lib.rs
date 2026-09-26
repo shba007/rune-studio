@@ -2,6 +2,8 @@ mod media;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let _ = dotenvy::from_filename("../.env").or_else(|_| dotenvy::dotenv());
+
     let mut builder = tauri::Builder::default();
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -24,8 +26,14 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             media::pick_directory,
             media::scan_directory,
+            media::generate_thumbnails,
             media::get_media_base64,
+            media::upload_media_to_s3,
             media::execute_file_actions,
+            media::save_artifact_to_disk,
+            media::load_artifact_from_disk,
+            media::clear_directory_cache,
+            media::delete_artifact_from_disk,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

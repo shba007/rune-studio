@@ -3,7 +3,9 @@ import { ofetch } from 'ofetch'
 import type { InferenceTaskRequest } from '@/types/inference'
 import { useMediaStore } from '@/stores/mediaStore'
 
-const API_ENDPOINT = import.meta.env.VITE_AI_API_URL || 'http://localhost:3423/v1/chat/completions'
+const BASE_API = import.meta.env.VITE_AI_API_URL
+const CHAT_ENDPOINT = `${BASE_API}/v1/chat/completions`
+const DIRECT_INFERENCE_ENDPOINT = `${BASE_API}/v1/inference`
 
 interface ChatCompletionResponse {
   choices?: Array<{
@@ -11,6 +13,8 @@ interface ChatCompletionResponse {
       role?: string
       content?: string
       tool_calls?: Array<{
+        id?: string
+        type: 'function'
         function: {
           name: string
           arguments: string | Record<string, unknown>
@@ -20,12 +24,9 @@ interface ChatCompletionResponse {
   }>
 }
 
-function stripThinkingTrace(text: string): string {
-  let cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim()
-  if (cleaned.includes('</think>')) {
-    cleaned = cleaned.split('</think>').pop()?.trim() || ''
-  }
-  return cleaned
+interface DirectTaskResponse {
+  name: string
+  arguments: Record<string, unknown> | string
 }
 
 export function useInference() {
@@ -38,91 +39,89 @@ export function useInference() {
     isExecuting.value = true
     errorMessage.value = ''
 
-    const activeModel = mediaStore.detectedModelName || 'default'
+    const activeModel = mediaStore.detectedModelName || 'qwen3.8-27b'
 
     try {
-      let body: Record<string, unknown>
-
+      // 1. Direct Engine Route (Section 8 of API reference: /v1/inference?engine=...)
       if (task.type === 'ToolCall') {
         const { prompt, schema } = task.payload
-        body = {
-          model: activeModel,
-          messages: [{ role: 'user', content: prompt }],
-          tools: schema.map((tool) => ({
-            type: 'function',
-            function: {
-              name: tool.name,
-              description: tool.description,
-              parameters: tool.parameters,
+        try {
+          const directData = await ofetch<DirectTaskResponse>(
+            `${DIRECT_INFERENCE_ENDPOINT}?engine=${encodeURIComponent(activeModel)}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: {
+                type: 'tool_call',
+                prompt,
+                schema: schema[0] || {
+                  type: 'object',
+                  properties: {},
+                },
+              },
             },
-          })),
-          tool_choice: 'auto',
-          temperature: 0.1,
+          )
+
+          lastRawResponse.value = JSON.stringify(directData)
+          const args =
+            typeof directData.arguments === 'string'
+              ? JSON.parse(directData.arguments)
+              : directData.arguments || {}
+          return { name: directData.name, arguments: args } as T
+        } catch {
+          // Fallback to OpenAI-compatible /v1/chat/completions tool call (Section 4)
         }
-      } else if (task.type === 'Chat') {
-        body = {
-          model: activeModel,
-          messages: task.payload.messages,
-        }
-      } else {
-        throw new Error(`Task type "${task.type}" is not supported on this endpoint.`)
-      }
 
-      const data = await ofetch<ChatCompletionResponse>(API_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body,
-        timeout: 60000,
-        retry: 0,
-      })
+        const data = await ofetch<ChatCompletionResponse>(CHAT_ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: {
+            model: activeModel,
+            messages: [{ role: 'user', content: prompt }],
+            tools: schema.map((tool) => ({
+              type: 'function',
+              function: {
+                name: tool.name,
+                description: tool.description,
+                parameters: tool.parameters,
+              },
+            })),
+            tool_choice: 'auto',
+            temperature: 0.1,
+          },
+        })
 
-      lastRawResponse.value = JSON.stringify(data)
-
-      if (task.type === 'ToolCall') {
-        const message = data.choices?.[0]?.message
-        const toolCalls = message?.tool_calls
+        lastRawResponse.value = JSON.stringify(data)
+        const toolCalls = data.choices?.[0]?.message?.tool_calls
 
         if (toolCalls && toolCalls.length > 0 && toolCalls[0]) {
+          const call = toolCalls[0]
           return {
-            name: toolCalls[0].function.name,
+            name: call.function.name,
             arguments:
-              typeof toolCalls[0].function.arguments === 'string'
-                ? JSON.parse(toolCalls[0].function.arguments)
-                : toolCalls[0].function.arguments,
+              typeof call.function.arguments === 'string'
+                ? JSON.parse(call.function.arguments)
+                : call.function.arguments,
           } as T
         }
 
-        const rawContent = stripThinkingTrace(message?.content || '')
-        const toolMatch = rawContent.match(/<tool_call>([\s\S]*?)<\/tool_call>/i)
-        const jsonTarget = toolMatch && toolMatch[1] ? toolMatch[1].trim() : rawContent
-
-        const firstBrace = jsonTarget.indexOf('{')
-        const firstBracket = jsonTarget.indexOf('[')
-        const startIdx =
-          firstBracket !== -1 && (firstBrace === -1 || firstBracket < firstBrace)
-            ? firstBracket
-            : firstBrace
-
-        if (startIdx !== -1) {
-          const parsed = JSON.parse(jsonTarget.substring(startIdx)) as
-            | { name: string; arguments?: string | Record<string, unknown> }
-            | Array<{ name: string; arguments?: string | Record<string, unknown> }>
-          const item = Array.isArray(parsed) ? parsed[0] : parsed
-          if (item) {
-            return {
-              name: item.name,
-              arguments:
-                typeof item.arguments === 'string'
-                  ? JSON.parse(item.arguments)
-                  : item.arguments || {},
-            } as T
-          }
-        }
-
-        throw new Error(rawContent || 'Model did not trigger any tool call.')
+        throw new Error('Endpoint did not return standard tool_calls object')
       }
 
-      return data as T
+      if (task.type === 'Chat') {
+        const data = await ofetch<ChatCompletionResponse>(CHAT_ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: {
+            model: activeModel,
+            messages: task.payload.messages,
+          },
+        })
+        lastRawResponse.value = JSON.stringify(data)
+        return data as T
+      }
+
+      throw new Error(`Task type "${task.type}" is not supported on this endpoint.`)
     } catch (err: unknown) {
       const fetchErr = err as { data?: { error?: { message?: string } }; message?: string }
       const msg =

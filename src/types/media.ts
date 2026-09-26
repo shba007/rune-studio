@@ -9,17 +9,7 @@ export interface MediaItem {
   mediaType: MediaType
   lastModified: number
   thumbnailUrl?: string
-}
-
-export interface ComparisonVerdict {
-  isMatch: boolean
-  confidence: number
-  similarityType?: string
-  explanation: string
-  thought?: string
-  visualSummaryA?: string
-  visualSummaryB?: string
-  recommendedPrimary?: 'item_a' | 'item_b'
+  thumbnailPath?: string
 }
 
 export type StagedActionType = 'MOVE_SAME_DIR' | 'QUARANTINE_DUPLICATE' | 'MOVE_TO_TRASH'
@@ -35,3 +25,22 @@ export interface StagedAction {
   reason: string
   enabled: boolean
 }
+
+export interface IdentityCluster {
+  id: string
+  suggestedName: string
+  customName: string
+  primaryItem: MediaItem
+  exemplars: MediaItem[]
+  items: MediaItem[]
+  confidenceAverage: number
+}
+
+export interface PipelineProgress {
+  current: number
+  total: number
+  currentItem: MediaItem | null
+  currentStage: string
+}
+
+export type PipelineState = 'idle' | 'profiling' | 'clustering' | 'review' | 'completed'

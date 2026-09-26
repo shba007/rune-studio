@@ -1,6 +1,14 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { MediaItem, ComparisonVerdict, StagedAction, StagedActionType } from '@/types/media'
+import type {
+  MediaItem,
+  StagedAction,
+  StagedActionType,
+  IdentityCluster,
+  PipelineProgress,
+  PipelineState,
+} from '@/types/media'
+import type { MediaArtifact, ArbitrationVerdict } from '@/types/artifact'
 
 export interface IntentPreset {
   id: string
@@ -8,7 +16,6 @@ export interface IntentPreset {
   shortLabel: string
   badge: string
   description: string
-  prompt: string
 }
 
 export const COMPARISON_INTENTS: Record<string, IntentPreset> = {
@@ -17,64 +24,28 @@ export const COMPARISON_INTENTS: Record<string, IntentPreset> = {
     label: 'Identity / Person',
     shortLabel: 'Person',
     badge: '👤 Face & Identity',
-    description:
-      'Matches the same individual across video frames, photos, angles, and lighting while ignoring clothes/hair.',
-    prompt:
-      'You are performing BIOLOGICAL & FACIAL IDENTITY VERIFICATION. Determine whether the person in Item A and Item B is the EXACT SAME INDIVIDUAL or DIFFERENT PEOPLE.\n' +
-      'RULES FOR HIGH ACCURACY:\n' +
-      '1. Be skeptical and rigorous: Two subjects sharing similar age, gender, ethnicity, skin tone, or hair color are NOT a match unless their distinctive facial bone structure, eye shape, nose bridge/tip, lip contour, and facial proportions match.\n' +
-      '2. If the facial geometry, jawline, nose structure, or eye spacing belong to different individuals, you MUST output isMatch: false with high confidence.\n' +
-      '3. Disregard superficial similarities such as makeup, clothes, lighting, pose, or background.\n' +
-      '4. If clear facial features are absent, cropped out, or too blurred in either item to prove identity, output isMatch: false.\n' +
-      '5. Only output isMatch: true if you are certain they are the exact same person.',
+    description: 'Invariant facial biometrics and craniofacial arbitration via side-by-side VLM.',
   },
   same_product: {
     id: 'same_product',
     label: 'Product / Physical Item',
     shortLabel: 'Product',
     badge: '📦 Product Model',
-    description:
-      'Matches the exact product structure or model, ignoring surrounding staging props, countertops, or room fixtures.',
-    prompt:
-      'You are performing COMMERCIAL PRODUCT IDENTIFICATION. Determine whether Image A and Image B feature the EXACT SAME PRODUCT MODEL, APPAREL, OR HARDWARE ITEM.\n' +
-      'RULES FOR HIGH ACCURACY:\n' +
-      '1. Compare primary item structure: geometry, wire patterns, seams, materials, branding/logos, dimensions, and functional components.\n' +
-      '2. STRICTLY IGNORE BACKGROUND STAGING: Surrounding kitchen or studio props, countertops, faucets, toasters, fruit bowls, background walls, or lighting variations MUST BE COMPLETELY DISREGARDED.\n' +
-      '3. If the primary product or item being displayed is the same model/design, output isMatch: true.',
+    description: 'Hardware silhouette, seam pattern, and branding alignment ignoring model/wearer.',
   },
   duplicates: {
     id: 'duplicates',
     label: 'Near / Exact Duplicate',
     shortLabel: 'Duplicate',
-    badge: '📑 File Deduplication',
-    description:
-      'Detects burst shots, identical captures, resized copies, or converted formats to clean storage.',
-    prompt:
-      'You are performing DEDUPLICATION DETECTION. Evaluate whether Image A and Image B represent the SAME PHOTOGRAPHIC CAPTURE, BURST SHOT, RESIZED VERSION, OR FILE DUPLICATE.\n' +
-      'RULES FOR HIGH ACCURACY:\n' +
-      '1. Compare the full frame: camera angle, exact subject posture, overall background arrangement, and composition.\n' +
-      '2. If background elements, props, or camera perspective significantly differ, it is NOT an exact duplicate (isMatch: false).\n' +
-      '3. Minor compression artifacts, resolutions, or color grading differences should still be classified as duplicates (isMatch: true).',
+    badge: '📑 Deduplication',
+    description: 'Photographic framing, camera angle, and composition deduplication.',
   },
   same_category: {
     id: 'same_category',
     label: 'Theme / Scene Category',
     shortLabel: 'Theme',
     badge: '🎨 Scene Theme',
-    description: 'Groups media sharing the same scene context, activity, or visual category.',
-    prompt:
-      'You are performing THEMATIC AND SCENE CLUSTERING. Determine whether Image A and Image B belong to the SAME EVENT, SCENE THEME, OR CATEGORY (e.g. glamour photoshoot, kitchen interior, document, vacation).\n' +
-      'RULES:\n' +
-      '1. Evaluate environmental aesthetics, scene context, and overall activity.\n' +
-      '2. Specific person identity or exact product model differences do not prevent a category match.',
-  },
-  custom: {
-    id: 'custom',
-    label: 'Custom Instruction',
-    shortLabel: 'Custom',
-    badge: '⚙️ Custom Prompt',
-    description: 'Provide custom comparison instructions in the prompt bar.',
-    prompt: '',
+    description: 'Environmental ambiance, setting type, and thematic grouping.',
   },
 }
 
@@ -90,6 +61,12 @@ function getStoredRecentDirectories(): string[] {
   }
 }
 
+export interface ServerHealthInfo {
+  status: string
+  version: string
+  loadedModels: string[]
+}
+
 export const useMediaStore = defineStore('media', () => {
   const directoryPath = ref('')
   const isRecursive = ref(true)
@@ -99,28 +76,36 @@ export const useMediaStore = defineStore('media', () => {
   const filterType = ref<'all' | 'image' | 'video'>('all')
   const searchQuery = ref('')
 
-  const selectedItemA = ref<MediaItem | null>(null)
-  const selectedItemB = ref<MediaItem | null>(null)
+  const selectedMedia = ref<MediaItem | null>(null)
+
+  // Caches
+  const artifactsCache = ref<Record<string, MediaArtifact>>({})
+  const arbitrationCache = ref<Record<string, ArbitrationVerdict>>({})
 
   const selectedIntentKey = ref<string>('same_person')
-  const customPromptText = ref('')
-  const confidenceThreshold = ref<number>(0.7)
-  const isThinkingEnabled = ref<boolean>(true)
+  const confidenceThreshold = ref<number>(0.8)
+  const isThinkingEnabled = ref<boolean>(false)
 
   const detectedModelName = ref<string>(localStorage.getItem(SAVED_MODEL_KEY) || '')
   const availableModels = ref<string[]>([])
   const isFetchingModels = ref<boolean>(false)
-  const modelsFetchError = ref<string | null>(null)
   const isVisionCapable = ref<boolean | null>(null)
   const isCheckingModel = ref<boolean>(false)
   const modelCheckMessage = ref<string>('')
-
-  const isComparing = ref(false)
-  const comparisonError = ref<string | null>(null)
-  const lastVerdict = ref<ComparisonVerdict | null>(null)
+  const serverHealth = ref<ServerHealthInfo | null>(null)
 
   const stagedActions = ref<StagedAction[]>([])
   const isReviewModalOpen = ref(false)
+
+  const pipelineState = ref<PipelineState>('idle')
+  const pipelineProgress = ref<PipelineProgress>({
+    current: 0,
+    total: 0,
+    currentItem: null,
+    currentStage: '',
+  })
+  const identityClusters = ref<IdentityCluster[]>([])
+  const isIdentityReviewOpen = ref(false)
 
   const currentIntent = computed<IntentPreset>(() => {
     return COMPARISON_INTENTS[selectedIntentKey.value] ?? COMPARISON_INTENTS['same_person']!
@@ -136,31 +121,17 @@ export const useMediaStore = defineStore('media', () => {
     })
   })
 
-  const effectivePrompt = computed(() => {
-    if (selectedIntentKey.value === 'custom') {
-      return customPromptText.value.trim() || 'Visually compare Item A and Item B for similarity.'
-    }
-    return currentIntent.value.prompt
-  })
-
-  const canCompare = computed(() => {
-    return (
-      Boolean(detectedModelName.value) &&
-      isVisionCapable.value !== false &&
-      selectedItemA.value !== null &&
-      selectedItemB.value !== null &&
-      selectedItemA.value.id !== selectedItemB.value.id &&
-      !isComparing.value
-    )
-  })
-
-  const isThresholdMet = computed(() => {
-    if (!lastVerdict.value) return false
-    return lastVerdict.value.isMatch && lastVerdict.value.confidence >= confidenceThreshold.value
-  })
-
   const activeStagedCount = computed(() => {
     return stagedActions.value.filter((a) => a.enabled).length
+  })
+
+  const selectedMediaArtifact = computed<MediaArtifact | null>(() => {
+    if (!selectedMedia.value) return null
+    return artifactsCache.value[selectedMedia.value.path] || null
+  })
+
+  const cachedArtifactsCount = computed(() => {
+    return Object.keys(artifactsCache.value).length
   })
 
   function setDirectory(path: string) {
@@ -176,42 +147,43 @@ export const useMediaStore = defineStore('media', () => {
   function setMediaItems(items: MediaItem[]) {
     mediaItems.value = items
     const ids = new Set(items.map((i) => i.id))
-    if (selectedItemA.value && !ids.has(selectedItemA.value.id)) selectedItemA.value = null
-    if (selectedItemB.value && !ids.has(selectedItemB.value.id)) selectedItemB.value = null
+    if (selectedMedia.value && !ids.has(selectedMedia.value.id)) {
+      selectedMedia.value = null
+    }
+  }
+
+  function updateThumbnails(
+    updates: { id: string; thumbnailUrl: string; thumbnailPath?: string }[],
+  ) {
+    if (updates.length === 0) return
+    const map = new Map(updates.map((u) => [u.id, u]))
+    for (const item of mediaItems.value) {
+      const u = map.get(item.id)
+      if (u) {
+        item.thumbnailUrl = u.thumbnailUrl
+        if (u.thumbnailPath) {
+          item.thumbnailPath = u.thumbnailPath
+        }
+      }
+    }
   }
 
   function selectMedia(item: MediaItem) {
-    if (!selectedItemA.value) {
-      selectedItemA.value = item
-    } else if (selectedItemA.value.id === item.id) {
-      selectedItemA.value = null
-    } else if (!selectedItemB.value) {
-      selectedItemB.value = item
-    } else if (selectedItemB.value.id === item.id) {
-      selectedItemB.value = null
+    if (selectedMedia.value?.id === item.id) {
+      selectedMedia.value = null
     } else {
-      selectedItemB.value = item
+      selectedMedia.value = item
     }
-    lastVerdict.value = null
-    comparisonError.value = null
   }
 
   function clearSelection() {
-    selectedItemA.value = null
-    selectedItemB.value = null
-    lastVerdict.value = null
-    comparisonError.value = null
-  }
-
-  function setComparisonVerdict(verdict: ComparisonVerdict | null) {
-    lastVerdict.value = verdict
+    selectedMedia.value = null
   }
 
   function setModel(modelName: string) {
     detectedModelName.value = modelName
     localStorage.setItem(SAVED_MODEL_KEY, modelName)
     isVisionCapable.value = null
-    lastVerdict.value = null
   }
 
   function stageAction(params: {
@@ -236,7 +208,7 @@ export const useMediaStore = defineStore('media', () => {
   }
 
   function toggleStagedAction(id: string) {
-    const action = stagedActions.value.find((a) => a.id !== id)
+    const action = stagedActions.value.find((a) => a.id === id)
     if (action) {
       action.enabled = !action.enabled
     }
@@ -246,6 +218,20 @@ export const useMediaStore = defineStore('media', () => {
     stagedActions.value = []
   }
 
+  function removeItemFromCluster(clusterId: string, itemId: string) {
+    const cluster = identityClusters.value.find((c) => c.id === clusterId)
+    if (!cluster) return
+    cluster.items = cluster.items.filter((item) => item.id !== itemId)
+    cluster.exemplars = cluster.exemplars.filter((item) => item.id !== itemId)
+    if (cluster.items.length === 0) {
+      identityClusters.value = identityClusters.value.filter((c) => c.id !== clusterId)
+    }
+  }
+
+  function removeCluster(clusterId: string) {
+    identityClusters.value = identityClusters.value.filter((c) => c.id !== clusterId)
+  }
+
   return {
     directoryPath,
     isRecursive,
@@ -253,41 +239,45 @@ export const useMediaStore = defineStore('media', () => {
     recentDirectories,
     filterType,
     searchQuery,
-    selectedItemA,
-    selectedItemB,
+    selectedMedia,
+    selectedMediaArtifact,
+    cachedArtifactsCount,
+
+    artifactsCache,
+    arbitrationCache,
     selectedIntentKey,
-    customPromptText,
     confidenceThreshold,
     isThinkingEnabled,
     detectedModelName,
     availableModels,
     isFetchingModels,
-    modelsFetchError,
     isVisionCapable,
     isCheckingModel,
     modelCheckMessage,
-    isComparing,
-    comparisonError,
-    lastVerdict,
+    serverHealth,
     stagedActions,
     isReviewModalOpen,
 
+    pipelineState,
+    pipelineProgress,
+    identityClusters,
+    isIdentityReviewOpen,
+
     currentIntent,
     filteredMedia,
-    effectivePrompt,
-    canCompare,
-    isThresholdMet,
     activeStagedCount,
 
     setDirectory,
     setMediaItems,
+    updateThumbnails,
     selectMedia,
     clearSelection,
-    setComparisonVerdict,
     setModel,
     stageAction,
     removeStagedAction,
     toggleStagedAction,
     clearStagedActions,
+    removeItemFromCluster,
+    removeCluster,
   }
 })
