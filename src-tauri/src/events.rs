@@ -89,6 +89,9 @@ pub struct StepStarted {
     pub point: Option<Point>,
     pub double: bool,
     pub button: &'static str,
+    /// How long the action takes to carry out: the cursor's glide for a click, the typing time for
+    /// text. The overlay lands the click ripple when the cursor arrives and types the caption in step.
+    pub duration_ms: u64,
 }
 
 #[derive(Clone, Serialize)]

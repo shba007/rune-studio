@@ -10,7 +10,10 @@ use tauri::{AppHandle, Emitter};
 
 use crate::{
     events::{self, Point, StepFinished, StepStarted},
-    exec::{CancelToken, ExecError, apps, input::{Input, MouseButton}},
+    exec::{
+        CancelToken, ExecError, apps,
+        input::{Input, MouseButton, cursor_position, glide_duration, typing_duration},
+    },
     model::coords::{Monitor, model_to_pixels},
 };
 
@@ -55,6 +58,14 @@ fn visual(action: &Action, monitor: &Monitor) -> (String, Option<Point>, bool, &
 pub fn announce(app: &AppHandle, step: u32, reason: &str, action: &Action, monitor: &Monitor) -> String {
     let described = action.describe();
     let (detail, point, double, button) = visual(action, monitor);
+    let duration_ms = match (action, &point) {
+        (Action::Click { .. }, Some(target)) => {
+            let (from_x, from_y) = cursor_position().unwrap_or((target.x, target.y));
+            glide_duration(f64::from(target.x - from_x).hypot(f64::from(target.y - from_y))).as_millis() as u64
+        }
+        (Action::TypeText { text }, _) => typing_duration(text).as_millis() as u64,
+        _ => 0,
+    };
     let _ = app.emit(
         events::STEP_STARTED,
         StepStarted {
@@ -66,6 +77,7 @@ pub fn announce(app: &AppHandle, step: u32, reason: &str, action: &Action, monit
             point,
             double,
             button,
+            duration_ms,
         },
     );
     described

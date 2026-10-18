@@ -91,6 +91,8 @@ export interface StepStartedPayload {
   point: { x: number; y: number } | null
   double: boolean
   button: 'left' | 'right' | 'middle'
+  /** How long the action takes: the cursor glide for a click, the typing time for text. */
+  durationMs: number
 }
 
 export interface TaskDonePayload {

@@ -95,6 +95,7 @@ function draw(now: number) {
     ctx.fill()
   }
   drawRipples(ctx, now, still)
+  updateTyping(now, still)
 }
 
 function dot(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, alpha: number) {
@@ -115,6 +116,7 @@ function drawRipples(ctx: CanvasRenderingContext2D, now: number, still: boolean)
   )
   for (const ripple of ripples) {
     const age = (now - ripple.at) / 1000
+    if (age < 0) continue
     for (let pulse = 0; pulse < ripple.pulses; pulse++) {
       const t = still ? 0.5 : (age - pulse * 0.35) / RIPPLE_SECONDS
       if (t < 0 || t > 1) continue
@@ -171,7 +173,39 @@ let ripples: Ripple[] = []
 /** Name of the outside agent in control, or null when it is Rune Studio's own agent. */
 const agentName = ref<string | null>(null)
 
-const action = ref<{ icon: IconName; label: string; detail: string } | null>(null)
+/** Characters of typed text shown at once; longer text scrolls so the newest letters stay in view. */
+const TYPED_TAIL = 24
+
+interface Typing {
+  text: string
+  startedAt: number
+  msPerChar: number
+}
+
+const action = ref<{
+  step: number
+  icon: IconName
+  label: string
+  detail: string
+  typing: Typing | null
+} | null>(null)
+
+/** How many characters of the text being typed have appeared so far. */
+const typedCount = ref(0)
+const typedShown = computed(() => {
+  const text = action.value?.typing?.text.slice(0, typedCount.value).replaceAll('\n', '↵') ?? ''
+  return text.length > TYPED_TAIL ? `…${text.slice(-TYPED_TAIL)}` : text
+})
+
+/** The caption types out in step with the real typing, so the user sees the text arrive. */
+function updateTyping(now: number, still: boolean) {
+  const typing = action.value?.typing
+  if (!typing) return
+  const count = still
+    ? typing.text.length
+    : Math.min(typing.text.length, Math.floor((now - typing.startedAt) / typing.msPerChar))
+  if (count !== typedCount.value) typedCount.value = count
+}
 
 const ACTION_ICON: Record<string, IconName> = {
   click: 'click',
@@ -191,10 +225,21 @@ const ACTION_LABEL: Record<string, string> = {
 function showStep(step: StepStartedPayload) {
   const prefix =
     step.tool === 'click' ? (step.double ? 'Double ' : step.button === 'right' ? 'Right ' : '') : ''
+  const typing =
+    step.tool === 'type_text' && step.detail
+      ? {
+          text: step.detail,
+          startedAt: performance.now(),
+          msPerChar: step.durationMs > 0 ? step.durationMs / [...step.detail].length : 15,
+        }
+      : null
+  typedCount.value = 0
   action.value = {
+    step: step.step,
+    typing,
     icon: ACTION_ICON[step.tool] ?? 'click',
     label: prefix ? `${prefix}click` : (ACTION_LABEL[step.tool] ?? step.tool),
-    detail: step.detail.length > 28 ? `${step.detail.slice(0, 27)}…` : step.detail,
+    detail: typing ? '' : step.detail.length > 28 ? `${step.detail.slice(0, 27)}…` : step.detail,
   }
   if (step.point) {
     // Desktop pixels to this window: the window sits at its monitor's origin.
@@ -202,7 +247,8 @@ function showStep(step: StepStartedPayload) {
     ripples.push({
       x: step.point.x / dpr - window.screenX,
       y: step.point.y / dpr - window.screenY,
-      at: performance.now(),
+      // The ripple lands when the cursor arrives, not when the step starts.
+      at: performance.now() + step.durationMs,
       pulses: step.double ? 2 : 1,
     })
   }
@@ -266,7 +312,7 @@ onBeforeUnmount(() => unlisten.forEach((off) => off()))
       <Transition name="action" mode="out-in">
         <div
           v-if="action"
-          :key="`${action.label}|${action.detail}`"
+          :key="action.step"
           class="flex h-8 items-center gap-2 rounded-full bg-white/95 px-4 text-[#111] shadow-[0_0_0_1px_rgb(0_0_0/0.25)]"
         >
           <AppIcon :name="action.icon" size="sm" />
@@ -274,12 +320,28 @@ onBeforeUnmount(() => unlisten.forEach((off) => off()))
           <span v-if="action.detail" class="max-w-64 truncate text-label text-[#111]/70">{{
             action.detail
           }}</span>
+          <span
+            v-if="action.typing"
+            class="flex items-center text-label whitespace-pre text-[#111]/70"
+          >
+            {{ typedShown }}<span class="caret ml-px h-4 w-[2px] bg-[#111]" />
+          </span>
         </div>
       </Transition>
     </div>
   </div>
 </template>
 <style scoped>
+.caret {
+  animation: caret-blink 0.9s steps(1) infinite;
+}
+
+@keyframes caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
 .action-enter-active,
 .action-leave-active {
   transition:
@@ -297,6 +359,10 @@ onBeforeUnmount(() => unlisten.forEach((off) => off()))
   .action-enter-active,
   .action-leave-active {
     transition: none;
+  }
+
+  .caret {
+    animation: none;
   }
 }
 </style>
