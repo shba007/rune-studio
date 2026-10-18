@@ -74,6 +74,18 @@ pub struct StepStarted {
     pub tool: &'static str,
     pub reason: String,
     pub text: String,
+    /// What the action carries, for the on-screen caption: the typed text, the keys, the app.
+    pub detail: String,
+    /// Where a click lands, in physical desktop pixels. The control overlay draws a ripple there.
+    pub point: Option<Point>,
+    pub double: bool,
+    pub button: &'static str,
+}
+
+#[derive(Clone, Serialize)]
+pub struct Point {
+    pub x: i32,
+    pub y: i32,
 }
 
 #[derive(Clone, Serialize)]

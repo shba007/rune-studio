@@ -4,7 +4,10 @@ import { invoke } from '@tauri-apps/api/core'
 import { useEventListener, usePreferredReducedMotion, useRafFn } from '@vueuse/core'
 import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
 
-import type { AgentState, Settings } from '@/types/protocol'
+import type { AgentState, Settings, StepStartedPayload } from '@/types/protocol'
+
+import AppIcon from './AppIcon.vue'
+import type { IconName } from '@/icons'
 
 /** Full-screen "the agent is driving" effect: a dot-matrix frame with a pulse circling it. */
 
@@ -91,6 +94,46 @@ function draw(now: number) {
     ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(1, level + 0.1)})`
     ctx.fill()
   }
+  drawRipples(ctx, now, still)
+}
+
+function dot(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, alpha: number) {
+  ctx.beginPath()
+  ctx.arc(x, y, radius + 1.2, 0, Math.PI * 2)
+  ctx.fillStyle = `rgba(0, 0, 0, ${0.3 * alpha})`
+  ctx.fill()
+  ctx.beginPath()
+  ctx.arc(x, y, radius, 0, Math.PI * 2)
+  ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`
+  ctx.fill()
+}
+
+/** Rings of dots on an 8 px pitch spreading out from each click, and a dot that stays at the centre. */
+function drawRipples(ctx: CanvasRenderingContext2D, now: number, still: boolean) {
+  ripples = ripples.filter(
+    (ripple) => (now - ripple.at) / 1000 < RIPPLE_SECONDS * ripple.pulses + 0.4,
+  )
+  for (const ripple of ripples) {
+    const age = (now - ripple.at) / 1000
+    for (let pulse = 0; pulse < ripple.pulses; pulse++) {
+      const t = still ? 0.5 : (age - pulse * 0.35) / RIPPLE_SECONDS
+      if (t < 0 || t > 1) continue
+      const radius = 8 + t * RIPPLE_REACH
+      const count = Math.max(8, Math.round((Math.PI * 2 * radius) / STEP))
+      for (let i = 0; i < count; i++) {
+        const angle = (i / count) * Math.PI * 2
+        dot(
+          ctx,
+          ripple.x + Math.cos(angle) * radius,
+          ripple.y + Math.sin(angle) * radius,
+          1.6,
+          (1 - t) * 0.9,
+        )
+      }
+    }
+    const settle = Math.max(0, 1 - Math.max(0, age - 0.3) / (RIPPLE_SECONDS * ripple.pulses + 0.1))
+    dot(ctx, ripple.x, ripple.y, 3, Math.min(1, 0.35 + settle))
+  }
 }
 
 const { pause, resume } = useRafFn(({ timestamp }) => draw(timestamp), {
@@ -112,6 +155,56 @@ function setActive(next: boolean) {
   }
 }
 
+/** A click marker: rings of dots spreading from the point where the agent clicked. */
+interface Ripple {
+  x: number
+  y: number
+  at: number
+  /** 1 or 2 pulses (a double click pulses twice). */
+  pulses: number
+}
+const RIPPLE_SECONDS = 0.9
+const RIPPLE_REACH = 72
+let ripples: Ripple[] = []
+
+/** The one caption under the control pill: what the agent is doing right now. */
+const action = ref<{ icon: IconName; label: string; detail: string } | null>(null)
+
+const ACTION_ICON: Record<string, IconName> = {
+  click: 'click',
+  type_text: 'keyboard',
+  press_keys: 'shortcut',
+  open_app: 'app',
+  wait: 'wait',
+}
+const ACTION_LABEL: Record<string, string> = {
+  click: 'Click',
+  type_text: 'Type',
+  press_keys: 'Keys',
+  open_app: 'Open',
+  wait: 'Wait',
+}
+
+function showStep(step: StepStartedPayload) {
+  const prefix =
+    step.tool === 'click' ? (step.double ? 'Double ' : step.button === 'right' ? 'Right ' : '') : ''
+  action.value = {
+    icon: ACTION_ICON[step.tool] ?? 'click',
+    label: prefix ? `${prefix}click` : (ACTION_LABEL[step.tool] ?? step.tool),
+    detail: step.detail.length > 28 ? `${step.detail.slice(0, 27)}…` : step.detail,
+  }
+  if (step.point) {
+    // Desktop pixels to this window: the window sits at its monitor's origin.
+    const dpr = window.devicePixelRatio || 1
+    ripples.push({
+      x: step.point.x / dpr - window.screenX,
+      y: step.point.y / dpr - window.screenY,
+      at: performance.now(),
+      pulses: step.double ? 2 : 1,
+    })
+  }
+}
+
 const unlisten: UnlistenFn[] = []
 
 onMounted(async () => {
@@ -123,12 +216,18 @@ onMounted(async () => {
     // The label is optional.
   }
   unlisten.push(
-    await listen<{ state: AgentState }>('state_changed', (event) =>
-      setActive(event.payload.state === 'acting' || event.payload.state === 'observing'),
-    ),
+    await listen<{ state: AgentState }>('state_changed', (event) => {
+      const next = event.payload.state
+      setActive(next === 'acting' || next === 'observing')
+      if (next !== 'acting' && next !== 'observing' && next !== 'planning') action.value = null
+    }),
+    await listen<StepStartedPayload>('step_started', (event) => showStep(event.payload)),
   )
   // The window is created at the moment control starts, so it may have missed the event.
   setActive(true)
+  // Dev only: lets a plain browser preview play a step without the Rust side.
+  if (import.meta.env.DEV)
+    (window as unknown as { __demoStep: typeof showStep }).__demoStep = showStep
 })
 useEventListener(window, 'resize', layout)
 onBeforeUnmount(() => unlisten.forEach((off) => off()))
@@ -149,5 +248,43 @@ onBeforeUnmount(() => unlisten.forEach((off) => off()))
         >· Stop {{ hotkeyLabel }}</span
       >
     </div>
+
+    <!-- What the agent is doing right now. One caption at a time, replaced by the next. -->
+    <div class="absolute top-16 left-1/2 -translate-x-1/2">
+      <Transition name="action" mode="out-in">
+        <div
+          v-if="action"
+          :key="`${action.label}|${action.detail}`"
+          class="flex h-8 items-center gap-2 rounded-full bg-white/95 px-4 text-[#111] shadow-[0_0_0_1px_rgb(0_0_0/0.25)]"
+        >
+          <AppIcon :name="action.icon" size="sm" />
+          <span class="text-caption uppercase">{{ action.label }}</span>
+          <span v-if="action.detail" class="max-w-64 truncate text-label text-[#111]/70">{{
+            action.detail
+          }}</span>
+        </div>
+      </Transition>
+    </div>
   </div>
 </template>
+<style scoped>
+.action-enter-active,
+.action-leave-active {
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+
+.action-enter-from,
+.action-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action-enter-active,
+  .action-leave-active {
+    transition: none;
+  }
+}
+</style>

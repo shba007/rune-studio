@@ -74,6 +74,12 @@ export interface StepStartedPayload {
   tool: string
   reason: string
   text: string
+  /** Typed text, keys, app name or wait time, for the on-screen caption. */
+  detail: string
+  /** Where a click lands, in physical desktop pixels. */
+  point: { x: number; y: number } | null
+  double: boolean
+  button: 'left' | 'right' | 'middle'
 }
 
 export interface TaskDonePayload {

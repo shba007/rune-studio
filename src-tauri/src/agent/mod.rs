@@ -11,8 +11,8 @@ use std::{future::Future, time::Duration};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{
-    events::{self, AgentState, AppState, StepFinished, StepStarted, TaskDone},
-    exec::{CancelToken, ExecError, apps, input::Input},
+    events::{self, AgentState, AppState, Point, StepFinished, StepStarted, TaskDone},
+    exec::{CancelToken, ExecError, apps, input::{Input, MouseButton}},
     model::{
         client::{ChatClient, ModelError},
         coords::{Monitor, model_to_pixels},
@@ -147,9 +147,19 @@ async fn run(app: &AppHandle, task: &str) -> Outcome {
 
         // Act.
         let described = action.describe();
+        let (detail, point, double, button) = visual(&action, &frame.monitor);
         let _ = app.emit(
             events::STEP_STARTED,
-            StepStarted { step, tool: action.tool_name(), reason: reason.clone(), text: if reason.is_empty() { described.clone() } else { reason } },
+            StepStarted {
+                step,
+                tool: action.tool_name(),
+                reason: reason.clone(),
+                text: if reason.is_empty() { described.clone() } else { reason },
+                detail,
+                point,
+                double,
+                button,
+            },
         );
         events::set_agent_state(app, AgentState::Acting);
         let launches = matches!(action, Action::OpenApp { .. });
@@ -177,6 +187,26 @@ async fn run(app: &AppHandle, task: &str) -> Outcome {
         }
     }
     Outcome::Failed(format!("stopped after {} steps without finishing", settings.max_steps))
+}
+
+/// What the control overlay shows for an action: a caption detail, and for clicks where they land.
+fn visual(action: &Action, monitor: &Monitor) -> (String, Option<Point>, bool, &'static str) {
+    match action {
+        Action::Click { x, y, button, double } => {
+            let (px, py) = model_to_pixels(monitor, *x, *y);
+            let name = match button {
+                MouseButton::Left => "left",
+                MouseButton::Right => "right",
+                MouseButton::Middle => "middle",
+            };
+            (String::new(), Some(Point { x: px, y: py }), *double, name)
+        }
+        Action::TypeText { text } => (text.clone(), None, false, "left"),
+        Action::PressKeys { keys } => (keys.join(" + "), None, false, "left"),
+        Action::OpenApp { name } => (name.clone(), None, false, "left"),
+        Action::Wait { ms } => (format!("{:.1} s", *ms as f64 / 1000.0), None, false, "left"),
+        Action::Done { .. } => (String::new(), None, false, "left"),
+    }
 }
 
 /// Performs one action on the real desktop. `Done` never reaches here.
