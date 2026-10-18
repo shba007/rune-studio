@@ -88,6 +88,7 @@ async fn run(app: &AppHandle, task: &str) -> Outcome {
 
         // Look.
         events::set_agent_state(app, AgentState::Observing);
+        body::announce_observe(app, None);
         let captured = tauri::async_runtime::spawn_blocking(|| screenshot::capture(None, MODEL_MAX_EDGE, MODEL_JPEG_QUALITY)).await;
         let frame = match captured {
             Ok(Ok(frame)) => frame,

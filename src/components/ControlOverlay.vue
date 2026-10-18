@@ -4,10 +4,15 @@ import { invoke } from '@tauri-apps/api/core'
 import { useEventListener, usePreferredReducedMotion, useRafFn } from '@vueuse/core'
 import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
 
-import type { AgentState, Settings, StepStartedPayload } from '@/types/protocol'
+import { KIND_ICON, TOOL_LABEL, kindOf, type ActionKind } from '@/config/actions'
+import type {
+  AgentState,
+  ObserveStartedPayload,
+  Settings,
+  StepStartedPayload,
+} from '@/types/protocol'
 
 import AppIcon from './AppIcon.vue'
-import type { IconName } from '@/icons'
 
 /** Full-screen "the agent is driving" effect: a dot-matrix frame with a pulse circling it. */
 
@@ -73,12 +78,12 @@ function draw(now: number) {
   const reveal = still ? DEPTH : Math.min(DEPTH, seconds * 14)
   const head = still ? -1 : (seconds * TRAVEL) % perimeter
 
-  for (const dot of dots) {
-    if (dot.depth > reveal) continue
-    const edge = 1 - dot.depth / DEPTH
+  for (const frameDot of dots) {
+    if (frameDot.depth > reveal) continue
+    const edge = 1 - frameDot.depth / DEPTH
     let level = 0.1 + 0.34 * edge * edge
     if (head >= 0) {
-      const behind = (head - dot.along + perimeter) % perimeter
+      const behind = (head - frameDot.along + perimeter) % perimeter
       if (behind < TAIL) {
         const glow = 1 - behind / TAIL
         level = Math.max(level, glow * glow * (0.35 + 0.65 * edge))
@@ -86,14 +91,15 @@ function draw(now: number) {
     }
     // A dark ring keeps the white dots readable over light windows.
     ctx.beginPath()
-    ctx.arc(dot.x, dot.y, DOT + 0.9 + level, 0, Math.PI * 2)
+    ctx.arc(frameDot.x, frameDot.y, DOT + 0.9 + level, 0, Math.PI * 2)
     ctx.fillStyle = `rgba(0, 0, 0, ${0.22 * level + 0.06})`
     ctx.fill()
     ctx.beginPath()
-    ctx.arc(dot.x, dot.y, DOT + 0.7 * level, 0, Math.PI * 2)
+    ctx.arc(frameDot.x, frameDot.y, DOT + 0.7 * level, 0, Math.PI * 2)
     ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(1, level + 0.1)})`
     ctx.fill()
   }
+  drawFlashes(ctx, now, still)
   drawRipples(ctx, now, still)
   updateTyping(now, still)
 }
@@ -108,6 +114,18 @@ function dot(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number
   ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`
   ctx.fill()
 }
+
+/** A click marker: rings of dots spreading from the point where the agent clicked. */
+interface Ripple {
+  x: number
+  y: number
+  at: number
+  /** 1 or 2 pulses (a double click pulses twice). */
+  pulses: number
+}
+const RIPPLE_SECONDS = 0.9
+const RIPPLE_REACH = 72
+let ripples: Ripple[] = []
 
 /** Rings of dots on an 8 px pitch spreading out from each click, and a dot that stays at the centre. */
 function drawRipples(ctx: CanvasRenderingContext2D, now: number, still: boolean) {
@@ -138,6 +156,54 @@ function drawRipples(ctx: CanvasRenderingContext2D, now: number, still: boolean)
   }
 }
 
+/** The area a screenshot covered: a viewfinder of dot corners, a scan line of dots and a brief wash. */
+interface Flash {
+  x: number
+  y: number
+  w: number
+  h: number
+  at: number
+}
+const FLASH_SECONDS = 0.8
+/** How much of the flash the scan line takes, the rest is the frame fading out. */
+const SWEEP_SHARE = 0.7
+let flashes: Flash[] = []
+
+function drawFlashes(ctx: CanvasRenderingContext2D, now: number, still: boolean) {
+  flashes = flashes.filter((flash) => (now - flash.at) / 1000 < FLASH_SECONDS)
+  for (const flash of flashes) {
+    const t = still ? 0.3 : Math.max(0, (now - flash.at) / 1000 / FLASH_SECONDS)
+    // Quick brightening, then a slow fade.
+    const envelope = t < 0.12 ? t / 0.12 : 1 - (t - 0.12) / 0.88
+    ctx.fillStyle = `rgba(255, 255, 255, ${0.12 * envelope})`
+    ctx.fillRect(flash.x, flash.y, flash.w, flash.h)
+
+    if (t < SWEEP_SHARE) {
+      const sweep = flash.y + (t / SWEEP_SHARE) * flash.h
+      for (let row = 0; row < 4; row++) {
+        const y = sweep - row * STEP
+        if (y < flash.y) break
+        for (let x = flash.x; x <= flash.x + flash.w; x += STEP)
+          dot(ctx, x, y, 1.6, 0.9 * (1 - row / 4))
+      }
+    }
+
+    // Corner brackets: an L of three dots at each corner.
+    const alpha = Math.min(1, (1 - t) * 1.6)
+    for (const [cx, cy, dx, dy] of [
+      [flash.x, flash.y, 1, 1],
+      [flash.x + flash.w, flash.y, -1, 1],
+      [flash.x, flash.y + flash.h, 1, -1],
+      [flash.x + flash.w, flash.y + flash.h, -1, -1],
+    ] as const) {
+      for (let i = 0; i < 4; i++) {
+        dot(ctx, cx + dx * i * STEP, cy, 2.2, alpha)
+        if (i > 0) dot(ctx, cx, cy + dy * i * STEP, 2.2, alpha)
+      }
+    }
+  }
+}
+
 const { pause, resume } = useRafFn(({ timestamp }) => draw(timestamp), {
   immediate: false,
   fpsLimit: 30,
@@ -157,19 +223,6 @@ function setActive(next: boolean) {
   }
 }
 
-/** A click marker: rings of dots spreading from the point where the agent clicked. */
-interface Ripple {
-  x: number
-  y: number
-  at: number
-  /** 1 or 2 pulses (a double click pulses twice). */
-  pulses: number
-}
-const RIPPLE_SECONDS = 0.9
-const RIPPLE_REACH = 72
-let ripples: Ripple[] = []
-
-/** The one caption under the control pill: what the agent is doing right now. */
 /** Name of the outside agent in control, or null when it is Rune Studio's own agent. */
 const agentName = ref<string | null>(null)
 
@@ -182,9 +235,10 @@ interface Typing {
   msPerChar: number
 }
 
+/** What the agent is doing right now. One at a time; the next replaces it. */
 const action = ref<{
-  step: number
-  icon: IconName
+  key: number
+  kind: ActionKind
   label: string
   detail: string
   typing: Typing | null
@@ -207,21 +261,6 @@ function updateTyping(now: number, still: boolean) {
   if (count !== typedCount.value) typedCount.value = count
 }
 
-const ACTION_ICON: Record<string, IconName> = {
-  click: 'click',
-  type_text: 'keyboard',
-  press_keys: 'shortcut',
-  open_app: 'app',
-  wait: 'wait',
-}
-const ACTION_LABEL: Record<string, string> = {
-  click: 'Click',
-  type_text: 'Type',
-  press_keys: 'Keys',
-  open_app: 'Open',
-  wait: 'Wait',
-}
-
 function showStep(step: StepStartedPayload) {
   const prefix =
     step.tool === 'click' ? (step.double ? 'Double ' : step.button === 'right' ? 'Right ' : '') : ''
@@ -235,10 +274,10 @@ function showStep(step: StepStartedPayload) {
       : null
   typedCount.value = 0
   action.value = {
-    step: step.step,
+    key: step.step,
+    kind: kindOf(step.tool),
     typing,
-    icon: ACTION_ICON[step.tool] ?? 'click',
-    label: prefix ? `${prefix}click` : (ACTION_LABEL[step.tool] ?? step.tool),
+    label: prefix ? `${prefix}click` : (TOOL_LABEL[step.tool] ?? step.tool),
     detail: typing ? '' : step.detail.length > 28 ? `${step.detail.slice(0, 27)}…` : step.detail,
   }
   if (step.point) {
@@ -252,6 +291,32 @@ function showStep(step: StepStartedPayload) {
       pulses: step.double ? 2 : 1,
     })
   }
+}
+
+let observeCount = 0
+
+/** A screenshot: the monitor icon, and a flash over the area that was captured. */
+function showObserve({ region }: ObserveStartedPayload) {
+  typedCount.value = 0
+  action.value = {
+    key: -++observeCount,
+    kind: 'screen',
+    label: region ? 'Zoom' : TOOL_LABEL.observe,
+    detail: '',
+    typing: null,
+  }
+  // The whole screen is flashed a little inside the edge frame, so the two do not overlap.
+  const inset = 3 * STEP
+  const [x0, y0, x1, y1] = region ?? [0, 0, 1000, 1000]
+  const box = region
+    ? {
+        x: (Math.min(x0, x1) / 1000) * width,
+        y: (Math.min(y0, y1) / 1000) * height,
+        w: (Math.abs(x1 - x0) / 1000) * width,
+        h: (Math.abs(y1 - y0) / 1000) * height,
+      }
+    : { x: inset, y: inset, w: width - 2 * inset, h: height - 2 * inset }
+  flashes.push({ ...box, at: performance.now() })
 }
 
 const unlisten: UnlistenFn[] = []
@@ -271,6 +336,7 @@ onMounted(async () => {
       if (next !== 'acting' && next !== 'observing' && next !== 'planning') action.value = null
     }),
     await listen<StepStartedPayload>('step_started', (event) => showStep(event.payload)),
+    await listen<ObserveStartedPayload>('observe_started', (event) => showObserve(event.payload)),
     await listen<{ agent: string | null }>(
       'external_agent',
       (event) => (agentName.value = event.payload.agent),
@@ -283,9 +349,10 @@ onMounted(async () => {
   } catch {
     // The label falls back to Rune.
   }
-  // Dev only: lets a plain browser preview play a step without the Rust side.
-  if (import.meta.env.DEV)
-    (window as unknown as { __demoStep: typeof showStep }).__demoStep = showStep
+  // Dev only: lets a plain browser preview play steps without the Rust side.
+  if (import.meta.env.DEV) {
+    Object.assign(window, { __demoStep: showStep, __demoObserve: showObserve })
+  }
 })
 useEventListener(window, 'resize', layout)
 onBeforeUnmount(() => unlisten.forEach((off) => off()))
@@ -297,40 +364,48 @@ onBeforeUnmount(() => unlisten.forEach((off) => off()))
     :class="active ? 'opacity-100' : 'opacity-0'"
   >
     <canvas ref="canvas" class="absolute inset-0 size-full" aria-hidden="true" />
-    <div
-      class="absolute top-6 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full bg-black/85 py-2 pr-4 pl-4 text-white"
-    >
-      <span class="size-2 animate-pulse rounded-full bg-[#d71921]" />
-      <span class="text-caption uppercase">{{ agentName ?? 'Rune' }} is in control</span>
-      <span v-if="hotkeyLabel" class="text-caption text-white/50 uppercase"
-        >· Stop {{ hotkeyLabel }}</span
-      >
-    </div>
 
-    <!-- What the agent is doing right now. One caption at a time, replaced by the next. -->
-    <div class="absolute top-16 left-1/2 -translate-x-1/2">
+    <!-- One pill: who is in control, what they are doing right now, and how to stop them. -->
+    <div
+      class="absolute top-6 left-1/2 flex h-10 -translate-x-1/2 items-center gap-3 rounded-full bg-black/85 pr-1 pl-4 text-white"
+    >
+      <span class="size-2 shrink-0 animate-pulse rounded-full bg-[#d71921]" />
+      <span class="text-caption whitespace-nowrap uppercase"
+        >{{ agentName ?? 'Rune' }} is in control</span
+      >
+
       <Transition name="action" mode="out-in">
         <div
           v-if="action"
-          :key="action.step"
-          class="flex h-8 items-center gap-2 rounded-full bg-white/95 px-4 text-[#111] shadow-[0_0_0_1px_rgb(0_0_0/0.25)]"
+          :key="action.key"
+          class="flex items-center gap-2 border-l border-white/20 pl-3"
         >
-          <AppIcon :name="action.icon" size="sm" />
-          <span class="text-caption uppercase">{{ action.label }}</span>
-          <span v-if="action.detail" class="max-w-64 truncate text-label text-[#111]/70">{{
+          <AppIcon :name="KIND_ICON[action.kind]" />
+          <span class="text-caption whitespace-nowrap uppercase">{{ action.label }}</span>
+          <span v-if="action.detail" class="max-w-64 truncate text-label text-white/70">{{
             action.detail
           }}</span>
           <span
             v-if="action.typing"
-            class="flex items-center text-label whitespace-pre text-[#111]/70"
+            class="flex items-center text-label whitespace-pre text-white/70"
           >
-            {{ typedShown }}<span class="caret ml-px h-4 w-[2px] bg-[#111]" />
+            {{ typedShown }}<span class="caret ml-px h-4 w-[2px] bg-white" />
           </span>
         </div>
       </Transition>
+
+      <div class="flex items-center gap-2 border-l border-white/20 pl-3">
+        <span v-if="hotkeyLabel" class="text-caption whitespace-nowrap text-white/50 uppercase">{{
+          hotkeyLabel
+        }}</span>
+        <span class="grid size-8 shrink-0 place-items-center rounded-full bg-[#d71921]">
+          <AppIcon name="stop" />
+        </span>
+      </div>
     </div>
   </div>
 </template>
+
 <style scoped>
 .caret {
   animation: caret-blink 0.9s steps(1) infinite;

@@ -72,6 +72,15 @@ pub const TASK_DONE: &str = "task_done";
 /// Who is driving from outside: `{ agent: "Claude" }`, or `{ agent: null }` when nobody is.
 pub const EXTERNAL_AGENT: &str = "external_agent";
 
+/// The agent is taking a screenshot: the overlay flashes the captured area.
+pub const OBSERVE_STARTED: &str = "observe_started";
+
+#[derive(Clone, Serialize)]
+pub struct ObserveStarted {
+    /// The zoomed part, as `[x0, y0, x1, y1]` in model units (0 to 1000), or `None` for the whole screen.
+    pub region: Option<[f64; 4]>,
+}
+
 #[derive(Clone, Serialize)]
 pub struct ExternalAgent {
     pub agent: Option<String>,

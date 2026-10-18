@@ -69,6 +69,12 @@ export const AUDIO_LEVEL = 'audio_level'
 export const STEP_STARTED = 'step_started'
 export const TASK_DONE = 'task_done'
 export const EXTERNAL_AGENT = 'external_agent'
+export const OBSERVE_STARTED = 'observe_started'
+
+/** The agent is taking a screenshot. `region` is the zoomed part (0 to 1000 units), or null for the whole screen. */
+export interface ObserveStartedPayload {
+  region: [number, number, number, number] | null
+}
 
 /** What Settings shows for the External agent group. `available` is false in normal builds. */
 export interface BridgeInfo {

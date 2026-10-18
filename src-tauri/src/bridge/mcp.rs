@@ -301,6 +301,7 @@ async fn observe(app: &AppHandle, arguments: &Value) -> Reply {
         Ok(region) => region,
         Err(reply) => return reply,
     };
+    body::announce_observe(app, region);
     let frame = match capture(region).await {
         Ok(frame) => frame,
         Err(reply) => return reply,

@@ -16,30 +16,35 @@ import IconEye from '~icons/ph/eye-fill'
 import IconKey from '~icons/ph/key-fill'
 import IconCommand from '~icons/ph/command-fill'
 import IconCopy from '~icons/ph/copy-fill'
-import IconCursorClick from '~icons/ph/cursor-click-fill'
+import IconHeadphones from '~icons/ph/headphones-fill'
 import IconHourglass from '~icons/ph/hourglass-medium-fill'
 import IconKeyboard from '~icons/ph/keyboard-fill'
 import IconLinkSimple from '~icons/ph/link-simple-fill'
 import IconMicrophone from '~icons/ph/microphone-fill'
+import IconMonitor from '~icons/ph/monitor-fill'
+import IconMouse from '~icons/ph/mouse-simple-fill'
 import IconPlugs from '~icons/ph/plugs-connected-fill'
 import IconSlidersHorizontal from '~icons/ph/sliders-horizontal-fill'
 import IconRuneMark from '~icons/custom/rune-mark'
 import IconStopCircle from '~icons/ph/stop-circle-fill'
+import IconVideo from '~icons/ph/video-camera-fill'
 import IconTrash from '~icons/ph/trash-fill'
 
 export const icons = {
   app: IconAppWindow,
   back: IconArrowLeft,
-  click: IconCursorClick,
   copy: IconCopy,
   plug: IconPlugs,
   keyboard: IconKeyboard,
   wait: IconHourglass,
   eye: IconEye,
+  headphones: IconHeadphones,
   key: IconKey,
   link: IconLinkSimple,
   logo: IconRuneMark,
   mic: IconMicrophone,
+  monitor: IconMonitor,
+  mouse: IconMouse,
   ok: IconCheckCircle,
   refresh: IconArrowClockwise,
   send: IconArrowUp,
@@ -47,6 +52,7 @@ export const icons = {
   stop: IconStopCircle,
   trash: IconTrash,
   tune: IconSlidersHorizontal,
+  video: IconVideo,
 } as const
 
 export type IconName = keyof typeof icons
