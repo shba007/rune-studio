@@ -1,6 +1,6 @@
 [package]
 name = "rune-studio"
-description = "Vue + Typescript + Tailwind + Tauri Template"
+description = "Voice and text driven desktop agent that controls the PC through rune-infer"
 authors = ["Shirsendu Bairagi <shirsendu2001@gmail.com>"]
 license = "MIT"
 repository = "https://github.com/shba007/rune-studio.git"
@@ -14,20 +14,23 @@ name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2.6", features = [] }
+tauri-build = { version = "2.7", features = [] }
 
 [dependencies]
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "2.11", features = ["protocol-asset"] }
-tauri-plugin-log = "2.9"
-tauri-plugin-process = "2.3"
-walkdir = "2.5"
-rfd = "0.17.2"
-base64 = "0.23.1"
-image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
-dotenvy = "0.15.7"
+tauri = { version = "2.12", features = ["tray-icon"] }
+tauri-plugin-log = "2.10"
+tauri-plugin-process = "2.4"
+tauri-plugin-global-shortcut = "2"
+dotenvy = "0.15"
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+keyring = "4"
+thiserror = "2"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
-tauri-plugin-updater = "2.12"
+tauri-plugin-updater = "2.14"
+
+[patch.crates-io]
+zip = { git = "https://github.com/zip-rs/zip2", tag = "v4.6.1" }

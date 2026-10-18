@@ -181,11 +181,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           # Those targets are only used on macos runners so it's in an `if` to slightly speed up windows and linux builds.
-          targets: ${{ matrix.platform == 'macos-latest' &&
-            'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: 🛠️ Setup Vite-Plus
-        uses: voidzero-dev/setup-vp@v1
+        uses: voidzero-dev/setup-vp@v1.21.2
         with:
           node-version: 'lts/*'
           cache: true
@@ -302,7 +301,6 @@ jobs:
           file: src-tauri/gen/android/app/build/outputs/bundle/universalRelease/app-universal-release.aab
           asset_name: rune-studio_${{ env.VERSION }}_arm64.aab
           tag: ${{ env.VERSION }}
-
   # deploy-mobile:
   #   needs: build-mobile
   #   runs-on: ubuntu-latest

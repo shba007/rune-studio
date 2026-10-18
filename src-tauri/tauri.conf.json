@@ -16,18 +16,21 @@
         "visible": true,
         "url": "/",
         "title": "Rune Studio",
-        "width": 1400,
-        "height": 720,
-        "resizable": true,
-        "fullscreen": false
+        "width": 680,
+        "height": 96,
+        "resizable": false,
+        "maximizable": false,
+        "minimizable": false,
+        "fullscreen": false,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true
       }
     ],
     "security": {
-      "csp": null,
-      "assetProtocol": {
-        "enable": true,
-        "scope": ["**/*"]
-      }
+      "csp": null
     }
   },
   "bundle": {

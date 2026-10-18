@@ -26,8 +26,6 @@ coverage
 
 *.tsbuildinfo
 
-.eslintcache
-
 # Cypress
 /cypress/videos/
 /cypress/screenshots/
@@ -47,3 +45,4 @@ __screenshots__/
 !.env.example
 
 temp
+.vitest/

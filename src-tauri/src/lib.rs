@@ -1,4 +1,22 @@
-mod media;
+mod backend;
+mod commands;
+mod error;
+mod events;
+mod hotkeys;
+mod settings;
+mod window;
+
+use std::sync::Mutex;
+
+use tauri::{
+    Manager,
+    menu::{Menu, MenuItem},
+    tray::TrayIconBuilder,
+};
+use tauri_plugin_global_shortcut::ShortcutState;
+
+use events::{AgentState, AppState};
+use hotkeys::Hotkeys;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -13,6 +31,21 @@ pub fn run() {
 
     builder
         .plugin(tauri_plugin_process::init())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, shortcut, event| {
+                    if event.state() != ShortcutState::Pressed {
+                        return;
+                    }
+                    let hotkeys = app.state::<AppState>().hotkeys.lock().expect("hotkeys lock poisoned").clone();
+                    if shortcut == &hotkeys.toggle {
+                        window::toggle(app);
+                    } else if shortcut == &hotkeys.stop {
+                        commands::stop(app.clone());
+                    }
+                })
+                .build(),
+        )
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -21,19 +54,57 @@ pub fn run() {
                         .build(),
                 )?;
             }
+
+            let loaded = settings::load(app.handle());
+            let hotkeys = Hotkeys::from_settings(&loaded);
+            app.manage(AppState {
+                settings: Mutex::new(loaded),
+                hotkeys: Mutex::new(hotkeys.clone()),
+                agent_state: Mutex::new(AgentState::Idle),
+                http: reqwest::Client::new(),
+            });
+
+            if let Some(pill) = app.get_webview_window(window::MAIN) {
+                window::exclude_from_capture(&pill)?;
+                window::place_top_center(&pill)?;
+            }
+
+            // Failures are already logged; the pill stays reachable from the tray.
+            let _ = hotkeys::apply(app.handle(), None, &hotkeys);
+
+            let show = MenuItem::with_id(app, "show", "Show / hide", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show, &quit])?;
+            let mut tray = TrayIconBuilder::new()
+                .menu(&menu)
+                .tooltip("Rune Studio")
+                .on_menu_event(|app, event| match event.id().as_ref() {
+                    "show" => window::toggle(app),
+                    "quit" => app.exit(0),
+                    _ => {}
+                });
+            if let Some(icon) = app.default_window_icon() {
+                tray = tray.icon(icon.clone());
+            }
+            tray.build(app)?;
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            media::pick_directory,
-            media::scan_directory,
-            media::generate_thumbnails,
-            media::get_media_base64,
-            media::upload_media_to_s3,
-            media::execute_file_actions,
-            media::save_artifact_to_disk,
-            media::load_artifact_from_disk,
-            media::clear_directory_cache,
-            media::delete_artifact_from_disk,
+            commands::get_settings,
+            commands::save_settings,
+            commands::has_api_key,
+            commands::set_api_key,
+            commands::check_backend,
+            commands::set_expanded,
+            commands::hide_pill,
+            commands::stop,
+            commands::start_task,
+            commands::steer,
+            commands::toggle_listening,
+            commands::confirm,
+            #[cfg(debug_assertions)]
+            commands::debug_set_state,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

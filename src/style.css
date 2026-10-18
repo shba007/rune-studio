@@ -1,1 +1,17 @@
 @import 'tailwindcss';
+
+/* The window is transparent: only the pill itself should paint. */
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+  font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+}
+
+input {
+  user-select: text;
+}

@@ -4,7 +4,6 @@ import { defineConfig, lazyPlugins } from 'vite-plus'
 import vue from '@vitejs/plugin-vue'
 import vueDevTools from 'vite-plugin-vue-devtools'
 import tailwindcss from '@tailwindcss/vite'
-import { templateCompilerOptions } from '@tresjs/core'
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -16,7 +15,7 @@ export default defineConfig({
     singleQuote: true,
   },
   lint: {
-    plugins: ['eslint', 'typescript', 'unicorn', 'oxc', 'vue', 'vitest'],
+    plugins: ['typescript', 'unicorn', 'oxc', 'vue', 'vitest'],
     categories: {
       correctness: 'error',
     },
@@ -97,9 +96,7 @@ export default defineConfig({
       },
     ],
   },
-  plugins: lazyPlugins(() => [ vue({
-      ...templateCompilerOptions
-    }), vueDevTools(), tailwindcss()]),
+  plugins: lazyPlugins(() => [vue(), vueDevTools(), tailwindcss()]),
   server: {
     watch: {
       ignored: ['**/src-tauri/**'],
