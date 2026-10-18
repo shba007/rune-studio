@@ -151,7 +151,7 @@ Prefer maintained packages from the unjs / unplugin / VueUse / Vue ecosystem ove
 | Timers, keys, focus                            | VueUse `useTimeoutFn`, `onKeyStroke`, `useFocus`                        | `useAgent.ts`, `AgentPill.vue`, `Composer.vue`                                                                                                                                                                                                                                                                                                                                                                       |
 | Styling                                        | Tailwind v4 with the five-role type hierarchy                           | see Typography                                                                                                                                                                                                                                                                                                                                                                                                       |
 | Icon sizes                                     | `icon-sm` / `icon-md` utilities in `src/style.css`                      | Two roles: **sm** 12 px (trailing arrows, remove links; the one 4 px-grid size) and **md** 16 px (the default: icon-only buttons and beside a label). Never put a raw `size-*` on an icon. Filled glyphs carry more weight than outline ones, so keep them small; check new ones at real size.                                                                                                                       |
-| Spacing grid                                   | Tailwind spacing, `layout.ts`, `window.rs`                              | **Everything snaps to an 8 px grid** (Tailwind units 2, 4, 6, 8, ...: `p-2`, `gap-2`, `size-10`). Where 8 cannot work, 4 px is allowed (type line heights of 20 px, radii of 20 and 28 px, 12 px icons). Never use half units (`gap-1.5`, `px-2.5`). Pages are 272 px wide, the orb 64 px, the window 344 wide and 248 (open) or 592 (settings) tall. The control overlay's dots sit on an 8 px pitch.               |
+| Spacing grid                                   | Tailwind spacing, `layout.ts`, `window.rs`                              | **Everything snaps to an 8 px grid** (Tailwind units 2, 4, 6, 8, ...: `p-2`, `gap-2`, `size-10`). Where 8 cannot work, 4 px is allowed (type line heights of 20 px, radii of 20 and 28 px, 12 px icons). Never use half units (`gap-1.5`, `px-2.5`). Pages are 272 px wide, the orb 64 px, the window 344 wide and 184 (open) or 592 (settings) tall. The control overlay's dots sit on an 8 px pitch.               |
 | Scrollbars                                     | global rules in `src/style.css`                                         | One slim (8 px, inset thumb), rounded, quiet scrollbar for every scroll area. Thumb colours are the `--scrollbar-thumb` and `--scrollbar-thumb-hover` variables; a light surface overrides them locally (the composer field does). Never style a scrollbar per component or leave the native one.                                                                                                                    |
 | Browser preview                                | `@tauri-apps/api/mocks` (`mockIPC`)                                     | `src/dev/mockTauri.ts` answers the startup commands so the UI renders in a plain browser for design review. Dev only: it is not in the production bundle.                                                                                                                                                                                                                                                            |
 
@@ -167,10 +167,8 @@ A single **bot glyph** (an 11x11 dot orb on a white disc: **64 px in total**, a 
 AMBIENT    (orb)                                  64 px, the resting form, bottom-right corner
 
 OPEN                  +----------------------------+
-                      | Open Notepad             ↗ |   suggestions: rows of the same frame,
-                      | Open Calculator          ↗ |   folded away once you type
             (orb)     | +------------------------+ |
-                      | | Type or say a command  | |   white field, 2 lines, Enter sends
+                      | | Type or say a command  | |   white field, 3 lines, Enter sends
                       | | [tune]       [mic] [↑] | |   settings left; mic + send together, same look
                       | +------------------------+ |
                       | • Ready            [Stop]  |   status bar: backend dot, state, Stop
@@ -190,19 +188,19 @@ SETTINGS              +----------------------------+
 ATTENTION  composer card; the status bar reads "Needs your OK  [Yes] [No]" (voice yes/no from M5)
 ```
 
-Modes: **ambient** (orb only), **open** (orb + composer) and **settings**. The card opens on the summon hotkey and when the agent needs the user (`ask_user`, high-risk confirm). It stays open until dismissed (`Esc`, the summon hotkey again, or clicking the orb while idle). Clicking the orb while the agent runs is Stop. Every page beside the orb (composer, settings, future task views) is exactly **272 px** wide (`PAGE_WIDTH` in `src/config/layout.ts`). The composer is one connected frame: one connected frame holding the suggestion rows, the white field and the status bar, so nothing floats. Mic and send are twin 40 px dark circles on the right (the mic turns red while listening); settings is a ghost button on the left. Suggestions show only while the field is empty and the agent is idle, and fold away smoothly once you type. The backend chip became a dot in the status bar (green, amber or red; hover for the details and model name).
+Modes: **ambient** (orb only), **open** (orb + composer) and **settings**. The card opens on the summon hotkey and when the agent needs the user (`ask_user`, high-risk confirm). It stays open until dismissed (`Esc`, the summon hotkey again, or clicking the orb while idle). Clicking the orb while the agent runs is Stop. Every page beside the orb (composer, settings, future task views) is exactly **272 px** wide (`PAGE_WIDTH` in `src/config/layout.ts`). The composer is one connected frame: the white field and the status bar in one frame, so nothing floats. There are no suggestion rows: they were removed for a cleaner look. Mic and send are twin 32 px dark circles on the right (the mic turns red while listening); settings is a ghost button on the left. The backend chip became a dot in the status bar (green, amber or red; hover for the details and model name).
 
 **Voice reaction.** The mic button toggles hands-free listening: Rust opens the default input device (cpal, on its own thread), computes an RMS level about 30 times a second, maps -55..-10 dBFS to 0..1 and emits `audio_level`. The orb's listening bloom follows that level (fast attack, slow decay); at silence only the centre breathes, so a dead mic looks different from a live one. If nothing is heard for 4 s the status bar says so. Level capture was pulled forward from M5; segmentation (VAD) and transcription remain M5.
 
 **Typography.** Five roles, defined once as design tokens in `src/style.css`. The default Tailwind size scale is removed (`--text-*: initial`), so a raw size such as `text-sm` or `text-[13px]` produces nothing; always use a role class.
 
-| Role    | Class          | Size / line | Weight | Tracking | Used for                                       |
-| ------- | -------------- | ----------- | ------ | -------- | ---------------------------------------------- |
-| Title   | `text-title`   | 18 / 24     | 600    | 0.02em   | Panel headings                                 |
-| Body    | `text-body`    | 14 / 20     | 400    | none     | Composer input, form fields, reading text      |
-| Status  | `text-status`  | 12 / 16     | 500    | 0.03em   | The live state line in the status bar          |
-| Label   | `text-label`   | 11 / 16     | 500    | 0.04em   | Suggestion rows, buttons, field labels, badges |
-| Caption | `text-caption` | 10 / 14     | 600    | 0.10em   | Section headings; pair with `uppercase`        |
+| Role    | Class          | Size / line | Weight | Tracking | Used for                                  |
+| ------- | -------------- | ----------- | ------ | -------- | ----------------------------------------- |
+| Title   | `text-title`   | 18 / 24     | 600    | 0.02em   | Panel headings                            |
+| Body    | `text-body`    | 14 / 20     | 400    | none     | Composer input, form fields, reading text |
+| Status  | `text-status`  | 12 / 16     | 500    | 0.03em   | The live state line in the status bar     |
+| Label   | `text-label`   | 11 / 16     | 500    | 0.04em   | Buttons, field labels, badges             |
+| Caption | `text-caption` | 10 / 14     | 600    | 0.10em   | Section headings; pair with `uppercase`   |
 
 Glyph states (distinct by motion and shape, never colour alone; static frames under `prefers-reduced-motion`):
 
@@ -218,7 +216,7 @@ Glyph states (distinct by motion and shape, never colour alone; static frames un
 
 A small dot on the disc's corner shows backend problems (amber/red) and is absent when everything is fine.
 
-**Window mechanics.** The window resizes in discrete steps (ambient 64x64, open 344x248, settings 344x592; width = 64 orb + 8 gap + 272 page) **keeping its bottom-right corner fixed**, so it grows up and to the left from wherever it sits, clamped to the work area. Because a transparent window still catches mouse clicks and clips what does not fit, the order is the same for every pair of modes (ambient < open < settings): when the target needs a bigger window, the window grows first and the page animates in afterwards; when it needs a smaller one, the page animates out first and the window shrinks last (after `COLLAPSE_MS`, longer than the page cross-fade). Pages switch with an out-in cross-fade, so only one is ever on screen and the fixed page width means nothing reflows. Verified natively: the window grows within about 40 ms of the click and shrinks about 370 ms after going back. Windows clamps a window's configured size to a minimum width, so the exact size is set explicitly at startup.
+**Window mechanics.** The window resizes in discrete steps (ambient 64x64, open 344x184, settings 344x592; width = 64 orb + 8 gap + 272 page) **keeping its bottom-right corner fixed**, so it grows up and to the left from wherever it sits, clamped to the work area. Because a transparent window still catches mouse clicks and clips what does not fit, the order is the same for every pair of modes (ambient < open < settings): when the target needs a bigger window, the window grows first and the page animates in afterwards; when it needs a smaller one, the page animates out first and the window shrinks last (after `COLLAPSE_MS`, longer than the page cross-fade). Pages switch with an out-in cross-fade, so only one is ever on screen and the fixed page width means nothing reflows. Verified natively: the window grows within about 40 ms of the click and shrinks about 370 ms after going back. Windows clamps a window's configured size to a minimum width, so the exact size is set explicitly at startup.
 
 **M6 additions.** Hover or click on the glyph opens a small ticker list in the label and status roles: one line per step (`click · Save`, risk, result) plus the last-screenshot thumbnail.
 

@@ -23,7 +23,7 @@ impl Mode {
     fn size(self) -> (f64, f64) {
         match self {
             Mode::Ambient => (64.0, 64.0),
-            Mode::Open => (344.0, 248.0),
+            Mode::Open => (344.0, 184.0),
             Mode::Settings => (344.0, 592.0),
         }
     }

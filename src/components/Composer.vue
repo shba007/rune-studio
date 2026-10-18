@@ -3,7 +3,6 @@ import { useFocus } from '@vueuse/core'
 import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 
 import type { Agent } from '@/composables/useAgent'
-import { SUGGESTIONS } from '@/config/suggestions'
 
 import AppIcon from './AppIcon.vue'
 
@@ -17,7 +16,6 @@ const { focused } = useFocus(field)
 const canSend = computed(() => command.value.trim().length > 0 && !agent.isRunning.value)
 const isListening = computed(() => agent.state.value === 'listening')
 const needsConfirm = computed(() => agent.state.value === 'awaiting_confirm')
-const showSuggestions = computed(() => command.value.length === 0 && !agent.isRunning.value)
 
 /** The backend chip is now a dot: green when fine, amber or red otherwise, details on hover. */
 const backend = computed(() => {
@@ -43,12 +41,6 @@ async function submit() {
   if (!canSend.value) return
   if (await agent.startTask(text)) command.value = ''
 }
-
-async function useSuggestion(text: string) {
-  command.value = text
-  await nextTick()
-  focused.value = true
-}
 </script>
 
 <template>
@@ -56,41 +48,20 @@ async function useSuggestion(text: string) {
     data-tauri-drag-region
     class="flex w-full flex-col rounded-[28px] border border-white/8 bg-[#141414] p-2"
   >
-    <!-- Suggestions are rows of the same frame, not floating chips. They fold away once you type. -->
-    <div
-      class="grid transition-[grid-template-rows] duration-200 ease-out"
-      :style="{ gridTemplateRows: showSuggestions ? '1fr' : '0fr' }"
-    >
-      <ul class="min-h-0 overflow-hidden" :inert="!showSuggestions">
-        <li class="pb-2">
-          <button
-            v-for="suggestion in SUGGESTIONS"
-            :key="suggestion"
-            type="button"
-            class="flex w-full cursor-pointer items-center justify-between gap-2 border-b border-white/8 px-4 py-2 text-left text-label text-zinc-300 transition last:border-b-0 hover:text-white"
-            @click="useSuggestion(suggestion)"
-          >
-            <span class="truncate">{{ suggestion }}</span>
-            <AppIcon name="open" size="sm" class="shrink-0 text-zinc-500" />
-          </button>
-        </li>
-      </ul>
-    </div>
-
     <div class="flex flex-col rounded-[20px] bg-[#f1f1ef] px-4 pt-4 pb-4 text-[#111]">
       <textarea
         ref="field"
         v-model="command"
-        rows="2"
+        rows="3"
         placeholder="Type or say a command"
-        class="h-10 w-full resize-none bg-transparent text-body outline-none placeholder:text-[#8a8a86] [--scrollbar-thumb-hover:rgb(0_0_0/0.4)] [--scrollbar-thumb:rgb(0_0_0/0.22)]"
+        class="h-14 w-full resize-none bg-transparent text-body outline-none placeholder:text-[#8a8a86] [--scrollbar-thumb-hover:rgb(0_0_0/0.4)] [--scrollbar-thumb:rgb(0_0_0/0.22)]"
         @keydown.enter.exact.prevent="submit"
       />
 
       <div class="flex items-center gap-2 pt-1">
         <button
           type="button"
-          class="grid size-10 cursor-pointer place-items-center rounded-full border border-black/15 text-[#111] transition hover:bg-black/6"
+          class="grid size-8 cursor-pointer place-items-center rounded-full border border-black/15 text-[#111] transition hover:bg-black/6"
           aria-label="Settings"
           @click="agent.setMode('settings')"
         >
@@ -101,7 +72,7 @@ async function useSuggestion(text: string) {
         <div class="ml-auto flex items-center gap-2">
           <button
             type="button"
-            class="grid size-10 cursor-pointer place-items-center rounded-full text-white transition"
+            class="grid size-8 cursor-pointer place-items-center rounded-full text-white transition"
             :class="isListening ? 'bg-[#d71921]' : 'bg-[#111] hover:bg-black'"
             :aria-label="isListening ? 'Stop listening' : 'Listen'"
             :aria-pressed="isListening"
@@ -112,7 +83,7 @@ async function useSuggestion(text: string) {
 
           <button
             type="button"
-            class="grid size-10 cursor-pointer place-items-center rounded-full bg-[#111] text-white transition"
+            class="grid size-8 cursor-pointer place-items-center rounded-full bg-[#111] text-white transition"
             :class="canSend ? 'opacity-100 hover:bg-black' : 'opacity-35'"
             aria-label="Send"
             @click="submit"

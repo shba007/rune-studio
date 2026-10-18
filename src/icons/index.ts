@@ -10,7 +10,6 @@
 import IconArrowClockwise from '~icons/ph/arrow-clockwise-fill'
 import IconArrowLeft from '~icons/ph/arrow-left-fill'
 import IconArrowUp from '~icons/ph/arrow-up-fill'
-import IconArrowUpRight from '~icons/ph/arrow-up-right-fill'
 import IconCheckCircle from '~icons/ph/check-circle-fill'
 import IconEye from '~icons/ph/eye-fill'
 import IconKey from '~icons/ph/key-fill'
@@ -28,7 +27,6 @@ export const icons = {
   link: IconLinkSimple,
   mic: IconMicrophone,
   ok: IconCheckCircle,
-  open: IconArrowUpRight,
   refresh: IconArrowClockwise,
   send: IconArrowUp,
   shortcut: IconCommand,
