@@ -7,7 +7,9 @@ import {
   AUDIO_LEVEL,
   OPEN_SETTINGS,
   STATE_CHANGED,
+  STEP_STARTED,
   SUMMON,
+  TASK_DONE,
   type AgentState,
   type BackendStatus,
   type CaptureReport,
@@ -15,6 +17,8 @@ import {
   type PillMode,
   type Settings,
   type StateChangedPayload,
+  type StepStartedPayload,
+  type TaskDonePayload,
 } from '@/types/protocol'
 
 const RUNNING: AgentState[] = ['planning', 'awaiting_confirm', 'acting', 'observing']
@@ -56,7 +60,17 @@ export function useAgent() {
   const level = ref(0)
 
   const isRunning = computed(() => RUNNING.includes(state.value))
-  const statusText = computed(() => notice.value ?? STATE_LABELS[state.value])
+  /** What the agent is doing right now (its reason for the current step), while a task runs. */
+  const stepText = ref<string | null>(null)
+  /** How the last task ended, shown while the state is done or failed. */
+  const resultText = ref<string | null>(null)
+  const statusText = computed(() => {
+    if (notice.value) return notice.value
+    if (isRunning.value && stepText.value) return stepText.value
+    if ((state.value === 'done' || state.value === 'failed') && resultText.value)
+      return resultText.value
+    return STATE_LABELS[state.value]
+  })
 
   const unlisten: UnlistenFn[] = []
   let modeToken = 0
@@ -136,6 +150,8 @@ export function useAgent() {
   /** Resolves to whether the task was accepted, so the composer only clears on success. */
   async function startTask(text: string): Promise<boolean> {
     try {
+      stepText.value = null
+      resultText.value = null
       await invoke('start_task', { text })
       return true
     } catch (err) {
@@ -174,6 +190,14 @@ export function useAgent() {
       await listen<StateChangedPayload>(STATE_CHANGED, (event) => {
         state.value = event.payload.state
       }),
+      await listen<StepStartedPayload>(
+        STEP_STARTED,
+        (event) => (stepText.value = event.payload.text),
+      ),
+      await listen<TaskDonePayload>(
+        TASK_DONE,
+        (event) => (resultText.value = event.payload.summary),
+      ),
       await listen<number>(AUDIO_LEVEL, (event) => {
         level.value = event.payload
         if (event.payload > SOUND_THRESHOLD) heardSound = true

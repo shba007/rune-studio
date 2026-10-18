@@ -1,9 +1,6 @@
-//! Executing actions on the desktop: mouse, keyboard and the Stop token.
-//!
-//! Until the agent loop lands (M2) the only callers are the debug commands, which exist only in
-//! debug builds, so a release build sees this module as unused.
-#![cfg_attr(not(debug_assertions), allow(dead_code))]
+//! Executing actions on the desktop: mouse, keyboard, launching apps and the Stop token.
 
+pub mod apps;
 pub mod input;
 
 use std::{

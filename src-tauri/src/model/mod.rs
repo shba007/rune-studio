@@ -1,7 +1,4 @@
-//! Everything about the model-facing coordinate space.
-//!
-//! Until the agent loop lands (M2) the only callers are the debug commands, which exist only in
-//! debug builds, so a release build sees this module as unused.
-#![cfg_attr(not(debug_assertions), allow(dead_code))]
+//! Talking to the model: the coordinate space it uses and the chat client.
 
+pub mod client;
 pub mod coords;

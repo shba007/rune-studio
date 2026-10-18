@@ -1,3 +1,4 @@
+mod agent;
 mod backend;
 mod commands;
 #[cfg(debug_assertions)]

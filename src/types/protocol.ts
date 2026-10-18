@@ -63,7 +63,20 @@ export const STATE_CHANGED = 'state_changed'
 export const SUMMON = 'summon'
 export const OPEN_SETTINGS = 'open_settings'
 export const AUDIO_LEVEL = 'audio_level'
+export const STEP_STARTED = 'step_started'
+export const TASK_DONE = 'task_done'
 
 export interface StateChangedPayload {
   state: AgentState
+}
+export interface StepStartedPayload {
+  step: number
+  tool: string
+  reason: string
+  text: string
+}
+
+export interface TaskDonePayload {
+  summary: string
+  success: boolean
 }

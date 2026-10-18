@@ -1,6 +1,7 @@
 use tauri::{AppHandle, Manager, State};
 
 use crate::{
+    agent,
     backend::{self, BackendStatus},
     error::{AppError, AppResult},
     events::{self, AgentState, AppState},
@@ -60,8 +61,21 @@ pub fn stop(app: AppHandle) {
 }
 
 #[tauri::command]
-pub fn start_task(_text: String) -> AppResult<()> {
-    Err(AppError::NotImplemented("start_task (M2)"))
+pub fn start_task(app: AppHandle, state: State<'_, AppState>, text: String) -> AppResult<()> {
+    let task = text.trim();
+    if task.is_empty() {
+        return Err(AppError::Invalid("Type or say what you want done".into()));
+    }
+    if matches!(
+        events::agent_state(&app),
+        AgentState::Planning | AgentState::AwaitingConfirm | AgentState::Acting | AgentState::Observing
+    ) {
+        return Err(AppError::Invalid("A task is already running".into()));
+    }
+    // Starting a task ends listening: the microphone must not stay open behind it.
+    drop(state.mic.lock().expect("mic lock poisoned").take());
+    agent::start(&app, task.to_string());
+    Ok(())
 }
 
 #[tauri::command]

@@ -24,7 +24,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             base_url: "http://127.0.0.1:8080".into(),
-            vision_model: "qwen3.8-27b".into(),
+            vision_model: "ternary-bonsai-2-27b".into(),
             asr_model: "parakeet-tdt-0.6b-v3".into(),
             max_steps: 30,
             toggle_hotkey: hotkeys::DEFAULT_TOGGLE.into(),

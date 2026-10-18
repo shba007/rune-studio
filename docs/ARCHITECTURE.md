@@ -107,10 +107,10 @@ src-tauri/src/
   backend.rs       rune-infer HTTP client, health/model check
   events.rs        typed events + commands shared with the UI
   window.rs        pill window: placement, ambient/open/settings sizing, click-through, capture exclusion
-  agent/           loop, history, prompt, protocol            (M2+)
-  model/           coords (done, M1); client                  (client: M2)
+  agent/           loop, prompt, protocol (done, M2); history pruning, stuck detection (M4)
+  model/           coords (done, M1); client (done, M2)
   observe/         screenshot (done, M1); uia                 (uia: M4)
-  exec/            input + CancelToken (done, M1); apps       (apps: M2)
+  exec/            input + CancelToken (done, M1); apps (done, M2)
   debug.rs         dev-only commands for the eyes and hands   (debug builds only)
   system_tests.rs  #[ignore]d end-to-end tests against a real window
   safety/          gate, rules                                (M3)
@@ -171,7 +171,7 @@ OPEN                  +----------------------------+
                       | | Type or say a command  | |   white field, 3 lines, Enter sends
                       | | [tune]       [mic] [↑] | |   settings left; mic + send together, same look
                       | +------------------------+ |
-                      | • Ready            [Stop]  |   status bar: backend dot, state, Stop
+                      | • Ready                    |   status bar: backend dot, state or step reason
                       +----------------------------+
 
 SETTINGS              +----------------------------+
@@ -188,7 +188,7 @@ SETTINGS              +----------------------------+
 ATTENTION  composer card; the status bar reads "Needs your OK  [Yes] [No]" (voice yes/no from M5)
 ```
 
-Modes: **ambient** (orb only), **open** (orb + composer) and **settings**. The card opens on the summon hotkey and when the agent needs the user (`ask_user`, high-risk confirm). It stays open until dismissed (`Esc`, the summon hotkey again, or clicking the orb while idle). Clicking the orb while the agent runs is Stop. Every page beside the orb (composer, settings, future task views) is exactly **272 px** wide (`PAGE_WIDTH` in `src/config/layout.ts`). The composer is one connected frame: the white field and the status bar in one frame, so nothing floats. There are no suggestion rows: they were removed for a cleaner look. Mic and send are twin 32 px dark circles on the right (the mic turns red while listening); settings is a ghost button on the left. The backend chip became a dot in the status bar (green, amber or red; hover for the details and model name).
+Modes: **ambient** (orb only), **open** (orb + composer) and **settings**. The card opens on the summon hotkey and when the agent needs the user (`ask_user`, high-risk confirm). It stays open until dismissed (`Esc`, the summon hotkey again, or clicking the orb while idle). Clicking the orb while the agent runs is Stop. Every page beside the orb (composer, settings, future task views) is exactly **272 px** wide (`PAGE_WIDTH` in `src/config/layout.ts`). The composer is one connected frame: the white field and the status bar in one frame, so nothing floats. There are no suggestion rows: they were removed for a cleaner look. Mic and send are twin 32 px dark circles on the right (the mic turns red while listening; while a task runs the send button turns into a red, icon-only Stop button, so there is no separate Stop control); settings is a ghost button on the left. The backend chip became a dot in the status bar (green, amber or red; hover for the details and model name).
 
 **Voice reaction.** The mic button toggles hands-free listening: Rust opens the default input device (cpal, on its own thread), computes an RMS level about 30 times a second, maps -55..-10 dBFS to 0..1 and emits `audio_level`. The orb's listening bloom follows that level (fast attack, slow decay); at silence only the centre breathes, so a dead mic looks different from a live one. If nothing is heard for 4 s the status bar says so. Level capture was pulled forward from M5; segmentation (VAD) and transcription remain M5.
 
@@ -228,6 +228,16 @@ A small dot on the disc's corner shows backend problems (amber/red) and is absen
 Commands (UI -> Rust): `start_task(text)`, `steer(text)`, `toggle_listening()`, `stop()`, `confirm(id, approved)`, `set_mode("ambient"|"open"|"settings")`, `get_settings()`, `save_settings(...)`, `set_api_key(key)`, `check_backend()`.
 
 Events (Rust -> UI): `state_changed(state)`, `summon`, `open_settings`, `audio_level(0..1)`, `transcript(text, final)`, `step_started{id, tool, reason, risk, target}`, `step_finished{id, ok, error?}`, `screenshot{id, thumb}`, `confirm_request{id, text, risk}`, `task_done{summary, success}`, `error{message}`.
+
+### M2 notes: the first loop
+
+Built: `agent/{mod,protocol,prompt}.rs`, `model/client.rs`, `exec/apps.rs` and the `start_task` command. Each turn the loop captures the primary monitor (1280 px JPEG), sends **one image plus a text history** (the last 12 steps as `click (500, 400) -> done`; older screenshots are not kept, so prefill stays small) and requires exactly one tool call (`tool_choice: "required"`, `reasoning_effort: "none"`, `temperature 0`). Tools in M2: `click`, `type_text`, `press_keys`, `open_app`, `wait`, `done`. `open_app` uses `ShellExecuteW` with the name as a single argument (no shell, so nothing can chain a second command). The default vision model is now `ternary-bonsai-2-27b` (the M1.5 result); settings saved earlier keep their old value.
+
+Behaviour: Stop aborts even an in-flight model request (the request future is dropped). An unusable answer (no tool call, bad arguments, a click outside 0 to 1000) is reported back to the model as a failed step, and the run fails after 3 in a row. The step limit (default 30) fails the run. The status line shows the model's one-sentence reason for the current step, then the final summary. The control overlay shows while acting or observing.
+
+**Live result (2026-10-18):** "Open Notepad and write hello" ran end to end in about 1 minute and 3 steps (open_app, type_text, done) with `ternary-bonsai-2-27b`; Notepad contained exactly "hello" and the status line ended on the model's summary. Stop during a run was covered by unit tests and the M1 system tests but not re-run live.
+
+Not in M2 by design: risk gating and confirmation (M3), element ids and stuck detection (M4), steering and voice (M5). Until M3 the agent clicks and types whatever the model decides, so only run it on tasks you would run yourself.
 
 ## 8. Milestones
 

@@ -63,3 +63,28 @@ fn apply_state(app: &AppHandle, state: AgentState, allow_click_through: bool) {
 pub fn agent_state(app: &AppHandle) -> AgentState {
     *app.state::<AppState>().agent_state.lock().expect("agent state lock poisoned")
 }
+
+pub const STEP_STARTED: &str = "step_started";
+pub const STEP_FINISHED: &str = "step_finished";
+pub const TASK_DONE: &str = "task_done";
+
+#[derive(Clone, Serialize)]
+pub struct StepStarted {
+    pub step: u32,
+    pub tool: &'static str,
+    pub reason: String,
+    pub text: String,
+}
+
+#[derive(Clone, Serialize)]
+pub struct StepFinished {
+    pub step: u32,
+    pub ok: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+pub struct TaskDone {
+    pub summary: String,
+    pub success: bool,
+}

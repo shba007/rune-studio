@@ -83,12 +83,18 @@ async function submit() {
 
           <button
             type="button"
-            class="grid size-8 cursor-pointer place-items-center rounded-full bg-[#111] text-white transition"
-            :class="canSend ? 'opacity-100 hover:bg-black' : 'opacity-35'"
-            aria-label="Send"
-            @click="submit"
+            class="grid size-8 cursor-pointer place-items-center rounded-full text-white transition"
+            :class="
+              agent.isRunning.value
+                ? 'bg-[#d71921] hover:bg-[#b9151c]'
+                : canSend
+                  ? 'bg-[#111] opacity-100 hover:bg-black'
+                  : 'bg-[#111] opacity-35'
+            "
+            :aria-label="agent.isRunning.value ? 'Stop' : 'Send'"
+            @click="agent.isRunning.value ? agent.stop() : submit()"
           >
-            <AppIcon name="send" />
+            <AppIcon :name="agent.isRunning.value ? 'stop' : 'send'" />
           </button>
         </div>
       </div>
@@ -123,14 +129,6 @@ async function submit() {
           No
         </button>
       </template>
-      <button
-        v-else-if="agent.isRunning.value"
-        type="button"
-        class="cursor-pointer rounded-full border border-[#d71921] h-8 px-3 text-label text-[#d71921] hover:bg-[#d71921]/15"
-        @click="agent.stop()"
-      >
-        Stop
-      </button>
     </div>
   </div>
 </template>
