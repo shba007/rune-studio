@@ -39,6 +39,8 @@ pub struct ConfirmRequest {
     /// What made this risky, in plain words.
     pub reasons: Vec<String>,
     pub timeout_secs: u64,
+    /// "approval" (an action wants a yes) or "question" (the agent asks something).
+    pub kind: &'static str,
 }
 
 #[derive(Clone, Serialize)]
@@ -110,7 +112,7 @@ pub async fn check(app: &AppHandle, cancel: &CancelToken, source: &str, action: 
     }
     let ask = needs_confirmation(risk, ask_every_action, rules::is_harmless(action));
 
-    let verdict = if ask { ask_user(app, cancel, source, &text, reason, risk, &reasons).await } else { Verdict::Allow };
+    let verdict = if ask { ask_user(app, cancel, source, &text, reason, risk, &reasons, "approval").await } else { Verdict::Allow };
 
     if !rules::is_harmless(action) {
         let decision = match (&verdict, ask) {
@@ -131,7 +133,14 @@ async fn until_stopped(cancel: &CancelToken) {
     }
 }
 
-async fn ask_user(app: &AppHandle, cancel: &CancelToken, source: &str, text: &str, reason: &str, risk: Risk, reasons: &[String]) -> Verdict {
+/// The agent asks the user a yes/no question. Yes comes back as `Allow`, no and no answer as
+/// `Denied`. It is not an action, so it is neither assessed nor written to the audit log.
+pub async fn ask_question(app: &AppHandle, cancel: &CancelToken, source: &str, question: &str) -> Verdict {
+    ask_user(app, cancel, source, question, "", Risk::Low, &[], "question").await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn ask_user(app: &AppHandle, cancel: &CancelToken, source: &str, text: &str, reason: &str, risk: Risk, reasons: &[String], kind: &'static str) -> Verdict {
     let id = new_id();
     let (sender, receiver) = oneshot::channel();
     *app.state::<AppState>().confirm.lock().expect("confirm lock poisoned") = Some(Pending { id: id.clone(), sender });
@@ -146,6 +155,7 @@ async fn ask_user(app: &AppHandle, cancel: &CancelToken, source: &str, text: &st
             risk,
             reasons: reasons.to_vec(),
             timeout_secs: ANSWER_TIMEOUT.as_secs(),
+            kind,
         },
     );
     // The pill may be hidden from the tray; a question must be seen.

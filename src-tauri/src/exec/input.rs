@@ -3,7 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use enigo::{Button, Coordinate, Direction, Enigo, Key, Keyboard, Mouse, Settings};
+use enigo::{Axis, Button, Coordinate, Direction, Enigo, Key, Keyboard, Mouse, Settings};
 
 use super::{CancelToken, ExecError};
 
@@ -70,6 +70,44 @@ pub enum MouseButton {
     Right,
     Middle,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScrollDirection {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+impl ScrollDirection {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Up => "up",
+            Self::Down => "down",
+            Self::Left => "left",
+            Self::Right => "right",
+        }
+    }
+}
+
+impl FromStr for ScrollDirection {
+    type Err = ExecError;
+
+    fn from_str(name: &str) -> Result<Self, Self::Err> {
+        match name.trim().to_ascii_lowercase().as_str() {
+            "up" => Ok(Self::Up),
+            "down" => Ok(Self::Down),
+            "left" => Ok(Self::Left),
+            "right" => Ok(Self::Right),
+            other => Err(ExecError::UnknownKey(other.to_string())),
+        }
+    }
+}
+
+/// Gap between wheel notches, so apps with smooth scrolling keep up.
+const SCROLL_GAP: Duration = Duration::from_millis(60);
+/// Pause after pressing the button for a drag, before the pointer starts to move.
+const DRAG_GRAB: Duration = Duration::from_millis(120);
 
 impl FromStr for MouseButton {
     type Err = ExecError;
@@ -156,6 +194,38 @@ impl Input {
             self.enigo.button(button.into(), Direction::Click).map_err(input_error)?;
         }
         Ok(())
+    }
+
+    /// Scrolls the wheel `amount` notches with the pointer at a point (the window under the pointer
+    /// is the one that scrolls).
+    pub fn scroll(&mut self, px: i32, py: i32, direction: ScrollDirection, amount: u32, cancel: &CancelToken) -> Result<(), ExecError> {
+        self.glide_to(px, py, cancel)?;
+        let (length, axis) = match direction {
+            ScrollDirection::Up => (-1, Axis::Vertical),
+            ScrollDirection::Down => (1, Axis::Vertical),
+            ScrollDirection::Left => (-1, Axis::Horizontal),
+            ScrollDirection::Right => (1, Axis::Horizontal),
+        };
+        for _ in 0..amount {
+            cancel.check()?;
+            self.enigo.scroll(length, axis).map_err(input_error)?;
+            cancel.sleep(SCROLL_GAP)?;
+        }
+        Ok(())
+    }
+
+    /// Presses the left button at `from`, glides to `to` and lets go. The button is released even
+    /// if Stop or an error interrupts the drag, so it can never stay held down.
+    pub fn drag(&mut self, from: (i32, i32), to: (i32, i32), cancel: &CancelToken) -> Result<(), ExecError> {
+        self.glide_to(from.0, from.1, cancel)?;
+        self.enigo.button(Button::Left, Direction::Press).map_err(input_error)?;
+        let outcome = (|| {
+            cancel.sleep(DRAG_GRAB)?;
+            self.glide_to(to.0, to.1, cancel)?;
+            cancel.sleep(DRAG_GRAB)
+        })();
+        let _ = self.enigo.button(Button::Left, Direction::Release);
+        outcome
     }
 
     /// Types text one character at a time, checking for Stop between characters.

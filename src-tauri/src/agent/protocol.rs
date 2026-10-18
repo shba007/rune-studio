@@ -3,15 +3,31 @@
 
 use serde_json::{Value, json};
 
-use crate::{exec::input::MouseButton, safety::Risk};
+use crate::{
+    exec::{
+        input::{MouseButton, ScrollDirection},
+        uia,
+    },
+    safety::Risk,
+};
 
 /// Longest pause the model may ask for.
 const MAX_WAIT_MS: u64 = 5_000;
+/// Most wheel notches in one scroll.
+const MAX_SCROLL: u32 = 10;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {
     /// A point in model space (0..=1000 on both axes).
     Click { x: f64, y: f64, button: MouseButton, double: bool },
+    /// A control from the latest element list (see `exec::uia`), clicked at its middle.
+    ClickElement { id: String, button: MouseButton, double: bool },
+    /// Scroll the wheel with the pointer at a point in model space.
+    Scroll { x: f64, y: f64, direction: ScrollDirection, amount: u32 },
+    /// Press at one point in model space, move to another, release.
+    Drag { from: (f64, f64), to: (f64, f64) },
+    /// Ask the user a yes/no question. The loop handles it; it never touches the desktop.
+    AskUser { question: String },
     TypeText { text: String },
     PressKeys { keys: Vec<String> },
     OpenApp { name: String },
@@ -23,6 +39,10 @@ impl Action {
     pub fn tool_name(&self) -> &'static str {
         match self {
             Action::Click { .. } => "click",
+            Action::ClickElement { .. } => "click_element",
+            Action::Scroll { .. } => "scroll",
+            Action::Drag { .. } => "drag",
+            Action::AskUser { .. } => "ask_user",
             Action::TypeText { .. } => "type_text",
             Action::PressKeys { .. } => "press_keys",
             Action::OpenApp { .. } => "open_app",
@@ -43,6 +63,21 @@ impl Action {
                 };
                 format!("{kind} ({}, {})", x.round(), y.round())
             }
+            Action::ClickElement { id, button, double } => {
+                let kind = match (button, double) {
+                    (MouseButton::Left, false) => "click",
+                    (MouseButton::Left, true) => "double-click",
+                    (MouseButton::Right, _) => "right-click",
+                    (MouseButton::Middle, _) => "middle-click",
+                };
+                match uia::lookup(id) {
+                    Some(element) => format!("{kind} {} \"{}\" ({id})", element.role, element.name.chars().take(40).collect::<String>()),
+                    None => format!("{kind} element {id}"),
+                }
+            }
+            Action::Scroll { direction, amount, .. } => format!("scroll {} {amount}", direction.name()),
+            Action::Drag { from, to } => format!("drag ({}, {}) to ({}, {})", from.0.round(), from.1.round(), to.0.round(), to.1.round()),
+            Action::AskUser { question } => format!("ask the user: {}", question.chars().take(80).collect::<String>()),
             Action::TypeText { text } => format!("type \"{}\"", text.chars().take(60).collect::<String>()),
             Action::PressKeys { keys } => format!("press {}", keys.join("+")),
             Action::OpenApp { name } => format!("open {name}"),
@@ -85,6 +120,46 @@ pub fn parse(name: &str, arguments: &Value) -> Result<Decision, String> {
                 None => MouseButton::Left,
             };
             Action::Click { x, y, button, double: arguments["double"].as_bool().unwrap_or(false) }
+        }
+        "click_element" => {
+            let id = text("id")?;
+            if id.trim().is_empty() {
+                return Err("click_element: \"id\" must be an element id like e3".into());
+            }
+            let button = match arguments["button"].as_str() {
+                Some(button) => button.parse().map_err(|_| format!("click_element: unknown button \"{button}\""))?,
+                None => MouseButton::Left,
+            };
+            Action::ClickElement { id: id.trim().to_string(), button, double: arguments["double"].as_bool().unwrap_or(false) }
+        }
+        "scroll" => {
+            let x = number(&arguments["x"]).unwrap_or(500.0);
+            let y = number(&arguments["y"]).unwrap_or(500.0);
+            if !(0.0..=1000.0).contains(&x) || !(0.0..=1000.0).contains(&y) {
+                return Err(format!("scroll: ({x}, {y}) is outside the 0 to 1000 range"));
+            }
+            let direction = arguments["direction"].as_str().ok_or("scroll: missing \"direction\"")?;
+            let direction = direction.parse().map_err(|_| format!("scroll: direction must be up, down, left or right, not \"{direction}\""))?;
+            let amount = number(&arguments["amount"]).map_or(3, |amount| amount.max(1.0) as u32).min(MAX_SCROLL);
+            Action::Scroll { x, y, direction, amount }
+        }
+        "drag" => {
+            let point = |key_x: &str, key_y: &str| -> Result<(f64, f64), String> {
+                let x = number(&arguments[key_x]).ok_or(format!("drag: missing \"{key_x}\""))?;
+                let y = number(&arguments[key_y]).ok_or(format!("drag: missing \"{key_y}\""))?;
+                if !(0.0..=1000.0).contains(&x) || !(0.0..=1000.0).contains(&y) {
+                    return Err(format!("drag: ({x}, {y}) is outside the 0 to 1000 range"));
+                }
+                Ok((x, y))
+            };
+            Action::Drag { from: point("x1", "y1")?, to: point("x2", "y2")? }
+        }
+        "ask_user" => {
+            let question = text("question")?;
+            if question.trim().is_empty() {
+                return Err("ask_user: \"question\" must not be empty".into());
+            }
+            Action::AskUser { question: question.trim().to_string() }
         }
         "type_text" => Action::TypeText { text: text("text")? },
         "press_keys" => {
@@ -163,6 +238,44 @@ pub fn tools() -> Value {
 
     json!([
         tool("click", "Click a point on the screen.", click_properties, &["x", "y"]),
+        tool(
+            "click_element",
+            "Click a control from the element list (lines like: e3 button Save). More exact than click for small buttons, links, tabs and fields. Use only ids from the current list.",
+            json!({
+                "id": { "type": "string", "description": "An element id such as e3" },
+                "button": { "type": "string", "enum": ["left", "right", "middle"] },
+                "double": { "type": "boolean" },
+            }),
+            &["id"],
+        ),
+        tool(
+            "scroll",
+            "Scroll with the mouse wheel over a point, to see more of a page, list or document.",
+            json!({
+                "x": { "type": "integer", "description": "0 to 1000, default 500 (the middle)" },
+                "y": { "type": "integer", "description": "0 to 1000, default 500" },
+                "direction": { "type": "string", "enum": ["up", "down", "left", "right"] },
+                "amount": { "type": "integer", "description": "Wheel notches, 1 to 10, default 3 (about a third of a page)" },
+            }),
+            &["direction"],
+        ),
+        tool(
+            "drag",
+            "Press at one point, move to another and let go: to move a file, a slider or a window, or select a range.",
+            json!({
+                "x1": { "type": "integer", "description": "Start, 0 to 1000" },
+                "y1": { "type": "integer" },
+                "x2": { "type": "integer", "description": "End, 0 to 1000" },
+                "y2": { "type": "integer" },
+            }),
+            &["x1", "y1", "x2", "y2"],
+        ),
+        tool(
+            "ask_user",
+            "Ask the user a yes/no question when you cannot tell what they want or something unexpected needs their decision. Do not ask what you can see on the screen.",
+            json!({ "question": { "type": "string", "description": "A short question that can be answered yes or no" } }),
+            &["question"],
+        ),
         tool(
             "type_text",
             "Type text into the control that currently has keyboard focus. Click the field first if needed.",
@@ -279,6 +392,58 @@ mod tests {
     fn every_tool_has_a_matching_parser() {
         let names: Vec<String> =
             tools().as_array().unwrap().iter().map(|tool| tool["function"]["name"].as_str().unwrap().to_string()).collect();
-        assert_eq!(names, ["click", "type_text", "press_keys", "open_app", "wait", "done"]);
+        assert_eq!(names, ["click", "click_element", "scroll", "drag", "ask_user", "type_text", "press_keys", "open_app", "wait", "done"]);
+        // Every tool the model is offered must parse (with the arguments it requires).
+        let samples = [
+            ("click", json!({ "x": 1, "y": 2 })),
+            ("click_element", json!({ "id": "e1" })),
+            ("scroll", json!({ "direction": "down" })),
+            ("drag", json!({ "x1": 1, "y1": 2, "x2": 3, "y2": 4 })),
+            ("ask_user", json!({ "question": "Ok?" })),
+            ("type_text", json!({ "text": "a" })),
+            ("press_keys", json!({ "keys": ["a"] })),
+            ("open_app", json!({ "name": "notepad" })),
+            ("wait", json!({})),
+            ("done", json!({ "summary": "s" })),
+        ];
+        for (name, arguments) in samples {
+            assert!(parse(name, &arguments).is_ok(), "{name} does not parse");
+        }
+    }
+
+    #[test]
+    fn click_element_needs_an_id_and_reads_the_button() {
+        let ok = parse("click_element", &json!({ "id": " e7 ", "button": "right", "double": true })).unwrap();
+        assert_eq!(ok.action, Action::ClickElement { id: "e7".into(), button: MouseButton::Right, double: true });
+        assert!(parse("click_element", &json!({})).is_err());
+        assert!(parse("click_element", &json!({ "id": "  " })).is_err());
+        assert!(parse("click_element", &json!({ "id": "e1", "button": "side" })).is_err());
+    }
+
+    #[test]
+    fn scroll_defaults_to_the_middle_and_three_notches_and_is_capped() {
+        let plain = parse("scroll", &json!({ "direction": "Down" })).unwrap();
+        assert_eq!(plain.action, Action::Scroll { x: 500.0, y: 500.0, direction: ScrollDirection::Down, amount: 3 });
+        let big = parse("scroll", &json!({ "direction": "up", "amount": 99, "x": 100, "y": 900 })).unwrap();
+        assert_eq!(big.action, Action::Scroll { x: 100.0, y: 900.0, direction: ScrollDirection::Up, amount: MAX_SCROLL });
+        assert!(parse("scroll", &json!({ "direction": "sideways" })).is_err());
+        assert!(parse("scroll", &json!({})).is_err());
+        assert!(parse("scroll", &json!({ "direction": "up", "x": 2000 })).unwrap_err().contains("outside the 0 to 1000"));
+    }
+
+    #[test]
+    fn drag_needs_four_points_in_range() {
+        let ok = parse("drag", &json!({ "x1": 10, "y1": 20, "x2": "30", "y2": 40 })).unwrap();
+        assert_eq!(ok.action, Action::Drag { from: (10.0, 20.0), to: (30.0, 40.0) });
+        assert!(parse("drag", &json!({ "x1": 10, "y1": 20, "x2": 30 })).unwrap_err().contains("y2"));
+        assert!(parse("drag", &json!({ "x1": 10, "y1": 20, "x2": 30, "y2": 1001 })).unwrap_err().contains("outside the 0 to 1000"));
+    }
+
+    #[test]
+    fn ask_user_needs_a_question() {
+        let ok = parse("ask_user", &json!({ "question": " Delete the draft? " })).unwrap();
+        assert_eq!(ok.action, Action::AskUser { question: "Delete the draft?".into() });
+        assert!(parse("ask_user", &json!({ "question": " " })).is_err());
+        assert!(parse("ask_user", &json!({})).is_err());
     }
 }

@@ -11,7 +11,7 @@ use tauri::{AppHandle, Emitter};
 use crate::{
     events::{self, Point, StepFinished, StepStarted},
     exec::{
-        CancelToken, ExecError, apps, caret,
+        CancelToken, ExecError, apps, caret, uia,
         input::{Input, MouseButton, cursor_position, glide_duration, typing_duration},
     },
     model::coords::{Monitor, model_to_pixels},
@@ -45,6 +45,27 @@ fn visual(action: &Action, monitor: &Monitor) -> (String, Option<Point>, bool, &
             };
             (String::new(), Some(Point { x: px, y: py }), *double, name)
         }
+        Action::ClickElement { id, button, double } => {
+            let point = uia::lookup(id).map(|element| {
+                let (x, y) = element.centre();
+                Point { x, y }
+            });
+            let name = match button {
+                MouseButton::Left => "left",
+                MouseButton::Right => "right",
+                MouseButton::Middle => "middle",
+            };
+            (String::new(), point, *double, name)
+        }
+        Action::Scroll { x, y, direction, amount } => {
+            let (px, py) = model_to_pixels(monitor, *x, *y);
+            (format!("{} {amount}", direction.name()), Some(Point { x: px, y: py }), false, "left")
+        }
+        Action::Drag { from, .. } => {
+            let (px, py) = model_to_pixels(monitor, from.0, from.1);
+            (String::new(), Some(Point { x: px, y: py }), false, "left")
+        }
+        Action::AskUser { question } => (question.clone(), None, false, "left"),
         Action::TypeText { text } => (text.clone(), None, false, "left"),
         Action::PressKeys { keys } => (keys.join(" + "), None, false, "left"),
         Action::OpenApp { name } => (name.clone(), None, false, "left"),
@@ -59,7 +80,7 @@ pub fn announce(app: &AppHandle, step: u32, reason: &str, action: &Action, monit
     let described = action.describe();
     let (detail, point, double, button) = visual(action, monitor);
     let duration_ms = match (action, &point) {
-        (Action::Click { .. }, Some(target)) => {
+        (Action::Click { .. } | Action::ClickElement { .. } | Action::Scroll { .. } | Action::Drag { .. }, Some(target)) => {
             let (from_x, from_y) = cursor_position().unwrap_or((target.x, target.y));
             glide_duration(f64::from(target.x - from_x).hypot(f64::from(target.y - from_y))).as_millis() as u64
         }
@@ -117,6 +138,24 @@ pub fn execute(action: &Action, monitor: &Monitor, cancel: &CancelToken) -> Resu
             let (px, py) = model_to_pixels(monitor, *x, *y);
             Input::new()?.click(px, py, *button, *double, cancel)
         }
+        Action::ClickElement { id, button, double } => {
+            let Some(element) = uia::lookup(id) else {
+                return Err(ExecError::Input(format!("there is no element {id} in the latest list; use an id from the current list or click a point")));
+            };
+            let (px, py) = element.centre();
+            Input::new()?.click(px, py, *button, *double, cancel)
+        }
+        Action::Scroll { x, y, direction, amount } => {
+            let (px, py) = model_to_pixels(monitor, *x, *y);
+            Input::new()?.scroll(px, py, *direction, *amount, cancel)
+        }
+        Action::Drag { from, to } => {
+            let start = model_to_pixels(monitor, from.0, from.1);
+            let end = model_to_pixels(monitor, to.0, to.1);
+            Input::new()?.drag(start, end, cancel)
+        }
+        // Asking is the loop's business; there is nothing to do on the desktop.
+        Action::AskUser { .. } => Ok(()),
         Action::TypeText { text } => Input::new()?.type_text(text, cancel),
         Action::PressKeys { keys } => Input::new()?.press_keys(keys, cancel),
         Action::OpenApp { name } => apps::open(name),

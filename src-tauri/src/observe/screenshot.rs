@@ -55,6 +55,12 @@ impl Frame {
         Ok(format!("data:image/jpeg;base64,{}", BASE64.encode(jpeg)))
     }
 
+    /// A tiny grey copy (32 by 18), to tell whether the screen changed between two looks.
+    pub fn signature(&self) -> Vec<u8> {
+        let small = image::imageops::resize(&self.image, 32, 18, FilterType::Triangle);
+        small.pixels().map(|pixel| ((u32::from(pixel[0]) * 3 + u32::from(pixel[1]) * 6 + u32::from(pixel[2])) / 10) as u8).collect()
+    }
+
     /// The colour of the downscaled image at a model-space point (0..=1000 on both axes).
     /// Lets tests check what the model would actually see at a point.
     #[cfg_attr(not(test), allow(dead_code))]

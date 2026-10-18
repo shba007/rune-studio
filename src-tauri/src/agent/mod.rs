@@ -7,6 +7,7 @@ pub mod body;
 pub mod prompt;
 pub mod protocol;
 pub mod quick;
+pub mod stuck;
 
 use std::{
     future::Future,
@@ -17,7 +18,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{
     events::{self, AgentState, AppState, TaskDone},
-    exec::{CancelToken, ExecError},
+    exec::{CancelToken, ExecError, uia},
     model::client::{ChatClient, ModelError, Request},
     observe::screenshot::{self, MODEL_JPEG_QUALITY, MODEL_MAX_EDGE},
     settings,
@@ -189,6 +190,12 @@ async fn run(app: &AppHandle, task: &str) -> Outcome {
     let mut invalid_in_a_row = 0;
     let mut declines = 0;
 
+    let mut watch = stuck::Watch::default();
+    // Whether an action ran since the last look, for noticing a screen that does not change.
+    let mut acted = false;
+    // Ids from an earlier task must never be clicked in this one.
+    uia::forget();
+
     for step in 1..=settings.max_steps {
         if cancel.is_cancelled() {
             return Outcome::Stopped;
@@ -197,10 +204,16 @@ async fn run(app: &AppHandle, task: &str) -> Outcome {
         // Look.
         events::set_agent_state(app, AgentState::Observing);
         body::announce_observe(app, None);
-        let captured = tauri::async_runtime::spawn_blocking(|| {
-            screenshot::capture(None, MODEL_MAX_EDGE, MODEL_JPEG_QUALITY)
-        })
-        .await;
+        // The screenshot and the list of the front window's controls are taken together.
+        let (captured, elements) = tokio::join!(
+            tauri::async_runtime::spawn_blocking(|| {
+                screenshot::capture(None, MODEL_MAX_EDGE, MODEL_JPEG_QUALITY)
+            }),
+            tauri::async_runtime::spawn_blocking(uia::snapshot),
+        );
+        let elements = elements.unwrap_or_default();
+        let element_text = uia::describe(&elements);
+        uia::remember(elements);
         let frame = match captured {
             Ok(Ok(frame)) => frame,
             Ok(Err(err)) => return Outcome::Failed(format!("could not see the screen: {err}")),
@@ -208,6 +221,14 @@ async fn run(app: &AppHandle, task: &str) -> Outcome {
         };
 
         let screenshot = frame.data_uri();
+
+        // Going nowhere? Tell the model after two unchanged looks, give up after five.
+        let unchanged = watch.look(frame.signature(), acted);
+        acted = false;
+        if unchanged >= stuck::GIVE_UP_AFTER {
+            return Outcome::Failed("Stopped: the screen stopped changing, so the actions are not working".into());
+        }
+        let warning = stuck::warning(unchanged);
 
         // Already finished? Once the last goal has had its steps, the decision model can tell from
         // the screen, without a full chat call just to say "done". Unsure means the big model decides.
@@ -228,7 +249,7 @@ async fn run(app: &AppHandle, task: &str) -> Outcome {
 
         // Decide.
         events::set_agent_state(app, AgentState::Planning);
-        let text = prompt::user_message(task, &plan, current, &history, step, settings.max_steps);
+        let text = prompt::user_message(task, &plan, current, &history, &element_text, warning.as_deref(), step, settings.max_steps);
         let request = Request {
             system: prompt::SYSTEM,
             user_text: &text,
@@ -302,6 +323,18 @@ async fn run(app: &AppHandle, task: &str) -> Outcome {
             return Outcome::Finished { summary, success };
         }
 
+        // A question for the user is answered here; it never touches the desktop.
+        if let Action::AskUser { question } = &action {
+            let outcome = match gate::ask_question(app, &cancel, "Rune", question).await {
+                Verdict::Allow => "the user answered: yes".to_string(),
+                Verdict::Denied("declined") => "the user answered: no".to_string(),
+                Verdict::Denied(_) => "the user did not answer in time, which counts as no".to_string(),
+                Verdict::Stopped => return Outcome::Stopped,
+            };
+            history.push(Entry { action: action.describe(), outcome });
+            continue;
+        }
+
         // Ask first if it is risky (or if the user wants every action confirmed).
         match gate::check(app, &cancel, "Rune", &action, &reason, risk).await {
             Verdict::Allow => {}
@@ -353,6 +386,7 @@ async fn run(app: &AppHandle, task: &str) -> Outcome {
             }
         }
 
+        acted = true;
         if cancel.sleep(settle).is_err() {
             return Outcome::Stopped;
         }

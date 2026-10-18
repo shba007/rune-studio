@@ -3,6 +3,7 @@
 pub mod apps;
 pub mod caret;
 pub mod input;
+pub mod uia;
 
 use std::{
     sync::{

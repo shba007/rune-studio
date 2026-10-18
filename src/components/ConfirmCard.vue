@@ -12,6 +12,7 @@ const props = defineProps<{ agent: Agent }>()
 const agent = props.agent
 
 const question = computed(() => agent.question.value)
+const asking = computed(() => question.value?.kind === 'question')
 const left = ref(question.value?.timeoutSecs ?? 0)
 useIntervalFn(() => (left.value = Math.max(0, left.value - 1)), 1000)
 
@@ -29,17 +30,20 @@ onMounted(() => no.value?.focus())
     v-if="question"
     class="flex w-full flex-col gap-2 rounded-[28px] border border-[#d71921]/50 bg-[#141414] p-4 text-zinc-100"
     role="alertdialog"
-    aria-label="Needs your OK"
+    :aria-label="asking ? 'Rune asks' : 'Needs your OK'"
   >
     <header class="flex h-6 items-center gap-2">
       <span class="size-2 shrink-0 animate-pulse rounded-full bg-[#d71921]" />
-      <span class="text-caption text-[#d71921] uppercase">Needs your OK</span>
+      <span class="text-caption text-[#d71921] uppercase">{{
+        asking ? 'Asks you' : 'Needs your OK'
+      }}</span>
       <span class="ml-auto truncate text-caption text-zinc-500 uppercase">{{
         question.source
       }}</span>
     </header>
 
-    <p class="text-body"><span class="text-zinc-400">Wants to </span>{{ question.text }}</p>
+    <p v-if="asking" class="text-body">{{ question.text }}</p>
+    <p v-else class="text-body"><span class="text-zinc-400">Wants to </span>{{ question.text }}</p>
     <p
       v-if="question.reason"
       class="line-clamp-2 text-label text-zinc-400"
@@ -73,7 +77,7 @@ onMounted(() => no.value?.focus())
         class="h-8 flex-1 cursor-pointer rounded-full bg-[#d71921] text-label text-white transition hover:bg-[#b9151c]"
         @click="agent.answer(true)"
       >
-        Yes, allow
+        {{ asking ? 'Yes' : 'Yes, allow' }}
       </button>
     </div>
     <p class="text-center text-caption text-zinc-600 uppercase">

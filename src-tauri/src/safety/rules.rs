@@ -56,7 +56,7 @@ fn mentions_any(text: &str, list: &[&str]) -> Option<String> {
 
 /// Whether an action is harmless by nature: waiting and finishing never ask.
 pub fn is_harmless(action: &Action) -> bool {
-    matches!(action, Action::Wait { .. } | Action::Done { .. })
+    matches!(action, Action::Wait { .. } | Action::Done { .. } | Action::Scroll { .. } | Action::AskUser { .. })
 }
 
 /// Assesses one action. `reason` is the agent's one-sentence explanation (may be empty).
@@ -75,8 +75,14 @@ pub fn assess(action: &Action, reason: &str, foreground: &Foreground) -> Assessm
         Action::PressKeys { keys } => assess_keys(keys, foreground, &mut result),
         Action::TypeText { text } => assess_typing(text, foreground, &mut result),
         Action::OpenApp { name } => assess_launch(name, &mut result),
-        Action::Click { .. } => assess_click(foreground, &mut result),
-        Action::Wait { .. } | Action::Done { .. } => {}
+        Action::Click { .. } | Action::Drag { .. } => assess_click(foreground, &mut result),
+        Action::ClickElement { id, .. } => {
+            assess_click(foreground, &mut result);
+            if let Some(element) = crate::exec::uia::lookup(id) {
+                assess_control(&element.name, &mut result);
+            }
+        }
+        Action::Wait { .. } | Action::Done { .. } | Action::Scroll { .. } | Action::AskUser { .. } => {}
     }
     result
 }
@@ -146,6 +152,13 @@ fn assess_click(foreground: &Foreground, result: &mut Assessment) {
     }
 }
 
+/// A control called "Delete" or "Send" is as telling as the agent's own words.
+fn assess_control(name: &str, result: &mut Assessment) {
+    if let Some(word) = mentions_any(name, HIGH_WORDS) {
+        result.raise(Risk::High, format!("The control is called \"{word}\""));
+    }
+}
+
 fn dialog_is_dangerous(foreground: &Foreground) -> bool {
     let title = foreground.title.to_lowercase();
     !title.is_empty() && DIALOG_WORDS.iter().any(|word| title.contains(word))
@@ -170,6 +183,24 @@ mod tests {
 
     fn risk(action: &Action, reason: &str, foreground: &Foreground) -> Risk {
         assess(action, reason, foreground).risk
+    }
+
+    #[test]
+    fn a_control_named_after_something_irreversible_is_high_risk() {
+        let mut found = Assessment::low();
+        assess_control("Delete all", &mut found);
+        assert_eq!(found.risk, Risk::High);
+        let mut calm = Assessment::low();
+        assess_control("Save", &mut calm);
+        assert_eq!(calm.risk, Risk::Low);
+    }
+
+    #[test]
+    fn scrolling_and_asking_never_need_a_yes() {
+        use crate::exec::input::ScrollDirection;
+        assert!(is_harmless(&Action::Scroll { x: 500.0, y: 500.0, direction: ScrollDirection::Down, amount: 3 }));
+        assert!(is_harmless(&Action::AskUser { question: "Delete it?".into() }));
+        assert!(!is_harmless(&Action::Drag { from: (0.0, 0.0), to: (10.0, 10.0) }));
     }
 
     #[test]

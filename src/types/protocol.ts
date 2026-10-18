@@ -95,6 +95,8 @@ export interface ConfirmRequestPayload {
   /** What made it risky, in plain words. */
   reasons: string[]
   timeoutSecs: number
+  /** An action that wants a yes, or a question the agent asks. */
+  kind: 'approval' | 'question'
 }
 export const THINKING = 'thinking'
 

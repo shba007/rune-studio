@@ -13,7 +13,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::{
     agent::{body, protocol},
     events::{self, AgentState, AppState, ExternalAgent, TaskDone},
-    exec::{ExecError, input::parse_key},
+    exec::{ExecError, input::parse_key, uia},
     observe::screenshot::{self, Frame, MODEL_JPEG_QUALITY, MODEL_MAX_EDGE},
 };
 
@@ -189,6 +189,23 @@ fn tool_list() -> Value {
               "y": { "type": "integer", "description": "0 to 1000, top to bottom" },
               "button": { "type": "string", "enum": ["left", "right", "middle"] },
               "double": { "type": "boolean" } }), &["x", "y"]) },
+        { "name": "rune_elements", "description": "List the controls (buttons, links, tabs, fields) of the front window with short ids like e3. Then rune_click_element clicks one exactly, which beats guessing a point for small targets. Call it again after the screen changes: ids belong to the latest list.",
+          "inputSchema": { "type": "object", "properties": {} } },
+        { "name": "rune_click_element", "description": "Click a control by its id from the latest rune_elements list. Returns a fresh screenshot.",
+          "inputSchema": schema(json!({
+              "id": { "type": "string", "description": "An id such as e3" },
+              "button": { "type": "string", "enum": ["left", "right", "middle"] },
+              "double": { "type": "boolean" } }), &["id"]) },
+        { "name": "rune_scroll", "description": "Scroll the mouse wheel over a point: up, down, left or right, 1 to 10 notches (3 is about a third of a page). Returns a fresh screenshot.",
+          "inputSchema": schema(json!({
+              "direction": { "type": "string", "enum": ["up", "down", "left", "right"] },
+              "amount": { "type": "integer", "description": "1 to 10, default 3" },
+              "x": { "type": "integer", "description": "0 to 1000, default 500" },
+              "y": { "type": "integer", "description": "0 to 1000, default 500" } }), &["direction"]) },
+        { "name": "rune_drag", "description": "Press at one point, move to another and let go: move a file or slider, or select a range. All four numbers run 0 to 1000. Returns a fresh screenshot.",
+          "inputSchema": schema(json!({
+              "x1": { "type": "integer" }, "y1": { "type": "integer" },
+              "x2": { "type": "integer" }, "y2": { "type": "integer" } }), &["x1", "y1", "x2", "y2"]) },
         { "name": "rune_type_text", "description": "Type text into whatever has keyboard focus. Click the field first if unsure. Returns a fresh screenshot.",
           "inputSchema": schema(json!({ "text": { "type": "string" } }), &["text"]) },
         { "name": "rune_press_keys", "description": "Press a key or combination, for example [\"enter\"] or [\"ctrl\", \"s\"]. Returns a fresh screenshot.",
@@ -211,6 +228,9 @@ fn tool_list() -> Value {
 fn protocol_name(tool: &str) -> Option<&'static str> {
     Some(match tool {
         "rune_click" => "click",
+        "rune_click_element" => "click_element",
+        "rune_scroll" => "scroll",
+        "rune_drag" => "drag",
         "rune_type_text" => "type_text",
         "rune_press_keys" => "press_keys",
         "rune_open_app" => "open_app",
@@ -225,6 +245,7 @@ async fn call(app: &AppHandle, name: &str, arguments: &Value) -> Reply {
         "rune_begin" => begin(app, arguments),
         "rune_observe" => observe(app, arguments).await,
         "rune_plan" => plan(app, arguments),
+        "rune_elements" => elements(app).await,
         "rune_status" => status(app),
         "rune_done" => done(app, arguments),
         other => match protocol_name(other) {
@@ -326,6 +347,20 @@ async fn observe(app: &AppHandle, arguments: &Value) -> Reply {
     };
     let text = format!("{what} {}", screen_note(&frame));
     Reply::shot(text, frame.jpeg)
+}
+
+/// Lists the front window's controls with ids, and remembers them for `rune_click_element`.
+async fn elements(app: &AppHandle) -> Reply {
+    if let Err(reply) = touch(app) {
+        return reply;
+    }
+    let found = tauri::async_runtime::spawn_blocking(uia::snapshot).await.unwrap_or_default();
+    let text = uia::describe(&found);
+    uia::remember(found);
+    if text.is_empty() {
+        return Reply::text("No controls could be listed for the front window (it may not support it, or it may be one of Rune's own). Use rune_observe and click a point instead.");
+    }
+    Reply::text(format!("Controls in the front window. Use the id with rune_click_element; the ids are valid until the next list.\n{text}"))
 }
 
 async fn act(app: &AppHandle, tool: &'static str, arguments: &Value) -> Reply {
@@ -485,7 +520,7 @@ mod tests {
 
     #[test]
     fn every_tool_in_the_list_has_a_handler_or_is_special() {
-        let special = ["rune_guide", "rune_begin", "rune_observe", "rune_plan", "rune_status", "rune_done"];
+        let special = ["rune_guide", "rune_begin", "rune_observe", "rune_plan", "rune_elements", "rune_status", "rune_done"];
         for tool in tool_list().as_array().unwrap() {
             let name = tool["name"].as_str().unwrap();
             assert!(special.contains(&name) || protocol_name(name).is_some(), "{name} has no handler");

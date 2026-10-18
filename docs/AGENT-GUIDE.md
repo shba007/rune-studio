@@ -30,7 +30,7 @@ Always work in this loop, one small step at a time.
 2. **Plan** with `rune_plan`: two to six short goals, in order. The user sees them as a progress tracker. A simple task can have one or two.
 3. **Observe** with `rune_observe`: you get a screenshot and the screen size.
 4. **Decide** one action.
-5. **Act** with `rune_click`, `rune_type_text`, `rune_press_keys`, `rune_open_app` or `rune_wait`. Each action returns a fresh screenshot after the screen has settled, so you can check the result right away.
+5. **Act** with `rune_click`, `rune_click_element`, `rune_type_text`, `rune_press_keys`, `rune_scroll`, `rune_drag`, `rune_open_app` or `rune_wait`. Each action returns a fresh screenshot after the screen has settled, so you can check the result right away.
 6. **Check** that the screenshot shows what you expected. If it does not, change your plan. Never repeat a failed action more than twice.
 7. **Finish** with `rune_done` and a short, honest summary. Control goes back to the user.
 
@@ -38,21 +38,25 @@ Always work in this loop, one small step at a time.
 
 Every action tool also accepts an optional `reason`: one short sentence shown to the user next to the action. Write it for a person ("Open the File menu"). It also accepts `goal`: the number of the goal from your plan that this action is for (1 for the first). Move to the next goal only when the current one is done. It also accepts `risk` (`low`, `medium` or `high`): be honest. High means the action deletes, sends, pays, installs, changes settings or cannot be undone.
 
-| Tool              | Arguments                                                            | What you get back                                                                                                                                |
-| ----------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `rune_guide`      | none                                                                 | This guide as text.                                                                                                                              |
-| `rune_begin`      | `task` (what you were asked), `agent` (your name), optional `plan`   | Confirmation that you are in control, and the basics.                                                                                            |
-| `rune_plan`       | `goals`, a list of two to six short goals                            | Saves your plan and shows it to the user as a progress tracker.                                                                                  |
-| `rune_observe`    | optional `region` `[x0, y0, x1, y1]`, each 0 to 1000                 | A screenshot and the screen size. With `region` you get a **zoomed crop** of that area, which is how you read small text or aim at tiny buttons. |
-| `rune_click`      | `x`, `y` (0 to 1000), `button` (`left`, `right`, `middle`), `double` | What was done, then a fresh screenshot.                                                                                                          |
-| `rune_type_text`  | `text`                                                               | Types into whatever has keyboard focus, then a screenshot.                                                                                       |
-| `rune_press_keys` | `keys`, a list like `["ctrl", "s"]`                                  | Presses the combination, then a screenshot.                                                                                                      |
-| `rune_open_app`   | `name`, like `notepad`, `calc`, `https://example.com`                | Opens it, waits for the window, then a screenshot.                                                                                               |
-| `rune_wait`       | `ms` (up to 5000)                                                    | Waits, then a screenshot.                                                                                                                        |
-| `rune_status`     | none                                                                 | Whether you are in control, and how long until your control times out.                                                                           |
-| `rune_done`       | `summary`, `success`                                                 | Ends your turn at the wheel. The user sees your summary.                                                                                         |
+| Tool                 | Arguments                                                                                     | What you get back                                                                                                                                |
+| -------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `rune_guide`         | none                                                                                          | This guide as text.                                                                                                                              |
+| `rune_begin`         | `task` (what you were asked), `agent` (your name), optional `plan`                            | Confirmation that you are in control, and the basics.                                                                                            |
+| `rune_plan`          | `goals`, a list of two to six short goals                                                     | Saves your plan and shows it to the user as a progress tracker.                                                                                  |
+| `rune_observe`       | optional `region` `[x0, y0, x1, y1]`, each 0 to 1000                                          | A screenshot and the screen size. With `region` you get a **zoomed crop** of that area, which is how you read small text or aim at tiny buttons. |
+| `rune_click`         | `x`, `y` (0 to 1000), `button` (`left`, `right`, `middle`), `double`                          | What was done, then a fresh screenshot.                                                                                                          |
+| `rune_elements`      | none                                                                                          | The controls of the front window as lines like `e3 button "Save"`, or a note that none could be listed. The ids last until the next list.        |
+| `rune_click_element` | `id` (from the latest `rune_elements`), `button`, `double`                                    | Clicks the middle of that control exactly, then a fresh screenshot. Better than `rune_click` for small buttons, links, tabs and fields.          |
+| `rune_scroll`        | `direction` (`up`, `down`, `left`, `right`), `amount` (1 to 10, default 3), optional `x`, `y` | Turns the mouse wheel with the pointer over that point (the middle by default), then a screenshot.                                               |
+| `rune_drag`          | `x1`, `y1`, `x2`, `y2` (0 to 1000)                                                            | Presses at the first point, moves to the second, lets go, then a screenshot.                                                                     |
+| `rune_type_text`     | `text`                                                                                        | Types into whatever has keyboard focus, then a screenshot.                                                                                       |
+| `rune_press_keys`    | `keys`, a list like `["ctrl", "s"]`                                                           | Presses the combination, then a screenshot.                                                                                                      |
+| `rune_open_app`      | `name`, like `notepad`, `calc`, `https://example.com`                                         | Opens it, waits for the window, then a screenshot.                                                                                               |
+| `rune_wait`          | `ms` (up to 5000)                                                                             | Waits, then a screenshot.                                                                                                                        |
+| `rune_status`        | none                                                                                          | Whether you are in control, and how long until your control times out.                                                                           |
+| `rune_done`          | `summary`, `success`                                                                          | Ends your turn at the wheel. The user sees your summary.                                                                                         |
 
-Not available yet: scrolling, dragging and element ids. Scroll with `rune_press_keys` (`pagedown`, `down`, `space`).
+**Small targets.** Call `rune_elements` and click by id with `rune_click_element` instead of guessing a point: it is exact. If the control you want is not in the list (many web pages and games do not expose their controls), zoom with `rune_observe` and click a point. Always call `rune_elements` again after the screen changes, because ids belong to the latest list. **Scrolling.** Use `rune_scroll` to see more of a page, list or document; look at the screenshot after each scroll. **Dragging** is for moving things and selecting a range, not for ordinary clicks.
 
 ## 5. Coordinates (read this twice)
 
@@ -139,7 +143,7 @@ Actions already wait a moment for the screen to settle. If something is slow (an
 
 ## 13. What you cannot do (yet)
 
-- Scroll or drag directly, or use element ids.
+- Ask the user a question through Rune: ask in your own chat instead.
 - See more than the main monitor.
 - Hear or speak. The user talks to you in your own chat.
 - Touch the user's files except through apps you open on screen.
