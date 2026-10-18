@@ -6,6 +6,7 @@ import tailwindcss from '@tailwindcss/vite'
 import Icons from 'unplugin-icons/vite'
 import { FileSystemIconLoader } from 'unplugin-icons/loaders'
 import Unfonts from 'unplugin-fonts/vite'
+import vueDevTools from 'vite-plugin-vue-devtools'
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -117,6 +118,8 @@ export default defineConfig({
   },
   plugins: lazyPlugins(() => [
     vue(),
+    // Development only: the plugin does nothing in a production build.
+    vueDevTools(),
     tailwindcss(),
     // Ready-made icons come from Phosphor Fill ('~icons/ph/<name>-fill') and hand-made SVGs from
     // src/assets/icons ('~icons/custom/<file-name>'). Both are imported only in src/icons/index.ts.

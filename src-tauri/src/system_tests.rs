@@ -298,3 +298,44 @@ fn capture_speed() {
         println!("capture #{round}: {ms} ms, {} KB", bytes / 1024);
     }
 }
+
+/// Title of the window that has keyboard focus.
+fn foreground_title() -> String {
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowTextW};
+    let mut buffer = [0_u16; 256];
+    // SAFETY: the buffer is valid for 256 UTF-16 units.
+    let length = unsafe { GetWindowTextW(GetForegroundWindow(), &mut buffer) };
+    String::from_utf16_lossy(&buffer[..length.max(0) as usize])
+}
+
+#[test]
+#[ignore = "opens Notepad and types into it"]
+fn the_caret_is_found_in_notepad() {
+    use windows::{
+        Win32::{Foundation::RECT, UI::WindowsAndMessaging::{FindWindowW, GetWindowRect}},
+        core::w,
+    };
+    make_dpi_aware();
+    let cancel = CancelToken::default();
+    crate::exec::apps::open("notepad").unwrap();
+    thread::sleep(Duration::from_millis(3500));
+
+    // Click inside Notepad so it has the keyboard, and refuse to type anywhere else.
+    let mut rect = RECT::default();
+    // SAFETY: plain Win32 calls with a valid out-pointer.
+    unsafe {
+        let window = FindWindowW(w!("Notepad"), None).expect("no Notepad window");
+        GetWindowRect(window, &mut rect).unwrap();
+    }
+    let mut input = Input::new().unwrap();
+    input.click((rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2, MouseButton::Left, false, &cancel).unwrap();
+    thread::sleep(Duration::from_millis(500));
+    let title = foreground_title();
+    assert!(title.contains("Notepad"), "refusing to type: the focused window is \"{title}\", not Notepad");
+
+    input.type_text("caret test", &cancel).unwrap();
+    thread::sleep(Duration::from_millis(400));
+    let caret = crate::exec::caret::position();
+    println!("window: ({}, {}, {}, {}), caret: {caret:?}, mouse: {:?}", rect.left, rect.top, rect.right, rect.bottom, crate::exec::input::cursor_position());
+    assert!(caret.is_some(), "the caret could not be located in Notepad");
+}

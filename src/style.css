@@ -121,3 +121,8 @@ input {
     transition: none;
   }
 }
+/* Vue devtools (development only) adds a floating button to every page. The control overlay covers
+   the whole screen and ignores the mouse, so the button would only get in the way there. */
+.overlay-view #__vue-devtools-container__ {
+  display: none !important;
+}

@@ -14,5 +14,7 @@ if (import.meta.env.DEV && !('__TAURI_INTERNALS__' in window)) {
 
 // The same bundle serves the pill and the full-screen control overlay.
 const overlay = new URLSearchParams(location.search).get('view') === 'overlay'
+// The full-screen overlay never shows the Vue devtools button (see style.css).
+if (overlay) document.documentElement.classList.add('overlay-view')
 
 createApp(overlay ? ControlOverlay : App).mount('#app')

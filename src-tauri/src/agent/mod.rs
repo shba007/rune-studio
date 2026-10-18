@@ -146,7 +146,9 @@ async fn run(app: &AppHandle, task: &str) -> Outcome {
         let settle = body::settle_time(&action);
         let monitor = frame.monitor;
         let worker_cancel = cancel.clone();
-        let executed = tauri::async_runtime::spawn_blocking(move || body::execute(&action, &monitor, &worker_cancel)).await;
+        let worker_app = app.clone();
+        let executed =
+            tauri::async_runtime::spawn_blocking(move || body::execute_reporting(&worker_app, &action, &monitor, &worker_cancel)).await;
         let result = match executed {
             Ok(result) => result,
             Err(err) => return Outcome::Failed(err.to_string()),

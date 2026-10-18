@@ -10,6 +10,7 @@ import type {
   ObserveStartedPayload,
   Settings,
   StepStartedPayload,
+  TypedPayload,
 } from '@/types/protocol'
 
 import AppIcon from './AppIcon.vue'
@@ -122,9 +123,12 @@ interface Ripple {
   at: number
   /** 1 or 2 pulses (a double click pulses twice). */
   pulses: number
+  /** Typed text rather than a click: a smaller ring around a caret mark. */
+  typing?: boolean
 }
 const RIPPLE_SECONDS = 0.9
 const RIPPLE_REACH = 72
+const TYPING_REACH = 44
 let ripples: Ripple[] = []
 
 /** Rings of dots on an 8 px pitch spreading out from each click, and a dot that stays at the centre. */
@@ -138,7 +142,7 @@ function drawRipples(ctx: CanvasRenderingContext2D, now: number, still: boolean)
     for (let pulse = 0; pulse < ripple.pulses; pulse++) {
       const t = still ? 0.5 : (age - pulse * 0.35) / RIPPLE_SECONDS
       if (t < 0 || t > 1) continue
-      const radius = 8 + t * RIPPLE_REACH
+      const radius = 8 + t * (ripple.typing ? TYPING_REACH : RIPPLE_REACH)
       const count = Math.max(8, Math.round((Math.PI * 2 * radius) / STEP))
       for (let i = 0; i < count; i++) {
         const angle = (i / count) * Math.PI * 2
@@ -152,11 +156,21 @@ function drawRipples(ctx: CanvasRenderingContext2D, now: number, still: boolean)
       }
     }
     const settle = Math.max(0, 1 - Math.max(0, age - 0.3) / (RIPPLE_SECONDS * ripple.pulses + 0.1))
-    dot(ctx, ripple.x, ripple.y, 3, Math.min(1, 0.35 + settle))
+    const hold = Math.min(1, 0.35 + settle)
+    if (ripple.typing) {
+      // A text caret: a short vertical bar of dots where the text went.
+      for (const offset of [-1, 0, 1]) dot(ctx, ripple.x, ripple.y + offset * STEP, 2.2, hold)
+    } else {
+      dot(ctx, ripple.x, ripple.y, 3, hold)
+    }
   }
 }
 
-/** The area a screenshot covered: a viewfinder of dot corners, a scan line of dots and a brief wash. */
+/**
+ * The area a screenshot covered: two runners of dots start at the top-left corner and trace the
+ * outline of the captured area, meet at the opposite corner, hold a moment and fade. Calm: no
+ * scanning and no wash over the screen, only a dotted outline that says "this is what I saw".
+ */
 interface Flash {
   x: number
   y: number
@@ -164,42 +178,36 @@ interface Flash {
   h: number
   at: number
 }
-const FLASH_SECONDS = 0.8
-/** How much of the flash the scan line takes, the rest is the frame fading out. */
-const SWEEP_SHARE = 0.7
+const FLASH_SECONDS = 0.9
+/** The outline is fully traced after this share of the flash. */
+const TRACE_SHARE = 0.4
+/** The outline starts to fade after this share. */
+const HOLD_SHARE = 0.55
 let flashes: Flash[] = []
+
+/** A point `d` px clockwise from the top-left corner along a rectangle's outline. */
+function onOutline(flash: Flash, d: number): [number, number] {
+  const { x, y, w, h } = flash
+  if (d <= w) return [x + d, y]
+  if (d <= w + h) return [x + w, y + (d - w)]
+  if (d <= 2 * w + h) return [x + w - (d - w - h), y + h]
+  return [x, y + h - (d - 2 * w - h)]
+}
 
 function drawFlashes(ctx: CanvasRenderingContext2D, now: number, still: boolean) {
   flashes = flashes.filter((flash) => (now - flash.at) / 1000 < FLASH_SECONDS)
   for (const flash of flashes) {
-    const t = still ? 0.3 : Math.max(0, (now - flash.at) / 1000 / FLASH_SECONDS)
-    // Quick brightening, then a slow fade.
-    const envelope = t < 0.12 ? t / 0.12 : 1 - (t - 0.12) / 0.88
-    ctx.fillStyle = `rgba(255, 255, 255, ${0.12 * envelope})`
-    ctx.fillRect(flash.x, flash.y, flash.w, flash.h)
-
-    if (t < SWEEP_SHARE) {
-      const sweep = flash.y + (t / SWEEP_SHARE) * flash.h
-      for (let row = 0; row < 4; row++) {
-        const y = sweep - row * STEP
-        if (y < flash.y) break
-        for (let x = flash.x; x <= flash.x + flash.w; x += STEP)
-          dot(ctx, x, y, 1.6, 0.9 * (1 - row / 4))
-      }
-    }
-
-    // Corner brackets: an L of three dots at each corner.
-    const alpha = Math.min(1, (1 - t) * 1.6)
-    for (const [cx, cy, dx, dy] of [
-      [flash.x, flash.y, 1, 1],
-      [flash.x + flash.w, flash.y, -1, 1],
-      [flash.x, flash.y + flash.h, 1, -1],
-      [flash.x + flash.w, flash.y + flash.h, -1, -1],
-    ] as const) {
-      for (let i = 0; i < 4; i++) {
-        dot(ctx, cx + dx * i * STEP, cy, 2.2, alpha)
-        if (i > 0) dot(ctx, cx, cy + dy * i * STEP, 2.2, alpha)
-      }
+    const t = still ? HOLD_SHARE : Math.max(0, (now - flash.at) / 1000 / FLASH_SECONDS)
+    const reach = Math.min(1, t / TRACE_SHARE)
+    const fade = t < HOLD_SHARE ? 1 : Math.max(0, 1 - (t - HOLD_SHARE) / (1 - HOLD_SHARE))
+    const outline = 2 * (flash.w + flash.h)
+    const count = Math.max(8, Math.round(outline / STEP))
+    for (let i = 0; i < count; i++) {
+      const d = (i / count) * outline
+      // Each runner has travelled `reach` of the way to the far corner.
+      if (Math.min(d, outline - d) > (reach * outline) / 2) continue
+      const [px, py] = onOutline(flash, d)
+      dot(ctx, px, py, 2, fade * 0.95)
     }
   }
 }
@@ -293,6 +301,19 @@ function showStep(step: StepStartedPayload) {
   }
 }
 
+/** Text was typed: mark the spot the way a click is marked, with a caret. */
+function showTyped({ point }: TypedPayload) {
+  if (!point) return
+  const dpr = window.devicePixelRatio || 1
+  ripples.push({
+    x: point.x / dpr - window.screenX,
+    y: point.y / dpr - window.screenY,
+    at: performance.now(),
+    pulses: 1,
+    typing: true,
+  })
+}
+
 let observeCount = 0
 
 /** A screenshot: the monitor icon, and a flash over the area that was captured. */
@@ -337,6 +358,7 @@ onMounted(async () => {
     }),
     await listen<StepStartedPayload>('step_started', (event) => showStep(event.payload)),
     await listen<ObserveStartedPayload>('observe_started', (event) => showObserve(event.payload)),
+    await listen<TypedPayload>('typed', (event) => showTyped(event.payload)),
     await listen<{ agent: string | null }>(
       'external_agent',
       (event) => (agentName.value = event.payload.agent),
@@ -351,7 +373,11 @@ onMounted(async () => {
   }
   // Dev only: lets a plain browser preview play steps without the Rust side.
   if (import.meta.env.DEV) {
-    Object.assign(window, { __demoStep: showStep, __demoObserve: showObserve })
+    Object.assign(window, {
+      __demoStep: showStep,
+      __demoObserve: showObserve,
+      __demoTyped: showTyped,
+    })
   }
 })
 useEventListener(window, 'resize', layout)

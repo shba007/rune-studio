@@ -11,7 +11,7 @@ use tauri::{AppHandle, Emitter};
 use crate::{
     events::{self, Point, StepFinished, StepStarted},
     exec::{
-        CancelToken, ExecError, apps,
+        CancelToken, ExecError, apps, caret,
         input::{Input, MouseButton, cursor_position, glide_duration, typing_duration},
     },
     model::coords::{Monitor, model_to_pixels},
@@ -95,6 +95,18 @@ pub fn finish_step(app: &AppHandle, step: u32, result: &Result<(), ExecError>) {
         Err(err) => (false, Some(err.to_string())),
     };
     let _ = app.emit(events::STEP_FINISHED, StepFinished { step, ok, error });
+}
+
+/// Performs an action and tells the UI what it did: for typed text, where it went, so the overlay
+/// can mark the spot the way it marks a click.
+pub fn execute_reporting(app: &AppHandle, action: &Action, monitor: &Monitor, cancel: &CancelToken) -> Result<(), ExecError> {
+    let result = execute(action, monitor, cancel);
+    if result.is_ok() && matches!(action, Action::TypeText { .. }) {
+        // Apps that do not report a caret still have the mouse where the agent clicked to focus them.
+        let point = caret::position().or_else(cursor_position).map(|(x, y)| Point { x, y });
+        let _ = app.emit(events::TYPED, events::Typed { point });
+    }
+    result
 }
 
 /// Performs one action on the real desktop. `Done` does nothing here: ending a task is the

@@ -1,6 +1,7 @@
 //! Executing actions on the desktop: mouse, keyboard, launching apps and the Stop token.
 
 pub mod apps;
+pub mod caret;
 pub mod input;
 
 use std::{

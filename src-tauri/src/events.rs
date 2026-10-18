@@ -72,6 +72,15 @@ pub const TASK_DONE: &str = "task_done";
 /// Who is driving from outside: `{ agent: "Claude" }`, or `{ agent: null }` when nobody is.
 pub const EXTERNAL_AGENT: &str = "external_agent";
 
+/// Text was just typed: the overlay marks the spot, like a click does.
+pub const TYPED: &str = "typed";
+
+#[derive(Clone, Serialize)]
+pub struct Typed {
+    /// Where the text went (the caret, or the mouse if the caret cannot be found), in physical desktop pixels.
+    pub point: Option<Point>,
+}
+
 /// The agent is taking a screenshot: the overlay flashes the captured area.
 pub const OBSERVE_STARTED: &str = "observe_started";
 

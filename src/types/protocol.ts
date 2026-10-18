@@ -70,6 +70,12 @@ export const STEP_STARTED = 'step_started'
 export const TASK_DONE = 'task_done'
 export const EXTERNAL_AGENT = 'external_agent'
 export const OBSERVE_STARTED = 'observe_started'
+export const TYPED = 'typed'
+
+/** Text was just typed. `point` is the caret (or the mouse), in physical desktop pixels. */
+export interface TypedPayload {
+  point: { x: number; y: number } | null
+}
 
 /** The agent is taking a screenshot. `region` is the zoomed part (0 to 1000 units), or null for the whole screen. */
 export interface ObserveStartedPayload {

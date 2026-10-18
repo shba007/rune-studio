@@ -349,8 +349,9 @@ async fn act(app: &AppHandle, tool: &'static str, arguments: &Value) -> Reply {
     let settle = body::settle_time(&action);
     let worker_cancel = cancel.clone();
     let worker_action = action.clone();
+    let worker_app = app.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
-        body::execute(&worker_action, &monitor, &worker_cancel)?;
+        body::execute_reporting(&worker_app, &worker_action, &monitor, &worker_cancel)?;
         worker_cancel.sleep(settle)
     })
     .await

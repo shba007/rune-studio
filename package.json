@@ -55,6 +55,7 @@
     "unplugin-fonts": "^2.0.0",
     "unplugin-icons": "^24.0.0",
     "vite": "npm:@voidzero-dev/vite-plus-core@1.1.0",
+    "vite-plugin-vue-devtools": "^8.2.1",
     "vite-plus": "1.1.0",
     "vue-tsc": "^3.3.13"
   },
