@@ -95,7 +95,7 @@ async function submit() {
             : 'bg-[#111] hover:bg-black dark:bg-[#f1f1ef] dark:text-[#111] dark:hover:bg-white'
         "
         :aria-label="action.label"
-        :aria-pressed="isListening"
+        :aria-pressed="action.icon === 'mic' ? isListening : undefined"
         @click="action.run()"
       >
         <AppIcon :name="action.icon" />

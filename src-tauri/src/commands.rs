@@ -161,8 +161,12 @@ pub async fn toggle_listening(app: AppHandle, state: State<'_, AppState>) -> App
 }
 
 #[tauri::command]
-pub fn confirm(_id: String, _approved: bool) -> AppResult<()> {
-    Err(AppError::NotImplemented("confirm (M3)"))
+pub fn confirm(app: AppHandle, id: String, approved: bool) -> AppResult<()> {
+    if crate::safety::gate::answer(&app, &id, approved) {
+        Ok(())
+    } else {
+        Err(AppError::Invalid("There is nothing waiting for an answer".into()))
+    }
 }
 
 /// Dev-only: drives the state machine by hand so the UI states and click-through

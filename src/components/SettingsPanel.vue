@@ -111,6 +111,14 @@ async function save() {
         <SettingsToggle v-model="draft.showThinking" label="Show thinking" icon="thinking" />
       </SettingsGroup>
 
+      <SettingsGroup title="Safety">
+        <SettingsToggle
+          v-model="draft.askEveryAction"
+          label="Ask before every action"
+          icon="shield"
+        />
+      </SettingsGroup>
+
       <SettingsGroup title="Shortcuts">
         <SettingsRow v-model="draft.toggleHotkey" label="Open and close" icon="shortcut" />
         <SettingsRow v-model="draft.stopHotkey" label="Stop" icon="stop" />

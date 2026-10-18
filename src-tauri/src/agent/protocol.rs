@@ -3,7 +3,7 @@
 
 use serde_json::{Value, json};
 
-use crate::exec::input::MouseButton;
+use crate::{exec::input::MouseButton, safety::Risk};
 
 /// Longest pause the model may ask for.
 const MAX_WAIT_MS: u64 = 5_000;
@@ -59,6 +59,8 @@ pub struct Decision {
     pub reason: String,
     /// The goal (1-based, from the plan) this action is for, when the model said.
     pub goal: Option<u32>,
+    /// How risky the agent itself says the action is. Our own rules may raise it.
+    pub risk: Option<Risk>,
 }
 
 fn number(value: &Value) -> Option<f64> {
@@ -101,7 +103,8 @@ pub fn parse(name: &str, arguments: &Value) -> Result<Decision, String> {
         other => return Err(format!("unknown tool \"{other}\"")),
     };
     let goal = number(&arguments["goal"]).filter(|goal| *goal >= 1.0).map(|goal| goal as u32);
-    Ok(Decision { action, reason, goal })
+    let risk = arguments["risk"].as_str().and_then(Risk::parse);
+    Ok(Decision { action, reason, goal, risk })
 }
 
 /// Most goals a plan may have. More than this is a to-do list, not a plan.
@@ -140,6 +143,7 @@ pub fn plan_tools() -> Value {
 fn tool(name: &str, description: &str, properties: Value, required: &[&str]) -> Value {
     let mut properties = properties;
     properties["reason"] = json!({ "type": "string", "description": "One short sentence: why this action." });
+    properties["risk"] = json!({ "type": "string", "enum": ["low", "medium", "high"], "description": "How risky this action is. High means it deletes, sends, pays, installs or cannot be undone: the user is asked first." });
     properties["goal"] = json!({ "type": "integer", "description": "Number of the goal (from the plan) this action is for, starting at 1." });
     json!({ "type": "function", "function": {
         "name": name,
@@ -250,6 +254,17 @@ mod tests {
         assert!(parse_plan(&json!({})).is_err());
         let long = "x".repeat(200);
         assert_eq!(parse_plan(&json!({ "goals": [long] })).unwrap()[0].chars().count(), 80);
+    }
+
+    #[test]
+    fn the_risk_an_action_declares_is_read() {
+        assert_eq!(parse("wait", &json!({ "risk": "high" })).unwrap().risk, Some(Risk::High));
+        assert_eq!(parse("wait", &json!({ "risk": "Medium" })).unwrap().risk, Some(Risk::Medium));
+        assert_eq!(parse("wait", &json!({ "risk": "scary" })).unwrap().risk, None);
+        assert_eq!(parse("wait", &json!({})).unwrap().risk, None);
+        for tool in tools().as_array().unwrap() {
+            assert!(tool["function"]["parameters"]["properties"]["risk"].is_object());
+        }
     }
 
     #[test]

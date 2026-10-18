@@ -6,6 +6,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   AUDIO_LEVEL,
   OPEN_SETTINGS,
+  CONFIRM_REQUEST,
+  CONFIRM_RESOLVED,
   PLAN_UPDATED,
   STATE_CHANGED,
   STEP_STARTED,
@@ -17,6 +19,7 @@ import {
   type BridgeInfo,
   type CaptureReport,
   type ClickReport,
+  type ConfirmRequestPayload,
   type PillMode,
   type PlanUpdatedPayload,
   type Settings,
@@ -67,6 +70,8 @@ export function useAgent() {
   const thinking = ref<ThinkingPayload | null>(null)
   /** What the agent last said: its reason for the current action, or the final summary. */
   const response = ref<string | null>(null)
+  /** The question waiting for the user's yes or no, if any. */
+  const question = ref<ConfirmRequestPayload | null>(null)
   /** The actions taken so far, newest last. */
   const steps = ref<{ step: number; tool: string; detail: string; ok: boolean | null }[]>([])
   const notice = ref<string | null>(null)
@@ -203,7 +208,12 @@ export function useAgent() {
 
   const stop = () => call('stop')
   const toggleListening = () => call('toggle_listening')
-  const confirm = (id: string, approved: boolean) => call('confirm', { id, approved })
+  /** Answer the waiting question. A stale answer is refused by the Rust side. */
+  async function answer(approved: boolean) {
+    const waiting = question.value
+    if (!waiting) return
+    await call('confirm', { id: waiting.id, approved })
+  }
   const debugSetState = (next: AgentState) => call('debug_set_state', { state: next })
   const debugCapture = (monitor?: number) => call<CaptureReport>('debug_capture', { monitor })
   const debugClick = (args: { x: number; y: number; delayMs?: number; monitor?: number }) =>
@@ -223,11 +233,6 @@ export function useAgent() {
     steps.value = []
     if (mode.value === 'task') void setMode('open')
   }
-
-  // The agent needs the user: open the card by itself.
-  watch(state, (next) => {
-    if (next === 'awaiting_confirm' && mode.value === 'ambient') void setMode('open')
-  })
 
   // Tell the user when "listening" is not actually hearing anything.
   watch(state, (next) => {
@@ -270,6 +275,14 @@ export function useAgent() {
         thinking.value = null
       }),
       await listen<PlanUpdatedPayload>(PLAN_UPDATED, (event) => (plan.value = event.payload)),
+      await listen<ConfirmRequestPayload>(CONFIRM_REQUEST, (event) => {
+        question.value = event.payload
+        // The question needs room: open the card by itself.
+        if (mode.value === 'ambient' || mode.value === 'open') void setMode('task')
+      }),
+      await listen<{ id: string }>(CONFIRM_RESOLVED, (event) => {
+        if (question.value?.id === event.payload.id) question.value = null
+      }),
       await listen<ThinkingPayload>(THINKING, (event) => (thinking.value = event.payload)),
       await listen<number>(AUDIO_LEVEL, (event) => {
         level.value = event.payload
@@ -296,6 +309,8 @@ export function useAgent() {
     fitHeight,
     mode,
     plan,
+    question,
+    answer,
     thinking,
     response,
     steps,

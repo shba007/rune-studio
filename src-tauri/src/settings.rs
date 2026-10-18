@@ -26,6 +26,8 @@ pub struct Settings {
     pub external_agent_since: u64,
     /// Let the model think and show that thinking (slower: thinking is off by default).
     pub show_thinking: bool,
+    /// Ask before every action, not only the risky ones.
+    pub ask_every_action: bool,
 }
 
 impl Default for Settings {
@@ -40,6 +42,7 @@ impl Default for Settings {
             external_agent: false,
             external_agent_since: 0,
             show_thinking: false,
+            ask_every_action: false,
         }
     }
 }

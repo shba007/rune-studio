@@ -23,6 +23,8 @@ export interface Settings {
   externalAgentSince: number
   /** Let the model think, and show that thinking. Slower, so off by default. */
   showThinking: boolean
+  /** Ask before every action, not only the risky ones. */
+  askEveryAction: boolean
 }
 
 export interface BackendStatus {
@@ -74,6 +76,23 @@ export const EXTERNAL_AGENT = 'external_agent'
 export const OBSERVE_STARTED = 'observe_started'
 export const TYPED = 'typed'
 export const PLAN_UPDATED = 'plan_updated'
+export const CONFIRM_REQUEST = 'confirm_request'
+export const CONFIRM_RESOLVED = 'confirm_resolved'
+
+/** An action is waiting for the user's yes or no. */
+export interface ConfirmRequestPayload {
+  id: string
+  /** Who wants to do it: Rune, or an outside agent's name. */
+  source: string
+  /** What it wants to do, in a short line. */
+  text: string
+  /** Why, in the agent's words. */
+  reason: string
+  risk: 'low' | 'medium' | 'high'
+  /** What made it risky, in plain words. */
+  reasons: string[]
+  timeoutSecs: number
+}
 export const THINKING = 'thinking'
 
 /** The plan for the task: its goals, and which one is being worked on. */

@@ -426,6 +426,15 @@ onMounted(async () => {
       onSays(event.payload.text)
     }),
     await listen<ThinkingPayload>('thinking', (event) => onThinking(event.payload)),
+    await listen<{ text: string }>('confirm_request', (event) => {
+      action.value = {
+        key: -(1000 + ++observeCount),
+        kind: 'wait',
+        label: 'Needs your OK',
+        detail: event.payload.text,
+        typing: null,
+      }
+    }),
     await listen<{ summary: string }>('task_done', (event) => onSays(event.payload.summary)),
     await listen<ObserveStartedPayload>('observe_started', (event) => showObserve(event.payload)),
     await listen<TypedPayload>('typed', (event) => showTyped(event.payload)),

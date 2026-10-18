@@ -11,6 +11,7 @@ mod hotkeys;
 mod model;
 mod observe;
 mod overlay;
+mod safety;
 mod settings;
 mod voice;
 mod window;
@@ -85,6 +86,7 @@ pub fn run() {
                 cancel: exec::CancelToken::default(),
                 agent_state: Mutex::new(AgentState::Idle),
                 lease: Mutex::new(bridge::lease::LeaseBook::default()),
+                confirm: Mutex::new(None),
                 http: reqwest::Client::new(),
             });
 

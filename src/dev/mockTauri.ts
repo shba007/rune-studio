@@ -44,6 +44,7 @@ export function installTauriMock() {
             externalAgent: false,
             externalAgentSince: 0,
             showThinking: false,
+            askEveryAction: false,
           }
         case 'bridge_info':
           return {

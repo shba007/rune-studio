@@ -25,8 +25,12 @@ use crate::{
 use prompt::Entry;
 use protocol::{Action, Decision};
 
+use crate::safety::gate::{self, Verdict};
+
 /// Give up after this many unusable model answers in a row.
 const MAX_INVALID_IN_A_ROW: u32 = 3;
+/// Give up after the user has said no this many times: they do not want this done.
+const MAX_DECLINES: u32 = 3;
 /// Thinking streams in token by token; the UI is told this often at most.
 const THINKING_EVERY: Duration = Duration::from_millis(150);
 
@@ -135,6 +139,7 @@ async fn run(app: &AppHandle, task: &str) -> Outcome {
 
     let mut history: Vec<Entry> = Vec::new();
     let mut invalid_in_a_row = 0;
+    let mut declines = 0;
 
     for step in 1..=settings.max_steps {
         if cancel.is_cancelled() {
@@ -178,7 +183,7 @@ async fn run(app: &AppHandle, task: &str) -> Outcome {
             events::emit_thinking(app, &reply.thinking, true);
         }
 
-        let Decision { action, reason, goal } = match protocol::parse(&reply.call.name, &reply.call.arguments) {
+        let Decision { action, reason, goal, risk } = match protocol::parse(&reply.call.name, &reply.call.arguments) {
             Ok(decision) => decision,
             Err(problem) => {
                 invalid_in_a_row += 1;
@@ -203,6 +208,23 @@ async fn run(app: &AppHandle, task: &str) -> Outcome {
         if let Action::Done { summary, success } = action {
             events::emit_plan(app, &plan, plan.len(), true);
             return Outcome::Finished { summary, success };
+        }
+
+        // Ask first if it is risky (or if the user wants every action confirmed).
+        match gate::check(app, &cancel, "Rune", &action, &reason, risk).await {
+            Verdict::Allow => {}
+            Verdict::Stopped => return Outcome::Stopped,
+            Verdict::Denied(why) => {
+                declines += 1;
+                if declines >= MAX_DECLINES {
+                    return Outcome::Failed("Stopped: you said no to this several times".into());
+                }
+                history.push(Entry {
+                    action: action.describe(),
+                    outcome: format!("the user did not allow it ({why}). Do not try another way to do the same thing; finish with done, or choose a different goal"),
+                });
+                continue;
+            }
         }
 
         // Act.

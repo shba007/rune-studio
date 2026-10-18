@@ -6,6 +6,7 @@ import { useAgent } from '@/composables/useAgent'
 import { PAGE_GAP, PAGE_WIDTH } from '@/config/layout'
 
 import Composer from './Composer.vue'
+import ConfirmCard from './ConfirmCard.vue'
 import GlyphOrb from './GlyphOrb.vue'
 import HealthDots from './HealthDots.vue'
 import ProgressRing from './ProgressRing.vue'
@@ -76,6 +77,11 @@ function onOrb() {
               <Transition name="page">
                 <TaskPanel v-if="agent.mode.value === 'task'" :agent="agent" />
               </Transition>
+              <ConfirmCard
+                v-if="agent.question.value"
+                :key="agent.question.value.id"
+                :agent="agent"
+              />
               <Composer :agent="agent" />
             </div>
           </Transition>

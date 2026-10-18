@@ -3,7 +3,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::{bridge::lease::LeaseBook, exec::CancelToken, hotkeys::Hotkeys, overlay, settings::Settings, voice::capture::Capture, window};
+use crate::{bridge::lease::LeaseBook, safety::gate::Pending, exec::CancelToken, hotkeys::Hotkeys, overlay, settings::Settings, voice::capture::Capture, window};
 
 pub const STATE_CHANGED: &str = "state_changed";
 pub const SUMMON: &str = "summon";
@@ -33,6 +33,8 @@ pub struct AppState {
     pub agent_state: Mutex<AgentState>,
     /// Who may drive the PC from outside (see `bridge::lease`).
     pub lease: Mutex<LeaseBook>,
+    /// The question waiting for the user's yes or no, if any (see `safety::gate`).
+    pub confirm: Mutex<Option<Pending>>,
     pub http: reqwest::Client,
 }
 

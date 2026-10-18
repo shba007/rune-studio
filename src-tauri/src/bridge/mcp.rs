@@ -18,6 +18,7 @@ use crate::{
 };
 
 use super::lease::{IDLE_LIMIT, LeaseError};
+use crate::safety::gate::{self, Verdict};
 
 use super::skill::GUIDE;
 const LATEST_PROTOCOL: &str = "2025-06-18";
@@ -167,6 +168,7 @@ fn tool_list() -> Value {
         let mut properties = properties;
         properties["reason"] = reason.clone();
         properties["goal"] = json!({ "type": "integer", "description": "Number of the goal from your plan that this action is for (starting at 1)." });
+        properties["risk"] = json!({ "type": "string", "enum": ["low", "medium", "high"], "description": "How risky this action is. High means it deletes, sends, pays, installs or cannot be undone: the user is asked first." });
         json!({ "type": "object", "properties": properties, "required": required })
     };
     json!([
@@ -347,6 +349,16 @@ async fn act(app: &AppHandle, tool: &'static str, arguments: &Value) -> Reply {
 
     let state = app.state::<AppState>();
     let cancel = state.cancel.clone();
+    // Risky actions wait for the user's yes, exactly as the built-in agent's do.
+    let source = state.lease.lock().expect("lease lock poisoned").agent().unwrap_or("External agent").to_string();
+    match gate::check(app, &cancel, &source, &decision.action, &decision.reason, decision.risk).await {
+        Verdict::Allow => {}
+        Verdict::Stopped => return LeaseError::StoppedByUser.into(),
+        Verdict::Denied(why) => {
+            events::set_agent_state(app, AgentState::Observing);
+            return Reply::error("declined_by_user", format!("the user did not allow it ({why}). Do not try another way to do the same thing; ask the user what they want instead."));
+        }
+    }
     let monitor = match screenshot::monitor(None) {
         Ok(monitor) => monitor,
         Err(err) => return Reply::error("screen_unavailable", err),

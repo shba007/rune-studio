@@ -26,6 +26,7 @@ import IconMicrophone from '~icons/ph/microphone-fill'
 import IconMonitor from '~icons/ph/monitor-fill'
 import IconMouse from '~icons/ph/mouse-simple-fill'
 import IconPlugs from '~icons/ph/plugs-connected-fill'
+import IconShieldCheck from '~icons/ph/shield-check-fill'
 import IconSlidersHorizontal from '~icons/ph/sliders-horizontal-fill'
 import IconRuneMark from '~icons/custom/rune-mark'
 import IconStopCircle from '~icons/ph/stop-circle-fill'
@@ -51,6 +52,7 @@ export const icons = {
   ok: IconCheckCircle,
   refresh: IconArrowClockwise,
   send: IconArrowUp,
+  shield: IconShieldCheck,
   shortcut: IconCommand,
   stop: IconStopCircle,
   trash: IconTrash,
