@@ -5,6 +5,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import {
   AUDIO_LEVEL,
+  VOICE_HEARD,
   OPEN_SETTINGS,
   CONFIRM_REQUEST,
   CONFIRM_RESOLVED,
@@ -20,6 +21,7 @@ import {
   type CaptureReport,
   type ClickReport,
   type ConfirmRequestPayload,
+  type VoiceHeardPayload,
   type PillMode,
   type PlanUpdatedPayload,
   type Settings,
@@ -287,6 +289,10 @@ export function useAgent() {
       await listen<number>(AUDIO_LEVEL, (event) => {
         level.value = event.payload
         if (event.payload > SOUND_THRESHOLD) heardSound = true
+      }),
+      await listen<VoiceHeardPayload>(VOICE_HEARD, (event) => {
+        const { text, note } = event.payload
+        showNotice(text ? `${note}: “${text}”` : note)
       }),
       await listen(SUMMON, () => void toggleOpen()),
       await listen(OPEN_SETTINGS, () => void setMode('settings')),

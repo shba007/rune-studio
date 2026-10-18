@@ -103,12 +103,21 @@ pub fn stop(app: AppHandle) {
     }
     if events::agent_state(&app) != AgentState::Idle {
         events::set_agent_state(&app, AgentState::Stopped);
+        crate::voice::resume_listening_soon(&app);
     }
 }
 
 #[tauri::command]
-pub fn start_task(app: AppHandle, state: State<'_, AppState>, text: String) -> AppResult<()> {
+pub fn start_task(app: AppHandle, text: String) -> AppResult<()> {
+    begin_task(&app, &text, false)
+}
+
+/// Starts a task. `keep_mic` leaves the microphone open (a task started by voice stays
+/// listening, so the user can say stop, answer a question or steer); typing a task closes it.
+pub fn begin_task(app: &AppHandle, text: &str, keep_mic: bool) -> AppResult<()> {
+    let state = app.state::<AppState>();
     let task = text.trim();
+    state.steer.lock().expect("steer lock poisoned").clear();
     if task.is_empty() {
         return Err(AppError::Invalid("Type or say what you want done".into()));
     }
@@ -122,14 +131,42 @@ pub fn start_task(app: AppHandle, state: State<'_, AppState>, text: String) -> A
         return Err(AppError::Invalid("An outside agent is in control".into()));
     }
     // Starting a task ends listening: the microphone must not stay open behind it.
-    drop(state.mic.lock().expect("mic lock poisoned").take());
-    agent::start(&app, task.to_string());
+    if !keep_mic {
+        drop(state.mic.lock().expect("mic lock poisoned").take());
+    }
+    agent::start(app, task.to_string());
     Ok(())
 }
 
+/// Words for the running agent: it reads them before its next step. Returns false if there was
+/// nothing worth keeping.
+pub fn push_steer(app: &AppHandle, text: &str) -> bool {
+    let text = text.trim();
+    if text.is_empty() {
+        return false;
+    }
+    app.state::<AppState>().steer.lock().expect("steer lock poisoned").push(text.chars().take(300).collect());
+    true
+}
+
 #[tauri::command]
-pub fn steer(_text: String) -> AppResult<()> {
-    Err(AppError::NotImplemented("steer (M2)"))
+pub fn steer(app: AppHandle, text: String) -> AppResult<()> {
+    if !matches!(
+        events::agent_state(&app),
+        AgentState::Planning | AgentState::Acting | AgentState::Observing | AgentState::AwaitingConfirm
+    ) {
+        return Err(AppError::Invalid("There is no running task to give instructions to".into()));
+    }
+    if push_steer(&app, &text) { Ok(()) } else { Err(AppError::Invalid("Say what the agent should do differently".into())) }
+}
+
+/// Closes the microphone (and leaves the listening state).
+pub fn close_microphone(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let was_open = state.mic.lock().expect("mic lock poisoned").take().is_some();
+    if was_open && events::agent_state(app) == AgentState::Listening {
+        events::set_agent_state(app, AgentState::Idle);
+    }
 }
 
 /// Opens or closes the microphone. Only the live level is wired up so far; speech

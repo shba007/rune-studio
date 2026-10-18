@@ -12,8 +12,6 @@ pub enum AppError {
     Keyring(#[from] keyring::Error),
     #[error("{0}")]
     Invalid(String),
-    #[error("{0} is not implemented yet")]
-    NotImplemented(&'static str),
 }
 
 impl Serialize for AppError {

@@ -83,6 +83,7 @@ pub fn run() {
             let loaded = settings::load(app.handle());
             let hotkeys = Hotkeys::from_settings(&loaded);
             app.manage(AppState {
+                steer: Default::default(),
                 settings: Mutex::new(loaded),
                 hotkeys: Mutex::new(hotkeys.clone()),
                 mic: Mutex::new(None),

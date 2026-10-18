@@ -35,6 +35,8 @@ pub struct AppState {
     pub lease: Mutex<LeaseBook>,
     /// The question waiting for the user's yes or no, if any (see `safety::gate`).
     pub confirm: Mutex<Option<Pending>>,
+    /// Things the user said while the agent was working; read before its next step.
+    pub steer: Mutex<Vec<String>>,
     pub http: reqwest::Client,
 }
 

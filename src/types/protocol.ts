@@ -73,6 +73,13 @@ export const STATE_CHANGED = 'state_changed'
 export const SUMMON = 'summon'
 export const OPEN_SETTINGS = 'open_settings'
 export const AUDIO_LEVEL = 'audio_level'
+export const VOICE_HEARD = 'voice_heard'
+
+/** Something was said: the words, and what the app did about them. */
+export interface VoiceHeardPayload {
+  text: string
+  note: string
+}
 export const STEP_STARTED = 'step_started'
 export const TASK_DONE = 'task_done'
 export const EXTERNAL_AGENT = 'external_agent'

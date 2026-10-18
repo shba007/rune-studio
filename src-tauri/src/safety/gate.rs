@@ -23,6 +23,8 @@ pub const ANSWER_TIMEOUT: Duration = Duration::from_secs(120);
 /// A question waiting for its answer.
 pub struct Pending {
     pub id: String,
+    /// "approval" or "question" (see `ConfirmRequest`).
+    pub kind: &'static str,
     sender: oneshot::Sender<bool>,
 }
 
@@ -57,6 +59,30 @@ pub enum Verdict {
     Denied(&'static str),
     /// The user pressed Stop while we were asking.
     Stopped,
+}
+
+/// What happened to a spoken answer.
+#[derive(Debug, PartialEq, Eq)]
+pub enum VoiceAnswer {
+    Answered,
+    /// A spoken yes to an action that needs approval: refused, it takes a click.
+    NeedsClick,
+    NothingWaiting,
+}
+
+/// Answers the waiting question by voice. A **no** always counts. A **yes** counts only for the
+/// agent's own questions: someone else's voice, or a TV, must never be able to approve a risky
+/// action, so that takes a click on the card.
+pub fn answer_by_voice(app: &AppHandle, approved: bool) -> VoiceAnswer {
+    let state = app.state::<AppState>();
+    let mut slot = state.confirm.lock().expect("confirm lock poisoned");
+    let Some(pending) = slot.take() else { return VoiceAnswer::NothingWaiting };
+    if approved && pending.kind == "approval" {
+        *slot = Some(pending);
+        return VoiceAnswer::NeedsClick;
+    }
+    let _ = pending.sender.send(approved);
+    VoiceAnswer::Answered
 }
 
 /// Completes the waiting question with the user's answer. Returns false if there is none (or the
@@ -143,7 +169,7 @@ pub async fn ask_question(app: &AppHandle, cancel: &CancelToken, source: &str, q
 async fn ask_user(app: &AppHandle, cancel: &CancelToken, source: &str, text: &str, reason: &str, risk: Risk, reasons: &[String], kind: &'static str) -> Verdict {
     let id = new_id();
     let (sender, receiver) = oneshot::channel();
-    *app.state::<AppState>().confirm.lock().expect("confirm lock poisoned") = Some(Pending { id: id.clone(), sender });
+    *app.state::<AppState>().confirm.lock().expect("confirm lock poisoned") = Some(Pending { id: id.clone(), kind, sender });
 
     let _ = app.emit(
         CONFIRM_REQUEST,

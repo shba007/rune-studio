@@ -86,6 +86,8 @@ fn finish(app: &AppHandle, outcome: Outcome) {
             events::set_agent_state(app, AgentState::Failed);
         }
     }
+    // A voice session carries on: back to listening once the result has been seen.
+    crate::voice::resume_listening_soon(app);
 }
 
 /// Resolves to `None` if Stop is pressed before the future completes. The future is dropped, so
@@ -201,6 +203,11 @@ async fn run(app: &AppHandle, task: &str) -> Outcome {
     for step in 1..=settings.max_steps {
         if cancel.is_cancelled() {
             return Outcome::Stopped;
+        }
+
+        // Anything the user said since the last step goes into the history as an instruction.
+        for note in state.steer.lock().expect("steer lock poisoned").drain(..) {
+            history.push(Entry { action: format!("the user said: \"{note}\""), outcome: "follow this from now on".into() });
         }
 
         // Look. If the decision model sees the page still loading, wait a moment and look again

@@ -49,7 +49,7 @@ tauri-plugin-log = "2.10"
 tauri-plugin-process = "2.4"
 tauri-plugin-global-shortcut = "2"
 dotenvy = "0.15"
-reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "multipart", "rustls"] }
 keyring = "4"
 cpal = "0.18"
 xcap = "0.9"
