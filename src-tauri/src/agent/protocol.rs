@@ -57,6 +57,8 @@ impl Action {
 pub struct Decision {
     pub action: Action,
     pub reason: String,
+    /// The goal (1-based, from the plan) this action is for, when the model said.
+    pub goal: Option<u32>,
 }
 
 fn number(value: &Value) -> Option<f64> {
@@ -98,12 +100,47 @@ pub fn parse(name: &str, arguments: &Value) -> Result<Decision, String> {
         "done" => Action::Done { summary: text("summary")?, success: arguments["success"].as_bool().unwrap_or(true) },
         other => return Err(format!("unknown tool \"{other}\"")),
     };
-    Ok(Decision { action, reason })
+    let goal = number(&arguments["goal"]).filter(|goal| *goal >= 1.0).map(|goal| goal as u32);
+    Ok(Decision { action, reason, goal })
+}
+
+/// Most goals a plan may have. More than this is a to-do list, not a plan.
+pub const MAX_GOALS: usize = 6;
+
+/// Checks the goals the model wrote: trimmed, non-empty, short, and not too many.
+pub fn parse_plan(arguments: &Value) -> Result<Vec<String>, String> {
+    let goals: Vec<String> = arguments["goals"]
+        .as_array()
+        .map(|list| {
+            list.iter()
+                .filter_map(Value::as_str)
+                .map(|goal| goal.trim().chars().take(80).collect::<String>())
+                .filter(|goal| !goal.is_empty())
+                .take(MAX_GOALS)
+                .collect()
+        })
+        .unwrap_or_default();
+    if goals.is_empty() {
+        return Err("set_plan: \"goals\" must be a list of one to six short goals".into());
+    }
+    Ok(goals)
+}
+
+/// The one tool offered for the planning call.
+pub fn plan_tools() -> Value {
+    json!([{ "type": "function", "function": {
+        "name": "set_plan",
+        "description": "Write the goals for this task, in order.",
+        "parameters": { "type": "object", "required": ["goals"], "properties": {
+            "goals": { "type": "array", "items": { "type": "string" }, "description": "Two to six short goals (a few words each), in the order they will be done. A simple task can have just one or two." },
+        }},
+    }}])
 }
 
 fn tool(name: &str, description: &str, properties: Value, required: &[&str]) -> Value {
     let mut properties = properties;
     properties["reason"] = json!({ "type": "string", "description": "One short sentence: why this action." });
+    properties["goal"] = json!({ "type": "integer", "description": "Number of the goal (from the plan) this action is for, starting at 1." });
     json!({ "type": "function", "function": {
         "name": name,
         "description": description,
@@ -193,6 +230,34 @@ mod tests {
             Action::Done { summary: "ok".into(), success: true }
         );
         assert!(parse("format_disk", &json!({})).is_err());
+    }
+
+    #[test]
+    fn the_goal_an_action_serves_is_read() {
+        assert_eq!(parse("wait", &json!({ "goal": 2 })).unwrap().goal, Some(2));
+        assert_eq!(parse("wait", &json!({ "goal": "3" })).unwrap().goal, Some(3));
+        assert_eq!(parse("wait", &json!({ "goal": 0 })).unwrap().goal, None);
+        assert_eq!(parse("wait", &json!({})).unwrap().goal, None);
+    }
+
+    #[test]
+    fn a_plan_is_cleaned_and_limited() {
+        let goals = parse_plan(&json!({ "goals": ["  Open Notepad ", "", "Type hello", 7] })).unwrap();
+        assert_eq!(goals, ["Open Notepad", "Type hello"]);
+        let many: Vec<String> = (1..=10).map(|n| format!("goal {n}")).collect();
+        assert_eq!(parse_plan(&json!({ "goals": many })).unwrap().len(), MAX_GOALS);
+        assert!(parse_plan(&json!({ "goals": [] })).is_err());
+        assert!(parse_plan(&json!({})).is_err());
+        let long = "x".repeat(200);
+        assert_eq!(parse_plan(&json!({ "goals": [long] })).unwrap()[0].chars().count(), 80);
+    }
+
+    #[test]
+    fn every_action_tool_accepts_a_goal() {
+        for tool in tools().as_array().unwrap() {
+            assert!(tool["function"]["parameters"]["properties"]["goal"].is_object(), "{} has no goal", tool["function"]["name"]);
+        }
+        assert_eq!(plan_tools()[0]["function"]["name"], "set_plan");
     }
 
     #[test]

@@ -65,7 +65,7 @@ async function save() {
         type="button"
         class="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full text-zinc-300 transition hover:bg-white/8 hover:text-white"
         aria-label="Back"
-        @click="agent.setMode('open')"
+        @click="agent.setMode(agent.home())"
       >
         <AppIcon name="back" />
       </button>
@@ -108,6 +108,7 @@ async function save() {
       <SettingsGroup title="Models">
         <SettingsRow v-model="draft.visionModel" label="Vision" icon="eye" />
         <SettingsRow v-model="draft.asrModel" label="Speech" icon="mic" />
+        <SettingsToggle v-model="draft.showThinking" label="Show thinking" icon="thinking" />
       </SettingsGroup>
 
       <SettingsGroup title="Shortcuts">

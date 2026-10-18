@@ -16,6 +16,8 @@ const EDGE_MARGIN: f64 = 16.0;
 pub enum Mode {
     Ambient,
     Open,
+    /// The composer with the task's progress panel above it.
+    Task,
     Settings,
 }
 
@@ -23,7 +25,9 @@ impl Mode {
     fn size(self) -> (f64, f64) {
         match self {
             Mode::Ambient => (64.0, 64.0),
-            Mode::Open => (344.0, 184.0),
+            // Open and Task start from these and then fit their content (see `fit_height`).
+            Mode::Open => (344.0, 64.0),
+            Mode::Task => (344.0, 336.0),
             Mode::Settings => (344.0, 592.0),
         }
     }
@@ -55,6 +59,17 @@ pub fn place_bottom_right(window: &WebviewWindow) -> tauri::Result<()> {
 /// Resizes while keeping the bottom-right corner fixed, so the pill grows up and to the left
 /// from wherever the user has put it. The result is kept inside the monitor's work area.
 pub fn set_mode(app: &AppHandle, mode: Mode) -> tauri::Result<()> {
+    let (width, height) = mode.size();
+    resize_keeping_corner(app, Some(width), height)
+}
+
+/// Makes the window as tall as its content (`height` in logical pixels), keeping its width and the
+/// bottom-right corner. The composer grows with the text; the window follows.
+pub fn fit_height(app: &AppHandle, height: f64) -> tauri::Result<()> {
+    resize_keeping_corner(app, None, height.clamp(64.0, 1_200.0))
+}
+
+fn resize_keeping_corner(app: &AppHandle, width: Option<f64>, height: f64) -> tauri::Result<()> {
     let Some(window) = main_window(app) else {
         return Ok(());
     };
@@ -63,7 +78,10 @@ pub fn set_mode(app: &AppHandle, mode: Mode) -> tauri::Result<()> {
     let right = position.x + old.width as i32;
     let bottom = position.y + old.height as i32;
 
-    let (width, height) = mode.size();
+    let width = match width {
+        Some(width) => width,
+        None => f64::from(old.width) / window.scale_factor()?,
+    };
     window.set_size(LogicalSize::new(width, height))?;
 
     let new = window.outer_size()?;

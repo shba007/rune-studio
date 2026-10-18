@@ -43,6 +43,9 @@ pub struct Lease {
     pub task: String,
     /// Actions taken so far.
     pub step: u32,
+    /// The goals the agent set for itself with `rune_plan`, and the one it is on.
+    pub plan: Vec<String>,
+    pub current_goal: usize,
     last_call: Instant,
 }
 
@@ -71,6 +74,10 @@ impl LeaseBook {
         self.current.as_ref()
     }
 
+    pub fn current_mut(&mut self) -> Option<&mut Lease> {
+        self.current.as_mut()
+    }
+
     /// Takes control for `agent`. Fails while the user's Stop is still in force or someone holds it.
     pub fn begin(&mut self, agent: &str, task: &str, now: Instant) -> Result<(), LeaseError> {
         if self.revoked {
@@ -82,7 +89,7 @@ impl LeaseBook {
         if self.current.is_some() {
             return Err(LeaseError::Busy);
         }
-        self.current = Some(Lease { agent: agent.to_string(), task: task.to_string(), step: 0, last_call: now });
+        self.current = Some(Lease { agent: agent.to_string(), task: task.to_string(), step: 0, plan: Vec::new(), current_goal: 0, last_call: now });
         Ok(())
     }
 

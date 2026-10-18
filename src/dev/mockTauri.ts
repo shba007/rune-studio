@@ -43,6 +43,7 @@ export function installTauriMock() {
             stopHotkey: 'Ctrl+Alt+Escape',
             externalAgent: false,
             externalAgentSince: 0,
+            showThinking: false,
           }
         case 'bridge_info':
           return {

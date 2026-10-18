@@ -1,25 +1,37 @@
 <script setup lang="ts">
-import { onKeyStroke } from '@vueuse/core'
-import { computed } from 'vue'
+import { onKeyStroke, useElementSize } from '@vueuse/core'
+import { computed, useTemplateRef, watch } from 'vue'
 
 import { useAgent } from '@/composables/useAgent'
 import { PAGE_GAP, PAGE_WIDTH } from '@/config/layout'
 
 import Composer from './Composer.vue'
 import GlyphOrb from './GlyphOrb.vue'
+import ProgressRing from './ProgressRing.vue'
 import SettingsPanel from './SettingsPanel.vue'
+import TaskPanel from './TaskPanel.vue'
 
 const agent = useAgent()
 
 const isAmbient = computed(() => agent.mode.value === 'ambient')
 
-/** Backend trouble shows as a dot on the disc; a healthy backend shows nothing. */
-const backendDot = computed(() => {
-  const status = agent.backend.value
-  if (!status) return null
-  if (!status.reachable) return 'bg-[#d71921]'
-  if (!status.authOk || status.missingModels.length > 0 || status.error) return 'bg-amber-400'
-  return null
+// Dev only: lets a plain browser preview set the plan, thinking and steps by hand.
+if (import.meta.env.DEV) Object.assign(window, { __demoAgent: agent })
+
+/** The model server's health, as a badge on the orb: green, amber (needs attention), red (down). */
+const HEALTH_TONE = {
+  ok: 'bg-emerald-400',
+  warn: 'bg-amber-400',
+  down: 'bg-[#d71921]',
+  checking: 'bg-zinc-500',
+} as const
+
+// The window is as tall as the open card's content, so it grows when the text does.
+const content = useTemplateRef<HTMLElement>('content')
+const { height: contentHeight } = useElementSize(content)
+watch(contentHeight, (height) => {
+  // Between two pages the column is briefly empty; ignore that.
+  if (height >= 48) void agent.fitHeight(Math.ceil(height / 8) * 8)
 })
 
 // Esc dismisses the card from anywhere in the window, not only while a control has focus.
@@ -36,8 +48,16 @@ function onOrb() {
   <div class="flex h-full w-full items-end justify-end">
     <div
       data-tauri-drag-region
-      class="flex size-16 shrink-0 items-center justify-center rounded-full bg-[#141414]"
+      class="relative flex size-16 shrink-0 items-center justify-center rounded-full bg-[#141414]"
     >
+      <!-- The rim of the orb is the task's progress: one dotted arc per goal. -->
+      <ProgressRing
+        :goals="agent.plan.value?.goals.length ?? 0"
+        :current="agent.plan.value?.current ?? 0"
+        :finished="agent.plan.value?.finished ?? false"
+        :running="agent.isRunning.value"
+        :failed="agent.state.value === 'failed'"
+      />
       <button
         type="button"
         class="relative size-14 cursor-pointer rounded-full bg-[#f1f1ef] outline-none focus-visible:ring-2 focus-visible:ring-white/60"
@@ -45,12 +65,12 @@ function onOrb() {
         @click="onOrb"
       >
         <GlyphOrb :state="agent.state.value" :level="agent.level.value" />
-        <span
-          v-if="backendDot"
-          class="absolute right-0 bottom-0 size-2 rounded-full ring-2 ring-[#f1f1ef]"
-          :class="backendDot"
-        />
       </button>
+      <span
+        class="absolute right-0 bottom-0 size-3 rounded-full ring-2 ring-[#141414]"
+        :class="HEALTH_TONE[agent.health.value.tone]"
+        :title="agent.health.value.title"
+      />
     </div>
 
     <!-- Page column. Every page has the same fixed width, so switching pages never reflows. -->
@@ -59,10 +79,17 @@ function onOrb() {
       :style="{ width: isAmbient ? '0px' : `${PAGE_WIDTH + PAGE_GAP}px` }"
     >
       <div class="ml-2 flex h-full flex-col justify-end" :style="{ width: `${PAGE_WIDTH}px` }">
-        <Transition name="page" mode="out-in">
-          <SettingsPanel v-if="agent.mode.value === 'settings'" key="settings" :agent="agent" />
-          <Composer v-else key="composer" :agent="agent" />
-        </Transition>
+        <div ref="content" class="flex flex-col">
+          <Transition name="page" mode="out-in">
+            <SettingsPanel v-if="agent.mode.value === 'settings'" key="settings" :agent="agent" />
+            <div v-else key="main" class="flex flex-col gap-2">
+              <Transition name="page">
+                <TaskPanel v-if="agent.mode.value === 'task'" :agent="agent" />
+              </Transition>
+              <Composer :agent="agent" />
+            </div>
+          </Transition>
+        </div>
       </div>
     </div>
   </div>

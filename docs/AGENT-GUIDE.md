@@ -27,20 +27,22 @@ Tell the user, in plain words, what to do. You never need to run these yourself.
 Always work in this loop, one small step at a time.
 
 1. **Begin** once with `rune_begin`. The screen frame appears and the user knows you are in control.
-2. **Observe** with `rune_observe`: you get a screenshot and the screen size.
-3. **Decide** one action.
-4. **Act** with `rune_click`, `rune_type_text`, `rune_press_keys`, `rune_open_app` or `rune_wait`. Each action returns a fresh screenshot after the screen has settled, so you can check the result right away.
-5. **Check** that the screenshot shows what you expected. If it does not, change your plan. Never repeat a failed action more than twice.
-6. **Finish** with `rune_done` and a short, honest summary. Control goes back to the user.
+2. **Plan** with `rune_plan`: two to six short goals, in order. The user sees them as a progress tracker. A simple task can have one or two.
+3. **Observe** with `rune_observe`: you get a screenshot and the screen size.
+4. **Decide** one action.
+5. **Act** with `rune_click`, `rune_type_text`, `rune_press_keys`, `rune_open_app` or `rune_wait`. Each action returns a fresh screenshot after the screen has settled, so you can check the result right away.
+6. **Check** that the screenshot shows what you expected. If it does not, change your plan. Never repeat a failed action more than twice.
+7. **Finish** with `rune_done` and a short, honest summary. Control goes back to the user.
 
 ## 4. Tools
 
-Every action tool also accepts an optional `reason`: one short sentence shown to the user next to the action. Write it for a person ("Open the File menu").
+Every action tool also accepts an optional `reason`: one short sentence shown to the user next to the action. Write it for a person ("Open the File menu"). It also accepts `goal`: the number of the goal from your plan that this action is for (1 for the first). Move to the next goal only when the current one is done.
 
 | Tool              | Arguments                                                            | What you get back                                                                                                                                |
 | ----------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `rune_guide`      | none                                                                 | This guide as text.                                                                                                                              |
-| `rune_begin`      | `task` (what you were asked), `agent` (your name)                    | Confirmation that you are in control, and the basics.                                                                                            |
+| `rune_begin`      | `task` (what you were asked), `agent` (your name), optional `plan`   | Confirmation that you are in control, and the basics.                                                                                            |
+| `rune_plan`       | `goals`, a list of two to six short goals                            | Saves your plan and shows it to the user as a progress tracker.                                                                                  |
 | `rune_observe`    | optional `region` `[x0, y0, x1, y1]`, each 0 to 1000                 | A screenshot and the screen size. With `region` you get a **zoomed crop** of that area, which is how you read small text or aim at tiny buttons. |
 | `rune_click`      | `x`, `y` (0 to 1000), `button` (`left`, `right`, `middle`), `double` | What was done, then a fresh screenshot.                                                                                                          |
 | `rune_type_text`  | `text`                                                               | Types into whatever has keyboard focus, then a screenshot.                                                                                       |

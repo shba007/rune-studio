@@ -56,8 +56,34 @@ pub async fn check_backend(state: State<'_, AppState>) -> AppResult<BackendStatu
 }
 
 #[tauri::command]
+pub fn fit_height(app: AppHandle, height: f64) -> AppResult<()> {
+    Ok(window::fit_height(&app, height)?)
+}
+
+#[tauri::command]
 pub fn set_mode(app: AppHandle, mode: window::Mode) -> AppResult<()> {
     Ok(window::set_mode(&app, mode)?)
+}
+
+/// Where the pill is on the desktop (physical pixels), so the full-screen overlay can put the
+/// speech bubble at the orb's head. `None` if the window is hidden.
+#[derive(serde::Serialize)]
+pub struct PillRect {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[tauri::command]
+pub fn pill_rect(app: AppHandle) -> Option<PillRect> {
+    let window = app.get_webview_window(window::MAIN)?;
+    if !window.is_visible().unwrap_or(false) {
+        return None;
+    }
+    let position = window.outer_position().ok()?;
+    let size = window.outer_size().ok()?;
+    Some(PillRect { x: position.x, y: position.y, width: size.width, height: size.height })
 }
 
 #[tauri::command]

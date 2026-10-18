@@ -8,8 +8,10 @@ import { KIND_ICON, TOOL_LABEL, kindOf, type ActionKind } from '@/config/actions
 import type {
   AgentState,
   ObserveStartedPayload,
+  PillRect,
   Settings,
   StepStartedPayload,
+  ThinkingPayload,
   TypedPayload,
 } from '@/types/protocol'
 
@@ -340,6 +342,64 @@ function showObserve({ region }: ObserveStartedPayload) {
   flashes.push({ ...box, at: performance.now() })
 }
 
+/**
+ * The speech bubble at the orb's head: what the agent is thinking (when Show thinking is on) and
+ * what it just said. Compact here; the full text is in the pill's task panel when it is expanded.
+ */
+const BUBBLE_CHARS = 120
+const bubbleThinking = ref('')
+const bubbleSays = ref('')
+const pill = ref<PillRect | null>(null)
+
+async function refreshPill() {
+  try {
+    pill.value = await invoke<PillRect | null>('pill_rect')
+  } catch {
+    pill.value = null
+  }
+}
+
+/** Thinking shows its newest words; a response shows its start. */
+const bubble = computed(() => {
+  // Expanded: the task panel shows all of it, so the bubble steps aside.
+  if (!pill.value || pill.value.width > 100) return null
+  if (bubbleThinking.value) {
+    const text = bubbleThinking.value.replace(/\s+/g, ' ').trim()
+    const shown = text.length > BUBBLE_CHARS ? `…${text.slice(-BUBBLE_CHARS)}` : text
+    return { label: 'Thinking', live: true, text: shown }
+  }
+  if (bubbleSays.value) {
+    const text = bubbleSays.value.replace(/\s+/g, ' ').trim()
+    const shown = text.length > BUBBLE_CHARS ? `${text.slice(0, BUBBLE_CHARS)}…` : text
+    return { label: 'Says', live: false, text: shown }
+  }
+  return null
+})
+
+/** Where the bubble sits: right edges aligned with the orb, just above its top. */
+const bubbleStyle = computed(() => {
+  const rect = pill.value
+  if (!rect) return {}
+  const dpr = window.devicePixelRatio || 1
+  const right = (rect.x + rect.width) / dpr - window.screenX
+  const top = rect.y / dpr - window.screenY
+  return {
+    right: `${Math.max(8, window.innerWidth - right)}px`,
+    bottom: `${Math.max(8, window.innerHeight - top + 12)}px`,
+  }
+})
+
+function onThinking({ text, done }: ThinkingPayload) {
+  bubbleThinking.value = done ? '' : text
+  void refreshPill()
+}
+
+function onSays(text: string) {
+  bubbleThinking.value = ''
+  bubbleSays.value = text
+  void refreshPill()
+}
+
 const unlisten: UnlistenFn[] = []
 
 onMounted(async () => {
@@ -353,10 +413,20 @@ onMounted(async () => {
   unlisten.push(
     await listen<{ state: AgentState }>('state_changed', (event) => {
       const next = event.payload.state
-      setActive(next === 'acting' || next === 'observing')
+      setActive(next === 'acting' || next === 'observing' || next === 'planning')
       if (next !== 'acting' && next !== 'observing' && next !== 'planning') action.value = null
+      if (next === 'planning') void refreshPill()
+      if (next === 'idle' || next === 'stopped') {
+        bubbleThinking.value = ''
+        bubbleSays.value = ''
+      }
     }),
-    await listen<StepStartedPayload>('step_started', (event) => showStep(event.payload)),
+    await listen<StepStartedPayload>('step_started', (event) => {
+      showStep(event.payload)
+      onSays(event.payload.text)
+    }),
+    await listen<ThinkingPayload>('thinking', (event) => onThinking(event.payload)),
+    await listen<{ summary: string }>('task_done', (event) => onSays(event.payload.summary)),
     await listen<ObserveStartedPayload>('observe_started', (event) => showObserve(event.payload)),
     await listen<TypedPayload>('typed', (event) => showTyped(event.payload)),
     await listen<{ agent: string | null }>(
@@ -377,6 +447,16 @@ onMounted(async () => {
       __demoStep: showStep,
       __demoObserve: showObserve,
       __demoTyped: showTyped,
+      __demoBubble: (thinking: string, says: string) => {
+        bubbleThinking.value = thinking
+        bubbleSays.value = says
+        pill.value = {
+          x: window.screenX + window.innerWidth - 80,
+          y: window.screenY + window.innerHeight - 80,
+          width: 64,
+          height: 64,
+        }
+      },
     })
   }
 })
@@ -385,50 +465,75 @@ onBeforeUnmount(() => unlisten.forEach((off) => off()))
 </script>
 
 <template>
-  <div
-    class="fixed inset-0 transition-opacity duration-500 ease-out"
-    :class="active ? 'opacity-100' : 'opacity-0'"
-  >
-    <canvas ref="canvas" class="absolute inset-0 size-full" aria-hidden="true" />
-
-    <!-- One pill: who is in control, what they are doing right now, and how to stop them. -->
+  <div class="fixed inset-0">
     <div
-      class="absolute top-6 left-1/2 flex h-10 -translate-x-1/2 items-center gap-3 rounded-full bg-black/85 pr-1 pl-4 text-white"
+      class="absolute inset-0 transition-opacity duration-500 ease-out"
+      :class="active ? 'opacity-100' : 'opacity-0'"
     >
-      <span class="size-2 shrink-0 animate-pulse rounded-full bg-[#d71921]" />
-      <span class="text-caption whitespace-nowrap uppercase"
-        >{{ agentName ?? 'Rune' }} is in control</span
-      >
+      <canvas ref="canvas" class="absolute inset-0 size-full" aria-hidden="true" />
 
-      <Transition name="action" mode="out-in">
-        <div
-          v-if="action"
-          :key="action.key"
-          class="flex items-center gap-2 border-l border-white/20 pl-3"
+      <!-- One pill: who is in control, what they are doing right now, and how to stop them. -->
+      <div
+        class="absolute top-6 left-1/2 flex h-10 -translate-x-1/2 items-center gap-3 rounded-full bg-black/85 pr-1 pl-4 text-white"
+      >
+        <span class="size-2 shrink-0 animate-pulse rounded-full bg-[#d71921]" />
+        <span class="text-caption whitespace-nowrap uppercase"
+          >{{ agentName ?? 'Rune' }} is in control</span
         >
-          <AppIcon :name="KIND_ICON[action.kind]" />
-          <span class="text-caption whitespace-nowrap uppercase">{{ action.label }}</span>
-          <span v-if="action.detail" class="max-w-64 truncate text-label text-white/70">{{
-            action.detail
-          }}</span>
-          <span
-            v-if="action.typing"
-            class="flex items-center text-label whitespace-pre text-white/70"
+
+        <Transition name="action" mode="out-in">
+          <div
+            v-if="action"
+            :key="action.key"
+            class="flex items-center gap-2 border-l border-white/20 pl-3"
           >
-            {{ typedShown }}<span class="caret ml-px h-4 w-[2px] bg-white" />
+            <AppIcon :name="KIND_ICON[action.kind]" />
+            <span class="text-caption whitespace-nowrap uppercase">{{ action.label }}</span>
+            <span v-if="action.detail" class="max-w-64 truncate text-label text-white/70">{{
+              action.detail
+            }}</span>
+            <span
+              v-if="action.typing"
+              class="flex items-center text-label whitespace-pre text-white/70"
+            >
+              {{ typedShown }}<span class="caret ml-px h-4 w-[2px] bg-white" />
+            </span>
+          </div>
+        </Transition>
+
+        <div class="flex items-center gap-2 border-l border-white/20 pl-3">
+          <span v-if="hotkeyLabel" class="text-caption whitespace-nowrap text-white/50 uppercase">{{
+            hotkeyLabel
+          }}</span>
+          <span class="grid size-8 shrink-0 place-items-center rounded-full bg-[#d71921]">
+            <AppIcon name="stop" />
           </span>
         </div>
-      </Transition>
-
-      <div class="flex items-center gap-2 border-l border-white/20 pl-3">
-        <span v-if="hotkeyLabel" class="text-caption whitespace-nowrap text-white/50 uppercase">{{
-          hotkeyLabel
-        }}</span>
-        <span class="grid size-8 shrink-0 place-items-center rounded-full bg-[#d71921]">
-          <AppIcon name="stop" />
-        </span>
       </div>
     </div>
+
+    <!-- The speech bubble at the orb's head. Outside the fading frame, so it outlasts it briefly. -->
+    <Transition name="bubble">
+      <div
+        v-if="bubble"
+        class="absolute w-[280px] rounded-2xl bg-black/85 px-4 py-2 text-white"
+        :style="bubbleStyle"
+      >
+        <div class="flex items-center gap-2">
+          <span class="text-caption text-white/50 uppercase">{{ bubble.label }}</span>
+          <span v-if="bubble.live" class="flex gap-1" aria-hidden="true">
+            <span
+              v-for="n in 3"
+              :key="n"
+              class="think-dot size-1 rounded-full bg-white"
+              :style="{ animationDelay: `${n * 160}ms` }"
+            />
+          </span>
+        </div>
+        <p class="line-clamp-3 text-label text-white/90">{{ bubble.text }}</p>
+        <span class="absolute right-6 -bottom-1 size-2 rotate-45 bg-black/85" />
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -440,6 +545,33 @@ onBeforeUnmount(() => unlisten.forEach((off) => off()))
 @keyframes caret-blink {
   50% {
     opacity: 0;
+  }
+}
+
+.bubble-enter-active,
+.bubble-leave-active {
+  transition:
+    opacity 200ms ease,
+    transform 200ms ease;
+}
+
+.bubble-enter-from,
+.bubble-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.think-dot {
+  animation: think-pulse 1s ease-in-out infinite;
+}
+
+@keyframes think-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
   }
 }
 
@@ -462,7 +594,8 @@ onBeforeUnmount(() => unlisten.forEach((off) => off()))
     transition: none;
   }
 
-  .caret {
+  .caret,
+  .think-dot {
     animation: none;
   }
 }

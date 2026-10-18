@@ -166,6 +166,7 @@ fn tool_list() -> Value {
     let schema = |properties: Value, required: &[&str]| {
         let mut properties = properties;
         properties["reason"] = reason.clone();
+        properties["goal"] = json!({ "type": "integer", "description": "Number of the goal from your plan that this action is for (starting at 1)." });
         json!({ "type": "object", "properties": properties, "required": required })
     };
     json!([
@@ -174,7 +175,8 @@ fn tool_list() -> Value {
         { "name": "rune_begin", "description": "Take control of the PC. The user sees a frame around the screen. Do this once before acting.",
           "inputSchema": { "type": "object", "properties": {
               "task": { "type": "string", "description": "What you were asked to do." },
-              "agent": { "type": "string", "description": "Your name, shown to the user." } }, "required": ["task"] } },
+              "agent": { "type": "string", "description": "Your name, shown to the user." },
+              "plan": { "type": "array", "items": { "type": "string" }, "description": "Optional: your goals, the same as calling rune_plan." } }, "required": ["task"] } },
         { "name": "rune_observe", "description": "Take a screenshot. Pass region to zoom into part of the screen, which helps with small text and tiny buttons.",
           "inputSchema": { "type": "object", "properties": {
               "region": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4,
@@ -193,6 +195,8 @@ fn tool_list() -> Value {
           "inputSchema": schema(json!({ "name": { "type": "string" } }), &["name"]) },
         { "name": "rune_wait", "description": "Wait for something to load, at most 5000 ms. Returns a fresh screenshot.",
           "inputSchema": schema(json!({ "ms": { "type": "integer" } }), &[]) },
+        { "name": "rune_plan", "description": "Write your goals for the task, two to six short ones in order. The user sees them as a progress tracker; then pass goal=1, 2, ... on your actions.",
+          "inputSchema": { "type": "object", "properties": { "goals": { "type": "array", "items": { "type": "string" } } }, "required": ["goals"] } },
         { "name": "rune_status", "description": "Whether you are in control, the state, and how long until your control times out.",
           "inputSchema": { "type": "object", "properties": {} } },
         { "name": "rune_done", "description": "Finish. Gives control back and shows your summary to the user.",
@@ -218,6 +222,7 @@ async fn call(app: &AppHandle, name: &str, arguments: &Value) -> Reply {
         "rune_guide" => Reply::text(GUIDE),
         "rune_begin" => begin(app, arguments),
         "rune_observe" => observe(app, arguments).await,
+        "rune_plan" => plan(app, arguments),
         "rune_status" => status(app),
         "rune_done" => done(app, arguments),
         other => match protocol_name(other) {
@@ -264,6 +269,9 @@ fn begin(app: &AppHandle, arguments: &Value) -> Reply {
     let _ = app.emit(events::EXTERNAL_AGENT, ExternalAgent { agent: Some(agent.clone()) });
     events::set_agent_state(app, AgentState::Observing);
     log::info!("agent bridge: {agent} took control for \"{task}\"");
+    if let Ok(goals) = protocol::parse_plan(&json!({ "goals": arguments["plan"] })) {
+        set_goals(app, goals);
+    }
     Reply::text(format!(
         "You are in control, {agent}. The user can see a frame around the screen and can press Stop at any time. \
          Take one small step at a time and look at every screenshot. \
@@ -330,6 +338,7 @@ async fn act(app: &AppHandle, tool: &'static str, arguments: &Value) -> Reply {
             return Reply::error(code, problem);
         }
     };
+    advance_goal(app, decision.goal);
     if let protocol::Action::PressKeys { keys } = &decision.action {
         if let Some(bad) = keys.iter().find(|key| parse_key(key).is_err()) {
             return Reply::error("unknown_key", format!("\"{bad}\" is not a key name. Use: {KEY_NAMES}"));
@@ -376,6 +385,52 @@ async fn act(app: &AppHandle, tool: &'static str, arguments: &Value) -> Reply {
     }
 }
 
+/// Saves the agent's goals and shows them to the user as the progress tracker.
+fn set_goals(app: &AppHandle, goals: Vec<String>) {
+    let state = app.state::<AppState>();
+    if let Some(lease) = state.lease.lock().expect("lease lock poisoned").current_mut() {
+        lease.plan = goals.clone();
+        lease.current_goal = 0;
+    }
+    events::emit_plan(app, &goals, 0, false);
+}
+
+fn plan(app: &AppHandle, arguments: &Value) -> Reply {
+    if let Err(reply) = touch(app) {
+        return reply;
+    }
+    match protocol::parse_plan(arguments) {
+        Ok(goals) => {
+            let listing = goals.iter().enumerate().map(|(index, goal)| format!("{}. {goal}", index + 1)).collect::<Vec<_>>().join(" ");
+            set_goals(app, goals);
+            Reply::text(format!("Plan saved: {listing} Now pass goal=1 (then 2, 3, ...) on your actions so the user sees your progress."))
+        }
+        Err(problem) => Reply::error("bad_arguments", problem),
+    }
+}
+
+/// The agent says which goal an action is for. Goals only move forward.
+fn advance_goal(app: &AppHandle, goal: Option<u32>) {
+    let Some(goal) = goal else { return };
+    let state = app.state::<AppState>();
+    let update = {
+        let mut book = state.lease.lock().expect("lease lock poisoned");
+        book.current_mut().and_then(|lease| {
+            if lease.plan.is_empty() {
+                return None;
+            }
+            let index = (goal as usize - 1).min(lease.plan.len() - 1);
+            (index > lease.current_goal).then(|| {
+                lease.current_goal = index;
+                (lease.plan.clone(), index)
+            })
+        })
+    };
+    if let Some((goals, index)) = update {
+        events::emit_plan(app, &goals, index, false);
+    }
+}
+
 fn status(app: &AppHandle) -> Reply {
     let state = app.state::<AppState>();
     let book = state.lease.lock().expect("lease lock poisoned");
@@ -401,6 +456,10 @@ fn done(app: &AppHandle, arguments: &Value) -> Reply {
     let state = app.state::<AppState>();
     let summary = clip(arguments["summary"].as_str().unwrap_or(""), 400);
     let success = arguments["success"].as_bool().unwrap_or(true);
+    let finished_plan = state.lease.lock().expect("lease lock poisoned").current().map(|lease| lease.plan.clone()).filter(|plan| !plan.is_empty());
+    if let Some(plan) = finished_plan {
+        events::emit_plan(app, &plan, plan.len(), true);
+    }
     state.lease.lock().expect("lease lock poisoned").end();
     let _ = app.emit(events::EXTERNAL_AGENT, ExternalAgent { agent: None });
     let _ = app.emit(events::TASK_DONE, TaskDone { summary, success });
@@ -414,7 +473,7 @@ mod tests {
 
     #[test]
     fn every_tool_in_the_list_has_a_handler_or_is_special() {
-        let special = ["rune_guide", "rune_begin", "rune_observe", "rune_status", "rune_done"];
+        let special = ["rune_guide", "rune_begin", "rune_observe", "rune_plan", "rune_status", "rune_done"];
         for tool in tool_list().as_array().unwrap() {
             let name = tool["name"].as_str().unwrap();
             assert!(special.contains(&name) || protocol_name(name).is_some(), "{name} has no handler");

@@ -21,6 +21,8 @@ export interface Settings {
   externalAgent: boolean
   /** Unix seconds of the last `rune-studio enable`. The UI passes it back unchanged. */
   externalAgentSince: number
+  /** Let the model think, and show that thinking. Slower, so off by default. */
+  showThinking: boolean
 }
 
 export interface BackendStatus {
@@ -60,7 +62,7 @@ export interface ClickReport {
   cursorY: number
 }
 
-export type PillMode = 'ambient' | 'open' | 'settings'
+export type PillMode = 'ambient' | 'open' | 'task' | 'settings'
 
 export const STATE_CHANGED = 'state_changed'
 export const SUMMON = 'summon'
@@ -71,6 +73,30 @@ export const TASK_DONE = 'task_done'
 export const EXTERNAL_AGENT = 'external_agent'
 export const OBSERVE_STARTED = 'observe_started'
 export const TYPED = 'typed'
+export const PLAN_UPDATED = 'plan_updated'
+export const THINKING = 'thinking'
+
+/** The plan for the task: its goals, and which one is being worked on. */
+export interface PlanUpdatedPayload {
+  goals: string[]
+  /** Index of the goal being worked on; equal to the number of goals when all are done. */
+  current: number
+  finished: boolean
+}
+
+/** What the model is thinking, as it streams in (only with Show thinking on). */
+export interface ThinkingPayload {
+  text: string
+  done: boolean
+}
+
+/** Where the pill is on the desktop, in physical pixels. */
+export interface PillRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
 
 /** Text was just typed. `point` is the caret (or the mouse), in physical desktop pixels. */
 export interface TypedPayload {

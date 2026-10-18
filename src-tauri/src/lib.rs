@@ -133,6 +133,8 @@ pub fn run() {
             commands::set_api_key,
             commands::check_backend,
             commands::set_mode,
+            commands::fit_height,
+            commands::pill_rect,
             commands::stop,
             commands::start_task,
             commands::steer,

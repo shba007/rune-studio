@@ -1,4 +1,4 @@
-//! The agent loop: look at the screen, ask the model for one action, do it, repeat.
+//! The agent loop: plan, then look at the screen, ask the model for one action, do it, repeat.
 //!
 //! One run is one task. Stop (hotkey, tray or button) cancels the shared token; every wait in
 //! here, including the model request, watches it, so Stop is felt within milliseconds.
@@ -7,14 +7,17 @@ pub mod body;
 pub mod prompt;
 pub mod protocol;
 
-use std::{future::Future, time::Duration};
+use std::{
+    future::Future,
+    time::{Duration, Instant},
+};
 
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{
     events::{self, AgentState, AppState, TaskDone},
     exec::{CancelToken, ExecError},
-    model::client::{ChatClient, ModelError},
+    model::client::{ChatClient, ModelError, Request},
     observe::screenshot::{self, MODEL_JPEG_QUALITY, MODEL_MAX_EDGE},
     settings,
 };
@@ -24,6 +27,8 @@ use protocol::{Action, Decision};
 
 /// Give up after this many unusable model answers in a row.
 const MAX_INVALID_IN_A_ROW: u32 = 3;
+/// Thinking streams in token by token; the UI is told this often at most.
+const THINKING_EVERY: Duration = Duration::from_millis(150);
 
 /// How a run ended.
 #[derive(Debug, PartialEq)]
@@ -71,12 +76,62 @@ async fn unless_stopped<T>(cancel: &CancelToken, work: impl Future<Output = T>) 
     }
 }
 
+/// Passes the model's thinking on to the UI as it streams in, at most every `THINKING_EVERY`.
+fn thinking_sender(app: &AppHandle) -> impl FnMut(&str) + Send {
+    let app = app.clone();
+    let mut last = Instant::now().checked_sub(THINKING_EVERY).unwrap_or_else(Instant::now);
+    move |text: &str| {
+        if last.elapsed() >= THINKING_EVERY {
+            last = Instant::now();
+            events::emit_thinking(&app, text, false);
+        }
+    }
+}
+
+/// The opening call of a task: split it into goals. A failed plan is not fatal (the whole task
+/// becomes one goal and the loop carries on), but Stop is.
+async fn make_plan(app: &AppHandle, client: &ChatClient<'_>, cancel: &CancelToken, task: &str, think: bool) -> Result<Vec<String>, Outcome> {
+    let tools = protocol::plan_tools();
+    let request = Request { system: prompt::PLAN_SYSTEM, user_text: &prompt::plan_user_message(task), screenshot: None, tools: &tools, think };
+    let mut send_thinking = thinking_sender(app);
+    let started = Instant::now();
+    let Some(result) = unless_stopped(cancel, client.call(&request, &mut send_thinking)).await else {
+        return Err(Outcome::Stopped);
+    };
+    let fallback = || vec![task.trim().chars().take(80).collect::<String>()];
+    let goals = match result {
+        Ok(reply) if reply.call.name == "set_plan" => {
+            if think {
+                events::emit_thinking(app, &reply.thinking, true);
+            }
+            protocol::parse_plan(&reply.call.arguments).unwrap_or_else(|_| fallback())
+        }
+        Ok(_) | Err(_) => fallback(),
+    };
+    log::info!("plan in {} ms: {goals:?}", started.elapsed().as_millis());
+    Ok(goals)
+}
+
 async fn run(app: &AppHandle, task: &str) -> Outcome {
     let state = app.state::<AppState>();
     let cancel = state.cancel.clone();
     let settings = state.settings.lock().expect("settings lock poisoned").clone();
     let api_key = settings::api_key();
     let tools = protocol::tools();
+    let think = settings.show_thinking;
+    let client = ChatClient {
+        http: &state.http,
+        base_url: &settings.base_url,
+        api_key: api_key.as_deref(),
+        model: &settings.vision_model,
+    };
+
+    let plan = match make_plan(app, &client, &cancel, task, think).await {
+        Ok(plan) => plan,
+        Err(outcome) => return outcome,
+    };
+    let mut current = 0_usize;
+    events::emit_plan(app, &plan, current, false);
 
     let mut history: Vec<Entry> = Vec::new();
     let mut invalid_in_a_row = 0;
@@ -98,15 +153,12 @@ async fn run(app: &AppHandle, task: &str) -> Outcome {
 
         // Decide.
         events::set_agent_state(app, AgentState::Planning);
-        let client = ChatClient {
-            http: &state.http,
-            base_url: &settings.base_url,
-            api_key: api_key.as_deref(),
-            model: &settings.vision_model,
-        };
-        let text = prompt::user_message(task, &history, step, settings.max_steps);
-        let started = std::time::Instant::now();
-        let Some(reply) = unless_stopped(&cancel, client.next_tool_call(prompt::SYSTEM, &text, &frame.data_uri(), &tools)).await else {
+        let text = prompt::user_message(task, &plan, current, &history, step, settings.max_steps);
+        let screenshot = frame.data_uri();
+        let request = Request { system: prompt::SYSTEM, user_text: &text, screenshot: Some(&screenshot), tools: &tools, think };
+        let mut send_thinking = thinking_sender(app);
+        let started = Instant::now();
+        let Some(reply) = unless_stopped(&cancel, client.call(&request, &mut send_thinking)).await else {
             return Outcome::Stopped;
         };
         let reply = match reply {
@@ -122,8 +174,11 @@ async fn run(app: &AppHandle, task: &str) -> Outcome {
             Err(err) => return Outcome::Failed(err.to_string()),
         };
         log::info!("step {step}: {} in {} ms ({:?} tokens)", reply.call.name, started.elapsed().as_millis(), reply.completion_tokens);
+        if think {
+            events::emit_thinking(app, &reply.thinking, true);
+        }
 
-        let Decision { action, reason } = match protocol::parse(&reply.call.name, &reply.call.arguments) {
+        let Decision { action, reason, goal } = match protocol::parse(&reply.call.name, &reply.call.arguments) {
             Ok(decision) => decision,
             Err(problem) => {
                 invalid_in_a_row += 1;
@@ -136,7 +191,17 @@ async fn run(app: &AppHandle, task: &str) -> Outcome {
         };
         invalid_in_a_row = 0;
 
+        // The model says which goal this action serves. Goals only move forward.
+        if let Some(goal) = goal {
+            let index = (goal as usize - 1).min(plan.len() - 1);
+            if index > current {
+                current = index;
+                events::emit_plan(app, &plan, current, false);
+            }
+        }
+
         if let Action::Done { summary, success } = action {
+            events::emit_plan(app, &plan, plan.len(), true);
             return Outcome::Finished { summary, success };
         }
 
@@ -193,5 +258,40 @@ mod tests {
     async fn a_finished_future_wins_when_there_is_no_stop() {
         let cancel = CancelToken::default();
         assert_eq!(unless_stopped(&cancel, async { 7 }).await, Some(7));
+    }
+}
+
+/// Talks to a real rune-infer server: asks for a plan with thinking on and checks that thinking
+/// streams in and a usable plan comes out. Run with `-- --ignored --nocapture`.
+#[cfg(test)]
+mod live {
+    use super::*;
+
+    #[tokio::test]
+    #[ignore = "talks to a local rune-infer server"]
+    async fn a_plan_comes_back_with_thinking_streamed() {
+        let http = reqwest::Client::new();
+        let key = std::env::var("RUNE_API_KEY").unwrap_or_else(|_| "sk-rune-local-test-key".into());
+        let client = ChatClient { http: &http, base_url: "http://127.0.0.1:8080", api_key: Some(&key), model: "ternary-bonsai-2-27b" };
+        let tools = protocol::plan_tools();
+        let request = Request {
+            system: prompt::PLAN_SYSTEM,
+            user_text: &prompt::plan_user_message("Open Notepad and write hello"),
+            screenshot: None,
+            tools: &tools,
+            think: true,
+        };
+        let mut updates = 0;
+        let mut longest = 0;
+        let mut on_thinking = |text: &str| {
+            updates += 1;
+            longest = longest.max(text.chars().count());
+        };
+        let reply = client.call(&request, &mut on_thinking).await.expect("the model should answer");
+        let goals = protocol::parse_plan(&reply.call.arguments).expect("a usable plan");
+        println!("thinking updates: {updates}, longest thinking: {longest} chars, final thinking: {} chars", reply.thinking.chars().count());
+        println!("goals: {goals:?}");
+        assert!(updates > 1, "thinking should stream in pieces");
+        assert!(!goals.is_empty() && goals.len() <= protocol::MAX_GOALS);
     }
 }

@@ -72,6 +72,36 @@ pub const TASK_DONE: &str = "task_done";
 /// Who is driving from outside: `{ agent: "Claude" }`, or `{ agent: null }` when nobody is.
 pub const EXTERNAL_AGENT: &str = "external_agent";
 
+/// The plan for the task: its goals and which one is being worked on.
+pub const PLAN_UPDATED: &str = "plan_updated";
+
+#[derive(Clone, Serialize)]
+pub struct PlanUpdated {
+    pub goals: Vec<String>,
+    /// Index of the goal being worked on. Equal to the number of goals once everything is done.
+    pub current: usize,
+    pub finished: bool,
+}
+
+pub fn emit_plan(app: &AppHandle, goals: &[String], current: usize, finished: bool) {
+    let _ = app.emit(PLAN_UPDATED, PlanUpdated { goals: goals.to_vec(), current, finished });
+}
+
+/// What the model is thinking, as it streams in (only when "Show thinking" is on).
+pub const THINKING: &str = "thinking";
+
+#[derive(Clone, Serialize)]
+pub struct Thinking {
+    /// All of it so far.
+    pub text: String,
+    /// The model has finished thinking.
+    pub done: bool,
+}
+
+pub fn emit_thinking(app: &AppHandle, text: &str, done: bool) {
+    let _ = app.emit(THINKING, Thinking { text: text.to_string(), done });
+}
+
 /// Text was just typed: the overlay marks the spot, like a click does.
 pub const TYPED: &str = "typed";
 

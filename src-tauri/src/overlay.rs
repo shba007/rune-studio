@@ -13,10 +13,14 @@ use crate::events::{AgentState, agent_state};
 const PREFIX: &str = "overlay-";
 /// Long enough for the page's fade-out to finish before the window is hidden.
 const FADE_OUT: Duration = Duration::from_millis(500);
+/// After a task ends the window stays a little longer, so the agent's last words stay in the speech
+/// bubble at the orb. The frame itself fades out as usual.
+const LINGER_AFTER_END: Duration = Duration::from_millis(6_500);
 
 /// States in which the agent is driving the PC.
 pub fn has_control(state: AgentState) -> bool {
-    matches!(state, AgentState::Acting | AgentState::Observing)
+    // Planning too: that is when the model thinks, and the overlay shows what it is saying.
+    matches!(state, AgentState::Planning | AgentState::Observing | AgentState::Acting | AgentState::AwaitingConfirm)
 }
 
 /// Shows or hides the overlay for the new state. Safe to call from any thread.
@@ -29,7 +33,8 @@ pub fn sync(app: &AppHandle, state: AgentState) {
         if has_control(state) {
             show(&handle);
         } else {
-            hide_after_fade(&handle);
+            let linger = if matches!(state, AgentState::Done | AgentState::Failed) { LINGER_AFTER_END } else { FADE_OUT };
+            hide_after_fade(&handle, linger);
         }
     });
 }
@@ -93,8 +98,8 @@ fn build(app: &AppHandle, label: &str) -> tauri::Result<tauri::WebviewWindow> {
     Ok(window)
 }
 
-fn hide_after_fade(app: &AppHandle) {
-    std::thread::sleep(FADE_OUT);
+fn hide_after_fade(app: &AppHandle, wait: Duration) {
+    std::thread::sleep(wait);
     // Control may have come back while the page was fading out.
     if has_control(agent_state(app)) {
         return;

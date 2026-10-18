@@ -1,12 +1,18 @@
-//! The chat call to rune-infer: one screenshot plus the task in, one tool call out.
+//! The chat call to rune-infer: the task (and usually a screenshot) in, one tool call out.
+//!
+//! Two modes. By default thinking is off (`reasoning_effort: "none"`): the M1.5 probe showed
+//! grounding does not need it, and it only adds latency. With `think` on, the reply is streamed so
+//! the model's thinking can be shown while it happens.
 
-use std::time::Duration;
+use std::{collections::BTreeMap, time::Duration};
 
 use serde_json::{Value, json};
 
 /// A turn can take half a minute on a 27B model that has to read a fresh screenshot.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
 const MAX_OUTPUT_TOKENS: u32 = 512;
+/// Thinking uses tokens before the tool call, so it needs room or the call would be cut off.
+const MAX_OUTPUT_TOKENS_THINKING: u32 = 3000;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ModelError {
@@ -30,6 +36,8 @@ pub struct ToolCall {
 pub struct Reply {
     pub call: ToolCall,
     pub completion_tokens: Option<u64>,
+    /// What the model thought before answering (empty when thinking was off).
+    pub thinking: String,
 }
 
 pub struct ChatClient<'a> {
@@ -39,47 +47,78 @@ pub struct ChatClient<'a> {
     pub model: &'a str,
 }
 
+/// One question for the model.
+pub struct Request<'a> {
+    pub system: &'a str,
+    pub user_text: &'a str,
+    /// The screen as a data URI. The planning call has none.
+    pub screenshot: Option<&'a str>,
+    pub tools: &'a Value,
+    /// Let the model think, and stream that thinking to `on_thinking`.
+    pub think: bool,
+}
+
 fn snippet(text: &str) -> String {
     text.chars().take(300).collect()
 }
 
 impl ChatClient<'_> {
-    /// Asks for the next action. Thinking is off (`reasoning_effort: "none"`): the M1.5 probe showed
-    /// grounding does not need it, and it only adds latency.
-    pub async fn next_tool_call(&self, system: &str, user_text: &str, screenshot: &str, tools: &Value) -> Result<Reply, ModelError> {
-        let body = json!({
+    /// Asks for a tool call. `on_thinking` receives the thinking so far (all of it, each time) as
+    /// it streams in; it is never called when `think` is off.
+    pub async fn call(&self, request: &Request<'_>, on_thinking: &mut (dyn FnMut(&str) + Send)) -> Result<Reply, ModelError> {
+        let content = match request.screenshot {
+            // Image first, text last, like the probe: the screenshot is the expensive part.
+            Some(screenshot) => json!([
+                { "type": "image_url", "image_url": { "url": screenshot } },
+                { "type": "text", "text": request.user_text },
+            ]),
+            None => json!(request.user_text),
+        };
+        let mut body = json!({
             "model": self.model,
             "temperature": 0,
-            "max_tokens": MAX_OUTPUT_TOKENS,
-            "reasoning_effort": "none",
+            "max_tokens": if request.think { MAX_OUTPUT_TOKENS_THINKING } else { MAX_OUTPUT_TOKENS },
             "messages": [
-                { "role": "system", "content": system },
-                // Image first, text last, like the probe: the screenshot is the expensive part.
-                { "role": "user", "content": [
-                    { "type": "image_url", "image_url": { "url": screenshot } },
-                    { "type": "text", "text": user_text },
-                ]},
+                { "role": "system", "content": request.system },
+                { "role": "user", "content": content },
             ],
-            "tools": tools,
+            "tools": request.tools,
             "tool_choice": "required",
         });
+        if request.think {
+            body["stream"] = json!(true);
+        } else {
+            body["reasoning_effort"] = json!("none");
+        }
 
-        let mut request = self
+        let mut http = self
             .http
             .post(format!("{}/v1/chat/completions", self.base_url.trim_end_matches('/')))
             .timeout(REQUEST_TIMEOUT)
             .json(&body);
         if let Some(key) = self.api_key {
-            request = request.bearer_auth(key);
+            http = http.bearer_auth(key);
         }
-        let response = request.send().await.map_err(|err| ModelError::Request(err.to_string()))?;
+        let mut response = http.send().await.map_err(|err| ModelError::Request(err.to_string()))?;
         let status = response.status();
-        let text = response.text().await.map_err(|err| ModelError::Request(err.to_string()))?;
         if !status.is_success() {
+            let text = response.text().await.unwrap_or_default();
             return Err(ModelError::Status { status: status.as_u16(), body: snippet(&text) });
         }
-        let value: Value = serde_json::from_str(&text).map_err(|err| ModelError::Reply(format!("{err}: {}", snippet(&text))))?;
-        parse_reply(&value)
+
+        if !request.think {
+            let text = response.text().await.map_err(|err| ModelError::Request(err.to_string()))?;
+            let value: Value = serde_json::from_str(&text).map_err(|err| ModelError::Reply(format!("{err}: {}", snippet(&text))))?;
+            return parse_reply(&value);
+        }
+
+        let mut stream = Stream::default();
+        while let Some(chunk) = response.chunk().await.map_err(|err| ModelError::Request(err.to_string()))? {
+            if stream.feed(&chunk) {
+                on_thinking(&stream.thinking);
+            }
+        }
+        stream.finish()
     }
 }
 
@@ -90,12 +129,90 @@ pub fn parse_reply(value: &Value) -> Result<Reply, ModelError> {
         return Err(ModelError::NoToolCall(snippet(message["content"].as_str().unwrap_or(""))));
     };
     let name = call["function"]["name"].as_str().unwrap_or("").to_string();
-    // Arguments arrive as a JSON string; a few servers send an object instead.
-    let arguments = match &call["function"]["arguments"] {
-        Value::String(text) => serde_json::from_str(text).map_err(|err| ModelError::Reply(format!("arguments were not JSON: {err}")))?,
-        other => other.clone(),
-    };
-    Ok(Reply { call: ToolCall { name, arguments }, completion_tokens: value["usage"]["completion_tokens"].as_u64() })
+    Ok(Reply {
+        call: ToolCall { name, arguments: parse_arguments(&call["function"]["arguments"])? },
+        completion_tokens: value["usage"]["completion_tokens"].as_u64(),
+        thinking: message["reasoning_content"].as_str().unwrap_or("").to_string(),
+    })
+}
+
+/// Arguments arrive as a JSON string; a few servers send an object instead.
+fn parse_arguments(arguments: &Value) -> Result<Value, ModelError> {
+    match arguments {
+        Value::String(text) => serde_json::from_str(text).map_err(|err| ModelError::Reply(format!("arguments were not JSON: {err}"))),
+        other => Ok(other.clone()),
+    }
+}
+
+/// A streamed reply being assembled from server-sent events.
+#[derive(Default)]
+struct Stream {
+    /// Bytes not yet split into whole lines (a chunk can end in the middle of one).
+    pending: Vec<u8>,
+    thinking: String,
+    content: String,
+    /// Tool calls by index: name, and the arguments text so far.
+    calls: BTreeMap<u64, (String, String)>,
+    completion_tokens: Option<u64>,
+}
+
+impl Stream {
+    /// Takes the next bytes from the server. Returns whether the thinking grew.
+    fn feed(&mut self, bytes: &[u8]) -> bool {
+        self.pending.extend_from_slice(bytes);
+        let mut grew = false;
+        while let Some(end) = self.pending.iter().position(|byte| *byte == b'\n') {
+            let line: Vec<u8> = self.pending.drain(..=end).collect();
+            let line = String::from_utf8_lossy(&line);
+            grew |= self.line(line.trim());
+        }
+        grew
+    }
+
+    fn line(&mut self, line: &str) -> bool {
+        let Some(data) = line.strip_prefix("data:").map(str::trim) else {
+            return false;
+        };
+        if data == "[DONE]" {
+            return false;
+        }
+        let Ok(event) = serde_json::from_str::<Value>(data) else {
+            return false;
+        };
+        if let Some(tokens) = event["usage"]["completion_tokens"].as_u64().filter(|tokens| *tokens > 0) {
+            self.completion_tokens = Some(tokens);
+        }
+        let delta = &event["choices"][0]["delta"];
+        for call in delta["tool_calls"].as_array().into_iter().flatten() {
+            let entry = self.calls.entry(call["index"].as_u64().unwrap_or(0)).or_default();
+            if let Some(name) = call["function"]["name"].as_str().filter(|name| !name.is_empty()) {
+                entry.0 = name.to_string();
+            }
+            match &call["function"]["arguments"] {
+                Value::String(part) => entry.1.push_str(part),
+                Value::Object(_) => entry.1 = call["function"]["arguments"].to_string(),
+                _ => {}
+            }
+        }
+        if let Some(text) = delta["content"].as_str() {
+            self.content.push_str(text);
+        }
+        match delta["reasoning_content"].as_str().filter(|text| !text.is_empty()) {
+            Some(text) => {
+                self.thinking.push_str(text);
+                true
+            }
+            None => false,
+        }
+    }
+
+    fn finish(self) -> Result<Reply, ModelError> {
+        let Some((name, arguments)) = self.calls.into_values().next() else {
+            return Err(ModelError::NoToolCall(snippet(&self.content)));
+        };
+        let arguments = parse_arguments(&Value::String(arguments))?;
+        Ok(Reply { call: ToolCall { name, arguments }, completion_tokens: self.completion_tokens, thinking: self.thinking })
+    }
 }
 
 #[cfg(test)]
@@ -124,5 +241,52 @@ mod tests {
     fn broken_argument_json_is_an_error() {
         let value = json!({ "choices": [{ "message": { "tool_calls": [{ "function": { "name": "click", "arguments": "{x:" } }] } }] });
         assert!(matches!(parse_reply(&value), Err(ModelError::Reply(_))));
+    }
+
+    fn event(delta: Value) -> String {
+        format!("data: {}\n\n", json!({ "choices": [{ "index": 0, "delta": delta }], "usage": { "completion_tokens": 0 } }))
+    }
+
+    #[test]
+    fn a_stream_collects_thinking_and_the_tool_call() {
+        let mut stream = Stream::default();
+        let mut text = String::new();
+        text.push_str(&event(json!({ "content": "", "role": "assistant" })));
+        text.push_str(&event(json!({ "reasoning_content": "The user " })));
+        text.push_str(&event(json!({ "reasoning_content": "wants Notepad" })));
+        text.push_str(&event(json!({ "tool_calls": [{ "index": 0, "id": "a", "function": { "name": "set_plan", "arguments": "{\"goals\":[\"Open\"," } }] })));
+        text.push_str(&event(json!({ "tool_calls": [{ "index": 0, "function": { "arguments": "\"Type\"]}" } }] })));
+        text.push_str("data: [DONE]\n\n");
+        // Feed it in awkward pieces, including a split in the middle of a line and of a word.
+        let bytes = text.as_bytes();
+        let mut grew = 0;
+        for piece in bytes.chunks(37) {
+            if stream.feed(piece) {
+                grew += 1;
+            }
+        }
+        assert!(grew >= 1);
+        let reply = stream.finish().unwrap();
+        assert_eq!(reply.thinking, "The user wants Notepad");
+        assert_eq!(reply.call.name, "set_plan");
+        assert_eq!(reply.call.arguments["goals"], json!(["Open", "Type"]));
+    }
+
+    #[test]
+    fn a_stream_without_a_tool_call_reports_what_the_model_said() {
+        let mut stream = Stream::default();
+        stream.feed(event(json!({ "content": "I would click it" })).as_bytes());
+        assert!(matches!(stream.finish(), Err(ModelError::NoToolCall(text)) if text.contains("click it")));
+    }
+
+    #[test]
+    fn multibyte_text_split_across_chunks_survives() {
+        let mut stream = Stream::default();
+        let line = event(json!({ "reasoning_content": "héllo 你好" }));
+        let bytes = line.as_bytes();
+        let split = bytes.iter().position(|byte| *byte == 0xC3).unwrap() + 1; // in the middle of "é"
+        stream.feed(&bytes[..split]);
+        stream.feed(&bytes[split..]);
+        assert_eq!(stream.thinking, "héllo 你好");
     }
 }

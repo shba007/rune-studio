@@ -6,20 +6,24 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   AUDIO_LEVEL,
   OPEN_SETTINGS,
+  PLAN_UPDATED,
   STATE_CHANGED,
   STEP_STARTED,
   SUMMON,
   TASK_DONE,
+  THINKING,
   type AgentState,
   type BackendStatus,
   type BridgeInfo,
   type CaptureReport,
   type ClickReport,
   type PillMode,
+  type PlanUpdatedPayload,
   type Settings,
   type StateChangedPayload,
   type StepStartedPayload,
   type TaskDonePayload,
+  type ThinkingPayload,
 } from '@/types/protocol'
 
 const RUNNING: AgentState[] = ['planning', 'awaiting_confirm', 'acting', 'observing']
@@ -37,7 +41,7 @@ const STATE_LABELS: Record<AgentState, string> = {
 }
 
 /** Window size order. Bigger modes need a bigger window than smaller ones. */
-const MODE_RANK: Record<PillMode, number> = { ambient: 0, open: 1, settings: 2 }
+const MODE_RANK: Record<PillMode, number> = { ambient: 0, open: 1, task: 2, settings: 3 }
 
 /** Longer than the page and width transitions, so the window only shrinks once they have finished. */
 const COLLAPSE_MS = 340
@@ -57,12 +61,34 @@ export function useAgent() {
   /** The outside-agent door. `available` is false unless the app was built with it. */
   const bridge = ref<BridgeInfo | null>(null)
   const mode = ref<PillMode>('ambient')
+  /** The task's goals and the one being worked on. Null until a plan arrives. */
+  const plan = ref<PlanUpdatedPayload | null>(null)
+  /** What the model is thinking right now (only with Show thinking on). */
+  const thinking = ref<ThinkingPayload | null>(null)
+  /** What the agent last said: its reason for the current action, or the final summary. */
+  const response = ref<string | null>(null)
+  /** The actions taken so far, newest last. */
+  const steps = ref<{ step: number; tool: string; detail: string; ok: boolean | null }[]>([])
   const notice = ref<string | null>(null)
   const focusTick = ref(0)
   /** Live microphone level, 0..1. Stays 0 unless the mic is open. */
   const level = ref(0)
 
   const isRunning = computed(() => RUNNING.includes(state.value))
+
+  /** How healthy the model server is, as one colour and a sentence for the tooltip. */
+  const health = computed<{ tone: 'ok' | 'warn' | 'down' | 'checking'; title: string }>(() => {
+    const status = backend.value
+    const model = settings.value?.visionModel ?? ''
+    if (!status) return { tone: 'checking', title: 'Checking the model server' }
+    if (!status.reachable) return { tone: 'down', title: status.error ?? 'Model server offline' }
+    if (!status.authOk) return { tone: 'warn', title: 'API key rejected' }
+    if (status.missingModels.length > 0) {
+      return { tone: 'warn', title: `Missing model: ${status.missingModels.join(', ')}` }
+    }
+    if (status.error) return { tone: 'warn', title: status.error }
+    return { tone: 'ok', title: `Model server OK, ${status.latencyMs ?? '?'} ms, ${model}` }
+  })
   /** What the agent is doing right now (its reason for the current step), while a task runs. */
   const stepText = ref<string | null>(null)
   /** How the last task ended, shown while the state is done or failed. */
@@ -126,7 +152,14 @@ export function useAgent() {
   }
 
   /** Open when collapsed; collapse when open or in settings. */
-  const toggleOpen = () => setMode(mode.value === 'ambient' ? 'open' : 'ambient')
+  /** Make the window as tall as the open card's content. Only the open and task pages do this. */
+  async function fitHeight(height: number) {
+    if (mode.value === 'open' || mode.value === 'task') await call('fit_height', { height })
+  }
+
+  /** The page the card opens to: the task's progress while there is one, else the composer. */
+  const home = (): PillMode => (plan.value ? 'task' : 'open')
+  const toggleOpen = () => setMode(mode.value === 'ambient' ? home() : 'ambient')
   const dismiss = () => (mode.value === 'ambient' ? Promise.resolve() : setMode('ambient'))
 
   async function refreshBackend() {
@@ -156,6 +189,10 @@ export function useAgent() {
     try {
       stepText.value = null
       resultText.value = null
+      plan.value = null
+      thinking.value = null
+      response.value = null
+      steps.value = []
       await invoke('start_task', { text })
       return true
     } catch (err) {
@@ -172,6 +209,20 @@ export function useAgent() {
   const debugClick = (args: { x: number; y: number; delayMs?: number; monitor?: number }) =>
     call<ClickReport>('debug_click', args)
   const debugType = (text: string, delayMs?: number) => call('debug_type', { text, delayMs })
+
+  // A task starts while the card is open: show its progress above the composer.
+  watch(isRunning, (running) => {
+    if (running && mode.value === 'open') void setMode('task')
+  })
+
+  /** Put the progress panel away and go back to the plain composer. */
+  function clearTask() {
+    plan.value = null
+    thinking.value = null
+    response.value = null
+    steps.value = []
+    if (mode.value === 'task') void setMode('open')
+  }
 
   // The agent needs the user: open the card by itself.
   watch(state, (next) => {
@@ -194,14 +245,32 @@ export function useAgent() {
       await listen<StateChangedPayload>(STATE_CHANGED, (event) => {
         state.value = event.payload.state
       }),
-      await listen<StepStartedPayload>(
-        STEP_STARTED,
-        (event) => (stepText.value = event.payload.text),
-      ),
-      await listen<TaskDonePayload>(
-        TASK_DONE,
-        (event) => (resultText.value = event.payload.summary),
-      ),
+      await listen<StepStartedPayload>(STEP_STARTED, (event) => {
+        stepText.value = event.payload.text
+        response.value = event.payload.text
+        thinking.value = null
+        steps.value = [
+          ...steps.value,
+          {
+            step: event.payload.step,
+            tool: event.payload.tool,
+            detail: event.payload.detail,
+            ok: null,
+          },
+        ]
+      }),
+      await listen<{ step: number; ok: boolean }>('step_finished', (event) => {
+        steps.value = steps.value.map((s) =>
+          s.step === event.payload.step ? { ...s, ok: event.payload.ok } : s,
+        )
+      }),
+      await listen<TaskDonePayload>(TASK_DONE, (event) => {
+        resultText.value = event.payload.summary
+        response.value = event.payload.summary
+        thinking.value = null
+      }),
+      await listen<PlanUpdatedPayload>(PLAN_UPDATED, (event) => (plan.value = event.payload)),
+      await listen<ThinkingPayload>(THINKING, (event) => (thinking.value = event.payload)),
       await listen<number>(AUDIO_LEVEL, (event) => {
         level.value = event.payload
         if (event.payload > SOUND_THRESHOLD) heardSound = true
@@ -223,7 +292,15 @@ export function useAgent() {
     settings,
     hasApiKey,
     bridge,
+    health,
+    fitHeight,
     mode,
+    plan,
+    thinking,
+    response,
+    steps,
+    home,
+    clearTask,
     notice,
     focusTick,
     level,

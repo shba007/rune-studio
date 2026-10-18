@@ -24,6 +24,8 @@ pub struct Settings {
     /// When `rune-studio enable` last ran (Unix seconds). A newer value re-arms an agent that Stop
     /// locked out: running the command again is the user saying "yes, let it back in".
     pub external_agent_since: u64,
+    /// Let the model think and show that thinking (slower: thinking is off by default).
+    pub show_thinking: bool,
 }
 
 impl Default for Settings {
@@ -37,6 +39,7 @@ impl Default for Settings {
             stop_hotkey: hotkeys::DEFAULT_STOP.into(),
             external_agent: false,
             external_agent_since: 0,
+            show_thinking: false,
         }
     }
 }
