@@ -21,6 +21,9 @@ pub struct Settings {
     pub stop_hotkey: String,
     /// Whether an outside agent may connect (only has an effect in `agent-bridge` builds).
     pub external_agent: bool,
+    /// When `rune-studio enable` last ran (Unix seconds). A newer value re-arms an agent that Stop
+    /// locked out: running the command again is the user saying "yes, let it back in".
+    pub external_agent_since: u64,
 }
 
 impl Default for Settings {
@@ -33,6 +36,7 @@ impl Default for Settings {
             toggle_hotkey: hotkeys::DEFAULT_TOGGLE.into(),
             stop_hotkey: hotkeys::DEFAULT_STOP.into(),
             external_agent: false,
+            external_agent_since: 0,
         }
     }
 }

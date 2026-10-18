@@ -19,6 +19,8 @@ export interface Settings {
   toggleHotkey: string
   stopHotkey: string
   externalAgent: boolean
+  /** Unix seconds of the last `rune-studio enable`. The UI passes it back unchanged. */
+  externalAgentSince: number
 }
 
 export interface BackendStatus {

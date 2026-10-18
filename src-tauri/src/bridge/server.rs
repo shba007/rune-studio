@@ -68,13 +68,17 @@ async fn watch_for_idle(app: AppHandle) {
 }
 
 /// Whether the user allows outside agents. Read from the settings file on every request, so the
-/// switch in Settings and `rune-studio enable` / `disable` take effect at once. Turning it back on
-/// also re-arms an agent that Stop locked out.
+/// switch in Settings and `rune-studio enable` / `disable` take effect at once. Turning it back on,
+/// or running `rune-studio enable` again, also re-arms an agent that Stop locked out.
 fn switch_is_on(app: &AppHandle) -> bool {
-    static WAS_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-    let on = crate::settings::load(app).external_agent;
-    let was_on = WAS_ON.swap(on, std::sync::atomic::Ordering::SeqCst);
-    if on && !was_on {
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    static WAS_ON: AtomicBool = AtomicBool::new(false);
+    static LAST_SINCE: AtomicU64 = AtomicU64::new(0);
+    let settings = crate::settings::load(app);
+    let on = settings.external_agent;
+    let was_on = WAS_ON.swap(on, Ordering::SeqCst);
+    let enabled_again = settings.external_agent_since > LAST_SINCE.swap(settings.external_agent_since, Ordering::SeqCst);
+    if on && (!was_on || enabled_again) {
         app.state::<AppState>().lease.lock().expect("lease lock poisoned").rearm();
     }
     on

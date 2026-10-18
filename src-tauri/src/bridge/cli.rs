@@ -138,6 +138,9 @@ fn set_switch(on: bool) -> i32 {
     };
     let mut current = settings::read_file(&path);
     current.external_agent = on;
+    if on {
+        current.external_agent_since = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |elapsed| elapsed.as_secs());
+    }
     if let Err(err) = settings::write_file(&path, &current) {
         say(&format!("Could not save the setting: {err}"));
         return 1;
