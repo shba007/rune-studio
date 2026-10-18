@@ -23,6 +23,7 @@ import IconLinkSimple from '~icons/ph/link-simple-fill'
 import IconMicrophone from '~icons/ph/microphone-fill'
 import IconPlugs from '~icons/ph/plugs-connected-fill'
 import IconSlidersHorizontal from '~icons/ph/sliders-horizontal-fill'
+import IconRuneMark from '~icons/custom/rune-mark'
 import IconStopCircle from '~icons/ph/stop-circle-fill'
 import IconTrash from '~icons/ph/trash-fill'
 
@@ -37,6 +38,7 @@ export const icons = {
   eye: IconEye,
   key: IconKey,
   link: IconLinkSimple,
+  logo: IconRuneMark,
   mic: IconMicrophone,
   ok: IconCheckCircle,
   refresh: IconArrowClockwise,

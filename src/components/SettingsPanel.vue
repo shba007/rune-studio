@@ -137,6 +137,11 @@ async function save() {
         </button>
       </SettingsGroup>
 
+      <p class="flex items-center justify-center gap-2 pt-2 text-label text-zinc-500">
+        <AppIcon name="logo" />
+        Rune Studio
+      </p>
+
       <details
         v-if="isDev"
         ref="developer"

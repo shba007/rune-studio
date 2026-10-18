@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <title>Rune Studio</title>
+  <circle cx="512" cy="512" r="496" fill="#141414"/>
+  <circle cx="512" cy="512" r="496" fill="none" stroke="#f1f1ef" stroke-opacity="0.35" stroke-width="16"/>
+  <g fill="#f1f1ef">
+    <circle cx="192" cy="432" r="33.31" fill-opacity="0.69"/>
+    <circle cx="192" cy="512" r="32.99" fill-opacity="0.65"/>
+    <circle cx="192" cy="592" r="32.66" fill-opacity="0.62"/>
+    <circle cx="272" cy="272" r="34.03" fill-opacity="0.77"/>
+    <circle cx="272" cy="352" r="33.77" fill-opacity="0.74"/>
+    <circle cx="272" cy="432" r="28.8" fill-opacity="0.2"/>
+    <circle cx="272" cy="512" r="28.8" fill-opacity="0.2"/>
+    <circle cx="272" cy="592" r="28.8" fill-opacity="0.2"/>
+    <circle cx="272" cy="672" r="32.2" fill-opacity="0.57"/>
+    <circle cx="272" cy="752" r="31.94" fill-opacity="0.54"/>
+    <circle cx="352" cy="272" r="34.29" fill-opacity="0.8"/>
+    <circle cx="352" cy="352" r="28.8" fill-opacity="0.2"/>
+    <circle cx="352" cy="432" r="28.8" fill-opacity="0.2"/>
+    <circle cx="352" cy="512" r="28.8" fill-opacity="0.2"/>
+    <circle cx="352" cy="592" r="28.8" fill-opacity="0.2"/>
+    <circle cx="352" cy="672" r="28.8" fill-opacity="0.2"/>
+    <circle cx="352" cy="752" r="31.68" fill-opacity="0.5"/>
+    <circle cx="432" cy="192" r="34.75" fill-opacity="0.86"/>
+    <circle cx="432" cy="272" r="28.8" fill-opacity="0.2"/>
+    <circle cx="432" cy="352" r="28.8" fill-opacity="0.2"/>
+    <circle cx="432" cy="432" r="28.8" fill-opacity="0.2"/>
+    <circle cx="432" cy="512" r="28.8" fill-opacity="0.2"/>
+    <circle cx="432" cy="592" r="28.8" fill-opacity="0.2"/>
+    <circle cx="432" cy="672" r="28.8" fill-opacity="0.2"/>
+    <circle cx="432" cy="752" r="28.8" fill-opacity="0.2"/>
+    <circle cx="432" cy="832" r="31.22" fill-opacity="0.45"/>
+    <circle cx="512" cy="192" r="35.07" fill-opacity="0.89"/>
+    <circle cx="512" cy="272" r="28.8" fill-opacity="0.2"/>
+    <circle cx="512" cy="352" r="28.8" fill-opacity="0.2"/>
+    <circle cx="512" cy="432" r="28.8" fill-opacity="0.2"/>
+    <circle cx="512" cy="512" r="36" fill-opacity="1"/>
+    <circle cx="512" cy="592" r="28.8" fill-opacity="0.2"/>
+    <circle cx="512" cy="672" r="28.8" fill-opacity="0.2"/>
+    <circle cx="512" cy="752" r="28.8" fill-opacity="0.2"/>
+    <circle cx="512" cy="832" r="31.2" fill-opacity="0.45"/>
+    <circle cx="592" cy="192" r="35.4" fill-opacity="0.93"/>
+    <circle cx="592" cy="272" r="28.8" fill-opacity="0.2"/>
+    <circle cx="592" cy="352" r="28.8" fill-opacity="0.2"/>
+    <circle cx="592" cy="432" r="28.8" fill-opacity="0.2"/>
+    <circle cx="592" cy="512" r="28.8" fill-opacity="0.2"/>
+    <circle cx="592" cy="592" r="28.8" fill-opacity="0.2"/>
+    <circle cx="592" cy="672" r="28.8" fill-opacity="0.2"/>
+    <circle cx="592" cy="752" r="28.8" fill-opacity="0.2"/>
+    <circle cx="592" cy="832" r="31.2" fill-opacity="0.45"/>
+    <circle cx="672" cy="272" r="35.85" fill-opacity="0.98"/>
+    <circle cx="672" cy="352" r="28.8" fill-opacity="0.2"/>
+    <circle cx="672" cy="432" r="28.8" fill-opacity="0.2"/>
+    <circle cx="672" cy="512" r="28.8" fill-opacity="0.2"/>
+    <circle cx="672" cy="592" r="28.8" fill-opacity="0.2"/>
+    <circle cx="672" cy="672" r="28.8" fill-opacity="0.2"/>
+    <circle cx="672" cy="752" r="31.2" fill-opacity="0.45"/>
+    <circle cx="752" cy="272" r="31.2" fill-opacity="0.45"/>
+    <circle cx="752" cy="352" r="31.2" fill-opacity="0.45"/>
+    <circle cx="752" cy="432" r="28.8" fill-opacity="0.2"/>
+    <circle cx="752" cy="512" r="28.8" fill-opacity="0.2"/>
+    <circle cx="752" cy="592" r="28.8" fill-opacity="0.2"/>
+    <circle cx="752" cy="672" r="31.2" fill-opacity="0.45"/>
+    <circle cx="752" cy="752" r="31.2" fill-opacity="0.45"/>
+    <circle cx="832" cy="432" r="31.2" fill-opacity="0.45"/>
+    <circle cx="832" cy="512" r="31.2" fill-opacity="0.45"/>
+    <circle cx="832" cy="592" r="31.2" fill-opacity="0.45"/>
+  </g>
+</svg>

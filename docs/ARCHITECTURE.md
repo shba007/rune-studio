@@ -161,6 +161,8 @@ unjs packages (`defu`, `consola`, `pathe`, `ofetch`, ...) are used only when a c
 
 Design language: Nothing-phone inspired. Monochrome, a circular dot-matrix glyph, one red accent (needs attention, recording, Stop), **Oxanium as the only typeface in the project** (open licence, bundled locally via `@fontsource-variable/oxanium`; Tailwind's `font-sans` and `font-mono` both resolve to it, so no other font can appear; no Nothing fonts or logos). Text follows a fixed five-role hierarchy (see Typography below). Frameless, transparent, always-on-top, skip-taskbar window, **anchored to the bottom-right of the primary monitor's work area** (16 px margin, above the taskbar) and draggable (position remembered from M6). Vue devtools are disabled (the plugin is removed from the Vite config).
 
+**Logo.** The mark is the orb itself: a 9x9 dot-matrix disc on a dark circle with a lit ring, a bright scanning head and a bright centre, in the monochrome palette. `scripts/make-logo.mjs` draws it (`public/logo.svg`, full colour; `src/assets/icons/rune-mark.svg`, single colour for the UI), and `bun run tauri icon public/logo.svg` makes the whole icon set (exe, tray, installer, taskbar), then the unused mobile icon folders are deleted. The same SVG is the favicon and the README logo; the single-colour mark is registered as the `logo` icon and shows at the foot of Settings. Change the logo by editing the script and re-running those two commands.
+
 A single **bot glyph** (an 11x11 dot orb on a white disc: **64 px in total**, a 56 px disc inside a 4 px dark rim) is the whole app at rest. When opened, the **composer card** grows to its right while the orb stays at the left, bottom-aligned with the card.
 
 ```
