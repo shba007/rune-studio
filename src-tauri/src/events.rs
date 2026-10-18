@@ -3,7 +3,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::{exec::CancelToken, hotkeys::Hotkeys, overlay, settings::Settings, voice::capture::Capture, window};
+use crate::{bridge::lease::LeaseBook, exec::CancelToken, hotkeys::Hotkeys, overlay, settings::Settings, voice::capture::Capture, window};
 
 pub const STATE_CHANGED: &str = "state_changed";
 pub const SUMMON: &str = "summon";
@@ -31,6 +31,8 @@ pub struct AppState {
     /// Set by every Stop; checked by the executor between steps.
     pub cancel: CancelToken,
     pub agent_state: Mutex<AgentState>,
+    /// Who may drive the PC from outside (see `bridge::lease`).
+    pub lease: Mutex<LeaseBook>,
     pub http: reqwest::Client,
 }
 
@@ -67,6 +69,13 @@ pub fn agent_state(app: &AppHandle) -> AgentState {
 pub const STEP_STARTED: &str = "step_started";
 pub const STEP_FINISHED: &str = "step_finished";
 pub const TASK_DONE: &str = "task_done";
+/// Who is driving from outside: `{ agent: "Claude" }`, or `{ agent: null }` when nobody is.
+pub const EXTERNAL_AGENT: &str = "external_agent";
+
+#[derive(Clone, Serialize)]
+pub struct ExternalAgent {
+    pub agent: Option<String>,
+}
 
 #[derive(Clone, Serialize)]
 pub struct StepStarted {

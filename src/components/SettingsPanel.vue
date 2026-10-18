@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useClipboard } from '@vueuse/core'
 import { nextTick, ref, useTemplateRef, watch } from 'vue'
 
 import type { Agent } from '@/composables/useAgent'
@@ -9,6 +10,7 @@ import BackendBadge from './BackendBadge.vue'
 import DevInputLab from './DevInputLab.vue'
 import SettingsGroup from './SettingsGroup.vue'
 import SettingsRow from './SettingsRow.vue'
+import SettingsToggle from './SettingsToggle.vue'
 
 const props = defineProps<{ agent: Agent }>()
 const agent = props.agent
@@ -27,6 +29,7 @@ const DEBUG_STATES: AgentState[] = [
 const draft = ref<Settings | null>(null)
 const developer = useTemplateRef<HTMLDetailsElement>('developer')
 const apiKeyDraft = ref('')
+const { copy, copied } = useClipboard({ copiedDuring: 1600 })
 
 watch(
   agent.settings,
@@ -110,6 +113,28 @@ async function save() {
       <SettingsGroup title="Shortcuts">
         <SettingsRow v-model="draft.toggleHotkey" label="Open and close" icon="shortcut" />
         <SettingsRow v-model="draft.stopHotkey" label="Stop" icon="stop" />
+      </SettingsGroup>
+
+      <SettingsGroup v-if="agent.bridge.value?.available" title="External agent">
+        <SettingsToggle v-model="draft.externalAgent" label="Allow outside agent" icon="plug" />
+        <button
+          v-if="draft.externalAgent"
+          type="button"
+          class="flex w-full cursor-pointer items-center gap-2 px-2 py-1 text-left"
+          @click="copy(agent.bridge.value.command)"
+        >
+          <span
+            class="grid size-8 shrink-0 place-items-center rounded-full bg-white/8 text-zinc-300"
+          >
+            <AppIcon name="copy" />
+          </span>
+          <span class="flex min-w-0 flex-1 flex-col">
+            <span class="text-label text-zinc-500">{{
+              copied ? 'Copied' : 'Copy the connect command'
+            }}</span>
+            <span class="truncate text-label text-zinc-400">{{ agent.bridge.value.url }}</span>
+          </span>
+        </button>
       </SettingsGroup>
 
       <details

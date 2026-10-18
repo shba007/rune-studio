@@ -18,6 +18,7 @@ export interface Settings {
   maxSteps: number
   toggleHotkey: string
   stopHotkey: string
+  externalAgent: boolean
 }
 
 export interface BackendStatus {
@@ -65,6 +66,15 @@ export const OPEN_SETTINGS = 'open_settings'
 export const AUDIO_LEVEL = 'audio_level'
 export const STEP_STARTED = 'step_started'
 export const TASK_DONE = 'task_done'
+export const EXTERNAL_AGENT = 'external_agent'
+
+/** What Settings shows for the External agent group. `available` is false in normal builds. */
+export interface BridgeInfo {
+  available: boolean
+  url: string
+  token: string
+  command: string
+}
 
 export interface StateChangedPayload {
   state: AgentState

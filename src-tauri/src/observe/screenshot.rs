@@ -141,9 +141,29 @@ pub fn prepare(rgba: image::RgbaImage, max_edge: u32, quality: u8) -> Result<Pre
 
 /// Captures a monitor and downscales it so the longer edge is at most `max_edge`.
 pub fn capture(id: Option<u32>, max_edge: u32, quality: u8) -> Result<Frame, ObserveError> {
+    capture_region(id, None, max_edge, quality)
+}
+
+/// Smallest crop, in physical pixels, worth sending.
+const MIN_REGION_PX: u32 = 16;
+
+/// Like [`capture`], but only the part inside `region` (`[x0, y0, x1, y1]` in model units,
+/// 0..=1000 across the monitor) when given. The crop is scaled up to the same budget as a full
+/// screenshot, which is how a small target gets enough pixels to be read and aimed at.
+pub fn capture_region(id: Option<u32>, region: Option<[f64; 4]>, max_edge: u32, quality: u8) -> Result<Frame, ObserveError> {
     let started = Instant::now();
     let (xmonitor, monitor) = resolve(id)?;
-    let rgba = xmonitor.capture_image().map_err(|err| ObserveError::Capture(err.to_string()))?;
+    let mut rgba = xmonitor.capture_image().map_err(|err| ObserveError::Capture(err.to_string()))?;
+    if let Some([x0, y0, x1, y1]) = region {
+        let (w, h) = (f64::from(rgba.width()), f64::from(rgba.height()));
+        let to_px = |value: f64, extent: f64| (value.clamp(0.0, 1000.0) / 1000.0 * extent).round() as u32;
+        let (left, right) = (to_px(x0.min(x1), w), to_px(x0.max(x1), w));
+        let (top, bottom) = (to_px(y0.min(y1), h), to_px(y0.max(y1), h));
+        if right.saturating_sub(left) < MIN_REGION_PX || bottom.saturating_sub(top) < MIN_REGION_PX {
+            return Err(ObserveError::Capture("the region is too small to show".into()));
+        }
+        rgba = image::imageops::crop_imm(&rgba, left, top, right - left, bottom - top).to_image();
+    }
     let Prepared { width, height, jpeg, image } = prepare(rgba, max_edge, quality)?;
     Ok(Frame {
         monitor,

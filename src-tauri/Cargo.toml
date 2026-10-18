@@ -16,7 +16,17 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2.7", features = [] }
 
+[features]
+# Lets an outside agent drive Rune Studio's eyes and hands over a local MCP server. Off by default.
+agent-bridge = ["dep:axum", "dep:getrandom"]
+
 [dependencies]
+axum = { version = "0.8", optional = true, default-features = false, features = [
+  "http1",
+  "json",
+  "tokio",
+] }
+getrandom = { version = "0.3", optional = true }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
@@ -33,7 +43,7 @@ enigo = "0.6"
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
 base64 = "0.23"
 thiserror = "2"
-tokio = { version = "1", features = ["time", "macros", "rt"] }
+tokio = { version = "1", features = ["time", "macros", "rt", "net"] }
 
 [dev-dependencies]
 # The M1.5 probe loads its scene screenshots from PNG.

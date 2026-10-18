@@ -41,7 +41,18 @@ export function installTauriMock() {
             maxSteps: 30,
             toggleHotkey: 'Alt+Q',
             stopHotkey: 'Ctrl+Alt+Escape',
+            externalAgent: false,
           }
+        case 'bridge_info':
+          return {
+            available: true,
+            url: 'http://127.0.0.1:47600/mcp',
+            token: 'demo',
+            command:
+              'claude mcp add --transport http rune-studio http://127.0.0.1:47600/mcp --header "Authorization: Bearer demo"',
+          }
+        case 'get_control_label':
+          return null
         case 'check_backend':
           return { reachable: true, authOk: true, missingModels: [], latencyMs: 12, error: null }
         case 'has_api_key':

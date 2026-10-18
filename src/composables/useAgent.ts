@@ -12,6 +12,7 @@ import {
   TASK_DONE,
   type AgentState,
   type BackendStatus,
+  type BridgeInfo,
   type CaptureReport,
   type ClickReport,
   type PillMode,
@@ -53,6 +54,8 @@ export function useAgent() {
   const backend = ref<BackendStatus | null>(null)
   const settings = ref<Settings | null>(null)
   const hasApiKey = ref(false)
+  /** The outside-agent door. `available` is false unless the app was built with it. */
+  const bridge = ref<BridgeInfo | null>(null)
   const mode = ref<PillMode>('ambient')
   const notice = ref<string | null>(null)
   const focusTick = ref(0)
@@ -133,6 +136,7 @@ export function useAgent() {
   async function refreshSettings() {
     settings.value = (await call<Settings>('get_settings')) ?? null
     hasApiKey.value = (await call<boolean>('has_api_key')) ?? false
+    bridge.value = (await call<BridgeInfo>('bridge_info')) ?? null
   }
 
   async function saveSettings(next: Settings) {
@@ -218,6 +222,7 @@ export function useAgent() {
     backend,
     settings,
     hasApiKey,
+    bridge,
     mode,
     notice,
     focusTick,

@@ -6,7 +6,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::{error::AppResult, hotkeys};
 
-const KEYRING_SERVICE: &str = "dev.shirsendu-bairagi.rune-studio";
+pub(crate) const KEYRING_SERVICE: &str = "dev.shirsendu-bairagi.rune-studio";
 const KEYRING_USER: &str = "rune-infer-api-key";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,6 +18,8 @@ pub struct Settings {
     pub max_steps: u32,
     pub toggle_hotkey: String,
     pub stop_hotkey: String,
+    /// Whether an outside agent may connect (only has an effect in `agent-bridge` builds).
+    pub external_agent: bool,
 }
 
 impl Default for Settings {
@@ -29,6 +31,7 @@ impl Default for Settings {
             max_steps: 30,
             toggle_hotkey: hotkeys::DEFAULT_TOGGLE.into(),
             stop_hotkey: hotkeys::DEFAULT_STOP.into(),
+            external_agent: false,
         }
     }
 }

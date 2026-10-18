@@ -1,0 +1,398 @@
+//! The tools an outside agent sees, as MCP (JSON-RPC 2.0) methods.
+//!
+//! Each action tool reuses the built-in agent's own pieces: `agent::protocol::parse` to check the
+//! arguments, and `agent::body` to announce, perform and settle the action. So an outside agent's
+//! click looks and behaves exactly like the model's, and Stop reaches it the same way.
+
+use std::time::Instant;
+
+use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
+use serde_json::{Value, json};
+use tauri::{AppHandle, Emitter, Manager};
+
+use crate::{
+    agent::{body, protocol},
+    events::{self, AgentState, AppState, ExternalAgent, TaskDone},
+    exec::{ExecError, input::parse_key},
+    observe::screenshot::{self, Frame, MODEL_JPEG_QUALITY, MODEL_MAX_EDGE},
+};
+
+use super::lease::{IDLE_LIMIT, LeaseError};
+
+const GUIDE: &str = include_str!("../../../docs/AGENT_GUIDE.md");
+const LATEST_PROTOCOL: &str = "2025-06-18";
+const SUPPORTED_PROTOCOLS: [&str; 3] = ["2025-06-18", "2025-03-26", "2024-11-05"];
+const KEY_NAMES: &str = "ctrl, shift, alt, win, enter, tab, esc, backspace, delete, space, up, down, left, right, home, end, pageup, pagedown, f1 to f12, or one character like s";
+
+/// One tool answer: some text, maybe a screenshot, and whether it is an error.
+struct Reply {
+    text: String,
+    image: Option<Vec<u8>>,
+    is_error: bool,
+}
+
+impl Reply {
+    fn text(text: impl Into<String>) -> Self {
+        Self { text: text.into(), image: None, is_error: false }
+    }
+
+    fn shot(text: impl Into<String>, jpeg: Vec<u8>) -> Self {
+        Self { text: text.into(), image: Some(jpeg), is_error: false }
+    }
+
+    /// An error carries a short code from the guide, then a sentence on what to do.
+    fn error(code: &str, message: impl std::fmt::Display) -> Self {
+        Self { text: format!("{code}: {message}"), image: None, is_error: true }
+    }
+
+    fn into_result(self) -> Value {
+        let mut content = vec![json!({ "type": "text", "text": self.text })];
+        if let Some(jpeg) = self.image {
+            content.push(json!({ "type": "image", "data": BASE64.encode(jpeg), "mimeType": "image/jpeg" }));
+        }
+        json!({ "content": content, "isError": self.is_error })
+    }
+}
+
+impl From<LeaseError> for Reply {
+    fn from(error: LeaseError) -> Self {
+        let advice = match error {
+            LeaseError::Busy => "Another agent, or Rune Studio's own agent, is working. Wait, or tell the user.",
+            LeaseError::NotBegun => "Call rune_begin first.",
+            LeaseError::StoppedByUser => "The user pressed Stop. Stop working and report. Do not try again unless the user asks.",
+            LeaseError::Expired => "Control ended because there were no calls for a while. Ask the user, then call rune_begin again.",
+        };
+        Reply::error(error.code(), advice)
+    }
+}
+
+fn rpc_result(id: &Value, result: Value) -> Value {
+    json!({ "jsonrpc": "2.0", "id": id, "result": result })
+}
+
+fn rpc_error(id: &Value, code: i32, message: &str) -> Value {
+    json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } })
+}
+
+/// Handles one JSON-RPC message. `None` means it was a notification and needs no answer.
+pub async fn handle(app: &AppHandle, request: Value) -> Option<Value> {
+    let id = request.get("id").cloned()?;
+    let method = request["method"].as_str().unwrap_or("");
+    Some(match method {
+        "initialize" => {
+            let asked = request["params"]["protocolVersion"].as_str().unwrap_or("");
+            let version = if SUPPORTED_PROTOCOLS.contains(&asked) { asked } else { LATEST_PROTOCOL };
+            rpc_result(
+                &id,
+                json!({
+                    "protocolVersion": version,
+                    "capabilities": { "tools": { "listChanged": false } },
+                    "serverInfo": { "name": "rune-studio", "version": env!("CARGO_PKG_VERSION") },
+                    "instructions": "Rune Studio lets you see the user's screen and use their mouse and keyboard. Call rune_guide first for how to use it, then rune_begin. Take one small step at a time and look at every screenshot.",
+                }),
+            )
+        }
+        "ping" => rpc_result(&id, json!({})),
+        "tools/list" => rpc_result(&id, json!({ "tools": tool_list() })),
+        "tools/call" => {
+            let name = request["params"]["name"].as_str().unwrap_or("");
+            let arguments = request["params"]["arguments"].clone();
+            rpc_result(&id, call(app, name, &arguments).await.into_result())
+        }
+        _ => rpc_error(&id, -32601, "method not found"),
+    })
+}
+
+fn tool_list() -> Value {
+    let reason = json!({ "type": "string", "description": "One short sentence for the user: why you are doing this." });
+    let schema = |properties: Value, required: &[&str]| {
+        let mut properties = properties;
+        properties["reason"] = reason.clone();
+        json!({ "type": "object", "properties": properties, "required": required })
+    };
+    json!([
+        { "name": "rune_guide", "description": "How to use Rune Studio: the full guide, in simple words. Read it first.",
+          "inputSchema": { "type": "object", "properties": {} } },
+        { "name": "rune_begin", "description": "Take control of the PC. The user sees a frame around the screen. Do this once before acting.",
+          "inputSchema": { "type": "object", "properties": {
+              "task": { "type": "string", "description": "What you were asked to do." },
+              "agent": { "type": "string", "description": "Your name, shown to the user." } }, "required": ["task"] } },
+        { "name": "rune_observe", "description": "Take a screenshot. Pass region to zoom into part of the screen, which helps with small text and tiny buttons.",
+          "inputSchema": { "type": "object", "properties": {
+              "region": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4,
+                          "description": "[x0, y0, x1, y1], each 0 to 1000 across the whole screen." } } } },
+        { "name": "rune_click", "description": "Click a point. x and y run 0 to 1000 across the whole screenshot, left to right and top to bottom. Returns a fresh screenshot.",
+          "inputSchema": schema(json!({
+              "x": { "type": "integer", "description": "0 to 1000, left to right" },
+              "y": { "type": "integer", "description": "0 to 1000, top to bottom" },
+              "button": { "type": "string", "enum": ["left", "right", "middle"] },
+              "double": { "type": "boolean" } }), &["x", "y"]) },
+        { "name": "rune_type_text", "description": "Type text into whatever has keyboard focus. Click the field first if unsure. Returns a fresh screenshot.",
+          "inputSchema": schema(json!({ "text": { "type": "string" } }), &["text"]) },
+        { "name": "rune_press_keys", "description": "Press a key or combination, for example [\"enter\"] or [\"ctrl\", \"s\"]. Returns a fresh screenshot.",
+          "inputSchema": schema(json!({ "keys": { "type": "array", "items": { "type": "string" } } }), &["keys"]) },
+        { "name": "rune_open_app", "description": "Open an app, file, folder or web address by name, like notepad, calc or https://example.com. Returns a fresh screenshot.",
+          "inputSchema": schema(json!({ "name": { "type": "string" } }), &["name"]) },
+        { "name": "rune_wait", "description": "Wait for something to load, at most 5000 ms. Returns a fresh screenshot.",
+          "inputSchema": schema(json!({ "ms": { "type": "integer" } }), &[]) },
+        { "name": "rune_status", "description": "Whether you are in control, the state, and how long until your control times out.",
+          "inputSchema": { "type": "object", "properties": {} } },
+        { "name": "rune_done", "description": "Finish. Gives control back and shows your summary to the user.",
+          "inputSchema": { "type": "object", "properties": {
+              "summary": { "type": "string" }, "success": { "type": "boolean" } }, "required": ["summary"] } },
+    ])
+}
+
+/// The names the action tools map onto in the built-in protocol.
+fn protocol_name(tool: &str) -> Option<&'static str> {
+    Some(match tool {
+        "rune_click" => "click",
+        "rune_type_text" => "type_text",
+        "rune_press_keys" => "press_keys",
+        "rune_open_app" => "open_app",
+        "rune_wait" => "wait",
+        _ => return None,
+    })
+}
+
+async fn call(app: &AppHandle, name: &str, arguments: &Value) -> Reply {
+    match name {
+        "rune_guide" => Reply::text(GUIDE),
+        "rune_begin" => begin(app, arguments),
+        "rune_observe" => observe(app, arguments).await,
+        "rune_status" => status(app),
+        "rune_done" => done(app, arguments),
+        other => match protocol_name(other) {
+            Some(tool) => act(app, tool, arguments).await,
+            None => Reply::error("unknown_tool", format!("there is no tool called {other}")),
+        },
+    }
+}
+
+fn clip(text: &str, max: usize) -> String {
+    text.trim().chars().take(max).collect()
+}
+
+fn screen_note(frame: &Frame) -> String {
+    format!(
+        "The screen is {}x{} pixels, shown here at {}x{}. Coordinates run 0 to 1000 on both axes: x left to right, y top to bottom, centre (500, 500).",
+        frame.monitor.width, frame.monitor.height, frame.width, frame.height
+    )
+}
+
+async fn capture(region: Option<[f64; 4]>) -> Result<Frame, Reply> {
+    match tauri::async_runtime::spawn_blocking(move || screenshot::capture_region(None, region, MODEL_MAX_EDGE, MODEL_JPEG_QUALITY)).await {
+        Ok(Ok(frame)) => Ok(frame),
+        Ok(Err(err)) => Err(Reply::error("screen_unavailable", err)),
+        Err(err) => Err(Reply::error("screen_unavailable", err)),
+    }
+}
+
+fn begin(app: &AppHandle, arguments: &Value) -> Reply {
+    let state = app.state::<AppState>();
+    if matches!(
+        events::agent_state(app),
+        AgentState::Planning | AgentState::AwaitingConfirm | AgentState::Acting | AgentState::Observing
+    ) && !state.lease.lock().expect("lease lock poisoned").is_held()
+    {
+        return LeaseError::Busy.into();
+    }
+    let agent = Some(clip(arguments["agent"].as_str().unwrap_or(""), 40)).filter(|name| !name.is_empty()).unwrap_or_else(|| "External agent".into());
+    let task = clip(arguments["task"].as_str().unwrap_or(""), 200);
+    if let Err(err) = state.lease.lock().expect("lease lock poisoned").begin(&agent, &task, Instant::now()) {
+        return err.into();
+    }
+    state.cancel.reset();
+    let _ = app.emit(events::EXTERNAL_AGENT, ExternalAgent { agent: Some(agent.clone()) });
+    events::set_agent_state(app, AgentState::Observing);
+    log::info!("agent bridge: {agent} took control for \"{task}\"");
+    Reply::text(format!(
+        "You are in control, {agent}. The user can see a frame around the screen and can press Stop at any time. \
+         Take one small step at a time and look at every screenshot. \
+         Coordinates run 0 to 1000 on both axes across the whole screen. \
+         Keys you can press: {KEY_NAMES}. Control ends if you make no call for {} seconds. Call rune_done when finished.",
+        IDLE_LIMIT.as_secs()
+    ))
+}
+
+/// Marks a call by the lease holder, or says why it may not go on.
+fn touch(app: &AppHandle) -> Result<u32, Reply> {
+    let state = app.state::<AppState>();
+    let mut book = state.lease.lock().expect("lease lock poisoned");
+    let lease = book.touch(Instant::now()).map_err(Reply::from)?;
+    lease.step += 1;
+    Ok(lease.step)
+}
+
+fn parse_region(value: &Value) -> Result<Option<[f64; 4]>, Reply> {
+    if value.is_null() {
+        return Ok(None);
+    }
+    let numbers: Vec<f64> = value.as_array().map(|list| list.iter().filter_map(Value::as_f64).collect()).unwrap_or_default();
+    match numbers.as_slice() {
+        [x0, y0, x1, y1] if numbers.iter().all(|n| (0.0..=1000.0).contains(n)) => Ok(Some([*x0, *y0, *x1, *y1])),
+        _ => Err(Reply::error("out_of_range", "region must be [x0, y0, x1, y1], four numbers from 0 to 1000")),
+    }
+}
+
+async fn observe(app: &AppHandle, arguments: &Value) -> Reply {
+    if let Err(reply) = touch(app) {
+        return reply;
+    }
+    let region = match parse_region(&arguments["region"]) {
+        Ok(region) => region,
+        Err(reply) => return reply,
+    };
+    let frame = match capture(region).await {
+        Ok(frame) => frame,
+        Err(reply) => return reply,
+    };
+    let what = match region {
+        Some([x0, y0, x1, y1]) => format!(
+            "This is a zoomed view of the part of the screen from ({x0}, {y0}) to ({x1}, {y1}). To click something here, convert its position back to whole-screen units: x = {x0} + cx/1000 * {}, y = {y0} + cy/1000 * {}.",
+            x1 - x0,
+            y1 - y0
+        ),
+        None => "Here is the whole screen right now.".to_string(),
+    };
+    let text = format!("{what} {}", screen_note(&frame));
+    Reply::shot(text, frame.jpeg)
+}
+
+async fn act(app: &AppHandle, tool: &'static str, arguments: &Value) -> Reply {
+    let step = match touch(app) {
+        Ok(step) => step,
+        Err(reply) => return reply,
+    };
+    let decision = match protocol::parse(tool, arguments) {
+        Ok(decision) => decision,
+        Err(problem) => {
+            let code = if problem.contains("outside the 0 to 1000") { "out_of_range" } else { "bad_arguments" };
+            return Reply::error(code, problem);
+        }
+    };
+    if let protocol::Action::PressKeys { keys } = &decision.action {
+        if let Some(bad) = keys.iter().find(|key| parse_key(key).is_err()) {
+            return Reply::error("unknown_key", format!("\"{bad}\" is not a key name. Use: {KEY_NAMES}"));
+        }
+    }
+
+    let state = app.state::<AppState>();
+    let cancel = state.cancel.clone();
+    let monitor = match screenshot::monitor(None) {
+        Ok(monitor) => monitor,
+        Err(err) => return Reply::error("screen_unavailable", err),
+    };
+
+    let action = decision.action;
+    let described = body::announce(app, step, &decision.reason, &action, &monitor);
+    events::set_agent_state(app, AgentState::Acting);
+    let settle = body::settle_time(&action);
+    let worker_cancel = cancel.clone();
+    let worker_action = action.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        body::execute(&worker_action, &monitor, &worker_cancel)?;
+        worker_cancel.sleep(settle)
+    })
+    .await
+    .unwrap_or_else(|err| Err(ExecError::Input(err.to_string())));
+
+    if matches!(result, Err(ExecError::Cancelled)) || cancel.is_cancelled() {
+        // Stop already moved the state to Stopped and revoked the lease. Leave both alone.
+        return LeaseError::StoppedByUser.into();
+    }
+    body::finish_step(app, step, &result);
+    events::set_agent_state(app, AgentState::Observing);
+    if let Err(err) = result {
+        return Reply::error("action_failed", format!("could not {described}: {err}. Look at the screen and try something different."));
+    }
+
+    match capture(None).await {
+        Ok(frame) => {
+            let text = format!("Done: {described}. Here is the screen now. {}", screen_note(&frame));
+            Reply::shot(text, frame.jpeg)
+        }
+        Err(reply) => reply,
+    }
+}
+
+fn status(app: &AppHandle) -> Reply {
+    let state = app.state::<AppState>();
+    let book = state.lease.lock().expect("lease lock poisoned");
+    let text = match book.current() {
+        Some(lease) => format!(
+            "You are in control as {}, working on: {}. Actions so far: {}. The screen state is {:?}. Control ends after {} seconds with no call.",
+            lease.agent,
+            lease.task,
+            lease.step,
+            events::agent_state(app),
+            IDLE_LIMIT.as_secs()
+        ),
+        None if book.is_revoked() => return LeaseError::StoppedByUser.into(),
+        None => "You are not in control. Call rune_begin to take control.".to_string(),
+    };
+    Reply::text(text)
+}
+
+fn done(app: &AppHandle, arguments: &Value) -> Reply {
+    if let Err(reply) = touch(app) {
+        return reply;
+    }
+    let state = app.state::<AppState>();
+    let summary = clip(arguments["summary"].as_str().unwrap_or(""), 400);
+    let success = arguments["success"].as_bool().unwrap_or(true);
+    state.lease.lock().expect("lease lock poisoned").end();
+    let _ = app.emit(events::EXTERNAL_AGENT, ExternalAgent { agent: None });
+    let _ = app.emit(events::TASK_DONE, TaskDone { summary, success });
+    events::set_agent_state(app, if success { AgentState::Done } else { AgentState::Failed });
+    Reply::text("Thanks. Control is back with the user and your summary is shown to them.")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_tool_in_the_list_has_a_handler_or_is_special() {
+        let special = ["rune_guide", "rune_begin", "rune_observe", "rune_status", "rune_done"];
+        for tool in tool_list().as_array().unwrap() {
+            let name = tool["name"].as_str().unwrap();
+            assert!(special.contains(&name) || protocol_name(name).is_some(), "{name} has no handler");
+            assert_eq!(tool["inputSchema"]["type"], "object");
+        }
+    }
+
+    #[test]
+    fn the_guide_documents_every_tool() {
+        for tool in tool_list().as_array().unwrap() {
+            let name = tool["name"].as_str().unwrap();
+            assert!(GUIDE.contains(&format!("`{name}`")), "the guide does not mention {name}");
+        }
+    }
+
+    #[test]
+    fn the_guide_documents_every_error_code() {
+        for code in ["not_enabled", "unauthorized", "busy", "not_begun", "stopped_by_user", "lease_expired", "out_of_range", "unknown_key", "action_failed", "screen_unavailable", "bad_arguments", "unknown_tool"] {
+            assert!(GUIDE.contains(&format!("`{code}`")), "the guide does not mention {code}");
+        }
+    }
+
+    #[test]
+    fn regions_must_be_four_numbers_in_range() {
+        assert!(matches!(parse_region(&json!([0, 0, 500, 500])), Ok(Some(_))));
+        assert!(matches!(parse_region(&Value::Null), Ok(None)));
+        assert!(parse_region(&json!([0, 0, 500])).is_err());
+        assert!(parse_region(&json!([0, 0, 500, 1200])).is_err());
+        assert!(parse_region(&json!("all")).is_err());
+    }
+
+    #[test]
+    fn errors_are_flagged_and_screenshots_become_image_content() {
+        let error = Reply::error("busy", "wait").into_result();
+        assert_eq!(error["isError"], true);
+        assert_eq!(error["content"][0]["text"], "busy: wait");
+        let shot = Reply::shot("hi", vec![1, 2, 3]).into_result();
+        assert_eq!(shot["content"][1]["type"], "image");
+        assert_eq!(shot["content"][1]["mimeType"], "image/jpeg");
+    }
+}

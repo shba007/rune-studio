@@ -1,5 +1,6 @@
 mod agent;
 mod backend;
+mod bridge;
 mod commands;
 #[cfg(debug_assertions)]
 mod debug;
@@ -76,6 +77,7 @@ pub fn run() {
                 mic: Mutex::new(None),
                 cancel: exec::CancelToken::default(),
                 agent_state: Mutex::new(AgentState::Idle),
+                lease: Mutex::new(bridge::lease::LeaseBook::default()),
                 http: reqwest::Client::new(),
             });
 
@@ -86,6 +88,9 @@ pub fn run() {
                 window::set_mode(app.handle(), window::Mode::Ambient)?;
                 window::place_bottom_right(&pill)?;
             }
+
+            #[cfg(feature = "agent-bridge")]
+            bridge::server::start(app.handle());
 
             // Failures are already logged; the pill stays reachable from the tray.
             let _ = hotkeys::apply(app.handle(), None, &hotkeys);
@@ -126,6 +131,8 @@ pub fn run() {
             commands::steer,
             commands::toggle_listening,
             commands::confirm,
+            commands::bridge_info,
+            commands::get_control_label,
             #[cfg(debug_assertions)]
             commands::debug_set_state,
             #[cfg(debug_assertions)]

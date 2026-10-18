@@ -22,6 +22,11 @@ pub fn save_settings(app: AppHandle, state: State<'_, AppState>, settings: Setti
     settings::save(&app, &settings)?;
 
     let next = Hotkeys::from_settings(&settings);
+    // Turning the switch back on is how the user re-arms an agent that Stop locked out.
+    let was_on = state.settings.lock().expect("settings lock poisoned").external_agent;
+    if settings.external_agent && !was_on {
+        state.lease.lock().expect("lease lock poisoned").rearm();
+    }
     *state.settings.lock().expect("settings lock poisoned") = settings;
     let previous = std::mem::replace(&mut *state.hotkeys.lock().expect("hotkeys lock poisoned"), next.clone());
     if previous != next {
@@ -55,6 +60,17 @@ pub fn set_mode(app: AppHandle, mode: window::Mode) -> AppResult<()> {
 pub fn stop(app: AppHandle) {
     // Always cancel, even from Idle: Stop must interrupt typing the instant it is pressed.
     app.state::<AppState>().cancel.cancel();
+    // An outside agent loses control and may not simply start again.
+    let had_agent = {
+        let state = app.state::<AppState>();
+        let mut lease = state.lease.lock().expect("lease lock poisoned");
+        let had = lease.is_held();
+        lease.revoke();
+        had
+    };
+    if had_agent {
+        let _ = tauri::Emitter::emit(&app, events::EXTERNAL_AGENT, events::ExternalAgent { agent: None });
+    }
     if events::agent_state(&app) != AgentState::Idle {
         events::set_agent_state(&app, AgentState::Stopped);
     }
@@ -71,6 +87,9 @@ pub fn start_task(app: AppHandle, state: State<'_, AppState>, text: String) -> A
         AgentState::Planning | AgentState::AwaitingConfirm | AgentState::Acting | AgentState::Observing
     ) {
         return Err(AppError::Invalid("A task is already running".into()));
+    }
+    if state.lease.lock().expect("lease lock poisoned").is_held() {
+        return Err(AppError::Invalid("An outside agent is in control".into()));
     }
     // Starting a task ends listening: the microphone must not stay open behind it.
     drop(state.mic.lock().expect("mic lock poisoned").take());
@@ -122,4 +141,37 @@ pub fn confirm(_id: String, _approved: bool) -> AppResult<()> {
 #[tauri::command]
 pub fn debug_set_state(app: AppHandle, state: AgentState) {
     events::preview_agent_state(&app, state);
+}
+
+/// Name of the outside agent currently in control, for the overlay's label.
+#[tauri::command]
+pub fn get_control_label(state: State<'_, AppState>) -> Option<String> {
+    state.lease.lock().expect("lease lock poisoned").agent().map(str::to_string)
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BridgeInfo {
+    /// Whether this build has the bridge at all.
+    pub available: bool,
+    pub url: String,
+    pub token: String,
+    /// A ready-to-paste command that connects Claude Code.
+    pub command: String,
+}
+
+/// What Settings shows for the External agent group.
+#[tauri::command]
+pub fn bridge_info() -> BridgeInfo {
+    #[cfg(feature = "agent-bridge")]
+    {
+        let url = crate::bridge::server::url();
+        let token = crate::bridge::token::get_or_create().unwrap_or_default();
+        let command = format!("claude mcp add --transport http rune-studio {url} --header \"Authorization: Bearer {token}\"");
+        BridgeInfo { available: true, url, token, command }
+    }
+    #[cfg(not(feature = "agent-bridge"))]
+    {
+        BridgeInfo { available: false, url: String::new(), token: String::new(), command: String::new() }
+    }
 }

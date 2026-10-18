@@ -168,6 +168,9 @@ const RIPPLE_REACH = 72
 let ripples: Ripple[] = []
 
 /** The one caption under the control pill: what the agent is doing right now. */
+/** Name of the outside agent in control, or null when it is Rune Studio's own agent. */
+const agentName = ref<string | null>(null)
+
 const action = ref<{ icon: IconName; label: string; detail: string } | null>(null)
 
 const ACTION_ICON: Record<string, IconName> = {
@@ -222,9 +225,18 @@ onMounted(async () => {
       if (next !== 'acting' && next !== 'observing' && next !== 'planning') action.value = null
     }),
     await listen<StepStartedPayload>('step_started', (event) => showStep(event.payload)),
+    await listen<{ agent: string | null }>(
+      'external_agent',
+      (event) => (agentName.value = event.payload.agent),
+    ),
   )
-  // The window is created at the moment control starts, so it may have missed the event.
+  // The window is created at the moment control starts, so it may have missed the events.
   setActive(true)
+  try {
+    agentName.value = await invoke<string | null>('get_control_label')
+  } catch {
+    // The label falls back to Rune.
+  }
   // Dev only: lets a plain browser preview play a step without the Rust side.
   if (import.meta.env.DEV)
     (window as unknown as { __demoStep: typeof showStep }).__demoStep = showStep
@@ -243,7 +255,7 @@ onBeforeUnmount(() => unlisten.forEach((off) => off()))
       class="absolute top-6 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full bg-black/85 py-2 pr-4 pl-4 text-white"
     >
       <span class="size-2 animate-pulse rounded-full bg-[#d71921]" />
-      <span class="text-caption uppercase">Rune is in control</span>
+      <span class="text-caption uppercase">{{ agentName ?? 'Rune' }} is in control</span>
       <span v-if="hotkeyLabel" class="text-caption text-white/50 uppercase"
         >· Stop {{ hotkeyLabel }}</span
       >

@@ -3,6 +3,7 @@
 //! One run is one task. Stop (hotkey, tray or button) cancels the shared token; every wait in
 //! here, including the model request, watches it, so Stop is felt within milliseconds.
 
+pub mod body;
 pub mod prompt;
 pub mod protocol;
 
@@ -11,12 +12,9 @@ use std::{future::Future, time::Duration};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{
-    events::{self, AgentState, AppState, Point, StepFinished, StepStarted, TaskDone},
-    exec::{CancelToken, ExecError, apps, input::{Input, MouseButton}},
-    model::{
-        client::{ChatClient, ModelError},
-        coords::{Monitor, model_to_pixels},
-    },
+    events::{self, AgentState, AppState, TaskDone},
+    exec::{CancelToken, ExecError},
+    model::client::{ChatClient, ModelError},
     observe::screenshot::{self, MODEL_JPEG_QUALITY, MODEL_MAX_EDGE},
     settings,
 };
@@ -24,10 +22,6 @@ use crate::{
 use prompt::Entry;
 use protocol::{Action, Decision};
 
-/// Pause after an action so animations settle before the next screenshot.
-const SETTLE: Duration = Duration::from_millis(500);
-/// Launching an app takes longer to show a window than a click takes to react.
-const SETTLE_AFTER_LAUNCH: Duration = Duration::from_millis(1_800);
 /// Give up after this many unusable model answers in a row.
 const MAX_INVALID_IN_A_ROW: u32 = 3;
 
@@ -146,82 +140,34 @@ async fn run(app: &AppHandle, task: &str) -> Outcome {
         }
 
         // Act.
-        let described = action.describe();
-        let (detail, point, double, button) = visual(&action, &frame.monitor);
-        let _ = app.emit(
-            events::STEP_STARTED,
-            StepStarted {
-                step,
-                tool: action.tool_name(),
-                reason: reason.clone(),
-                text: if reason.is_empty() { described.clone() } else { reason },
-                detail,
-                point,
-                double,
-                button,
-            },
-        );
+        let described = body::announce(app, step, &reason, &action, &frame.monitor);
         events::set_agent_state(app, AgentState::Acting);
-        let launches = matches!(action, Action::OpenApp { .. });
+        let settle = body::settle_time(&action);
         let monitor = frame.monitor;
         let worker_cancel = cancel.clone();
-        let executed = tauri::async_runtime::spawn_blocking(move || execute(&action, &monitor, &worker_cancel)).await;
+        let executed = tauri::async_runtime::spawn_blocking(move || body::execute(&action, &monitor, &worker_cancel)).await;
         let result = match executed {
             Ok(result) => result,
             Err(err) => return Outcome::Failed(err.to_string()),
         };
+        if !matches!(result, Err(ExecError::Cancelled)) {
+            body::finish_step(app, step, &result);
+        }
         match result {
             Err(ExecError::Cancelled) => return Outcome::Stopped,
             Err(err) => {
-                let _ = app.emit(events::STEP_FINISHED, StepFinished { step, ok: false, error: Some(err.to_string()) });
                 history.push(Entry { action: described, outcome: format!("failed: {err}") });
             }
             Ok(()) => {
-                let _ = app.emit(events::STEP_FINISHED, StepFinished { step, ok: true, error: None });
                 history.push(Entry { action: described, outcome: "done".into() });
             }
         }
 
-        if cancel.sleep(if launches { SETTLE_AFTER_LAUNCH } else { SETTLE }).is_err() {
+        if cancel.sleep(settle).is_err() {
             return Outcome::Stopped;
         }
     }
     Outcome::Failed(format!("stopped after {} steps without finishing", settings.max_steps))
-}
-
-/// What the control overlay shows for an action: a caption detail, and for clicks where they land.
-fn visual(action: &Action, monitor: &Monitor) -> (String, Option<Point>, bool, &'static str) {
-    match action {
-        Action::Click { x, y, button, double } => {
-            let (px, py) = model_to_pixels(monitor, *x, *y);
-            let name = match button {
-                MouseButton::Left => "left",
-                MouseButton::Right => "right",
-                MouseButton::Middle => "middle",
-            };
-            (String::new(), Some(Point { x: px, y: py }), *double, name)
-        }
-        Action::TypeText { text } => (text.clone(), None, false, "left"),
-        Action::PressKeys { keys } => (keys.join(" + "), None, false, "left"),
-        Action::OpenApp { name } => (name.clone(), None, false, "left"),
-        Action::Wait { ms } => (format!("{:.1} s", *ms as f64 / 1000.0), None, false, "left"),
-        Action::Done { .. } => (String::new(), None, false, "left"),
-    }
-}
-
-/// Performs one action on the real desktop. `Done` never reaches here.
-fn execute(action: &Action, monitor: &Monitor, cancel: &CancelToken) -> Result<(), ExecError> {
-    match action {
-        Action::Click { x, y, button, double } => {
-            let (px, py) = model_to_pixels(monitor, *x, *y);
-            Input::new()?.click(px, py, *button, *double, cancel)
-        }
-        Action::TypeText { text } => Input::new()?.type_text(text, cancel),
-        Action::PressKeys { keys } => Input::new()?.press_keys(keys, cancel),
-        Action::OpenApp { name } => apps::open(name),
-        Action::Wait { ms } => cancel.sleep(Duration::from_millis(*ms)),
-        Action::Done { .. } => Ok(()),
-    }
 }
 
 #[cfg(test)]
