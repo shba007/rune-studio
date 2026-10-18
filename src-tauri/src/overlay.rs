@@ -31,8 +31,10 @@ pub fn sync(app: &AppHandle, state: AgentState) {
     let handle = app.clone();
     std::thread::spawn(move || {
         if has_control(state) {
+            crate::cursor::apply();
             show(&handle);
         } else {
+            crate::cursor::restore();
             let linger = if matches!(state, AgentState::Done | AgentState::Failed) { LINGER_AFTER_END } else { FADE_OUT };
             hide_after_fade(&handle, linger);
         }

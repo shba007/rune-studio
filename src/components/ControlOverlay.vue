@@ -102,7 +102,6 @@ function draw(now: number) {
     ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(1, level + 0.1)})`
     ctx.fill()
   }
-  drawReticle(ctx, now, still)
   drawFlashes(ctx, now, still)
   drawRipples(ctx, now, still)
   updateTyping(now, still)
@@ -207,77 +206,6 @@ function drawFlashes(ctx: CanvasRenderingContext2D, now: number, still: boolean)
   }
 }
 
-/**
- * The centre of focus: where the agent is working right now (the point it clicked, the caret it
- * typed at, the middle of what it looked at). A faint hexagonal HUD sits there, at a tenth of full
- * strength, so it marks the spot without hiding what is under it.
- */
-interface Focus {
-  x: number
-  y: number
-  since: number
-}
-const RETICLE_ALPHA = 0.1
-let focus: Focus | null = null
-
-function setFocus(x: number, y: number) {
-  focus = { x, y, since: performance.now() }
-}
-
-function drawReticle(ctx: CanvasRenderingContext2D, now: number, still: boolean) {
-  if (!focus) return
-  const appear = still ? 1 : Math.min(1, (now - focus.since) / 300)
-  const breathe = still ? 1 : 1 + 0.025 * Math.sin(now / 700)
-  const scale = (1.15 + 0.25 * (1 - appear)) * breathe
-  const alpha = RETICLE_ALPHA * appear
-
-  /** The reticle's strokes, in its own units (about 50 across), drawn twice: a dark edge and a light line. */
-  const paths = (): Path2D => {
-    const p = new Path2D()
-    // Hexagon with a small one inside.
-    for (const radius of [22, 11]) {
-      for (let i = 0; i <= 6; i++) {
-        const angle = (Math.PI / 3) * i
-        const px = Math.cos(angle) * radius
-        const py = Math.sin(angle) * radius
-        if (i === 0) p.moveTo(px, py)
-        else p.lineTo(px, py)
-      }
-    }
-    // Chevrons either side, and stubs above and below.
-    for (const side of [-1, 1]) {
-      p.moveTo(side * 44, -13)
-      p.lineTo(side * 34, 0)
-      p.lineTo(side * 44, 13)
-      p.moveTo(side * 30, 0)
-      p.lineTo(side * 26, 0)
-    }
-    p.moveTo(0, -46)
-    p.lineTo(0, -30)
-    p.moveTo(0, 46)
-    p.lineTo(0, 30)
-    return p
-  }
-
-  ctx.save()
-  ctx.translate(focus.x, focus.y)
-  ctx.scale(scale, scale)
-  ctx.lineJoin = 'round'
-  ctx.lineCap = 'round'
-  const shape = paths()
-  ctx.strokeStyle = `rgba(0, 0, 0, ${alpha * 0.6})`
-  ctx.lineWidth = 3.2
-  ctx.stroke(shape)
-  ctx.strokeStyle = `rgba(255, 255, 255, ${alpha * 1.4})`
-  ctx.lineWidth = 1.6
-  ctx.stroke(shape)
-  ctx.beginPath()
-  ctx.arc(0, 0, 2, 0, Math.PI * 2)
-  ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 1.4})`
-  ctx.fill()
-  ctx.restore()
-}
-
 const { pause, resume } = useRafFn(({ timestamp }) => draw(timestamp), {
   immediate: false,
   fpsLimit: 30,
@@ -357,7 +285,6 @@ function showStep(step: StepStartedPayload) {
   if (step.point) {
     // Desktop pixels to this window: the window sits at its monitor's origin.
     const dpr = window.devicePixelRatio || 1
-    setFocus(step.point.x / dpr - window.screenX, step.point.y / dpr - window.screenY)
     ripples.push({
       x: step.point.x / dpr - window.screenX,
       y: step.point.y / dpr - window.screenY,
@@ -372,7 +299,6 @@ function showStep(step: StepStartedPayload) {
 function showTyped({ point }: TypedPayload) {
   if (!point) return
   const dpr = window.devicePixelRatio || 1
-  setFocus(point.x / dpr - window.screenX, point.y / dpr - window.screenY)
   ripples.push({
     x: point.x / dpr - window.screenX,
     y: point.y / dpr - window.screenY,
@@ -405,7 +331,6 @@ function showObserve({ region, continuous }: ObserveStartedPayload) {
         h: (Math.abs(y1 - y0) / 1000) * height,
       }
     : { x: inset, y: inset, w: width - 2 * inset, h: height - 2 * inset }
-  setFocus(box.x + box.w / 2, box.y + box.h / 2)
   // Only one recording wave at a time.
   if (continuous) flashes = flashes.filter((flash) => !flash.continuous)
   flashes.push({ ...box, at: performance.now(), continuous: Boolean(continuous) })
@@ -485,7 +410,6 @@ onMounted(async () => {
       setActive(next === 'acting' || next === 'observing' || next === 'planning')
       if (next !== 'acting' && next !== 'observing' && next !== 'planning') {
         action.value = null
-        focus = null
       }
       if (next === 'planning') void refreshPill()
       if (next === 'idle' || next === 'stopped') {
@@ -529,7 +453,6 @@ onMounted(async () => {
       __demoStep: showStep,
       __demoObserve: showObserve,
       __demoTyped: showTyped,
-      __demoFocus: setFocus,
       __demoBubble: (thinking: string, says: string) => {
         bubbleThinking.value = thinking
         bubbleSays.value = says

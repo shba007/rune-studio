@@ -61,11 +61,24 @@ fn finish(app: &AppHandle, outcome: Outcome) {
         Outcome::Finished { summary, success } => {
             log::info!("task finished (success: {success}): {summary}");
             let _ = app.emit(events::TASK_DONE, TaskDone { summary, success });
-            events::set_agent_state(app, if success { AgentState::Done } else { AgentState::Failed });
+            events::set_agent_state(
+                app,
+                if success {
+                    AgentState::Done
+                } else {
+                    AgentState::Failed
+                },
+            );
         }
         Outcome::Failed(message) => {
             log::warn!("task failed: {message}");
-            let _ = app.emit(events::TASK_DONE, TaskDone { summary: message, success: false });
+            let _ = app.emit(
+                events::TASK_DONE,
+                TaskDone {
+                    summary: message,
+                    success: false,
+                },
+            );
             events::set_agent_state(app, AgentState::Failed);
         }
     }
@@ -83,7 +96,9 @@ async fn unless_stopped<T>(cancel: &CancelToken, work: impl Future<Output = T>) 
 /// Passes the model's thinking on to the UI as it streams in, at most every `THINKING_EVERY`.
 fn thinking_sender(app: &AppHandle) -> impl FnMut(&str) + Send {
     let app = app.clone();
-    let mut last = Instant::now().checked_sub(THINKING_EVERY).unwrap_or_else(Instant::now);
+    let mut last = Instant::now()
+        .checked_sub(THINKING_EVERY)
+        .unwrap_or_else(Instant::now);
     move |text: &str| {
         if last.elapsed() >= THINKING_EVERY {
             last = Instant::now();
@@ -94,12 +109,25 @@ fn thinking_sender(app: &AppHandle) -> impl FnMut(&str) + Send {
 
 /// The opening call of a task: split it into goals. A failed plan is not fatal (the whole task
 /// becomes one goal and the loop carries on), but Stop is.
-async fn make_plan(app: &AppHandle, client: &ChatClient<'_>, cancel: &CancelToken, task: &str, think: bool) -> Result<Vec<String>, Outcome> {
+async fn make_plan(
+    app: &AppHandle,
+    client: &ChatClient<'_>,
+    cancel: &CancelToken,
+    task: &str,
+    think: bool,
+) -> Result<Vec<String>, Outcome> {
     let tools = protocol::plan_tools();
-    let request = Request { system: prompt::PLAN_SYSTEM, user_text: &prompt::plan_user_message(task), screenshot: None, tools: &tools, think };
+    let request = Request {
+        system: prompt::PLAN_SYSTEM,
+        user_text: &prompt::plan_user_message(task),
+        screenshot: None,
+        tools: &tools,
+        think,
+    };
     let mut send_thinking = thinking_sender(app);
     let started = Instant::now();
-    let Some(result) = unless_stopped(cancel, client.call(&request, &mut send_thinking)).await else {
+    let Some(result) = unless_stopped(cancel, client.call(&request, &mut send_thinking)).await
+    else {
         return Err(Outcome::Stopped);
     };
     let fallback = || vec![task.trim().chars().take(80).collect::<String>()];
@@ -119,7 +147,11 @@ async fn make_plan(app: &AppHandle, client: &ChatClient<'_>, cancel: &CancelToke
 async fn run(app: &AppHandle, task: &str) -> Outcome {
     let state = app.state::<AppState>();
     let cancel = state.cancel.clone();
-    let settings = state.settings.lock().expect("settings lock poisoned").clone();
+    let settings = state
+        .settings
+        .lock()
+        .expect("settings lock poisoned")
+        .clone();
     let api_key = settings::api_key();
     let tools = protocol::tools();
     let think = settings.show_thinking;
@@ -149,7 +181,10 @@ async fn run(app: &AppHandle, task: &str) -> Outcome {
         // Look.
         events::set_agent_state(app, AgentState::Observing);
         body::announce_observe(app, None);
-        let captured = tauri::async_runtime::spawn_blocking(|| screenshot::capture(None, MODEL_MAX_EDGE, MODEL_JPEG_QUALITY)).await;
+        let captured = tauri::async_runtime::spawn_blocking(|| {
+            screenshot::capture(None, MODEL_MAX_EDGE, MODEL_JPEG_QUALITY)
+        })
+        .await;
         let frame = match captured {
             Ok(Ok(frame)) => frame,
             Ok(Err(err)) => return Outcome::Failed(format!("could not see the screen: {err}")),
@@ -160,10 +195,17 @@ async fn run(app: &AppHandle, task: &str) -> Outcome {
         events::set_agent_state(app, AgentState::Planning);
         let text = prompt::user_message(task, &plan, current, &history, step, settings.max_steps);
         let screenshot = frame.data_uri();
-        let request = Request { system: prompt::SYSTEM, user_text: &text, screenshot: Some(&screenshot), tools: &tools, think };
+        let request = Request {
+            system: prompt::SYSTEM,
+            user_text: &text,
+            screenshot: Some(&screenshot),
+            tools: &tools,
+            think,
+        };
         let mut send_thinking = thinking_sender(app);
         let started = Instant::now();
-        let Some(reply) = unless_stopped(&cancel, client.call(&request, &mut send_thinking)).await else {
+        let Some(reply) = unless_stopped(&cancel, client.call(&request, &mut send_thinking)).await
+        else {
             return Outcome::Stopped;
         };
         let reply = match reply {
@@ -173,24 +215,40 @@ async fn run(app: &AppHandle, task: &str) -> Outcome {
                 if invalid_in_a_row >= MAX_INVALID_IN_A_ROW {
                     return Outcome::Failed(err.to_string());
                 }
-                history.push(Entry { action: "(no action)".into(), outcome: "you must call a tool".into() });
+                history.push(Entry {
+                    action: "(no action)".into(),
+                    outcome: "you must call a tool".into(),
+                });
                 continue;
             }
             Err(err) => return Outcome::Failed(err.to_string()),
         };
-        log::info!("step {step}: {} in {} ms ({:?} tokens)", reply.call.name, started.elapsed().as_millis(), reply.completion_tokens);
+        log::info!(
+            "step {step}: {} in {} ms ({:?} tokens)",
+            reply.call.name,
+            started.elapsed().as_millis(),
+            reply.completion_tokens
+        );
         if think {
             events::emit_thinking(app, &reply.thinking, true);
         }
 
-        let Decision { action, reason, goal, risk } = match protocol::parse(&reply.call.name, &reply.call.arguments) {
+        let Decision {
+            action,
+            reason,
+            goal,
+            risk,
+        } = match protocol::parse(&reply.call.name, &reply.call.arguments) {
             Ok(decision) => decision,
             Err(problem) => {
                 invalid_in_a_row += 1;
                 if invalid_in_a_row >= MAX_INVALID_IN_A_ROW {
                     return Outcome::Failed(problem);
                 }
-                history.push(Entry { action: reply.call.name, outcome: format!("invalid: {problem}") });
+                history.push(Entry {
+                    action: reply.call.name,
+                    outcome: format!("invalid: {problem}"),
+                });
                 continue;
             }
         };
@@ -234,8 +292,10 @@ async fn run(app: &AppHandle, task: &str) -> Outcome {
         let monitor = frame.monitor;
         let worker_cancel = cancel.clone();
         let worker_app = app.clone();
-        let executed =
-            tauri::async_runtime::spawn_blocking(move || body::execute_reporting(&worker_app, &action, &monitor, &worker_cancel)).await;
+        let executed = tauri::async_runtime::spawn_blocking(move || {
+            body::execute_reporting(&worker_app, &action, &monitor, &worker_cancel)
+        })
+        .await;
         let result = match executed {
             Ok(result) => result,
             Err(err) => return Outcome::Failed(err.to_string()),
@@ -246,10 +306,16 @@ async fn run(app: &AppHandle, task: &str) -> Outcome {
         match result {
             Err(ExecError::Cancelled) => return Outcome::Stopped,
             Err(err) => {
-                history.push(Entry { action: described, outcome: format!("failed: {err}") });
+                history.push(Entry {
+                    action: described,
+                    outcome: format!("failed: {err}"),
+                });
             }
             Ok(()) => {
-                history.push(Entry { action: described, outcome: "done".into() });
+                history.push(Entry {
+                    action: described,
+                    outcome: "done".into(),
+                });
             }
         }
 
@@ -257,7 +323,10 @@ async fn run(app: &AppHandle, task: &str) -> Outcome {
             return Outcome::Stopped;
         }
     }
-    Outcome::Failed(format!("stopped after {} steps without finishing", settings.max_steps))
+    Outcome::Failed(format!(
+        "stopped after {} steps without finishing",
+        settings.max_steps
+    ))
 }
 
 #[cfg(test)]
@@ -294,7 +363,12 @@ mod live {
     async fn a_plan_comes_back_with_thinking_streamed() {
         let http = reqwest::Client::new();
         let key = std::env::var("RUNE_API_KEY").unwrap_or_else(|_| "sk-rune-local-test-key".into());
-        let client = ChatClient { http: &http, base_url: "http://127.0.0.1:8080", api_key: Some(&key), model: "ternary-bonsai-2-27b" };
+        let client = ChatClient {
+            http: &http,
+            base_url: "http://127.0.0.1:8080",
+            api_key: Some(&key),
+            model: "ternary-bonsai-2-27b-pq2-0",
+        };
         let tools = protocol::plan_tools();
         let request = Request {
             system: prompt::PLAN_SYSTEM,
@@ -309,9 +383,15 @@ mod live {
             updates += 1;
             longest = longest.max(text.chars().count());
         };
-        let reply = client.call(&request, &mut on_thinking).await.expect("the model should answer");
+        let reply = client
+            .call(&request, &mut on_thinking)
+            .await
+            .expect("the model should answer");
         let goals = protocol::parse_plan(&reply.call.arguments).expect("a usable plan");
-        println!("thinking updates: {updates}, longest thinking: {longest} chars, final thinking: {} chars", reply.thinking.chars().count());
+        println!(
+            "thinking updates: {updates}, longest thinking: {longest} chars, final thinking: {} chars",
+            reply.thinking.chars().count()
+        );
         println!("goals: {goals:?}");
         assert!(updates > 1, "thinking should stream in pieces");
         assert!(!goals.is_empty() && goals.len() <= protocol::MAX_GOALS);

@@ -2,6 +2,7 @@ mod agent;
 mod backend;
 mod bridge;
 mod commands;
+mod cursor;
 #[cfg(debug_assertions)]
 mod debug;
 mod error;
@@ -69,6 +70,8 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
+            // A pointer left changed by an earlier run that did not shut down cleanly.
+            cursor::reset();
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -157,6 +160,11 @@ pub fn run() {
             #[cfg(debug_assertions)]
             debug::debug_keys,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_, event| {
+            if let tauri::RunEvent::Exit = event {
+                cursor::reset();
+            }
+        });
 }

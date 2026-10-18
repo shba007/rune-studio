@@ -34,7 +34,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             base_url: "http://127.0.0.1:8080".into(),
-            vision_model: "ternary-bonsai-2-27b".into(),
+            vision_model: "ternary-bonsai-2-27b-pq2-0".into(),
             asr_model: "parakeet-tdt-0.6b-v3".into(),
             max_steps: 30,
             toggle_hotkey: hotkeys::DEFAULT_TOGGLE.into(),
@@ -50,13 +50,20 @@ impl Default for Settings {
 /// The settings file, found without a running app (for the command line).
 #[cfg(feature = "agent-bridge")]
 pub fn path_without_app() -> Option<PathBuf> {
-    Some(PathBuf::from(std::env::var_os("APPDATA")?).join(KEYRING_SERVICE).join("settings.json"))
+    Some(
+        PathBuf::from(std::env::var_os("APPDATA")?)
+            .join(KEYRING_SERVICE)
+            .join("settings.json"),
+    )
 }
 
 /// Reads settings from a file; missing or unreadable means defaults.
 #[cfg(feature = "agent-bridge")]
 pub fn read_file(path: &std::path::Path) -> Settings {
-    fs::read_to_string(path).ok().and_then(|text| serde_json::from_str(&text).ok()).unwrap_or_default()
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_default()
 }
 
 #[cfg(feature = "agent-bridge")]
@@ -64,7 +71,10 @@ pub fn write_file(path: &std::path::Path, settings: &Settings) -> std::io::Resul
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
     }
-    fs::write(path, serde_json::to_string_pretty(settings).map_err(std::io::Error::other)?)
+    fs::write(
+        path,
+        serde_json::to_string_pretty(settings).map_err(std::io::Error::other)?,
+    )
 }
 
 fn settings_path(app: &AppHandle) -> AppResult<PathBuf> {
