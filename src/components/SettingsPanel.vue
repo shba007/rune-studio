@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { nextTick, ref, useTemplateRef, watch } from 'vue'
 
 import type { Agent } from '@/composables/useAgent'
 import type { AgentState, Settings } from '@/types/protocol'
 
+import AppIcon from './AppIcon.vue'
 import BackendBadge from './BackendBadge.vue'
+import SettingsGroup from './SettingsGroup.vue'
+import SettingsRow from './SettingsRow.vue'
 
 const props = defineProps<{ agent: Agent }>()
 const agent = props.agent
@@ -19,9 +22,9 @@ const DEBUG_STATES: AgentState[] = [
   'done',
   'failed',
 ]
-const FIELD = 'rounded-lg bg-zinc-800 px-3 py-1.5 outline-none focus:ring-1 focus:ring-zinc-500'
 
 const draft = ref<Settings | null>(null)
+const developer = useTemplateRef<HTMLDetailsElement>('developer')
 const apiKeyDraft = ref('')
 
 watch(
@@ -32,105 +35,112 @@ watch(
   { immediate: true },
 )
 
-async function saveKey() {
-  await agent.saveApiKey(apiKeyDraft.value)
-  apiKeyDraft.value = ''
+/** Opening the developer section would otherwise leave its buttons below the fold. */
+async function revealDeveloper() {
+  if (!developer.value?.open) return
+  await nextTick()
+  developer.value.scrollIntoView({ block: 'end', behavior: 'smooth' })
+}
+
+/** An empty key field means "leave the stored key alone"; removing it is its own action. */
+async function save() {
+  if (apiKeyDraft.value.trim()) {
+    await agent.saveApiKey(apiKeyDraft.value)
+    apiKeyDraft.value = ''
+  }
+  if (draft.value) await agent.saveSettings(draft.value)
 }
 </script>
 
 <template>
   <section
-    class="flex h-full w-full flex-col gap-4 overflow-y-auto rounded-[32px] border border-white/8 bg-[#141414] p-6 text-sm text-zinc-100"
+    class="flex h-full w-full flex-col overflow-hidden rounded-[28px] border border-white/8 bg-[#141414] text-zinc-100"
   >
-    <div class="flex items-center justify-between">
-      <h2 class="font-dot text-lg">Settings</h2>
+    <header class="flex items-center gap-1 px-3 pt-3 pb-2">
       <button
         type="button"
-        class="cursor-pointer rounded-full border border-white/15 px-3 py-1 font-mono text-xs text-zinc-300 hover:bg-white/10"
+        class="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full text-zinc-300 transition hover:bg-white/8 hover:text-white"
+        aria-label="Back"
         @click="agent.setMode('open')"
       >
-        Done
+        <AppIcon name="back" />
       </button>
-    </div>
-
-    <BackendBadge :status="agent.backend.value" />
-
-    <div v-if="draft" class="grid gap-3">
-      <h3 class="text-xs font-semibold tracking-wide text-zinc-400 uppercase">rune-infer</h3>
-      <label class="grid gap-1">
-        <span class="text-xs text-zinc-400">Base URL</span>
-        <input v-model="draft.baseUrl" :class="FIELD" />
-      </label>
-      <div class="grid grid-cols-2 gap-3">
-        <label class="grid gap-1">
-          <span class="text-xs text-zinc-400">Vision model</span>
-          <input v-model="draft.visionModel" :class="FIELD" />
-        </label>
-        <label class="grid gap-1">
-          <span class="text-xs text-zinc-400">Speech model</span>
-          <input v-model="draft.asrModel" :class="FIELD" />
-        </label>
-        <label class="grid gap-1">
-          <span class="text-xs text-zinc-400">Summon hotkey</span>
-          <input v-model="draft.toggleHotkey" :class="FIELD" />
-        </label>
-        <label class="grid gap-1">
-          <span class="text-xs text-zinc-400">Stop hotkey</span>
-          <input v-model="draft.stopHotkey" :class="FIELD" />
-        </label>
+      <div class="flex min-w-0 flex-1 flex-col pl-1">
+        <h2 class="text-title">Settings</h2>
+        <BackendBadge :status="agent.backend.value" />
       </div>
-      <div class="flex gap-2">
-        <button
-          type="button"
-          class="cursor-pointer rounded-lg bg-zinc-700 px-3 py-1.5 hover:bg-zinc-600"
-          @click="agent.saveSettings(draft)"
-        >
-          Save and recheck
-        </button>
-        <button
-          type="button"
-          class="cursor-pointer rounded-lg px-3 py-1.5 text-zinc-300 hover:bg-zinc-800"
-          @click="agent.refreshBackend()"
-        >
-          Recheck
-        </button>
-      </div>
-    </div>
+      <button
+        type="button"
+        class="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full text-zinc-300 transition hover:bg-white/8 hover:text-white"
+        aria-label="Check the backend again"
+        @click="agent.refreshBackend()"
+      >
+        <AppIcon name="refresh" />
+      </button>
+    </header>
 
-    <div class="grid gap-2">
-      <h3 class="text-xs font-semibold tracking-wide text-zinc-400 uppercase">API key</h3>
-      <div class="flex gap-2">
-        <input
+    <div v-if="draft" class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 pb-3">
+      <SettingsGroup title="Connection">
+        <SettingsRow v-model="draft.baseUrl" label="Base URL" icon="link" />
+        <SettingsRow
           v-model="apiKeyDraft"
           type="password"
-          :placeholder="
-            agent.hasApiKey.value ? 'Key stored (type to replace, empty to clear)' : 'No key stored'
-          "
-          :class="[FIELD, 'min-w-0 flex-1']"
+          label="API key"
+          icon="key"
+          :placeholder="agent.hasApiKey.value ? 'Stored. Type to replace' : 'Not set'"
         />
-        <button
-          type="button"
-          class="cursor-pointer rounded-lg bg-zinc-700 px-3 py-1.5 hover:bg-zinc-600"
-          @click="saveKey"
-        >
-          Save
-        </button>
-      </div>
+      </SettingsGroup>
+
+      <button
+        v-if="agent.hasApiKey.value"
+        type="button"
+        class="-mt-1.5 flex w-fit cursor-pointer items-center gap-1.5 self-end px-1 text-label text-zinc-500 transition hover:text-[#d71921]"
+        @click="agent.saveApiKey('')"
+      >
+        <AppIcon name="trash" size="sm" />
+        Remove stored key
+      </button>
+
+      <SettingsGroup title="Models">
+        <SettingsRow v-model="draft.visionModel" label="Vision" icon="eye" />
+        <SettingsRow v-model="draft.asrModel" label="Speech" icon="mic" />
+      </SettingsGroup>
+
+      <SettingsGroup title="Shortcuts">
+        <SettingsRow v-model="draft.toggleHotkey" label="Open and close" icon="shortcut" />
+        <SettingsRow v-model="draft.stopHotkey" label="Stop" icon="stop" />
+      </SettingsGroup>
+
+      <details
+        v-if="isDev"
+        ref="developer"
+        class="rounded-2xl bg-white/5 px-3 py-2"
+        @toggle="revealDeveloper"
+      >
+        <summary class="cursor-pointer text-caption text-zinc-500 uppercase">Developer</summary>
+        <div class="flex flex-wrap gap-1.5 pt-2">
+          <button
+            v-for="s in DEBUG_STATES"
+            :key="s"
+            type="button"
+            class="cursor-pointer rounded-full bg-white/8 px-2.5 py-1 text-label text-zinc-300 transition hover:bg-white/15"
+            @click="agent.debugSetState(s)"
+          >
+            {{ s }}
+          </button>
+        </div>
+      </details>
     </div>
 
-    <div v-if="isDev" class="grid gap-2">
-      <h3 class="text-xs font-semibold tracking-wide text-zinc-400 uppercase">Dev: force state</h3>
-      <div class="flex flex-wrap gap-2">
-        <button
-          v-for="s in DEBUG_STATES"
-          :key="s"
-          type="button"
-          class="cursor-pointer rounded-lg bg-zinc-800 px-2.5 py-1 text-xs hover:bg-zinc-700"
-          @click="agent.debugSetState(s)"
-        >
-          {{ s }}
-        </button>
-      </div>
-    </div>
+    <footer class="p-3 pt-0">
+      <button
+        type="button"
+        class="flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-full bg-[#f1f1ef] text-label text-[#111] transition hover:bg-white"
+        @click="save"
+      >
+        <AppIcon name="ok" size="md" />
+        Save and check
+      </button>
+    </footer>
   </section>
 </template>

@@ -105,5 +105,5 @@ pub fn confirm(_id: String, _approved: bool) -> AppResult<()> {
 #[cfg(debug_assertions)]
 #[tauri::command]
 pub fn debug_set_state(app: AppHandle, state: AgentState) {
-    events::set_agent_state(&app, state);
+    events::preview_agent_state(&app, state);
 }

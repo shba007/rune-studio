@@ -9,7 +9,8 @@ pub const MAIN: &str = "main";
 const EDGE_MARGIN: f64 = 16.0;
 
 /// The pill's discrete window sizes. The UI animates inside the window; the window itself
-/// only ever jumps between these. Keep in sync with the layout in `AgentPill.vue`.
+/// only ever jumps between these. Widths are ORB_SIZE + PAGE_GAP + PAGE_WIDTH (64 + 8 + 276) from
+/// `src/config/layout.ts`; keep the two in sync.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Mode {
@@ -21,9 +22,9 @@ pub enum Mode {
 impl Mode {
     fn size(self) -> (f64, f64) {
         match self {
-            Mode::Ambient => (76.0, 76.0),
-            Mode::Open => (572.0, 268.0),
-            Mode::Settings => (572.0, 560.0),
+            Mode::Ambient => (64.0, 64.0),
+            Mode::Open => (348.0, 244.0),
+            Mode::Settings => (348.0, 572.0),
         }
     }
 }

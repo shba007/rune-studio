@@ -135,30 +135,71 @@ Design points:
 - **Elevated windows** cannot receive injected input (UIPI). Detect and tell the user; do not run as admin.
 - **DPI:** the whole pipeline stays in physical pixels; the process is per-monitor DPI aware.
 
+### Frontend conventions
+
+Prefer maintained packages from the unjs / unplugin / VueUse / Vue ecosystem over hand-rolled code, when a real need exists.
+
+| Need                                           | Use                                                                     | Notes                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ---------------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Fonts                                          | `unplugin-fonts` (Vite) with its Fontsource provider                    | Oxanium comes from `@fontsource-variable/oxanium`, so it is bundled and never fetched at runtime. `main.ts` imports the virtual `unfonts.css`.                                                                                                                                                                                                                                                                       |
+| Icons (ready-made)                             | `unplugin-icons` (Vite) + `@iconify-json/ph`                            | **Phosphor Fill** is the only ready-made icon set, **filled everywhere**. State is carried by the container and colour (a dark circle, red while listening), never by swapping outline for filled. Only the icons used are bundled.                                                                                                                                                                                  |
+| Icons (custom)                                 | `unplugin-icons` custom collection                                      | Hand-made SVGs live only in `src/assets/icons/` (one file per icon, 24x24, filled, `currentColor`) and load as `~icons/custom/<file-name>`. Never inline `<svg>` in a component or composable. See `src/assets/icons/README.md`.                                                                                                                                                                                     |
+| Icon registry                                  | `src/icons/index.ts` + `<AppIcon>`                                      | The **only** file that names an icon set. It maps meanings (`mic`, `send`, `tune`, `back`, `refresh`, `ok`, `open`, `key`, `eye`, `link`, `shortcut`, `stop`, `trash`) to icons; components render `<AppIcon name="mic" size="lg" />`. Switching family or style is a one-file change. A lint rule (`no-restricted-imports` on `~icons/**`, off only inside `src/icons/`) fails the build on any direct icon import. |
+| Animation loop, reduced motion, tab visibility | VueUse `useRafFn`, `usePreferredReducedMotion`, `useDocumentVisibility` | `GlyphOrb.vue`                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Timers, keys, focus                            | VueUse `useTimeoutFn`, `onKeyStroke`, `useFocus`                        | `useAgent.ts`, `AgentPill.vue`, `Composer.vue`                                                                                                                                                                                                                                                                                                                                                                       |
+| Styling                                        | Tailwind v4 with the five-role type hierarchy                           | see Typography                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Icon sizes                                     | `icon-sm` / `icon-md` / `icon-lg` utilities in `src/style.css`          | Three roles like the type scale: **sm** 12 px (trailing arrows, remove links), **md** 14 px (beside a label: setting rows, save action), **lg** 16 px (icon-only buttons). Never put a raw `size-*` on an icon. Filled glyphs carry more weight than outline ones, so keep them small; check new ones at real size (link and keyboard were too dense at 14 px and were replaced by `link-simple` and `command`).     |
+| Scrollbars                                     | global rules in `src/style.css`                                         | One slim (8 px, inset thumb), rounded, quiet scrollbar for every scroll area. Thumb colours are the `--scrollbar-thumb` and `--scrollbar-thumb-hover` variables; a light surface overrides them locally (the composer field does). Never style a scrollbar per component or leave the native one.                                                                                                                    |
+| Browser preview                                | `@tauri-apps/api/mocks` (`mockIPC`)                                     | `src/dev/mockTauri.ts` answers the startup commands so the UI renders in a plain browser for design review. Dev only: it is not in the production bundle.                                                                                                                                                                                                                                                            |
+
+unjs packages (`defu`, `consola`, `pathe`, `ofetch`, ...) are used only when a concrete need appears; none is needed yet, since all I/O lives in Rust.
+
 ## 7. UI: the pill
 
-Design language: Nothing-phone inspired. Monochrome, a circular dot-matrix glyph, one red accent (needs attention, recording, Stop), the Doto dot font (open licence, bundled locally via `@fontsource-variable/doto`; no Nothing fonts or logos) for status text and placeholders, mono for everything else. Frameless, transparent, always-on-top, skip-taskbar window, **anchored to the bottom-right of the primary monitor's work area** (16 px margin, above the taskbar) and draggable (position remembered from M6). Vue devtools are disabled (the plugin is removed from the Vite config).
+Design language: Nothing-phone inspired. Monochrome, a circular dot-matrix glyph, one red accent (needs attention, recording, Stop), **Oxanium as the only typeface in the project** (open licence, bundled locally via `@fontsource-variable/oxanium`; Tailwind's `font-sans` and `font-mono` both resolve to it, so no other font can appear; no Nothing fonts or logos). Text follows a fixed five-role hierarchy (see Typography below). Frameless, transparent, always-on-top, skip-taskbar window, **anchored to the bottom-right of the primary monitor's work area** (16 px margin, above the taskbar) and draggable (position remembered from M6). Vue devtools are disabled (the plugin is removed from the Vite config).
 
-A single **bot glyph** (an 11x11 dot orb on a white disc) is the whole app at rest. When opened, the **composer card** grows to its right while the orb stays at the left, bottom-aligned with the card.
+A single **bot glyph** (an 11x11 dot orb on a white disc: **64 px in total**, a 56 px disc inside a 4 px dark rim) is the whole app at rest. When opened, the **composer card** grows to its right while the orb stays at the left, bottom-aligned with the card.
 
 ```
-AMBIENT    (orb)                                            76 px, the resting form, bottom-right corner
+AMBIENT    (orb)                                  64 px, the resting form, bottom-right corner
 
-OPEN                  [ Open Notepad and write hello ] [ Open Calculator ... ]   starter suggestions
-                      +--------------------------------------------+
-                      |  Type or say a command                     |   white field, multi-line, Enter sends
-            (orb)     |  [sliders] [mic]                    (send) |   settings, hands-free mic, send
-                      +--------------------------------------------+
-                      | [model] [backend 12 ms]   Ready     [Stop] |   status bar (Doto)
-                      +--------------------------------------------+
+OPEN                  +----------------------------+
+                      | Open Notepad             ↗ |   suggestions: rows of the same frame,
+                      | Open Calculator          ↗ |   folded away once you type
+            (orb)     | +------------------------+ |
+                      | | Type or say a command  | |   white field, 2 lines, Enter sends
+                      | | [tune]       [mic] [↑] | |   settings left; mic + send together, same look
+                      | +------------------------+ |
+                      | • Ready            [Stop]  |   status bar: backend dot, state, Stop
+                      +----------------------------+
 
-ATTENTION  same card; status bar reads "Needs your OK  [Yes] [No]" (voice yes/no from M5)
-SETTINGS   the card is replaced by a settings panel (rune-infer URL, models, API key, hotkeys)
+SETTINGS              +----------------------------+
+                      | ←  Settings            ⟳   |   back, title + live backend status, recheck
+                      |    • Backend OK · 12 ms    |
+            (orb)     | CONNECTION                 |
+                      | (link) Base URL            |   grouped cards, one icon row per setting
+                      | (key)  API key             |
+                      | MODELS     (eye) Vision ...|
+                      | SHORTCUTS  (kbd) Open ...  |
+                      | [ ✓  Save and check ]      |
+                      +----------------------------+
+
+ATTENTION  composer card; the status bar reads "Needs your OK  [Yes] [No]" (voice yes/no from M5)
 ```
 
-Modes: **ambient** (orb only), **open** (orb + composer) and **settings**. The card opens on the summon hotkey and when the agent needs the user (`ask_user`, high-risk confirm). It stays open until dismissed (`Esc`, the summon hotkey again, or clicking the orb while idle). Clicking the orb while the agent runs is Stop. Suggestions show only while the field is empty and the agent is idle.
+Modes: **ambient** (orb only), **open** (orb + composer) and **settings**. The card opens on the summon hotkey and when the agent needs the user (`ask_user`, high-risk confirm). It stays open until dismissed (`Esc`, the summon hotkey again, or clicking the orb while idle). Clicking the orb while the agent runs is Stop. Every page beside the orb (composer, settings, future task views) is exactly **276 px** wide (`PAGE_WIDTH` in `src/config/layout.ts`). The composer is one connected frame: one connected frame holding the suggestion rows, the white field and the status bar, so nothing floats. Mic and send are twin 36 px dark circles on the right (the mic turns red while listening); settings is a ghost button on the left. Suggestions show only while the field is empty and the agent is idle, and fold away smoothly once you type. The backend chip became a dot in the status bar (green, amber or red; hover for the details and model name).
 
 **Voice reaction.** The mic button toggles hands-free listening: Rust opens the default input device (cpal, on its own thread), computes an RMS level about 30 times a second, maps -55..-10 dBFS to 0..1 and emits `audio_level`. The orb's listening bloom follows that level (fast attack, slow decay); at silence only the centre breathes, so a dead mic looks different from a live one. If nothing is heard for 4 s the status bar says so. Level capture was pulled forward from M5; segmentation (VAD) and transcription remain M5.
+
+**Typography.** Five roles, defined once as design tokens in `src/style.css`. The default Tailwind size scale is removed (`--text-*: initial`), so a raw size such as `text-sm` or `text-[13px]` produces nothing; always use a role class.
+
+| Role    | Class          | Size / line | Weight | Tracking | Used for                                       |
+| ------- | -------------- | ----------- | ------ | -------- | ---------------------------------------------- |
+| Title   | `text-title`   | 18 / 24     | 600    | 0.02em   | Panel headings                                 |
+| Body    | `text-body`    | 14 / 20     | 400    | none     | Composer input, form fields, reading text      |
+| Status  | `text-status`  | 12 / 16     | 500    | 0.03em   | The live state line in the status bar          |
+| Label   | `text-label`   | 11 / 16     | 500    | 0.04em   | Suggestion rows, buttons, field labels, badges |
+| Caption | `text-caption` | 10 / 14     | 600    | 0.10em   | Section headings; pair with `uppercase`        |
 
 Glyph states (distinct by motion and shape, never colour alone; static frames under `prefers-reduced-motion`):
 
@@ -174,12 +215,12 @@ Glyph states (distinct by motion and shape, never colour alone; static frames un
 
 A small dot on the disc's corner shows backend problems (amber/red) and is absent when everything is fine.
 
-**Window mechanics.** The window resizes in discrete steps (ambient 76x76, open 572x268, settings 572x560) **keeping its bottom-right corner fixed**, so it grows up and to the left from wherever it sits, clamped to the work area. Because a transparent window still catches mouse clicks, expanding resizes the window first and then animates the card inside; collapsing animates first and then shrinks the window. Windows clamps a window's configured size to a minimum width, so the exact size is set explicitly at startup.
+**Window mechanics.** The window resizes in discrete steps (ambient 64x64, open 348x244, settings 348x572; width = 64 orb + 8 gap + 276 page) **keeping its bottom-right corner fixed**, so it grows up and to the left from wherever it sits, clamped to the work area. Because a transparent window still catches mouse clicks and clips what does not fit, the order is the same for every pair of modes (ambient < open < settings): when the target needs a bigger window, the window grows first and the page animates in afterwards; when it needs a smaller one, the page animates out first and the window shrinks last (after `COLLAPSE_MS`, longer than the page cross-fade). Pages switch with an out-in cross-fade, so only one is ever on screen and the fixed page width means nothing reflows. Verified natively: the window grows within about 40 ms of the click and shrinks about 370 ms after going back. Windows clamps a window's configured size to a minimum width, so the exact size is set explicitly at startup.
 
-**M6 additions.** Hover or click on the glyph opens a small ticker list in the dot font: one line per step (`click · Save`, risk, result) plus the last-screenshot thumbnail.
+**M6 additions.** Hover or click on the glyph opens a small ticker list in the label and status roles: one line per step (`click · Save`, risk, result) plus the last-screenshot thumbnail.
 
 - **Hotkeys:** `Alt+Q` opens the card (and shows the window if hidden); pressing it again collapses to the orb. `Ctrl+Alt+Esc` is the global **Stop**. Both are settings (`toggleHotkey`, `stopHotkey`) and re-register on save. `Ctrl+Alt+Space` was rejected (taken by the Claude desktop app); `Alt+Tab` cannot be registered (reserved by Windows); `Ctrl+Space` would break editor autocomplete and IME toggles.
-- **Click-through while acting:** the window ignores the mouse in the Acting state, so it can never block a click meant for another app. Stop is then the hotkey or the voice word "stop".
+- **Click-through while acting:** during a real agent run the window ignores the mouse in the Acting state, so it can never block a click meant for another app. Stop is then the hotkey, the voice word "stop", or the tray menu's **Stop** (which works even while the window is click-through and does not depend on the hotkey being free). The dev-only state switcher in Settings > Developer uses a preview path that never enables click-through, so forcing "acting" by hand cannot lock the window. Opening that section scrolls its buttons into view.
 
 ### Rust <-> Vue contract
 
@@ -198,7 +239,7 @@ Events (Rust -> UI): `state_changed(state)`, `summon`, `open_settings`, `audio_l
 | M3   | Safety gate and confirmation (buttons)                                                                                        | "Delete this file" pauses for a yes                          | High-risk actions cannot run without a yes                                  |
 | M4   | Full tools and UIA: `scroll`, `drag`, `wait`, `ask_user`, element ids, stuck detection, history pruning                       | Copy text from a browser into Notepad                        | UIA apps use element ids; no-op loops are detected                          |
 | M5   | Voice: mic level (done), VAD, STT, listening toggle, steering, voice yes/no/stop                                              | Click the mic once, talk through a task                      | Utterances cut cleanly; speaking mid-task steers                            |
-| M6   | UI polish: glyph hover/click ticker list (dot font, thumbnail), tray, remembered position, error states                       | The full orb + composer flow                                 | Every Step 7 state is real                                                  |
+| M6   | UI polish: glyph hover/click ticker list (thumbnail), tray, remembered position, error states                                 | The full orb + composer flow                                 | Every Step 7 state is real                                                  |
 | M7   | Hardening and packaging: eval suite of ~15 tasks (success rate, steps, latency, tokens), elevated-window detection, installer | Report card + installer                                      | Success rate measured; installs on a clean machine                          |
 
 ## 9. Risks

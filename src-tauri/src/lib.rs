@@ -79,14 +79,18 @@ pub fn run() {
 
             let show = MenuItem::with_id(app, "show", "Show / hide", true, None::<&str>)?;
             let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
+            // Stop lives in the tray too: it works while the window is click-through and does
+            // not depend on the Stop hotkey being free.
+            let stop = MenuItem::with_id(app, "stop", "Stop", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &settings, &quit])?;
+            let menu = Menu::with_items(app, &[&show, &settings, &stop, &quit])?;
             let mut tray = TrayIconBuilder::new()
                 .menu(&menu)
                 .tooltip("Rune Studio")
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "show" => window::toggle_visibility(app),
                     "settings" => window::open_settings(app),
+                    "stop" => commands::stop(app.clone()),
                     "quit" => app.exit(0),
                     _ => {}
                 });

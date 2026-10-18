@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { useTimeoutFn } from '@vueuse/core'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import {
@@ -28,8 +29,11 @@ const STATE_LABELS: Record<AgentState, string> = {
   stopped: 'Stopped',
 }
 
-/** Matches the card's width transition, so the window only shrinks once it has finished. */
-const COLLAPSE_MS = 320
+/** Window size order. Bigger modes need a bigger window than smaller ones. */
+const MODE_RANK: Record<PillMode, number> = { ambient: 0, open: 1, settings: 2 }
+
+/** Longer than the page and width transitions, so the window only shrinks once they have finished. */
+const COLLAPSE_MS = 340
 const NOTICE_MS = 4000
 /** How long the mic may stay silent before we suggest it is not getting any audio. */
 const SILENCE_MS = 4000
@@ -54,14 +58,21 @@ export function useAgent() {
 
   const unlisten: UnlistenFn[] = []
   let modeToken = 0
-  let noticeTimer: ReturnType<typeof setTimeout> | undefined
-  let silenceTimer: ReturnType<typeof setTimeout> | undefined
   let heardSound = false
+
+  // `start` restarts a running timer, so a newer notice always gets its full time on screen.
+  const noticeTimer = useTimeoutFn(() => (notice.value = null), NOTICE_MS, { immediate: false })
+  const silenceTimer = useTimeoutFn(
+    () => {
+      if (!heardSound) showNotice('No sound from the microphone. Check Windows microphone access')
+    },
+    SILENCE_MS,
+    { immediate: false },
+  )
 
   function showNotice(message: string) {
     notice.value = message
-    clearTimeout(noticeTimer)
-    noticeTimer = setTimeout(() => (notice.value = null), NOTICE_MS)
+    noticeTimer.start()
   }
 
   async function call<T>(command: string, args?: Record<string, unknown>): Promise<T | undefined> {
@@ -74,21 +85,24 @@ export function useAgent() {
   }
 
   /**
-   * A transparent window still catches clicks, so growing resizes the window first and then
-   * animates the card inside it; shrinking animates first and then resizes the window.
-   * A newer call cancels the tail of an older one.
+   * A transparent window still catches clicks, and clips whatever does not fit. So when the
+   * target needs a bigger window (ambient < open < settings) the window grows first and the
+   * page animates in afterwards; when it needs a smaller one the page animates out first and
+   * the window shrinks last. This holds for every pair of modes, so no page is ever drawn
+   * into a window that is too small. A newer call cancels the tail of an older one.
    */
   async function setMode(next: PillMode) {
     const token = ++modeToken
-    if (next === 'ambient') {
-      mode.value = 'ambient'
+    const grows = MODE_RANK[next] > MODE_RANK[mode.value]
+    if (grows) {
+      await call('set_mode', { mode: next })
+      if (token !== modeToken) return
+      mode.value = next
+    } else {
+      mode.value = next
       await sleep(COLLAPSE_MS)
-      if (token === modeToken) await call('set_mode', { mode: 'ambient' })
-      return
+      if (token === modeToken) await call('set_mode', { mode: next })
     }
-    await call('set_mode', { mode: next })
-    if (token !== modeToken) return
-    mode.value = next
     if (next === 'open') focusTick.value += 1
   }
 
@@ -140,15 +154,13 @@ export function useAgent() {
 
   // Tell the user when "listening" is not actually hearing anything.
   watch(state, (next) => {
-    clearTimeout(silenceTimer)
+    silenceTimer.stop()
     heardSound = false
     if (next !== 'listening') {
       level.value = 0
       return
     }
-    silenceTimer = setTimeout(() => {
-      if (!heardSound) showNotice('No sound from the microphone. Check Windows microphone access')
-    }, SILENCE_MS)
+    silenceTimer.start()
   })
 
   onMounted(async () => {
@@ -167,11 +179,7 @@ export function useAgent() {
     await refreshBackend()
   })
 
-  onBeforeUnmount(() => {
-    unlisten.forEach((off) => off())
-    clearTimeout(noticeTimer)
-    clearTimeout(silenceTimer)
-  })
+  onBeforeUnmount(() => unlisten.forEach((off) => off()))
 
   return {
     state,

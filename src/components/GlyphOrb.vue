@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue'
+import { useDocumentVisibility, usePreferredReducedMotion, useRafFn } from '@vueuse/core'
+import { onMounted, useTemplateRef, watch, watchEffect } from 'vue'
 
 import type { AgentState } from '@/types/protocol'
 
@@ -19,10 +20,12 @@ const KIND: Record<AgentState, Kind> = {
   failed: 'failed',
 }
 
-const SIZE = 64
+/** Disc diameter in px. Dot geometry below was tuned at 64 px and scales with it. */
+const SIZE = 56
+const SCALE = SIZE / 64
 const GRID = 11
 const CENTER = 5
-const STEP = 5.4
+const STEP = 5.4 * SCALE
 const OFFSET = (SIZE - (GRID - 1) * STEP) / 2
 const CHECK = [
   [2, 5],
@@ -35,11 +38,11 @@ const CHECK = [
 ] as const
 
 const canvas = useTemplateRef<HTMLCanvasElement>('canvas')
-let frameId = 0
 let smoothedLevel = 0
 let kindStartedAt = performance.now()
 const origin = performance.now()
-const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
+const reducedMotion = usePreferredReducedMotion()
+const visibility = useDocumentVisibility()
 
 const wave = (x: number) => Math.sin(x) * 0.5 + 0.5
 
@@ -113,8 +116,8 @@ function draw(now: number) {
   const kind = KIND[props.state]
   // Fast attack, slow decay: syllables register but the glyph does not flicker.
   smoothedLevel = Math.max(props.level ?? 0, smoothedLevel * 0.86)
-  const t = reducedMotion.matches ? 0 : (now - origin) / 1000
-  const since = reducedMotion.matches ? 10 : (now - kindStartedAt) / 1000
+  const t = reducedMotion.value === 'reduce' ? 0 : (now - origin) / 1000
+  const since = reducedMotion.value === 'reduce' ? 10 : (now - kindStartedAt) / 1000
   const lit = new Map<number, number>()
   paint(kind, t, since, (x, y, b) => {
     if (x < 0 || y < 0 || x >= GRID || y >= GRID || b <= 0.02) return
@@ -130,14 +133,14 @@ function draw(now: number) {
       const px = OFFSET + x * STEP
       const py = OFFSET + y * STEP
       ctx.beginPath()
-      ctx.arc(px, py, 1.25, 0, Math.PI * 2)
+      ctx.arc(px, py, 1.25 * SCALE, 0, Math.PI * 2)
       ctx.fillStyle = 'rgba(0, 0, 0, 0.13)'
       ctx.fill()
 
       const b = Math.min(1, lit.get(x * GRID + y) ?? 0)
       if (b > 0) {
         ctx.beginPath()
-        ctx.arc(px, py, 1.25 + 0.95 * b, 0, Math.PI * 2)
+        ctx.arc(px, py, (1.25 + 0.95 * b) * SCALE, 0, Math.PI * 2)
         ctx.fillStyle = red ? `rgba(215, 25, 33, ${b})` : `rgba(17, 17, 17, ${b})`
         ctx.fill()
       }
@@ -145,10 +148,13 @@ function draw(now: number) {
   }
 }
 
-function loop(now: number) {
-  if (!document.hidden && !reducedMotion.matches) draw(now)
-  frameId = requestAnimationFrame(loop)
-}
+/** Animates only while the window is visible and the user has not asked for reduced motion. */
+const { pause, resume } = useRafFn(({ timestamp }) => draw(timestamp), { immediate: false })
+
+watchEffect(() => {
+  if (reducedMotion.value === 'reduce' || visibility.value === 'hidden') pause()
+  else resume()
+})
 
 watch(
   () => props.state,
@@ -166,12 +172,9 @@ onMounted(() => {
   el.height = SIZE * dpr
   el.getContext('2d')?.scale(dpr, dpr)
   draw(performance.now())
-  frameId = requestAnimationFrame(loop)
 })
-
-onBeforeUnmount(() => cancelAnimationFrame(frameId))
 </script>
 
 <template>
-  <canvas ref="canvas" :width="SIZE" :height="SIZE" class="block size-16" aria-hidden="true" />
+  <canvas ref="canvas" :width="SIZE" :height="SIZE" class="block size-14" aria-hidden="true" />
 </template>

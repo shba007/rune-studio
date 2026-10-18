@@ -40,9 +40,20 @@ struct StateChanged {
 /// Single place the agent state changes. Keeps the UI event and the window's
 /// click-through behaviour in sync: the pill must never block a click while acting.
 pub fn set_agent_state(app: &AppHandle, state: AgentState) {
+    apply_state(app, state, true);
+}
+
+/// Like `set_agent_state`, but never turns click-through on. For the dev state switcher, which
+/// forces states by hand and must not trap the user in a window that ignores the mouse.
+#[cfg(debug_assertions)]
+pub fn preview_agent_state(app: &AppHandle, state: AgentState) {
+    apply_state(app, state, false);
+}
+
+fn apply_state(app: &AppHandle, state: AgentState, allow_click_through: bool) {
     let app_state = app.state::<AppState>();
     *app_state.agent_state.lock().expect("agent state lock poisoned") = state;
-    window::set_click_through(app, state == AgentState::Acting);
+    window::set_click_through(app, allow_click_through && state == AgentState::Acting);
     let _ = app.emit(STATE_CHANGED, StateChanged { state });
 }
 
