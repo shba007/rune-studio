@@ -19,7 +19,7 @@ use crate::{
 
 use super::lease::{IDLE_LIMIT, LeaseError};
 
-const GUIDE: &str = include_str!("../../../docs/AGENT_GUIDE.md");
+use super::skill::GUIDE;
 const LATEST_PROTOCOL: &str = "2025-06-18";
 const SUPPORTED_PROTOCOLS: [&str; 3] = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const KEY_NAMES: &str = "ctrl, shift, alt, win, enter, tab, esc, backspace, delete, space, up, down, left, right, home, end, pageup, pagedown, f1 to f12, or one character like s";
@@ -86,13 +86,23 @@ pub async fn handle(app: &AppHandle, request: Value) -> Option<Value> {
                 &id,
                 json!({
                     "protocolVersion": version,
-                    "capabilities": { "tools": { "listChanged": false } },
+                    "capabilities": { "tools": { "listChanged": false }, "resources": {}, "prompts": {} },
                     "serverInfo": { "name": "rune-studio", "version": env!("CARGO_PKG_VERSION") },
                     "instructions": "Rune Studio lets you see the user's screen and use their mouse and keyboard. Call rune_guide first for how to use it, then rune_begin. Take one small step at a time and look at every screenshot.",
                 }),
             )
         }
         "ping" => rpc_result(&id, json!({})),
+        "resources/list" => rpc_result(&id, json!({ "resources": resource_list() })),
+        "resources/read" => match read_resource(request["params"]["uri"].as_str().unwrap_or("")) {
+            Some(contents) => rpc_result(&id, json!({ "contents": [contents] })),
+            None => rpc_error(&id, -32002, "resource not found"),
+        },
+        "prompts/list" => rpc_result(&id, json!({ "prompts": prompt_list() })),
+        "prompts/get" => match get_prompt(request["params"]["name"].as_str().unwrap_or(""), &request["params"]["arguments"]) {
+            Some(prompt) => rpc_result(&id, prompt),
+            None => rpc_error(&id, -32602, "unknown prompt"),
+        },
         "tools/list" => rpc_result(&id, json!({ "tools": tool_list() })),
         "tools/call" => {
             let name = request["params"]["name"].as_str().unwrap_or("");
@@ -101,6 +111,54 @@ pub async fn handle(app: &AppHandle, request: Value) -> Option<Value> {
         }
         _ => rpc_error(&id, -32601, "method not found"),
     })
+}
+
+/// The guide is also offered as an MCP resource and prompt, so a client that knows nothing about
+/// skills still gets it.
+const GUIDE_URI: &str = "rune://guide";
+
+fn resource_list() -> Value {
+    json!([{
+        "uri": GUIDE_URI,
+        "name": "rune-studio-guide",
+        "title": "How to use Rune Studio",
+        "description": "The guide for agents: the loop, tools, coordinates, safety rules and errors.",
+        "mimeType": "text/markdown",
+    }])
+}
+
+fn read_resource(uri: &str) -> Option<Value> {
+    (uri == GUIDE_URI).then(|| json!({ "uri": GUIDE_URI, "mimeType": "text/markdown", "text": GUIDE }))
+}
+
+fn prompt_list() -> Value {
+    json!([{
+        "name": "rune_start",
+        "title": "Do something on the user's PC",
+        "description": "Gives you the Rune Studio guide and the task, so you can start working on the PC safely.",
+        "arguments": [{ "name": "task", "description": "What the user wants done on their PC.", "required": false }],
+    }])
+}
+
+fn get_prompt(name: &str, arguments: &Value) -> Option<Value> {
+    if name != "rune_start" {
+        return None;
+    }
+    let task = arguments["task"].as_str().map(str::trim).filter(|task| !task.is_empty());
+    let lead = match task {
+        Some(task) => format!("Use Rune Studio to do this on the user's PC: {task}
+
+"),
+        None => "Use Rune Studio to work on the user's PC.
+
+".to_string(),
+    };
+    Some(json!({
+        "description": "Rune Studio guide and task",
+        "messages": [{ "role": "user", "content": { "type": "text", "text": format!("{lead}Read this guide first and follow it:
+
+{GUIDE}") } }],
+    }))
 }
 
 fn tool_list() -> Value {
@@ -375,6 +433,22 @@ mod tests {
         for code in ["not_enabled", "unauthorized", "busy", "not_begun", "stopped_by_user", "lease_expired", "out_of_range", "unknown_key", "action_failed", "screen_unavailable", "bad_arguments", "unknown_tool"] {
             assert!(GUIDE.contains(&format!("`{code}`")), "the guide does not mention {code}");
         }
+    }
+
+    #[test]
+    fn the_guide_is_offered_as_a_resource_and_a_prompt() {
+        assert_eq!(resource_list()[0]["uri"], "rune://guide");
+        let contents = read_resource("rune://guide").unwrap();
+        assert!(contents["text"].as_str().unwrap().contains("rune_begin"));
+        assert!(read_resource("rune://nothing").is_none());
+
+        assert_eq!(prompt_list()[0]["name"], "rune_start");
+        let with_task = get_prompt("rune_start", &json!({ "task": "open Notepad" })).unwrap();
+        let text = with_task["messages"][0]["content"]["text"].as_str().unwrap();
+        assert!(text.contains("open Notepad") && text.contains("rune_begin"));
+        let without = get_prompt("rune_start", &Value::Null).unwrap();
+        assert!(without["messages"][0]["content"]["text"].as_str().unwrap().starts_with("Use Rune Studio to work"));
+        assert!(get_prompt("other", &Value::Null).is_none());
     }
 
     #[test]

@@ -13,4 +13,6 @@ pub mod mcp;
 #[cfg(feature = "agent-bridge")]
 pub mod server;
 #[cfg(feature = "agent-bridge")]
+pub mod skill;
+#[cfg(feature = "agent-bridge")]
 pub mod token;

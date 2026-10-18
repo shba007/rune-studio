@@ -89,17 +89,17 @@ Actions already wait a moment for the screen to settle. If something is slow (an
 
 | Error                | Meaning                                                | Do this                                                        |
 | -------------------- | ------------------------------------------------------ | -------------------------------------------------------------- |
-| `not_enabled`        | The user has not allowed outside agents.               | See section 2.                                                 |
-| `unauthorized`       | The connection is not set up right.                    | See section 2.                                                 |
+| `not_enabled`        | The user has not allowed outside agents.               | See "If you cannot use it" above.                              |
+| `unauthorized`       | The connection is not set up right.                    | See "If you cannot use it" above.                              |
 | `busy`               | Another agent, or Rune Studio's own agent, is working. | Wait, or tell the user.                                        |
 | `not_begun`          | You acted before `rune_begin`.                         | Call `rune_begin`.                                             |
 | `stopped_by_user`    | The user pressed Stop.                                 | Stop. Report. Do not continue.                                 |
 | `declined_by_user`   | The user said no to a risky action.                    | Do not retry. Ask what they want.                              |
 | `lease_expired`      | You were silent too long.                              | Ask the user, then `rune_begin` again.                         |
 | `bad_arguments`      | A required argument is missing or the wrong shape.     | Fix the call using the tool table.                             |
-| `unknown_tool`       | There is no tool with that name.                       | Check the tool table (section 4).                              |
+| `unknown_tool`       | There is no tool with that name.                       | Check the tool table under Tools.                              |
 | `out_of_range`       | A coordinate or region was outside 0 to 1000.          | Fix the numbers.                                               |
-| `unknown_key`        | A key name was not recognised.                         | Use the names in section 6.                                    |
+| `unknown_key`        | A key name was not recognised.                         | Use the key names under Typing and keys.                       |
 | `action_failed`      | The click, typing or launch failed.                    | Read the message, look at the screen, try something different. |
 | `screen_unavailable` | The screenshot failed (for example the PC is locked).  | Tell the user.                                                 |
 
@@ -121,7 +121,7 @@ Actions already wait a moment for the screen to settle. If something is slow (an
 **Click a tiny button**
 
 1. `rune_observe { region: [900, 0, 1000, 60] }` to zoom on the top-right corner.
-2. Work out the point inside the crop, convert it to whole-screen units (section 5), then `rune_click`.
+2. Work out the point inside the crop, convert it to whole-screen units (see Coordinates), then `rune_click`.
 3. Check the result in the screenshot. If it missed, zoom again and adjust.
 
 ## 12. Good habits checklist

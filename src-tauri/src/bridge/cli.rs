@@ -23,10 +23,13 @@ use std::{
 
 use serde_json::{Value, json};
 
-use super::{server, token};
+use super::{
+    server,
+    skill::{self, GUIDE},
+    token,
+};
 use crate::settings;
 
-const GUIDE: &str = include_str!("../../../docs/AGENT_GUIDE.md");
 const START_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, PartialEq, Eq)]
@@ -39,6 +42,9 @@ pub enum Command {
     Disable,
     Connect(String),
     Guide,
+    /// Install (or with `--remove`, remove) the Claude Code skill.
+    Skill(String),
+    Disconnect(String),
     Help,
     /// Not a command we know: shown as an error with the help text.
     Unknown(String),
@@ -54,6 +60,8 @@ pub fn parse(args: &[String]) -> Command {
         "enable" => Command::Enable,
         "disable" => Command::Disable,
         "guide" => Command::Guide,
+        "skill" => Command::Skill(args.get(1).cloned().unwrap_or_default()),
+        "disconnect" => Command::Disconnect(args.get(1).cloned().unwrap_or_default()),
         "help" | "--help" | "-h" => Command::Help,
         "connect" => Command::Connect(args.get(1).cloned().unwrap_or_default()),
         other => Command::Unknown(other.to_string()),
@@ -64,8 +72,11 @@ const HELP: &str = "\
 Rune Studio
 
   rune-studio                  Open the app.
-  rune-studio connect claude   Connect Claude Code to Rune Studio (works in every project).
+  rune-studio connect claude   Connect Claude Code to Rune Studio (works in every project):
+                               registers the tools and installs the Rune Studio skill.
   rune-studio connect --print  Show the settings to paste into any other MCP-capable agent.
+  rune-studio skill            Install or refresh the Claude Code skill only (--remove deletes it).
+  rune-studio disconnect claude  Remove Rune Studio from Claude Code (tools and skill).
   rune-studio enable           Allow outside agents to see and use this PC through Rune Studio.
   rune-studio disable          Turn that off again.
   rune-studio status           Show whether Rune Studio is running and what is allowed.
@@ -85,6 +96,8 @@ pub fn run() -> i32 {
         Command::Enable => set_switch(true),
         Command::Disable => set_switch(false),
         Command::Connect(target) => connect(&target),
+        Command::Skill(option) => skill_command(&option),
+        Command::Disconnect(target) => disconnect(&target),
         Command::Guide => {
             say(GUIDE);
             0
@@ -195,7 +208,11 @@ fn connect(target: &str) -> i32 {
             };
             match outcome {
                 Ok(status) if status.success() => {
-                    say("Connected. Claude Code can now use Rune Studio in every project. Ask it to do something on your PC.");
+                    let skill_note = match install_skill() {
+                        Ok(dir) => format!(" It also installed the Rune Studio skill ({}).", dir.display()),
+                        Err(err) => format!(" (The skill could not be installed: {err}. Run: rune-studio skill)"),
+                    };
+                    say(&format!("Connected. Claude Code can now use Rune Studio in every project.{skill_note} Restart Claude Code, then ask it to do something on your PC."));
                     0
                 }
                 _ => {
@@ -209,6 +226,65 @@ fn connect(target: &str) -> i32 {
         _ => {
             say("Say which agent to connect: rune-studio connect claude   (or: rune-studio connect --print for any other agent)");
             2
+        }
+    }
+}
+
+fn install_skill() -> Result<std::path::PathBuf, String> {
+    let dir = skill::default_dir().ok_or("cannot find your home folder")?;
+    skill::install(&dir, GUIDE).map_err(|err| err.to_string())?;
+    Ok(dir)
+}
+
+fn skill_command(option: &str) -> i32 {
+    let Some(dir) = skill::default_dir() else {
+        say("Cannot find your home folder.");
+        return 1;
+    };
+    if option == "--remove" {
+        return match skill::remove(&dir) {
+            Ok(()) => {
+                say("The Rune Studio skill was removed.");
+                0
+            }
+            Err(err) => {
+                say(&format!("Could not remove the skill: {err}"));
+                1
+            }
+        };
+    }
+    match install_skill() {
+        Ok(dir) => {
+            say(&format!("Installed the Rune Studio skill in {}. Restart Claude Code to pick it up.", dir.display()));
+            0
+        }
+        Err(err) => {
+            say(&format!("Could not install the skill: {err}"));
+            1
+        }
+    }
+}
+
+fn disconnect(target: &str) -> i32 {
+    if target != "claude" {
+        say("Say which agent to disconnect: rune-studio disconnect claude");
+        return 2;
+    }
+    let arguments = ["mcp", "remove", "--scope", "user", "rune-studio"];
+    let direct = Process::new("claude").args(arguments).status();
+    let outcome = match direct {
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Process::new("cmd").arg("/C").arg("claude").args(arguments).status(),
+        other => other,
+    };
+    let _ = skill_command("--remove");
+    match outcome {
+        Ok(status) if status.success() => {
+            say("Rune Studio was removed from Claude Code.");
+            0
+        }
+        _ => {
+            say("The skill was removed, but Claude Code's \"claude\" command did not remove the tools. Run: claude mcp remove --scope user rune-studio");
+            1
         }
     }
 }
@@ -314,6 +390,9 @@ mod tests {
         assert_eq!(parse(&args(&["enable"])), Command::Enable);
         assert_eq!(parse(&args(&["disable"])), Command::Disable);
         assert_eq!(parse(&args(&["guide"])), Command::Guide);
+        assert_eq!(parse(&args(&["skill"])), Command::Skill(String::new()));
+        assert_eq!(parse(&args(&["skill", "--remove"])), Command::Skill("--remove".into()));
+        assert_eq!(parse(&args(&["disconnect", "claude"])), Command::Disconnect("claude".into()));
         assert_eq!(parse(&args(&["--help"])), Command::Help);
         assert_eq!(parse(&args(&["connect", "claude"])), Command::Connect("claude".into()));
         assert_eq!(parse(&args(&["connect"])), Command::Connect(String::new()));
@@ -326,7 +405,7 @@ mod tests {
 
     #[test]
     fn the_help_text_mentions_every_command() {
-        for word in ["connect claude", "enable", "disable", "status", "guide", "mcp"] {
+        for word in ["connect claude", "disconnect claude", "skill", "enable", "disable", "status", "guide", "mcp"] {
             assert!(HELP.contains(word), "help does not mention {word}");
         }
     }
