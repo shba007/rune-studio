@@ -24,7 +24,7 @@ use std::{
 use serde_json::{Value, json};
 
 use super::{
-    server,
+    agents, server,
     skill::{self, GUIDE},
     token,
 };
@@ -74,9 +74,10 @@ Rune Studio
   rune-studio                  Open the app.
   rune-studio connect claude   Connect Claude Code to Rune Studio (works in every project):
                                registers the tools and installs the Rune Studio skill.
+  rune-studio connect antigravity  Connect Antigravity the same way (settings file and skill).
   rune-studio connect --print  Show the settings to paste into any other MCP-capable agent.
   rune-studio skill            Install or refresh the Claude Code skill only (--remove deletes it).
-  rune-studio disconnect claude  Remove Rune Studio from Claude Code (tools and skill).
+  rune-studio disconnect <agent>  Remove Rune Studio from claude or antigravity (tools and skill).
   rune-studio enable           Allow outside agents to see and use this PC through Rune Studio.
   rune-studio disable          Turn that off again.
   rune-studio status           Show whether Rune Studio is running and what is allowed.
@@ -190,6 +191,19 @@ fn open_app() -> i32 {
     }
 }
 
+/// The agents `connect` and `disconnect` know how to set up.
+const AGENTS: &str = "claude, antigravity";
+
+fn unknown_agent(verb: &str, target: &str) -> i32 {
+    if target.is_empty() {
+        say(&format!("Say which agent: rune-studio {verb} <agent>   (agents: {AGENTS})"));
+    } else {
+        say(&format!("\"{target}\" is not an agent I know how to set up. I can {verb}: {AGENTS}.
+For any other MCP-capable agent, run: rune-studio connect --print   and paste the result into its MCP settings."));
+    }
+    2
+}
+
 fn connect(target: &str) -> i32 {
     let exe = app_path();
     match target {
@@ -197,37 +211,74 @@ fn connect(target: &str) -> i32 {
             say(&serde_json::to_string_pretty(&json!({ "mcpServers": { "rune-studio": { "command": exe, "args": ["mcp"] } } })).unwrap_or_default());
             0
         }
-        "claude" => {
-            let _ = set_switch(true);
-            let arguments = ["mcp", "add", "--scope", "user", "rune-studio", "--", exe.as_str(), "mcp"];
-            let direct = Process::new("claude").args(arguments).status();
-            // `claude` may be a .cmd shim, which only the command interpreter can start.
-            let outcome = match direct {
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => Process::new("cmd").arg("/C").arg("claude").args(arguments).status(),
-                other => other,
+        "claude" => connect_claude(&exe),
+        "antigravity" => connect_antigravity(&exe),
+        other => unknown_agent("connect", other),
+    }
+}
+
+/// Runs Claude Code's `claude` command, which may be a .cmd shim that only the command interpreter can start.
+fn run_claude(arguments: &[&str]) -> std::io::Result<std::process::ExitStatus> {
+    match Process::new("claude").args(arguments).status() {
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Process::new("cmd").arg("/C").arg("claude").args(arguments).status(),
+        other => other,
+    }
+}
+
+fn connect_claude(exe: &str) -> i32 {
+    let _ = set_switch(true);
+    match run_claude(&["mcp", "add", "--scope", "user", "rune-studio", "--", exe, "mcp"]) {
+        Ok(status) if status.success() => {
+            let skill_note = match install_skill() {
+                Ok(dir) => format!(" It also installed the Rune Studio skill ({}).", dir.display()),
+                Err(err) => format!(" (The skill could not be installed: {err}. Run: rune-studio skill)"),
             };
-            match outcome {
-                Ok(status) if status.success() => {
-                    let skill_note = match install_skill() {
-                        Ok(dir) => format!(" It also installed the Rune Studio skill ({}).", dir.display()),
-                        Err(err) => format!(" (The skill could not be installed: {err}. Run: rune-studio skill)"),
-                    };
-                    say(&format!("Connected. Claude Code can now use Rune Studio in every project.{skill_note} Restart Claude Code, then ask it to do something on your PC."));
-                    0
-                }
-                _ => {
-                    say(&format!(
-                        "Could not run Claude Code's \"claude\" command. Connect by hand with:\n\n  claude mcp add --scope user rune-studio -- \"{exe}\" mcp\n"
-                    ));
-                    1
-                }
-            }
+            say(&format!("Connected. Claude Code can now use Rune Studio in every project.{skill_note} Restart Claude Code, then ask it to do something on your PC."));
+            0
         }
         _ => {
-            say("Say which agent to connect: rune-studio connect claude   (or: rune-studio connect --print for any other agent)");
-            2
+            say(&format!("Could not run Claude Code's \"claude\" command. Connect by hand with:
+
+  claude mcp add --scope user rune-studio -- \"{exe}\" mcp
+"));
+            1
         }
     }
+}
+
+fn connect_antigravity(exe: &str) -> i32 {
+    let Some(paths) = agents::antigravity() else {
+        say("Cannot find your home folder.");
+        return 1;
+    };
+    let _ = set_switch(true);
+    let changed = match agents::edit_file(&paths.config, |text| agents::add_server(text, exe).map(Some)) {
+        Ok(changed) => changed,
+        Err(problem) => {
+            say(&format!("Could not update Antigravity's settings ({}): {problem}
+Nothing was changed. Add Rune Studio by hand: run  rune-studio connect --print  and paste it into Antigravity's MCP settings (agent panel, MCP Servers, Manage MCP Servers, View raw config).", paths.config.display()));
+            return 1;
+        }
+    };
+    let mut skill_dirs = vec![paths.skill.clone()];
+    skill_dirs.extend(paths.cli_skill.clone());
+    let mut skill_note = String::new();
+    for dir in &skill_dirs {
+        if let Err(err) = skill::install(dir, GUIDE) {
+            skill_note = format!(" (The skill could not be installed in {}: {err})", dir.display());
+        }
+    }
+    say(&format!(
+        "{} Antigravity can now use Rune Studio.{}
+  Settings: {}
+  Skill:    {}
+In Antigravity, refresh MCP servers (agent panel > MCP Servers > Manage MCP Servers, or Settings > Customizations > Installed MCP Servers) or restart it, then ask it to do something on your PC.",
+        if changed { "Connected." } else { "Already connected." },
+        skill_note,
+        paths.config.display(),
+        paths.skill.display(),
+    ));
+    0
 }
 
 fn install_skill() -> Result<std::path::PathBuf, String> {
@@ -266,26 +317,48 @@ fn skill_command(option: &str) -> i32 {
 }
 
 fn disconnect(target: &str) -> i32 {
-    if target != "claude" {
-        say("Say which agent to disconnect: rune-studio disconnect claude");
-        return 2;
-    }
-    let arguments = ["mcp", "remove", "--scope", "user", "rune-studio"];
-    let direct = Process::new("claude").args(arguments).status();
-    let outcome = match direct {
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Process::new("cmd").arg("/C").arg("claude").args(arguments).status(),
-        other => other,
-    };
-    let _ = skill_command("--remove");
-    match outcome {
-        Ok(status) if status.success() => {
-            say("Rune Studio was removed from Claude Code.");
-            0
+    match target {
+        "claude" => {
+            let outcome = run_claude(&["mcp", "remove", "--scope", "user", "rune-studio"]);
+            let _ = skill_command("--remove");
+            match outcome {
+                Ok(status) if status.success() => {
+                    say("Rune Studio was removed from Claude Code.");
+                    0
+                }
+                _ => {
+                    say("The skill was removed, but Claude Code's \"claude\" command did not remove the tools. Run: claude mcp remove --scope user rune-studio");
+                    1
+                }
+            }
         }
-        _ => {
-            say("The skill was removed, but Claude Code's \"claude\" command did not remove the tools. Run: claude mcp remove --scope user rune-studio");
-            1
+        "antigravity" => {
+            let Some(paths) = agents::antigravity() else {
+                say("Cannot find your home folder.");
+                return 1;
+            };
+            let outcome = agents::edit_file(&paths.config, agents::remove_server);
+            let mut dirs = vec![paths.skill];
+            dirs.extend(paths.cli_skill);
+            for dir in dirs {
+                let _ = skill::remove(&dir);
+            }
+            match outcome {
+                Ok(true) => {
+                    say("Rune Studio was removed from Antigravity (tools and skill). Refresh or restart Antigravity.");
+                    0
+                }
+                Ok(false) => {
+                    say("Rune Studio was not in Antigravity's settings. The skill was removed if it was there.");
+                    0
+                }
+                Err(problem) => {
+                    say(&format!("Could not update Antigravity's settings: {problem}"));
+                    1
+                }
+            }
         }
+        other => unknown_agent("disconnect", other),
     }
 }
 
@@ -405,7 +478,7 @@ mod tests {
 
     #[test]
     fn the_help_text_mentions_every_command() {
-        for word in ["connect claude", "disconnect claude", "skill", "enable", "disable", "status", "guide", "mcp"] {
+        for word in ["connect claude", "connect antigravity", "disconnect", "skill", "enable", "disable", "status", "guide", "mcp"] {
             assert!(HELP.contains(word), "help does not mention {word}");
         }
     }

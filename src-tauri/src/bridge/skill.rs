@@ -1,4 +1,4 @@
-//! Packages `docs/AGENT_GUIDE.md` as a Claude Code skill, so one command gives an agent both the
+//! Packages `docs/AGENT-GUIDE.md` as a Claude Code skill, so one command gives an agent both the
 //! tools (the MCP server) and the know-how (the skill).
 //!
 //! The guide stays the single source of truth. A skill loads in layers: a short `SKILL.md` is
@@ -10,7 +10,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub const GUIDE: &str = include_str!("../../../docs/AGENT_GUIDE.md");
+pub const GUIDE: &str = include_str!("../../../docs/AGENT-GUIDE.md");
 
 const NAME: &str = "rune-studio";
 /// What makes an agent reach for the skill. Keep it about the user's request, not the product.
@@ -38,7 +38,11 @@ fn split(guide: &str) -> (String, Vec<Section>) {
             && let Some((number, title)) = heading.split_once(". ")
             && let Ok(number) = number.parse()
         {
-            sections.push(Section { number, title: title.to_string(), body: String::new() });
+            sections.push(Section {
+                number,
+                title: title.to_string(),
+                body: String::new(),
+            });
         } else if let Some(section) = sections.last_mut() {
             section.body.push_str(line);
             section.body.push('\n');
@@ -54,7 +58,11 @@ fn render(sections: &[Section], numbers: &[u32]) -> String {
     let mut out = String::new();
     for number in numbers {
         if let Some(section) = sections.iter().find(|section| section.number == *number) {
-            out.push_str(&format!("## {}\n{}\n", section.title, section.body.trim_end()));
+            out.push_str(&format!(
+                "## {}\n{}\n",
+                section.title,
+                section.body.trim_end()
+            ));
             out.push('\n');
         }
     }
@@ -74,18 +82,30 @@ pub fn files(guide: &str) -> Vec<(&'static str, String)> {
             body
         }
     );
-    let page = |title: &str, numbers: &[u32]| format!("# {title}\n\n{}", render(&sections, numbers));
+    let page =
+        |title: &str, numbers: &[u32]| format!("# {title}\n\n{}", render(&sections, numbers));
     vec![
         ("SKILL.md", skill),
         ("tools.md", page("Rune Studio: tools", &TOOLS_SECTIONS)),
-        ("recipes.md", page("Rune Studio: recipes", &RECIPES_SECTIONS)),
-        ("errors.md", page("Rune Studio: errors and limits", &ERRORS_SECTIONS)),
+        (
+            "recipes.md",
+            page("Rune Studio: recipes", &RECIPES_SECTIONS),
+        ),
+        (
+            "errors.md",
+            page("Rune Studio: errors and limits", &ERRORS_SECTIONS),
+        ),
     ]
 }
 
 /// `~/.claude/skills/rune-studio`, where Claude Code looks for a user's own skills.
 pub fn default_dir() -> Option<PathBuf> {
-    Some(PathBuf::from(std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"))?).join(".claude").join("skills").join(NAME))
+    Some(
+        PathBuf::from(std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"))?)
+            .join(".claude")
+            .join("skills")
+            .join(NAME),
+    )
 }
 
 /// Writes the skill into `dir`, replacing an older copy. Returns the files written.
@@ -115,20 +135,40 @@ mod tests {
     #[test]
     fn every_guide_section_lands_in_exactly_one_file() {
         let (_, sections) = split(GUIDE);
-        let placed: Vec<u32> = [SKILL_SECTIONS.as_slice(), &TOOLS_SECTIONS, &RECIPES_SECTIONS, &ERRORS_SECTIONS].concat();
+        let placed: Vec<u32> = [
+            SKILL_SECTIONS.as_slice(),
+            &TOOLS_SECTIONS,
+            &RECIPES_SECTIONS,
+            &ERRORS_SECTIONS,
+        ]
+        .concat();
         for section in &sections {
-            let count = placed.iter().filter(|number| **number == section.number).count();
-            assert_eq!(count, 1, "guide section {} ({}) is placed {count} times", section.number, section.title);
+            let count = placed
+                .iter()
+                .filter(|number| **number == section.number)
+                .count();
+            assert_eq!(
+                count, 1,
+                "guide section {} ({}) is placed {count} times",
+                section.number, section.title
+            );
         }
         for number in &placed {
-            assert!(sections.iter().any(|section| section.number == *number), "no guide section {number}");
+            assert!(
+                sections.iter().any(|section| section.number == *number),
+                "no guide section {number}"
+            );
         }
     }
 
     #[test]
     fn the_skill_has_frontmatter_and_points_at_its_detail_files() {
         let files = files(GUIDE);
-        let skill = &files.iter().find(|(name, _)| *name == "SKILL.md").unwrap().1;
+        let skill = &files
+            .iter()
+            .find(|(name, _)| *name == "SKILL.md")
+            .unwrap()
+            .1;
         assert!(skill.starts_with("---\nname: rune-studio\ndescription: Use when"));
         assert!(skill.contains("## The loop"));
         assert!(skill.contains("## Safety"));
@@ -140,8 +180,21 @@ mod tests {
 
     #[test]
     fn nothing_from_the_guide_is_lost_in_the_split() {
-        let all: String = files(GUIDE).iter().map(|(_, content)| content.as_str()).collect();
-        for tool in ["rune_begin", "rune_observe", "rune_click", "rune_type_text", "rune_press_keys", "rune_open_app", "rune_wait", "rune_status", "rune_done"] {
+        let all: String = files(GUIDE)
+            .iter()
+            .map(|(_, content)| content.as_str())
+            .collect();
+        for tool in [
+            "rune_begin",
+            "rune_observe",
+            "rune_click",
+            "rune_type_text",
+            "rune_press_keys",
+            "rune_open_app",
+            "rune_wait",
+            "rune_status",
+            "rune_done",
+        ] {
             assert!(all.contains(tool), "{tool} is missing from the skill files");
         }
         for code in ["stopped_by_user", "not_enabled", "out_of_range"] {
@@ -152,8 +205,15 @@ mod tests {
     #[test]
     fn the_skill_does_not_talk_about_section_numbers() {
         for (name, content) in files(GUIDE) {
-            assert!(!content.contains("section "), "{name} still refers to a numbered section");
-            assert!(!content.lines().any(|line| line.starts_with("## ") && line[3..].starts_with(|c: char| c.is_ascii_digit())), "{name} has a numbered heading");
+            assert!(
+                !content.contains("section "),
+                "{name} still refers to a numbered section"
+            );
+            assert!(
+                !content.lines().any(|line| line.starts_with("## ")
+                    && line[3..].starts_with(|c: char| c.is_ascii_digit())),
+                "{name} has a numbered heading"
+            );
         }
     }
 
