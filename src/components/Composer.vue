@@ -59,10 +59,13 @@ async function submit() {
     data-tauri-drag-region
     class="flex w-full items-end rounded-[32px] bg-[#141414] p-2 shadow-[inset_0_0_0_1px_rgb(255_255_255/0.08)]"
   >
-    <div class="flex w-full items-end gap-1 rounded-[24px] bg-[#f1f1ef] p-2 text-[#111]">
+    <!-- Light by default (a pale field in the dark card); fully dark when the system is in dark mode. -->
+    <div
+      class="flex w-full items-end gap-1 rounded-[24px] bg-[#f1f1ef] p-2 text-[#111] dark:bg-[#1f1f1f] dark:text-zinc-100"
+    >
       <button
         type="button"
-        class="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full border border-black/15 text-[#111] transition hover:bg-black/6"
+        class="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full border border-black/15 text-[#111] transition hover:bg-black/6 dark:border-white/15 dark:text-zinc-200 dark:hover:bg-white/8"
         aria-label="Settings"
         @click="agent.setMode('settings')"
       >
@@ -74,8 +77,12 @@ async function submit() {
         v-model="command"
         rows="1"
         :placeholder="placeholder"
-        class="max-h-[152px] min-h-8 min-w-0 flex-1 resize-none bg-transparent px-1 py-1 text-body leading-6 outline-none [--scrollbar-thumb-hover:rgb(0_0_0/0.4)] [--scrollbar-thumb:rgb(0_0_0/0.22)]"
-        :class="agent.notice.value ? 'placeholder:text-[#b3141b]' : 'placeholder:text-[#8a8a86]'"
+        class="max-h-[152px] min-h-8 min-w-0 flex-1 resize-none bg-transparent px-1 py-1 text-body leading-6 outline-none [--scrollbar-thumb-hover:rgb(0_0_0/0.4)] [--scrollbar-thumb:rgb(0_0_0/0.22)] dark:[--scrollbar-thumb-hover:rgb(255_255_255/0.32)] dark:[--scrollbar-thumb:rgb(255_255_255/0.16)]"
+        :class="
+          agent.notice.value
+            ? 'placeholder:text-[#b3141b] dark:placeholder:text-[#ff6b72]'
+            : 'placeholder:text-[#8a8a86] dark:placeholder:text-zinc-500'
+        "
         @keydown.enter.exact.prevent="submit"
       />
 
@@ -83,7 +90,9 @@ async function submit() {
         type="button"
         class="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full text-white transition"
         :class="
-          action.tone === 'red' ? 'bg-[#d71921] hover:bg-[#b9151c]' : 'bg-[#111] hover:bg-black'
+          action.tone === 'red'
+            ? 'bg-[#d71921] hover:bg-[#b9151c]'
+            : 'bg-[#111] hover:bg-black dark:bg-[#f1f1ef] dark:text-[#111] dark:hover:bg-white'
         "
         :aria-label="action.label"
         :aria-pressed="isListening"

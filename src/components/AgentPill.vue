@@ -7,6 +7,7 @@ import { PAGE_GAP, PAGE_WIDTH } from '@/config/layout'
 
 import Composer from './Composer.vue'
 import GlyphOrb from './GlyphOrb.vue'
+import HealthDots from './HealthDots.vue'
 import ProgressRing from './ProgressRing.vue'
 import SettingsPanel from './SettingsPanel.vue'
 import TaskPanel from './TaskPanel.vue'
@@ -17,14 +18,6 @@ const isAmbient = computed(() => agent.mode.value === 'ambient')
 
 // Dev only: lets a plain browser preview set the plan, thinking and steps by hand.
 if (import.meta.env.DEV) Object.assign(window, { __demoAgent: agent })
-
-/** The model server's health, as a badge on the orb: green, amber (needs attention), red (down). */
-const HEALTH_TONE = {
-  ok: 'bg-emerald-400',
-  warn: 'bg-amber-400',
-  down: 'bg-[#d71921]',
-  checking: 'bg-zinc-500',
-} as const
 
 // The window is as tall as the open card's content, so it grows when the text does.
 const content = useTemplateRef<HTMLElement>('content')
@@ -62,15 +55,12 @@ function onOrb() {
         type="button"
         class="relative size-14 cursor-pointer rounded-full bg-[#f1f1ef] outline-none focus-visible:ring-2 focus-visible:ring-white/60"
         :aria-label="agent.isRunning.value ? 'Stop' : isAmbient ? 'Open' : 'Close'"
+        :title="agent.health.value.title"
         @click="onOrb"
       >
         <GlyphOrb :state="agent.state.value" :level="agent.level.value" />
+        <HealthDots :tone="agent.health.value.tone" />
       </button>
-      <span
-        class="absolute right-0 bottom-0 size-3 rounded-full ring-2 ring-[#141414]"
-        :class="HEALTH_TONE[agent.health.value.tone]"
-        :title="agent.health.value.title"
-      />
     </div>
 
     <!-- Page column. Every page has the same fixed width, so switching pages never reflows. -->
