@@ -1,5 +1,9 @@
 @import 'tailwindcss';
 
+@theme {
+  --font-dot: 'Doto Variable', ui-monospace, monospace;
+}
+
 /* The window is transparent: only the pill itself should paint. */
 html,
 body,

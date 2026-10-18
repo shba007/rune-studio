@@ -3,7 +3,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::{hotkeys::Hotkeys, settings::Settings, window};
+use crate::{hotkeys::Hotkeys, settings::Settings, voice::capture::Capture, window};
 
 pub const STATE_CHANGED: &str = "state_changed";
 pub const SUMMON: &str = "summon";
@@ -26,6 +26,8 @@ pub enum AgentState {
 pub struct AppState {
     pub settings: Mutex<Settings>,
     pub hotkeys: Mutex<Hotkeys>,
+    /// Present while the microphone is open.
+    pub mic: Mutex<Option<Capture>>,
     pub agent_state: Mutex<AgentState>,
     pub http: reqwest::Client,
 }

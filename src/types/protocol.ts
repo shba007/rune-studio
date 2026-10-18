@@ -33,6 +33,7 @@ export type PillMode = 'ambient' | 'open' | 'settings'
 export const STATE_CHANGED = 'state_changed'
 export const SUMMON = 'summon'
 export const OPEN_SETTINGS = 'open_settings'
+export const AUDIO_LEVEL = 'audio_level'
 
 export interface StateChangedPayload {
   state: AgentState

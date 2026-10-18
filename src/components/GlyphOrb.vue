@@ -3,7 +3,7 @@ import { onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue'
 
 import type { AgentState } from '@/types/protocol'
 
-const props = defineProps<{ state: AgentState }>()
+const props = defineProps<{ state: AgentState; level?: number }>()
 
 type Kind = 'idle' | 'listening' | 'thinking' | 'acting' | 'attention' | 'done' | 'failed'
 
@@ -36,6 +36,7 @@ const CHECK = [
 
 const canvas = useTemplateRef<HTMLCanvasElement>('canvas')
 let frameId = 0
+let smoothedLevel = 0
 let kindStartedAt = performance.now()
 const origin = performance.now()
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
@@ -59,11 +60,12 @@ function paint(kind: Kind, t: number, since: number, light: Light) {
           if (r < 0.5) light(x, y, 0.7)
           break
         case 'listening': {
-          // Placeholder level until the audio_level event exists (M5).
-          const level = 0.25 + 0.75 * wave(t * 3.1) * wave(t * 7.3 + 1)
-          const reach = 1.2 + level * 3.6
-          if (r <= reach) light(x, y, 0.45 + 0.55 * (1 - r / reach))
-          else if (Math.abs(r - 4.6) < 0.5) light(x, y, 0.12)
+          // Follows the real microphone level. At silence only the centre breathes, so a dead
+          // mic looks different from a live one.
+          const reach = 0.9 + smoothedLevel * 4.3
+          if (r <= reach) light(x, y, 0.4 + 0.6 * (1 - r / reach))
+          else if (Math.abs(r - 4.6) < 0.5) light(x, y, 0.08 + 0.25 * smoothedLevel)
+          if (r < 0.5) light(x, y, 0.5 + 0.4 * wave(t * 2.5))
           break
         }
         case 'thinking':
@@ -109,6 +111,8 @@ function draw(now: number) {
   if (!ctx) return
 
   const kind = KIND[props.state]
+  // Fast attack, slow decay: syllables register but the glyph does not flicker.
+  smoothedLevel = Math.max(props.level ?? 0, smoothedLevel * 0.86)
   const t = reducedMotion.matches ? 0 : (now - origin) / 1000
   const since = reducedMotion.matches ? 10 : (now - kindStartedAt) / 1000
   const lit = new Map<number, number>()

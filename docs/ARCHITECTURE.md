@@ -112,7 +112,7 @@ src-tauri/src/
   observe/         screenshot, uia                            (M1, M4)
   exec/            input, apps                                (M1)
   safety/          gate, rules                                (M3)
-  voice/           capture, vad, session                      (M5)
+  voice/           capture (mic + level, done), vad, session  (VAD and session: M5)
 ```
 
 | Job           | Crate                          | Notes (verified against docs, 2026-10)                                                          |
@@ -137,45 +137,55 @@ Design points:
 
 ## 7. UI: the pill
 
-Design language: Nothing-phone inspired. Monochrome, a circular dot-matrix glyph, one red accent used only for "needs attention", a dot or mono font for text (Doto, open licence, bundled locally; no Nothing fonts or logos). Frameless, transparent, always-on-top, skip-taskbar window, top-center, draggable (position remembered from M6).
+Design language: Nothing-phone inspired. Monochrome, a circular dot-matrix glyph, one red accent (needs attention, recording, Stop), the Doto dot font (open licence, bundled locally via `@fontsource-variable/doto`; no Nothing fonts or logos) for status text and placeholders, mono for everything else. Frameless, transparent, always-on-top, skip-taskbar window, **anchored to the bottom-right of the primary monitor's work area** (16 px margin, above the taskbar) and draggable (position remembered from M6). Vue devtools are disabled (the plugin is removed from the Vite config).
 
-A single **bot glyph** (an 11x11 dot "orb" on a white disc) is the whole app at rest. The dark capsule grows out of it.
+A single **bot glyph** (an 11x11 dot orb on a white disc) is the whole app at rest. When opened, the **composer card** grows to its right while the orb stays at the left, bottom-aligned with the card.
 
 ```
-AMBIENT   [ glyph ]                                   ~76 px disc, the default resting form
-OPEN      [ glyph ][ Type or say a command...  ][ mic ]   ~480 px, stays open until dismissed
-ATTENTION [ glyph ][ Send this email to Raj?  Yes  No ][ mic ]   opens itself; "yes"/"no" by voice
-SETTINGS  capsule + a panel below (rune-infer URL, models, API key, hotkeys)   opened from the tray
+AMBIENT    (orb)                                            76 px, the resting form, bottom-right corner
+
+OPEN                  [ Open Notepad and write hello ] [ Open Calculator ... ]   starter suggestions
+                      +--------------------------------------------+
+                      |  Type or say a command                     |   white field, multi-line, Enter sends
+            (orb)     |  [sliders] [mic]                    (send) |   settings, hands-free mic, send
+                      +--------------------------------------------+
+                      | [model] [backend 12 ms]   Ready     [Stop] |   status bar (Doto)
+                      +--------------------------------------------+
+
+ATTENTION  same card; status bar reads "Needs your OK  [Yes] [No]" (voice yes/no from M5)
+SETTINGS   the card is replaced by a settings panel (rune-infer URL, models, API key, hotkeys)
 ```
 
-Modes: **ambient** (glyph only), **open** (glyph + input + mic) and **settings**. The capsule opens on the summon hotkey and when the agent needs the user (`ask_user`, high-risk confirm). It stays open until dismissed (`Esc`, the summon hotkey again, or clicking the glyph while idle). Clicking the glyph while the agent runs is Stop.
+Modes: **ambient** (orb only), **open** (orb + composer) and **settings**. The card opens on the summon hotkey and when the agent needs the user (`ask_user`, high-risk confirm). It stays open until dismissed (`Esc`, the summon hotkey again, or clicking the orb while idle). Clicking the orb while the agent runs is Stop. Suggestions show only while the field is empty and the agent is idle.
+
+**Voice reaction.** The mic button toggles hands-free listening: Rust opens the default input device (cpal, on its own thread), computes an RMS level about 30 times a second, maps -55..-10 dBFS to 0..1 and emits `audio_level`. The orb's listening bloom follows that level (fast attack, slow decay); at silence only the centre breathes, so a dead mic looks different from a live one. If nothing is heard for 4 s the status bar says so. Level capture was pulled forward from M5; segmentation (VAD) and transcription remain M5.
 
 Glyph states (distinct by motion and shape, never colour alone; static frames under `prefers-reduced-motion`):
 
-| State                | Dot-matrix behaviour                                                  |
-| -------------------- | --------------------------------------------------------------------- |
-| Idle / stopped       | Dim ring, slow breath                                                 |
-| Listening            | Bloom that follows the voice level (needs an `audio_level` event, M5) |
-| Thinking / observing | Comet orbiting the ring                                               |
-| Acting               | One bright "cursor" dot roaming, click ripple                         |
-| Needs attention      | Red `!`, blinking (the only red)                                      |
-| Done                 | Check mark draws in dot by dot, then fades to idle                    |
-| Failed               | Red `x`                                                               |
+| State                | Dot-matrix behaviour                                         |
+| -------------------- | ------------------------------------------------------------ |
+| Idle / stopped       | Dim ring, slow breath                                        |
+| Listening            | Bloom that follows the live microphone level (`audio_level`) |
+| Thinking / observing | Comet orbiting the ring                                      |
+| Acting               | One bright "cursor" dot roaming, click ripple                |
+| Needs attention      | Red `!`, blinking (the only red)                             |
+| Done                 | Check mark draws in dot by dot, then fades to idle           |
+| Failed               | Red `x`                                                      |
 
 A small dot on the disc's corner shows backend problems (amber/red) and is absent when everything is fine.
 
-**Window mechanics.** The window resizes in discrete steps (ambient 76x76, open 480x76, settings 480x420) around a fixed horizontal centre. Because a transparent window still catches mouse clicks, expanding resizes the window first and then animates the capsule inside; collapsing animates first and then shrinks the window.
+**Window mechanics.** The window resizes in discrete steps (ambient 76x76, open 572x268, settings 572x560) **keeping its bottom-right corner fixed**, so it grows up and to the left from wherever it sits, clamped to the work area. Because a transparent window still catches mouse clicks, expanding resizes the window first and then animates the card inside; collapsing animates first and then shrinks the window. Windows clamps a window's configured size to a minimum width, so the exact size is set explicitly at startup.
 
 **M6 additions.** Hover or click on the glyph opens a small ticker list in the dot font: one line per step (`click · Save`, risk, result) plus the last-screenshot thumbnail.
 
-- **Hotkeys:** `Alt+Q` opens the capsule (and shows the window if hidden); pressing it again collapses to ambient. `Ctrl+Alt+Esc` is the global **Stop**. Both are settings (`toggleHotkey`, `stopHotkey`) and re-register on save. `Ctrl+Alt+Space` was rejected (taken by the Claude desktop app); `Alt+Tab` cannot be registered (reserved by Windows); `Ctrl+Space` would break editor autocomplete and IME toggles.
+- **Hotkeys:** `Alt+Q` opens the card (and shows the window if hidden); pressing it again collapses to the orb. `Ctrl+Alt+Esc` is the global **Stop**. Both are settings (`toggleHotkey`, `stopHotkey`) and re-register on save. `Ctrl+Alt+Space` was rejected (taken by the Claude desktop app); `Alt+Tab` cannot be registered (reserved by Windows); `Ctrl+Space` would break editor autocomplete and IME toggles.
 - **Click-through while acting:** the window ignores the mouse in the Acting state, so it can never block a click meant for another app. Stop is then the hotkey or the voice word "stop".
 
 ### Rust <-> Vue contract
 
 Commands (UI -> Rust): `start_task(text)`, `steer(text)`, `toggle_listening()`, `stop()`, `confirm(id, approved)`, `set_mode("ambient"|"open"|"settings")`, `get_settings()`, `save_settings(...)`, `set_api_key(key)`, `check_backend()`.
 
-Events (Rust -> UI): `state_changed(state)`, `summon`, `open_settings`, `audio_level(0..1)` (M5), `transcript(text, final)`, `step_started{id, tool, reason, risk, target}`, `step_finished{id, ok, error?}`, `screenshot{id, thumb}`, `confirm_request{id, text, risk}`, `task_done{summary, success}`, `error{message}`.
+Events (Rust -> UI): `state_changed(state)`, `summon`, `open_settings`, `audio_level(0..1)`, `transcript(text, final)`, `step_started{id, tool, reason, risk, target}`, `step_finished{id, ok, error?}`, `screenshot{id, thumb}`, `confirm_request{id, text, risk}`, `task_done{summary, success}`, `error{message}`.
 
 ## 8. Milestones
 
@@ -187,8 +197,8 @@ Events (Rust -> UI): `state_changed(state)`, `summon`, `open_settings`, `audio_l
 | M2   | Vertical slice: model client, `click`/`type_text`/`press_keys`/`open_app`/`done`, loop, step limit, text input                | "Open Notepad and write hello"                               | End-to-end works; Stop interrupts at any moment                             |
 | M3   | Safety gate and confirmation (buttons)                                                                                        | "Delete this file" pauses for a yes                          | High-risk actions cannot run without a yes                                  |
 | M4   | Full tools and UIA: `scroll`, `drag`, `wait`, `ask_user`, element ids, stuck detection, history pruning                       | Copy text from a browser into Notepad                        | UIA apps use element ids; no-op loops are detected                          |
-| M5   | Voice: cpal, VAD, STT, listening toggle, steering, voice yes/no/stop                                                          | Click the mic once, talk through a task                      | Utterances cut cleanly; speaking mid-task steers                            |
-| M6   | UI polish: glyph hover/click ticker list (dot font, thumbnail), tray, remembered position, error states, Doto font            | The full dot-matrix capsule flow                             | Every Step 7 state is real                                                  |
+| M5   | Voice: mic level (done), VAD, STT, listening toggle, steering, voice yes/no/stop                                              | Click the mic once, talk through a task                      | Utterances cut cleanly; speaking mid-task steers                            |
+| M6   | UI polish: glyph hover/click ticker list (dot font, thumbnail), tray, remembered position, error states                       | The full orb + composer flow                                 | Every Step 7 state is real                                                  |
 | M7   | Hardening and packaging: eval suite of ~15 tasks (success rate, steps, latency, tokens), elevated-window detection, installer | Report card + installer                                      | Success rate measured; installs on a clean machine                          |
 
 ## 9. Risks

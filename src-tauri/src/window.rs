@@ -5,10 +5,11 @@ use crate::events::{OPEN_SETTINGS, SUMMON};
 
 pub const MAIN: &str = "main";
 
-const TOP_MARGIN: f64 = 16.0;
+/// Gap between the pill and the screen edges, in logical pixels.
+const EDGE_MARGIN: f64 = 16.0;
 
 /// The pill's discrete window sizes. The UI animates inside the window; the window itself
-/// only ever jumps between these.
+/// only ever jumps between these. Keep in sync with the layout in `AgentPill.vue`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Mode {
@@ -21,8 +22,8 @@ impl Mode {
     fn size(self) -> (f64, f64) {
         match self {
             Mode::Ambient => (76.0, 76.0),
-            Mode::Open => (480.0, 76.0),
-            Mode::Settings => (480.0, 420.0),
+            Mode::Open => (572.0, 268.0),
+            Mode::Settings => (572.0, 560.0),
         }
     }
 }
@@ -36,32 +37,43 @@ pub fn exclude_from_capture(window: &WebviewWindow) -> tauri::Result<()> {
     window.set_content_protected(true)
 }
 
-/// Centres the window horizontally at the top of the primary monitor.
-pub fn place_top_center(window: &WebviewWindow) -> tauri::Result<()> {
+/// Puts the window in the bottom-right corner of the primary monitor's work area, so it
+/// sits above the taskbar.
+pub fn place_bottom_right(window: &WebviewWindow) -> tauri::Result<()> {
     let Some(monitor) = window.primary_monitor()? else {
         return Ok(());
     };
+    let area = monitor.work_area();
     let size = window.outer_size()?;
-    let x = monitor.position().x + (monitor.size().width as i32 - size.width as i32) / 2;
-    let y = monitor.position().y + (TOP_MARGIN * monitor.scale_factor()) as i32;
+    let margin = (EDGE_MARGIN * monitor.scale_factor()) as i32;
+    let x = area.position.x + area.size.width as i32 - size.width as i32 - margin;
+    let y = area.position.y + area.size.height as i32 - size.height as i32 - margin;
     window.set_position(PhysicalPosition::new(x, y))
 }
 
-/// Resizes around the window's current horizontal centre, so a pill the user dragged
-/// elsewhere grows in place instead of snapping back to the top of the screen.
+/// Resizes while keeping the bottom-right corner fixed, so the pill grows up and to the left
+/// from wherever the user has put it. The result is kept inside the monitor's work area.
 pub fn set_mode(app: &AppHandle, mode: Mode) -> tauri::Result<()> {
     let Some(window) = main_window(app) else {
         return Ok(());
     };
     let position = window.outer_position()?;
-    let old_width = window.outer_size()?.width as i32;
-    let center_x = position.x + old_width / 2;
+    let old = window.outer_size()?;
+    let right = position.x + old.width as i32;
+    let bottom = position.y + old.height as i32;
 
     let (width, height) = mode.size();
     window.set_size(LogicalSize::new(width, height))?;
 
-    let new_width = window.outer_size()?.width as i32;
-    window.set_position(PhysicalPosition::new(center_x - new_width / 2, position.y))
+    let new = window.outer_size()?;
+    let mut x = right - new.width as i32;
+    let mut y = bottom - new.height as i32;
+    if let Some(monitor) = window.current_monitor()? {
+        let area = monitor.work_area();
+        x = x.clamp(area.position.x, (area.position.x + area.size.width as i32 - new.width as i32).max(area.position.x));
+        y = y.clamp(area.position.y, (area.position.y + area.size.height as i32 - new.height as i32).max(area.position.y));
+    }
+    window.set_position(PhysicalPosition::new(x, y))
 }
 
 pub fn set_click_through(app: &AppHandle, enabled: bool) {

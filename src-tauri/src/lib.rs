@@ -4,6 +4,7 @@ mod error;
 mod events;
 mod hotkeys;
 mod settings;
+mod voice;
 mod window;
 
 use std::sync::Mutex;
@@ -60,6 +61,7 @@ pub fn run() {
             app.manage(AppState {
                 settings: Mutex::new(loaded),
                 hotkeys: Mutex::new(hotkeys.clone()),
+                mic: Mutex::new(None),
                 agent_state: Mutex::new(AgentState::Idle),
                 http: reqwest::Client::new(),
             });
@@ -69,7 +71,7 @@ pub fn run() {
                 // Windows clamps the configured size to its minimum window width; an explicit
                 // resize is exact.
                 window::set_mode(app.handle(), window::Mode::Ambient)?;
-                window::place_top_center(&pill)?;
+                window::place_bottom_right(&pill)?;
             }
 
             // Failures are already logged; the pill stays reachable from the tray.
