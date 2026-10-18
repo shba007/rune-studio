@@ -34,27 +34,21 @@
 
   /* Caption: section headings. Pair with uppercase. */
   --text-caption: 0.625rem;
-  --text-caption--line-height: 0.875rem;
+  --text-caption--line-height: 1rem;
   --text-caption--font-weight: 600;
   --text-caption--letter-spacing: 0.1em;
 }
 
-/* Icon sizes: three roles, like the type scale. Put one of these on every icon and never a raw
-   size-* class. Filled glyphs carry more weight than outline ones, so keep them small. */
+/* Icon sizes: two roles. Put one of these on every icon and never a raw size-* class. Filled
+   glyphs carry more weight than outline ones, so keep them small. */
 @utility icon-sm {
-  /* 12 px: inline accessories (trailing arrows, remove links). */
+  /* 12 px (the one 4 px-grid size): inline accessories like trailing arrows and remove links. */
   width: 0.75rem;
   height: 0.75rem;
 }
 
 @utility icon-md {
-  /* 14 px: next to a label (setting rows, the save action). */
-  width: 0.875rem;
-  height: 0.875rem;
-}
-
-@utility icon-lg {
-  /* 16 px: icon-only buttons. */
+  /* 16 px: the default, for icon-only buttons and next to a label. */
   width: 1rem;
   height: 1rem;
 }
@@ -118,7 +112,7 @@ input {
 .page-enter-from,
 .page-leave-to {
   opacity: 0;
-  transform: translateY(6px);
+  transform: translateY(8px);
 }
 
 @media (prefers-reduced-motion: reduce) {

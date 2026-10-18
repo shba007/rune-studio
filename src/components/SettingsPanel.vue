@@ -57,7 +57,7 @@ async function save() {
   <section
     class="flex h-full w-full flex-col overflow-hidden rounded-[28px] border border-white/8 bg-[#141414] text-zinc-100"
   >
-    <header class="flex items-center gap-1 px-3 pt-3 pb-2">
+    <header class="flex items-center gap-1 px-4 pt-4 pb-2">
       <button
         type="button"
         class="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full text-zinc-300 transition hover:bg-white/8 hover:text-white"
@@ -66,7 +66,7 @@ async function save() {
       >
         <AppIcon name="back" />
       </button>
-      <div class="flex min-w-0 flex-1 flex-col pl-1">
+      <div class="flex min-w-0 flex-1 flex-col pl-2">
         <h2 class="text-title">Settings</h2>
         <BackendBadge :status="agent.backend.value" />
       </div>
@@ -80,7 +80,7 @@ async function save() {
       </button>
     </header>
 
-    <div v-if="draft" class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 pb-3">
+    <div v-if="draft" class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pb-4">
       <SettingsGroup title="Connection">
         <SettingsRow v-model="draft.baseUrl" label="Base URL" icon="link" />
         <SettingsRow
@@ -95,7 +95,7 @@ async function save() {
       <button
         v-if="agent.hasApiKey.value"
         type="button"
-        class="-mt-1.5 flex w-fit cursor-pointer items-center gap-1.5 self-end px-1 text-label text-zinc-500 transition hover:text-[#d71921]"
+        class="-mt-2 flex w-fit cursor-pointer items-center gap-2 self-end px-2 text-label text-zinc-500 transition hover:text-[#d71921]"
         @click="agent.saveApiKey('')"
       >
         <AppIcon name="trash" size="sm" />
@@ -115,16 +115,16 @@ async function save() {
       <details
         v-if="isDev"
         ref="developer"
-        class="rounded-2xl bg-white/5 px-3 py-2"
+        class="rounded-2xl bg-white/5 px-4 py-2"
         @toggle="revealDeveloper"
       >
         <summary class="cursor-pointer text-caption text-zinc-500 uppercase">Developer</summary>
-        <div class="flex flex-wrap gap-1.5 pt-2">
+        <div class="flex flex-wrap gap-2 pt-2">
           <button
             v-for="s in DEBUG_STATES"
             :key="s"
             type="button"
-            class="cursor-pointer rounded-full bg-white/8 px-2.5 py-1 text-label text-zinc-300 transition hover:bg-white/15"
+            class="h-8 cursor-pointer rounded-full bg-white/8 px-3 text-label text-zinc-300 transition hover:bg-white/15"
             @click="agent.debugSetState(s)"
           >
             {{ s }}
@@ -134,13 +134,13 @@ async function save() {
       </details>
     </div>
 
-    <footer class="p-3 pt-0">
+    <footer class="p-4 pt-0">
       <button
         type="button"
         class="flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-full bg-[#f1f1ef] text-label text-[#111] transition hover:bg-white"
         @click="save"
       >
-        <AppIcon name="ok" size="md" />
+        <AppIcon name="ok" />
         Save and check
       </button>
     </footer>

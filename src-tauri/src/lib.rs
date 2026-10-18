@@ -8,10 +8,13 @@ mod exec;
 mod hotkeys;
 mod model;
 mod observe;
+mod overlay;
 mod settings;
 mod voice;
 mod window;
 
+#[cfg(test)]
+mod probe_m15;
 #[cfg(test)]
 mod system_tests;
 

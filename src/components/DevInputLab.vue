@@ -53,10 +53,10 @@ async function doType() {
 </script>
 
 <template>
-  <div class="flex flex-col gap-2.5 border-t border-white/8 pt-3">
+  <div class="flex flex-col gap-2 border-t border-white/8 pt-4">
     <h4 class="text-caption text-zinc-500 uppercase">Eyes and hands</h4>
 
-    <div class="flex flex-col gap-1.5">
+    <div class="flex flex-col gap-2">
       <button
         type="button"
         :class="[BUTTON, 'self-start']"
@@ -86,7 +86,7 @@ async function doType() {
       s
     </label>
 
-    <div class="flex items-center gap-1.5">
+    <div class="flex items-center gap-2">
       <input
         v-model.number="x"
         type="number"
@@ -111,7 +111,7 @@ async function doType() {
       pixel {{ click.pixelX }}, {{ click.pixelY }} · cursor {{ click.cursorX }}, {{ click.cursorY }}
     </p>
 
-    <div class="flex items-center gap-1.5">
+    <div class="flex items-center gap-2">
       <input
         v-model="text"
         type="text"

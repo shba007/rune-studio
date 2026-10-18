@@ -7,4 +7,4 @@ export const ORB_SIZE = 64
 export const PAGE_GAP = 8
 
 /** Every page that sits beside the orb (composer, settings, future task views) is this wide. */
-export const PAGE_WIDTH = 276
+export const PAGE_WIDTH = 272

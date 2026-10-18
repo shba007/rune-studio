@@ -116,12 +116,18 @@ pub fn monitor_at(px: i32, py: i32) -> Result<Monitor, ObserveError> {
     describe(&monitor)
 }
 
-/// Captures a monitor and downscales it so the longer edge is at most `max_edge`.
-pub fn capture(id: Option<u32>, max_edge: u32, quality: u8) -> Result<Frame, ObserveError> {
-    let started = Instant::now();
-    let (xmonitor, monitor) = resolve(id)?;
-    let rgba = xmonitor.capture_image().map_err(|err| ObserveError::Capture(err.to_string()))?;
+/// What the model is sent: the screenshot downscaled to the model's budget, as JPEG.
+pub struct Prepared {
+    pub width: u32,
+    pub height: u32,
+    pub jpeg: Vec<u8>,
+    image: RgbImage,
+}
 
+/// The one place a captured screen becomes a model-sized JPEG: downscale so the longer edge is at
+/// most `max_edge`, then encode. The app and the M1.5 grounding probe both go through here, so the
+/// probe measures exactly what the agent will send.
+pub fn prepare(rgba: image::RgbaImage, max_edge: u32, quality: u8) -> Result<Prepared, ObserveError> {
     let (width, height) = fit_within(rgba.width(), rgba.height(), max_edge);
     let rgb = DynamicImage::ImageRgba8(rgba).into_rgb8();
     let image = if (width, height) == (rgb.width(), rgb.height()) {
@@ -129,8 +135,16 @@ pub fn capture(id: Option<u32>, max_edge: u32, quality: u8) -> Result<Frame, Obs
     } else {
         image::imageops::resize(&rgb, width, height, FilterType::Triangle)
     };
-
     let jpeg = encode_jpeg(&image, quality)?;
+    Ok(Prepared { width, height, jpeg, image })
+}
+
+/// Captures a monitor and downscales it so the longer edge is at most `max_edge`.
+pub fn capture(id: Option<u32>, max_edge: u32, quality: u8) -> Result<Frame, ObserveError> {
+    let started = Instant::now();
+    let (xmonitor, monitor) = resolve(id)?;
+    let rgba = xmonitor.capture_image().map_err(|err| ObserveError::Capture(err.to_string()))?;
+    let Prepared { width, height, jpeg, image } = prepare(rgba, max_edge, quality)?;
     Ok(Frame {
         monitor,
         width,

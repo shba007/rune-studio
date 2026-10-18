@@ -62,12 +62,12 @@ async function useSuggestion(text: string) {
       :style="{ gridTemplateRows: showSuggestions ? '1fr' : '0fr' }"
     >
       <ul class="min-h-0 overflow-hidden" :inert="!showSuggestions">
-        <li class="pb-1.5">
+        <li class="pb-2">
           <button
             v-for="suggestion in SUGGESTIONS"
             :key="suggestion"
             type="button"
-            class="flex w-full cursor-pointer items-center justify-between gap-2 border-b border-white/8 px-3.5 py-2 text-left text-label text-zinc-300 transition last:border-b-0 hover:text-white"
+            class="flex w-full cursor-pointer items-center justify-between gap-2 border-b border-white/8 px-4 py-2 text-left text-label text-zinc-300 transition last:border-b-0 hover:text-white"
             @click="useSuggestion(suggestion)"
           >
             <span class="truncate">{{ suggestion }}</span>
@@ -77,7 +77,7 @@ async function useSuggestion(text: string) {
       </ul>
     </div>
 
-    <div class="flex flex-col rounded-[20px] bg-[#f1f1ef] px-4 pt-3.5 pb-3 text-[#111]">
+    <div class="flex flex-col rounded-[20px] bg-[#f1f1ef] px-4 pt-4 pb-4 text-[#111]">
       <textarea
         ref="field"
         v-model="command"
@@ -90,7 +90,7 @@ async function useSuggestion(text: string) {
       <div class="flex items-center gap-2 pt-1">
         <button
           type="button"
-          class="grid size-9 cursor-pointer place-items-center rounded-full border border-black/15 text-[#111] transition hover:bg-black/6"
+          class="grid size-10 cursor-pointer place-items-center rounded-full border border-black/15 text-[#111] transition hover:bg-black/6"
           aria-label="Settings"
           @click="agent.setMode('settings')"
         >
@@ -101,7 +101,7 @@ async function useSuggestion(text: string) {
         <div class="ml-auto flex items-center gap-2">
           <button
             type="button"
-            class="grid size-9 cursor-pointer place-items-center rounded-full text-white transition"
+            class="grid size-10 cursor-pointer place-items-center rounded-full text-white transition"
             :class="isListening ? 'bg-[#d71921]' : 'bg-[#111] hover:bg-black'"
             :aria-label="isListening ? 'Stop listening' : 'Listen'"
             :aria-pressed="isListening"
@@ -112,7 +112,7 @@ async function useSuggestion(text: string) {
 
           <button
             type="button"
-            class="grid size-9 cursor-pointer place-items-center rounded-full bg-[#111] text-white transition"
+            class="grid size-10 cursor-pointer place-items-center rounded-full bg-[#111] text-white transition"
             :class="canSend ? 'opacity-100 hover:bg-black' : 'opacity-35'"
             aria-label="Send"
             @click="submit"
@@ -123,7 +123,7 @@ async function useSuggestion(text: string) {
       </div>
     </div>
 
-    <div class="flex min-h-10 items-center gap-2 px-2.5 pt-1.5 pb-0.5">
+    <div class="flex min-h-10 items-center gap-2 px-2">
       <span class="size-2 shrink-0 rounded-full" :class="backend.dot" :title="backend.title" />
 
       <span
@@ -139,14 +139,14 @@ async function useSuggestion(text: string) {
       <template v-if="needsConfirm">
         <button
           type="button"
-          class="cursor-pointer rounded-full border border-[#d71921] px-2.5 py-1 text-label text-[#d71921] hover:bg-[#d71921]/15"
+          class="cursor-pointer rounded-full border border-[#d71921] h-8 px-3 text-label text-[#d71921] hover:bg-[#d71921]/15"
           @click="agent.confirm('pending', true)"
         >
           Yes
         </button>
         <button
           type="button"
-          class="cursor-pointer rounded-full border border-zinc-600 px-2.5 py-1 text-label text-zinc-400 hover:bg-white/10"
+          class="cursor-pointer rounded-full border border-zinc-600 h-8 px-3 text-label text-zinc-400 hover:bg-white/10"
           @click="agent.confirm('pending', false)"
         >
           No
@@ -155,7 +155,7 @@ async function useSuggestion(text: string) {
       <button
         v-else-if="agent.isRunning.value"
         type="button"
-        class="cursor-pointer rounded-full border border-[#d71921] px-2.5 py-1 text-label text-[#d71921] hover:bg-[#d71921]/15"
+        class="cursor-pointer rounded-full border border-[#d71921] h-8 px-3 text-label text-[#d71921] hover:bg-[#d71921]/15"
         @click="agent.stop()"
       >
         Stop

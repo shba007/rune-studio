@@ -19,7 +19,7 @@ const view = computed(() => {
 </script>
 
 <template>
-  <span class="flex min-w-0 items-center gap-1.5 text-label text-zinc-400" :title="view.text">
+  <span class="flex min-w-0 items-center gap-2 text-label text-zinc-400" :title="view.text">
     <span class="size-2 shrink-0 rounded-full" :class="view.tone" />
     <span class="truncate">{{ view.text }}</span>
   </span>

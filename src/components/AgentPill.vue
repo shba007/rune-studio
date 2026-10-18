@@ -47,7 +47,7 @@ function onOrb() {
         <GlyphOrb :state="agent.state.value" :level="agent.level.value" />
         <span
           v-if="backendDot"
-          class="absolute right-0 bottom-0 size-2.5 rounded-full ring-2 ring-[#f1f1ef]"
+          class="absolute right-0 bottom-0 size-2 rounded-full ring-2 ring-[#f1f1ef]"
           :class="backendDot"
         />
       </button>

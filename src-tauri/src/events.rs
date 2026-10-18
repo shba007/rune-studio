@@ -3,7 +3,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::{exec::CancelToken, hotkeys::Hotkeys, settings::Settings, voice::capture::Capture, window};
+use crate::{exec::CancelToken, hotkeys::Hotkeys, overlay, settings::Settings, voice::capture::Capture, window};
 
 pub const STATE_CHANGED: &str = "state_changed";
 pub const SUMMON: &str = "summon";
@@ -56,6 +56,7 @@ fn apply_state(app: &AppHandle, state: AgentState, allow_click_through: bool) {
     let app_state = app.state::<AppState>();
     *app_state.agent_state.lock().expect("agent state lock poisoned") = state;
     window::set_click_through(app, allow_click_through && state == AgentState::Acting);
+    overlay::sync(app, state);
     let _ = app.emit(STATE_CHANGED, StateChanged { state });
 }
 
