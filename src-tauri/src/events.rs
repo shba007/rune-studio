@@ -3,7 +3,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::{hotkeys::Hotkeys, settings::Settings, voice::capture::Capture, window};
+use crate::{exec::CancelToken, hotkeys::Hotkeys, settings::Settings, voice::capture::Capture, window};
 
 pub const STATE_CHANGED: &str = "state_changed";
 pub const SUMMON: &str = "summon";
@@ -28,6 +28,8 @@ pub struct AppState {
     pub hotkeys: Mutex<Hotkeys>,
     /// Present while the microphone is open.
     pub mic: Mutex<Option<Capture>>,
+    /// Set by every Stop; checked by the executor between steps.
+    pub cancel: CancelToken,
     pub agent_state: Mutex<AgentState>,
     pub http: reqwest::Client,
 }

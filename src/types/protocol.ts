@@ -28,6 +28,35 @@ export interface BackendStatus {
   error: string | null
 }
 
+export interface MonitorInfo {
+  id: number
+  x: number
+  y: number
+  width: number
+  height: number
+  scaleFactor: number
+  primary: boolean
+}
+
+/** Result of the dev-only screen capture: what the model would see. */
+export interface CaptureReport {
+  monitor: MonitorInfo
+  width: number
+  height: number
+  bytes: number
+  millis: number
+  thumbnail: string
+}
+
+/** Result of the dev-only click: where it was aimed and where the cursor really ended up. */
+export interface ClickReport {
+  monitor: MonitorInfo
+  pixelX: number
+  pixelY: number
+  cursorX: number
+  cursorY: number
+}
+
 export type PillMode = 'ambient' | 'open' | 'settings'
 
 export const STATE_CHANGED = 'state_changed'

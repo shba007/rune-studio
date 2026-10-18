@@ -10,6 +10,8 @@ import {
   SUMMON,
   type AgentState,
   type BackendStatus,
+  type CaptureReport,
+  type ClickReport,
   type PillMode,
   type Settings,
   type StateChangedPayload,
@@ -146,6 +148,10 @@ export function useAgent() {
   const toggleListening = () => call('toggle_listening')
   const confirm = (id: string, approved: boolean) => call('confirm', { id, approved })
   const debugSetState = (next: AgentState) => call('debug_set_state', { state: next })
+  const debugCapture = (monitor?: number) => call<CaptureReport>('debug_capture', { monitor })
+  const debugClick = (args: { x: number; y: number; delayMs?: number; monitor?: number }) =>
+    call<ClickReport>('debug_click', args)
+  const debugType = (text: string, delayMs?: number) => call('debug_type', { text, delayMs })
 
   // The agent needs the user: open the card by itself.
   watch(state, (next) => {
@@ -203,6 +209,9 @@ export function useAgent() {
     toggleListening,
     confirm,
     debugSetState,
+    debugCapture,
+    debugClick,
+    debugType,
   }
 }
 

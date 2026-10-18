@@ -108,9 +108,11 @@ src-tauri/src/
   events.rs        typed events + commands shared with the UI
   window.rs        pill window: placement, ambient/open/settings sizing, click-through, capture exclusion
   agent/           loop, history, prompt, protocol            (M2+)
-  model/           client, coords                             (M2+)
-  observe/         screenshot, uia                            (M1, M4)
-  exec/            input, apps                                (M1)
+  model/           coords (done, M1); client                  (client: M2)
+  observe/         screenshot (done, M1); uia                 (uia: M4)
+  exec/            input + CancelToken (done, M1); apps       (apps: M2)
+  debug.rs         dev-only commands for the eyes and hands   (debug builds only)
+  system_tests.rs  #[ignore]d end-to-end tests against a real window
   safety/          gate, rules                                (M3)
   voice/           capture (mic + level, done), vad, session  (VAD and session: M5)
 ```
@@ -230,17 +232,40 @@ Events (Rust -> UI): `state_changed(state)`, `summon`, `open_settings`, `audio_l
 
 ## 8. Milestones
 
-| #    | Milestone                                                                                                                     | Demo                                                         | Done when                                                                   |
-| ---- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------- |
-| M0   | Shell and plumbing: pill window, hotkeys, settings + keyring, rune-infer health/model check, typed event skeleton             | Alt+Q shows the pill with "backend OK"                       | Works on the dev monitor setup; backend status is real                      |
-| M1   | Eyes and hands, no AI: screenshot, downscale, `coords`, SendInput, global Stop                                                | Debug command clicks a normalized point and types in Notepad | Clicks land within a few pixels at 100/125/150% DPI and on a second monitor |
-| M1.5 | Grounding probe: ~30 saved screenshots -> `qwen3.8-27b` "click X"                                                             | Hit rate and latency numbers                                 | We know if raw coordinates suffice or UIA/grounding must come earlier       |
-| M2   | Vertical slice: model client, `click`/`type_text`/`press_keys`/`open_app`/`done`, loop, step limit, text input                | "Open Notepad and write hello"                               | End-to-end works; Stop interrupts at any moment                             |
-| M3   | Safety gate and confirmation (buttons)                                                                                        | "Delete this file" pauses for a yes                          | High-risk actions cannot run without a yes                                  |
-| M4   | Full tools and UIA: `scroll`, `drag`, `wait`, `ask_user`, element ids, stuck detection, history pruning                       | Copy text from a browser into Notepad                        | UIA apps use element ids; no-op loops are detected                          |
-| M5   | Voice: mic level (done), VAD, STT, listening toggle, steering, voice yes/no/stop                                              | Click the mic once, talk through a task                      | Utterances cut cleanly; speaking mid-task steers                            |
-| M6   | UI polish: glyph hover/click ticker list (thumbnail), tray, remembered position, error states                                 | The full orb + composer flow                                 | Every Step 7 state is real                                                  |
-| M7   | Hardening and packaging: eval suite of ~15 tasks (success rate, steps, latency, tokens), elevated-window detection, installer | Report card + installer                                      | Success rate measured; installs on a clean machine                          |
+| #         | Milestone                                                                                                                     | Demo                                                         | Done when                                                                   |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| M0        | Shell and plumbing: pill window, hotkeys, settings + keyring, rune-infer health/model check, typed event skeleton             | Alt+Q shows the pill with "backend OK"                       | Works on the dev monitor setup; backend status is real                      |
+| M1 (done) | Eyes and hands, no AI: screenshot, downscale, `coords`, SendInput, global Stop                                                | Debug command clicks a normalized point and types in Notepad | Clicks land within a few pixels at 100/125/150% DPI and on a second monitor |
+| M1.5      | Grounding probe: ~30 saved screenshots -> `qwen3.8-27b` "click X"                                                             | Hit rate and latency numbers                                 | We know if raw coordinates suffice or UIA/grounding must come earlier       |
+| M2        | Vertical slice: model client, `click`/`type_text`/`press_keys`/`open_app`/`done`, loop, step limit, text input                | "Open Notepad and write hello"                               | End-to-end works; Stop interrupts at any moment                             |
+| M3        | Safety gate and confirmation (buttons)                                                                                        | "Delete this file" pauses for a yes                          | High-risk actions cannot run without a yes                                  |
+| M4        | Full tools and UIA: `scroll`, `drag`, `wait`, `ask_user`, element ids, stuck detection, history pruning                       | Copy text from a browser into Notepad                        | UIA apps use element ids; no-op loops are detected                          |
+| M5        | Voice: mic level (done), VAD, STT, listening toggle, steering, voice yes/no/stop                                              | Click the mic once, talk through a task                      | Utterances cut cleanly; speaking mid-task steers                            |
+| M6        | UI polish: glyph hover/click ticker list (thumbnail), tray, remembered position, error states                                 | The full orb + composer flow                                 | Every Step 7 state is real                                                  |
+| M7        | Hardening and packaging: eval suite of ~15 tasks (success rate, steps, latency, tokens), elevated-window detection, installer | Report card + installer                                      | Success rate measured; installs on a clean machine                          |
+
+### M1 results: eyes and hands
+
+What exists: `model/coords.rs` (the only place that converts model space to pixels), `observe/screenshot.rs` (capture, downscale to 1280 px, JPEG), `exec/input.rs` (absolute mouse, cancellable typing, key combos) with a `CancelToken` that Stop sets, and dev-only commands plus a "Eyes and hands" panel in Settings > Developer.
+
+**Verified on a real desktop** (1920x1080, 100% DPI, one monitor):
+
+| Check                               | Result                                                                                             |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Cursor lands on the requested pixel | 0 px error over 10 probe points, including corners (1919, 1079)                                    |
+| Left, right and double click        | arrive at the exact pixel, correct button and click count                                          |
+| Typing                              | ASCII, accents and CJK arrive intact; Ctrl+A combos work; no modifier left held                    |
+| Stop                                | interrupts typing within about 250 ms (50 of 960 characters typed)                                 |
+| Capture mapping                     | a model-space point lands on the right pixel of the target window, after downscaling               |
+| Capture latency                     | about 70 ms in a release build, about 300 ms in a dev build (1080p to 1280x720 JPEG, about 105 KB) |
+| Through the real UI                 | Capture, Click, Type and the Stop hotkey all work end to end from Settings > Developer             |
+| DPI awareness                       | the app process is per-monitor aware                                                               |
+
+**Not verified natively, and how it is covered instead:** 125% and 150% scaling and a second monitor need hardware this PC does not have. They are covered by unit tests on the mapping (physical sizes at 125/150%, a monitor left of and above the primary one with negative origins, every pixel round-tripping, clamping) plus the per-monitor awareness check. Run the native checks on a scaled or multi-monitor machine before relying on them.
+
+How to run: `cargo test --lib` for the unit tests; `pwsh scripts/m1-system-test.ps1` for the end-to-end tests (it moves the real mouse and types for a few seconds against its own target window, and the typing tests refuse to run unless that window has focus).
+
+Findings worth keeping: unoptimised image code made dev-build capture about 1 s, so the dev profile optimises this crate lightly (about 350 ms); WebView2 exposes its controls through UI Automation, so the real app can be driven and inspected without pixel coordinates; and a button that re-renders itself makes UIA `Invoke` throw even though it fired, so judge by the effect.
 
 ## 9. Risks
 

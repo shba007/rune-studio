@@ -1,4 +1,4 @@
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 use crate::{
     backend::{self, BackendStatus},
@@ -52,6 +52,8 @@ pub fn set_mode(app: AppHandle, mode: window::Mode) -> AppResult<()> {
 
 #[tauri::command]
 pub fn stop(app: AppHandle) {
+    // Always cancel, even from Idle: Stop must interrupt typing the instant it is pressed.
+    app.state::<AppState>().cancel.cancel();
     if events::agent_state(&app) != AgentState::Idle {
         events::set_agent_state(&app, AgentState::Stopped);
     }

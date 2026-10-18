@@ -28,10 +28,30 @@ dotenvy = "0.15"
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 keyring = "4"
 cpal = "0.18"
+xcap = "0.9"
+enigo = "0.6"
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
+base64 = "0.23"
 thiserror = "2"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+  "Win32_UI_HiDpi",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_Foundation",
+] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2.14"
+
+# Screenshot downscaling and JPEG encoding are ~15x slower unoptimised (generic image code is
+# compiled into this crate), which would make every dev-build capture take about a second.
+[profile.dev.package.image]
+opt-level = 3
+
+[profile.dev.package.rune-studio]
+opt-level = 1
 
 [patch.crates-io]
 zip = { git = "https://github.com/zip-rs/zip2", tag = "v4.6.1" }

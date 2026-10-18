@@ -1,11 +1,19 @@
 mod backend;
 mod commands;
+#[cfg(debug_assertions)]
+mod debug;
 mod error;
 mod events;
+mod exec;
 mod hotkeys;
+mod model;
+mod observe;
 mod settings;
 mod voice;
 mod window;
+
+#[cfg(test)]
+mod system_tests;
 
 use std::sync::Mutex;
 
@@ -62,6 +70,7 @@ pub fn run() {
                 settings: Mutex::new(loaded),
                 hotkeys: Mutex::new(hotkeys.clone()),
                 mic: Mutex::new(None),
+                cancel: exec::CancelToken::default(),
                 agent_state: Mutex::new(AgentState::Idle),
                 http: reqwest::Client::new(),
             });
@@ -115,6 +124,16 @@ pub fn run() {
             commands::confirm,
             #[cfg(debug_assertions)]
             commands::debug_set_state,
+            #[cfg(debug_assertions)]
+            debug::debug_monitors,
+            #[cfg(debug_assertions)]
+            debug::debug_capture,
+            #[cfg(debug_assertions)]
+            debug::debug_click,
+            #[cfg(debug_assertions)]
+            debug::debug_type,
+            #[cfg(debug_assertions)]
+            debug::debug_keys,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

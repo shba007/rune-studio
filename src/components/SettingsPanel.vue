@@ -6,6 +6,7 @@ import type { AgentState, Settings } from '@/types/protocol'
 
 import AppIcon from './AppIcon.vue'
 import BackendBadge from './BackendBadge.vue'
+import DevInputLab from './DevInputLab.vue'
 import SettingsGroup from './SettingsGroup.vue'
 import SettingsRow from './SettingsRow.vue'
 
@@ -129,6 +130,7 @@ async function save() {
             {{ s }}
           </button>
         </div>
+        <DevInputLab :agent="agent" class="mt-3" />
       </details>
     </div>
 
