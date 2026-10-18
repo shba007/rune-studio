@@ -8,8 +8,16 @@ use super::{CancelToken, ExecError};
 const SETTLE_AFTER_MOVE: Duration = Duration::from_millis(30);
 /// Gap between the two clicks of a double click (well inside Windows' default double-click time).
 const DOUBLE_CLICK_GAP: Duration = Duration::from_millis(60);
-/// Pause between typed characters. Fast enough to feel instant, slow enough for apps to keep up.
-const TYPE_DELAY: Duration = Duration::from_millis(4);
+/// Pause between typed characters. 4 ms made Windows 11 Notepad drop letters and repeat others (about
+/// half of the lines in a live test were garbled); 8 ms and slower typed 25 of 25 lines cleanly. 15 ms
+/// leaves margin and still types about 70 characters a second.
+const TYPE_DELAY: Duration = Duration::from_millis(15);
+
+/// Experiment knob: RUNE_TYPE_DELAY_MS overrides the pause between typed characters.
+fn type_delay() -> Duration {
+    static DELAY: std::sync::OnceLock<Duration> = std::sync::OnceLock::new();
+    *DELAY.get_or_init(|| std::env::var("RUNE_TYPE_DELAY_MS").ok().and_then(|v| v.parse().ok()).map_or(TYPE_DELAY, Duration::from_millis))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MouseButton {
@@ -91,7 +99,7 @@ impl Input {
         for character in text.chars() {
             cancel.check()?;
             self.enigo.text(character.encode_utf8(&mut buffer)).map_err(input_error)?;
-            cancel.sleep(TYPE_DELAY)?;
+            cancel.sleep(type_delay())?;
         }
         Ok(())
     }
@@ -189,6 +197,12 @@ mod tests {
     fn unknown_names_are_rejected() {
         assert!(matches!(parse_key("hyper"), Err(ExecError::UnknownKey(_))));
         assert!(matches!(parse_key(""), Err(ExecError::UnknownKey(_))));
+    }
+
+    #[test]
+    fn typing_is_not_faster_than_notepad_can_take() {
+        // A live test dropped letters at 4 ms; see TYPE_DELAY. Do not speed this up without re-running it.
+        assert!(TYPE_DELAY >= Duration::from_millis(10));
     }
 
     #[test]
