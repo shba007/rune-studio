@@ -139,9 +139,8 @@ pub fn execute(action: &Action, monitor: &Monitor, cancel: &CancelToken) -> Resu
             Input::new()?.click(px, py, *button, *double, cancel)
         }
         Action::ClickElement { id, button, double } => {
-            let Some(element) = uia::lookup(id) else {
-                return Err(ExecError::Input(format!("there is no element {id} in the latest list; use an id from the current list or click a point")));
-            };
+            // Where the control is now, not where it was when the list was made.
+            let element = uia::resolve(id).map_err(ExecError::Input)?;
             let (px, py) = element.centre();
             Input::new()?.click(px, py, *button, *double, cancel)
         }

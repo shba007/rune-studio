@@ -54,6 +54,29 @@ pub fn lookup(id: &str) -> Option<Element> {
     LATEST.lock().expect("element list lock poisoned").iter().find(|element| element.id.eq_ignore_ascii_case(id)).cloned()
 }
 
+/// The same control in a fresh listing: same role and name, and when several match the one
+/// nearest to where it was. Pages move while the model thinks (a search box's suggestions change as
+/// it fills in), so a click goes where the control is *now*, and fails if it is gone.
+pub fn best_match(before: &Element, fresh: &[Element]) -> Option<Element> {
+    let (cx, cy) = before.centre();
+    fresh
+        .iter()
+        .filter(|element| element.role == before.role && element.name == before.name)
+        .min_by_key(|element| {
+            let (x, y) = element.centre();
+            i64::from(x - cx).pow(2) + i64::from(y - cy).pow(2)
+        })
+        .map(|element| Element { id: before.id.clone(), ..element.clone() })
+}
+
+/// The control an id stands for, at its current position. Takes a fresh listing to find it (the
+/// remembered list is left alone, so ids keep their meaning for the rest of the step).
+pub fn resolve(id: &str) -> Result<Element, String> {
+    let before = lookup(id).ok_or_else(|| format!("there is no element {id} in the latest list; use an id from the current list or click a point"))?;
+    best_match(&before, &snapshot())
+        .ok_or_else(|| format!("the {} \"{}\" is no longer on the screen; look at the screen and choose again", before.role, before.name))
+}
+
 /// Forgets the listing, so a new task never clicks an id from an old one.
 pub fn forget() {
     LATEST.lock().expect("element list lock poisoned").clear();
@@ -210,6 +233,26 @@ mod tests {
         assert_eq!(field.line(), "e4 edit \"Search\" = \"hello\"");
         let empty = Element { value: Some(String::new()), role: "edit", ..element("e5", "Search") };
         assert_eq!(empty.line(), "e5 edit \"Search\"");
+    }
+
+    #[test]
+    fn a_control_is_found_again_where_it_is_now() {
+        let before = Element { rect: (100, 100, 140, 120), ..element("e5", "Qwen/Qwen3.8-27B") };
+        let moved = Element { id: "e9".into(), rect: (100, 300, 140, 320), ..before.clone() };
+        let found = best_match(&before, &[element("e1", "Other"), moved]).unwrap();
+        assert_eq!(found.id, "e5", "it keeps the id the model used");
+        assert_eq!(found.rect, (100, 300, 140, 320), "but its new position");
+    }
+
+    #[test]
+    fn the_nearest_of_several_with_the_same_name_wins_and_a_missing_one_is_none() {
+        let before = Element { rect: (0, 0, 20, 20), ..element("e1", "Delete") };
+        let near = Element { id: "e2".into(), rect: (0, 40, 20, 60), ..before.clone() };
+        let far = Element { id: "e3".into(), rect: (0, 400, 20, 420), ..before.clone() };
+        assert_eq!(best_match(&before, &[far, near]).unwrap().rect, (0, 40, 20, 60));
+        assert!(best_match(&before, &[element("e4", "Save")]).is_none());
+        let other_role = Element { role: "link", ..before.clone() };
+        assert!(best_match(&before, &[other_role]).is_none());
     }
 
     #[test]
