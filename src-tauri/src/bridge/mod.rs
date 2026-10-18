@@ -7,6 +7,8 @@
 pub mod lease;
 
 #[cfg(feature = "agent-bridge")]
+pub mod cli;
+#[cfg(feature = "agent-bridge")]
 pub mod mcp;
 #[cfg(feature = "agent-bridge")]
 pub mod server;

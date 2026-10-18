@@ -47,9 +47,8 @@ export function installTauriMock() {
           return {
             available: true,
             url: 'http://127.0.0.1:47600/mcp',
-            token: 'demo',
             command:
-              'claude mcp add --transport http rune-studio http://127.0.0.1:47600/mcp --header "Authorization: Bearer demo"',
+              'claude mcp add --scope user rune-studio -- "C:/Rune Studio/rune-studio.exe" mcp',
           }
         case 'get_control_label':
           return null

@@ -72,7 +72,6 @@ export const EXTERNAL_AGENT = 'external_agent'
 export interface BridgeInfo {
   available: boolean
   url: string
-  token: string
   command: string
 }
 

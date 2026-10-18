@@ -12,8 +12,12 @@ use crate::{
 };
 
 #[tauri::command]
-pub fn get_settings(state: State<'_, AppState>) -> Settings {
-    state.settings.lock().expect("settings lock poisoned").clone()
+pub fn get_settings(app: AppHandle, state: State<'_, AppState>) -> Settings {
+    // The command line (`rune-studio enable`) can change the outside-agent switch behind our back.
+    let on_disk = settings::load(&app).external_agent;
+    let mut settings = state.settings.lock().expect("settings lock poisoned");
+    settings.external_agent = on_disk;
+    settings.clone()
 }
 
 #[tauri::command]
@@ -155,8 +159,8 @@ pub struct BridgeInfo {
     /// Whether this build has the bridge at all.
     pub available: bool,
     pub url: String,
-    pub token: String,
-    /// A ready-to-paste command that connects Claude Code.
+    /// A ready-to-paste command that connects Claude Code. It carries no secret: the app itself
+    /// supplies the token when an agent connects.
     pub command: String,
 }
 
@@ -166,12 +170,15 @@ pub fn bridge_info() -> BridgeInfo {
     #[cfg(feature = "agent-bridge")]
     {
         let url = crate::bridge::server::url();
-        let token = crate::bridge::token::get_or_create().unwrap_or_default();
-        let command = format!("claude mcp add --transport http rune-studio {url} --header \"Authorization: Bearer {token}\"");
-        BridgeInfo { available: true, url, token, command }
+        // The `rune-studio` command sits next to this windowed app.
+        let exe = std::env::current_exe()
+            .map(|path| path.with_file_name("rune-studio.exe").display().to_string())
+            .unwrap_or_else(|_| "rune-studio".into());
+        let command = format!("claude mcp add --scope user rune-studio -- \"{exe}\" mcp");
+        BridgeInfo { available: true, url, command }
     }
     #[cfg(not(feature = "agent-bridge"))]
     {
-        BridgeInfo { available: false, url: String::new(), token: String::new(), command: String::new() }
+        BridgeInfo { available: false, url: String::new(), command: String::new() }
     }
 }

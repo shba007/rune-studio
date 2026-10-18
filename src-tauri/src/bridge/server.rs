@@ -67,6 +67,19 @@ async fn watch_for_idle(app: AppHandle) {
     }
 }
 
+/// Whether the user allows outside agents. Read from the settings file on every request, so the
+/// switch in Settings and `rune-studio enable` / `disable` take effect at once. Turning it back on
+/// also re-arms an agent that Stop locked out.
+fn switch_is_on(app: &AppHandle) -> bool {
+    static WAS_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    let on = crate::settings::load(app).external_agent;
+    let was_on = WAS_ON.swap(on, std::sync::atomic::Ordering::SeqCst);
+    if on && !was_on {
+        app.state::<AppState>().lease.lock().expect("lease lock poisoned").rearm();
+    }
+    on
+}
+
 async fn not_allowed() -> StatusCode {
     StatusCode::METHOD_NOT_ALLOWED
 }
@@ -97,7 +110,7 @@ async fn post_mcp(State(app): State<AppHandle>, headers: HeaderMap, body: Bytes)
     if !bearer(&headers).is_some_and(token::matches) {
         return refuse(StatusCode::UNAUTHORIZED, "unauthorized", "Missing or wrong token. Ask the user for the token in Settings > External agent.");
     }
-    if !app.state::<AppState>().settings.lock().expect("settings lock poisoned").external_agent {
+    if !switch_is_on(&app) {
         return refuse(StatusCode::FORBIDDEN, "not_enabled", "The user has not switched External agent on in Settings.");
     }
     let request: Value = match serde_json::from_slice(&body) {

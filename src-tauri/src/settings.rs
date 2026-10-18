@@ -6,6 +6,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::{error::AppResult, hotkeys};
 
+/// The app identifier from tauri.conf.json: names the settings folder and the credential entries.
 pub(crate) const KEYRING_SERVICE: &str = "dev.shirsendu-bairagi.rune-studio";
 const KEYRING_USER: &str = "rune-infer-api-key";
 
@@ -34,6 +35,26 @@ impl Default for Settings {
             external_agent: false,
         }
     }
+}
+
+/// The settings file, found without a running app (for the command line).
+#[cfg(feature = "agent-bridge")]
+pub fn path_without_app() -> Option<PathBuf> {
+    Some(PathBuf::from(std::env::var_os("APPDATA")?).join(KEYRING_SERVICE).join("settings.json"))
+}
+
+/// Reads settings from a file; missing or unreadable means defaults.
+#[cfg(feature = "agent-bridge")]
+pub fn read_file(path: &std::path::Path) -> Settings {
+    fs::read_to_string(path).ok().and_then(|text| serde_json::from_str(&text).ok()).unwrap_or_default()
+}
+
+#[cfg(feature = "agent-bridge")]
+pub fn write_file(path: &std::path::Path, settings: &Settings) -> std::io::Result<()> {
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    fs::write(path, serde_json::to_string_pretty(settings).map_err(std::io::Error::other)?)
 }
 
 fn settings_path(app: &AppHandle) -> AppResult<PathBuf> {

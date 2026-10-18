@@ -5,9 +5,23 @@ authors = ["Shirsendu Bairagi <shirsendu2001@gmail.com>"]
 license = "MIT"
 repository = "https://github.com/shba007/rune-studio.git"
 edition = "2024"
+default-run = "rune-studio-app"
 rust-version = "1.98.1"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+# The windowed app. Windows starts a program like this without a console, so it cannot be a
+# command-line tool: that is the job of the second binary below.
+[[bin]]
+name = "rune-studio-app"
+path = "src/main.rs"
+
+# The `rune-studio` command: a console program (so a terminal waits for it and shows its output)
+# that opens the app, connects agents and answers `status`. Only in agent-bridge builds.
+[[bin]]
+name = "rune-studio"
+path = "src/bin/rune-studio.rs"
+required-features = ["agent-bridge"]
 
 [lib]
 name = "app_lib"
