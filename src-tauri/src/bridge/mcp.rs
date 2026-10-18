@@ -18,6 +18,7 @@ use crate::{
 };
 
 use super::lease::{IDLE_LIMIT, LeaseError};
+use crate::agent::quick;
 use crate::safety::gate::{self, Verdict};
 
 use super::skill::GUIDE;
@@ -423,12 +424,28 @@ async fn act(app: &AppHandle, tool: &'static str, arguments: &Value) -> Reply {
         return Reply::error("action_failed", format!("could not {described}: {err}. Look at the screen and try something different."));
     }
 
-    match capture(None).await {
-        Ok(frame) => {
-            let text = format!("Done: {described}. Here is the screen now. {}", screen_note(&frame));
-            Reply::shot(text, frame.jpeg)
+    // If the decision model sees the page still loading, give it a moment (a few times at most)
+    // so the screenshot the agent gets is of the finished page, not a half-drawn one.
+    let mut attempt = 0;
+    loop {
+        let frame = match capture(None).await {
+            Ok(frame) => frame,
+            Err(reply) => return reply,
+        };
+        let notes = quick::read_screen(app, &frame.data_uri()).await.unwrap_or_default();
+        if notes.loading && attempt < quick::MAX_LOAD_WAITS && !cancel.is_cancelled() {
+            attempt += 1;
+            tokio::time::sleep(std::time::Duration::from_millis(900)).await;
+            continue;
         }
-        Err(reply) => reply,
+        let mut text = format!("Done: {described}. Here is the screen now. {}", screen_note(&frame));
+        if notes.loading {
+            text.push_str(" It may still be loading: look again with rune_observe in a moment.");
+        }
+        if let Some(hint) = notes.hint {
+            text.push_str(&format!(" Note: {hint}"));
+        }
+        return Reply::shot(text, frame.jpeg);
     }
 }
 

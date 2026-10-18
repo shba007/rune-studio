@@ -61,3 +61,67 @@ pub async fn risk_opinion(app: &AppHandle, action: &str, reason: &str, window: &
     let (level, confidence) = answers.choice("risk")?;
     (level == "high" && confidence >= RISKY).then_some(Risk::High)
 }
+
+/// Most waits for a loading page before the big model is asked anyway.
+pub const MAX_LOAD_WAITS: u32 = 4;
+/// How sure the model must be that the screen is still loading before the loop waits.
+const LOADING: f64 = 0.9;
+/// How sure it must be about something in the way before the big model is told.
+const BLOCKER: f64 = 0.8;
+const BLOCKERS: &[&str] = &["none", "cookie_banner", "popup", "login_required", "captcha", "error_page"];
+
+/// What the decision model notices on a screenshot. Both are only advice: a wait, or a hint in
+/// the next prompt. The big model still chooses every action.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct ScreenNotes {
+    /// The page or app still looks like it is loading (blank, half drawn, a spinner).
+    pub loading: bool,
+    /// A note for the big model about something in the way.
+    pub hint: Option<&'static str>,
+}
+
+/// The note the big model gets for something in the way. A CAPTCHA or a login is never worked
+/// around: it is the user's to handle.
+pub fn hint_for(blocker: &str) -> Option<&'static str> {
+    Some(match blocker {
+        "cookie_banner" => "A cookie or consent banner seems to cover part of the page. Dismiss it first, choosing the option that declines non-essential cookies.",
+        "popup" => "A pop-up or dialog seems to be in front of what you want. Answer or close it first.",
+        "login_required" => "The page seems to ask for a login. Never enter credentials: use ask_user, or finish with done and success=false.",
+        "captcha" => "A CAPTCHA seems to be shown. Never try to solve it: use ask_user, or finish with done and success=false.",
+        "error_page" => "This looks like an error page (not found, offline or blocked). Go back or try a different address.",
+        _ => return None,
+    })
+}
+
+/// Reads the screen in one quick pass: is it still loading, and is something in the way? `None`
+/// when the decision model has nothing to say.
+pub async fn read_screen(app: &AppHandle, screenshot: &str) -> Option<ScreenNotes> {
+    let questions = [
+        Question::yes_no("loading", "Is the page or app on this screen still loading: mostly blank, half drawn, or showing a loading spinner or progress bar?"),
+        Question::choice(
+            "blocker",
+            "Is something covering or blocking the main content of this screen? Pick none if the content is clearly usable.",
+            BLOCKERS,
+        ),
+    ];
+    let answers = decision::ask(app, "A screenshot of the user's screen.", &[screenshot.to_string()], &questions).await?;
+    Some(ScreenNotes {
+        loading: answers.confident_yes("loading", LOADING),
+        hint: answers.choice("blocker").filter(|(_, confidence)| *confidence >= BLOCKER).and_then(|(blocker, _)| hint_for(&blocker)),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_blocker_but_none_has_a_hint_and_nothing_gets_worked_around() {
+        for blocker in BLOCKERS {
+            assert_eq!(hint_for(blocker).is_some(), *blocker != "none", "{blocker}");
+        }
+        assert!(hint_for("captcha").unwrap().contains("Never try to solve it"));
+        assert!(hint_for("login_required").unwrap().contains("Never enter credentials"));
+        assert!(hint_for("something else").is_none());
+    }
+}

@@ -35,6 +35,8 @@ const MAX_INVALID_IN_A_ROW: u32 = 3;
 const MAX_DECLINES: u32 = 3;
 /// Thinking streams in token by token; the UI is told this often at most.
 const THINKING_EVERY: Duration = Duration::from_millis(150);
+/// How long to wait before looking again at a page that is still loading.
+const LOAD_WAIT: Duration = Duration::from_millis(900);
 
 /// How a run ended.
 #[derive(Debug, PartialEq)]
@@ -201,23 +203,45 @@ async fn run(app: &AppHandle, task: &str) -> Outcome {
             return Outcome::Stopped;
         }
 
-        // Look.
-        events::set_agent_state(app, AgentState::Observing);
-        body::announce_observe(app, None);
-        // The screenshot and the list of the front window's controls are taken together.
-        let (captured, elements) = tokio::join!(
-            tauri::async_runtime::spawn_blocking(|| {
-                screenshot::capture(None, MODEL_MAX_EDGE, MODEL_JPEG_QUALITY)
-            }),
-            tauri::async_runtime::spawn_blocking(uia::snapshot),
-        );
-        let elements = elements.unwrap_or_default();
-        let element_text = uia::describe(&elements);
-        uia::remember(elements);
-        let frame = match captured {
-            Ok(Ok(frame)) => frame,
-            Ok(Err(err)) => return Outcome::Failed(format!("could not see the screen: {err}")),
-            Err(err) => return Outcome::Failed(err.to_string()),
+        // Look. If the decision model sees the page still loading, wait a moment and look again
+        // (a few times at most) instead of asking the big model about a half-drawn page.
+        let mut waits = 0;
+        let (frame, element_text, notes) = loop {
+            events::set_agent_state(app, AgentState::Observing);
+            body::announce_observe(app, None);
+            // The screenshot and the list of the front window's controls are taken together.
+            let (captured, elements) = tokio::join!(
+                tauri::async_runtime::spawn_blocking(|| {
+                    screenshot::capture(None, MODEL_MAX_EDGE, MODEL_JPEG_QUALITY)
+                }),
+                tauri::async_runtime::spawn_blocking(uia::snapshot),
+            );
+            let elements = elements.unwrap_or_default();
+            let listing = uia::describe(&elements);
+            uia::remember(elements);
+            let frame = match captured {
+                Ok(Ok(frame)) => frame,
+                Ok(Err(err)) => return Outcome::Failed(format!("could not see the screen: {err}")),
+                Err(err) => return Outcome::Failed(err.to_string()),
+            };
+            // Not on the first look: the desktop before any action is not loading anything.
+            let notes = if step > 1 {
+                match unless_stopped(&cancel, quick::read_screen(app, &frame.data_uri())).await {
+                    Some(notes) => notes,
+                    None => return Outcome::Stopped,
+                }
+            } else {
+                None
+            };
+            if waits < quick::MAX_LOAD_WAITS && notes.as_ref().is_some_and(|notes| notes.loading) {
+                waits += 1;
+                log::info!("step {step}: the screen is still loading, waiting ({waits})");
+                if cancel.sleep(LOAD_WAIT).is_err() {
+                    return Outcome::Stopped;
+                }
+                continue;
+            }
+            break (frame, listing, notes);
         };
 
         let screenshot = frame.data_uri();
@@ -228,7 +252,9 @@ async fn run(app: &AppHandle, task: &str) -> Outcome {
         if unchanged >= stuck::GIVE_UP_AFTER {
             return Outcome::Failed("Stopped: the screen stopped changing, so the actions are not working".into());
         }
-        let warning = stuck::warning(unchanged);
+        // What to tell the big model: that it is stuck, and anything in the way of the page.
+        let warning = [stuck::warning(unchanged), notes.and_then(|notes| notes.hint).map(String::from)].into_iter().flatten().collect::<Vec<_>>().join(" ");
+        let warning = (!warning.is_empty()).then_some(warning);
 
         // Already finished? Once the last goal has had its steps, the decision model can tell from
         // the screen, without a full chat call just to say "done". Unsure means the big model decides.
@@ -236,8 +262,7 @@ async fn run(app: &AppHandle, task: &str) -> Outcome {
         if current + 1 == plan.len() && succeeded >= plan.len() && history.last().is_some_and(|entry| entry.outcome == "done") {
             let skipped = history.len().saturating_sub(10);
             let actions: Vec<String> = history.iter().skip(skipped).map(|entry| format!("{} -> {}", entry.action, entry.outcome)).collect();
-            let Some(finished) = unless_stopped(&cancel, quick::looks_finished(app, task, &actions.join("
-"), &screenshot)).await else {
+            let Some(finished) = unless_stopped(&cancel, quick::looks_finished(app, task, &actions.join("\n"), &screenshot)).await else {
                 return Outcome::Stopped;
             };
             if finished {

@@ -48,7 +48,7 @@ impl Default for Settings {
             show_thinking: false,
             ask_every_action: false,
             fast_checks: true,
-            decision_model: "liquid-d1-3b".into(),
+            decision_model: "d1-3b-q8-0".into(),
         }
     }
 }
