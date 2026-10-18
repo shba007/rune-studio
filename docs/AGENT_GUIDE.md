@@ -25,6 +25,19 @@ bun run tauri build -- --features agent-bridge     # installer
 
 Even then, the user must switch **Settings > External agent** on. Until they do, the door is closed.
 
+## 2b. One-time setup without installing
+
+Build the app once (no installer), then register a launcher that starts it for you:
+
+```bash
+cd /path/to/code-studio
+bun install
+bun run tauri build --no-bundle --features agent-bridge
+claude mcp add --scope user rune-studio -- node "$(pwd)/scripts/rune-mcp.mjs"
+```
+
+`--scope user` makes it available in every project. From then on, any Claude Code session that calls a `rune_` tool starts Rune Studio by itself if it is not running (it uses `src-tauri/target/release/rune-studio.exe`; set `RUNE_STUDIO_EXE` to use another path). The launcher fetches the token from the app, so there is nothing to paste. The user still has to switch **Settings > External agent > Allow outside agent** on once and press Save. Check the setup any time with `node scripts/rune-mcp.mjs --check`. The launcher was tested cold (app not running: it starts the app, waits for the door, then answers) and warm. Under the hood the app answers `rune-studio.exe --print-bridge-token` with its token, so no secret is written to a file.
+
 ## 3. Connect
 
 1. The user turns on **Settings > External agent > Allow outside agent**, presses **Save and check**, then **Copy the connect command**. The command already contains the secret token (made on first use and kept in the Windows Credential Manager).

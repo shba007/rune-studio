@@ -34,6 +34,7 @@ pub struct Frame {
     pub width: u32,
     pub height: u32,
     pub jpeg: Vec<u8>,
+#[cfg_attr(not(debug_assertions), allow(dead_code))]
     pub elapsed_ms: u64,
     image: RgbImage,
 }
@@ -45,6 +46,7 @@ impl Frame {
         format!("data:image/jpeg;base64,{}", BASE64.encode(&self.jpeg))
     }
 
+#[cfg_attr(not(debug_assertions), allow(dead_code))]
     /// A smaller copy as a data URI, for showing in the UI.
     pub fn thumbnail_data_uri(&self, max_edge: u32) -> Result<String, ObserveError> {
         let (w, h) = fit_within(self.width, self.height, max_edge);
@@ -80,6 +82,7 @@ fn all_monitors() -> Result<Vec<XMonitor>, ObserveError> {
     XMonitor::all().map_err(|err| ObserveError::Display(err.to_string()))
 }
 
+#[cfg_attr(not(debug_assertions), allow(dead_code))]
 pub fn monitors() -> Result<Vec<Monitor>, ObserveError> {
     all_monitors()?.iter().map(describe).collect()
 }

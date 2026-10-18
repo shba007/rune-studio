@@ -56,6 +56,7 @@ impl Input {
         Ok(Self { enigo: Enigo::new(&Settings::default()).map_err(input_error)? })
     }
 
+#[cfg_attr(not(debug_assertions), allow(dead_code))]
     /// Where the cursor is now, in physical desktop pixels.
     pub fn cursor(&self) -> Result<(i32, i32), ExecError> {
         self.enigo.location().map_err(input_error)

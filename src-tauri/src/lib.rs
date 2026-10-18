@@ -34,6 +34,22 @@ use hotkeys::Hotkeys;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Lets scripts/rune-mcp.mjs learn the bridge token without a window or a plain-text file.
+    #[cfg(feature = "agent-bridge")]
+    if std::env::args().any(|arg| arg == "--print-bridge-token") {
+        use std::io::Write;
+        match bridge::token::get_or_create() {
+            Ok(token) => {
+                let _ = writeln!(std::io::stdout(), "{token}");
+            }
+            Err(err) => {
+                let _ = writeln!(std::io::stderr(), "{err}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
     let _ = dotenvy::from_filename("../.env").or_else(|_| dotenvy::dotenv());
 
     let mut builder = tauri::Builder::default();
