@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { nextTick, ref, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 
 import { useAgent } from '@/composables/useAgent'
 import type { AgentState, Settings } from '@/types/protocol'
 
 import BackendBadge from './BackendBadge.vue'
+import GlyphOrb from './GlyphOrb.vue'
 
 const agent = useAgent()
 const isDev = import.meta.env.DEV
@@ -20,8 +21,22 @@ const DEBUG_STATES: AgentState[] = [
   'planning',
   'acting',
   'awaiting_confirm',
+  'done',
   'failed',
 ]
+const FIELD = 'rounded-lg bg-zinc-800 px-3 py-1.5 outline-none focus:ring-1 focus:ring-zinc-500'
+
+const isAmbient = computed(() => agent.mode.value === 'ambient')
+const needsConfirm = computed(() => agent.state.value === 'awaiting_confirm')
+
+/** Backend trouble shows as a dot on the disc; a healthy backend shows nothing. */
+const backendDot = computed(() => {
+  const status = agent.backend.value
+  if (!status) return null
+  if (!status.reachable) return 'bg-red-500'
+  if (!status.authOk || status.missingModels.length > 0 || status.error) return 'bg-amber-400'
+  return null
+})
 
 watch(agent.settings, (value) => {
   if (value) settingsDraft.value = { ...value }
@@ -32,10 +47,15 @@ watch(agent.focusTick, async () => {
   input.value?.focus()
 })
 
+/** Idle: the glyph opens and closes the capsule. While the agent runs it is the Stop button. */
+function onGlyph() {
+  if (agent.isRunning.value) void agent.stop()
+  else void agent.toggleOpen()
+}
+
 async function submit() {
   const text = command.value.trim()
-  if (!text) return
-  await agent.startTask(text)
+  if (text) await agent.startTask(text)
 }
 
 async function saveKey() {
@@ -45,161 +65,184 @@ async function saveKey() {
 </script>
 
 <template>
-  <div class="flex h-full flex-col p-2" @keydown.esc="agent.hide()">
+  <div class="flex h-full w-full flex-col items-center gap-2" @keydown.esc="agent.dismiss()">
     <div
-      class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl border border-white/10 bg-zinc-900/95 text-zinc-100 shadow-2xl"
+      data-tauri-drag-region
+      class="flex h-19 shrink-0 items-center gap-2.5 overflow-hidden rounded-full bg-[#141414] p-1.5 transition-[width] duration-300 ease-out"
+      :style="{ width: isAmbient ? '76px' : '480px' }"
     >
-      <div data-tauri-drag-region class="flex h-20 shrink-0 items-center gap-3 px-4">
-        <button
-          type="button"
-          class="grid size-11 shrink-0 place-items-center rounded-full bg-zinc-800 text-lg transition hover:bg-zinc-700"
-          :class="{ 'bg-red-600 hover:bg-red-500': agent.state.value === 'listening' }"
-          title="Listen (voice arrives in a later milestone)"
-          @click="agent.toggleListening()"
-        >
-          🎙
-        </button>
-
-        <div data-tauri-drag-region class="flex min-w-0 flex-1 flex-col gap-1">
-          <input
-            ref="input"
-            v-model="command"
-            type="text"
-            placeholder="Say or type a command…"
-            class="w-full bg-transparent text-base text-zinc-100 outline-none placeholder:text-zinc-500"
-            @keydown.enter="submit"
-          />
-          <div data-tauri-drag-region class="flex items-center gap-3">
-            <span class="text-xs font-medium text-zinc-300">{{ agent.stateLabel.value }}</span>
-            <BackendBadge :status="agent.backend.value" />
-          </div>
-        </div>
-
-        <button
-          v-if="agent.isRunning.value"
-          type="button"
-          class="rounded-full bg-red-600 px-3 py-1.5 text-xs font-semibold hover:bg-red-500"
-          @click="agent.stop()"
-        >
-          Stop
-        </button>
-        <button
-          type="button"
-          class="grid size-8 shrink-0 place-items-center rounded-full text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100"
-          :title="agent.expanded.value ? 'Collapse' : 'Expand'"
-          @click="agent.setExpanded(!agent.expanded.value)"
-        >
-          {{ agent.expanded.value ? '⌃' : '⌄' }}
-        </button>
-      </div>
-
-      <p v-if="agent.notice.value" class="px-5 pb-2 text-xs text-amber-300">
-        {{ agent.notice.value }}
-      </p>
+      <button
+        type="button"
+        class="relative size-16 shrink-0 cursor-pointer rounded-full bg-[#f1f1ef] outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+        :aria-label="agent.isRunning.value ? 'Stop' : isAmbient ? 'Open' : 'Close'"
+        @click="onGlyph"
+      >
+        <GlyphOrb :state="agent.state.value" />
+        <span
+          v-if="backendDot"
+          class="absolute right-0.5 bottom-0.5 size-2.5 rounded-full ring-2 ring-[#f1f1ef]"
+          :class="backendDot"
+        />
+      </button>
 
       <div
-        v-if="agent.expanded.value"
-        class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto border-t border-white/10 p-5 text-sm"
+        data-tauri-drag-region
+        class="flex min-w-0 flex-1 items-center gap-2 transition-opacity duration-200"
+        :class="isAmbient ? 'pointer-events-none opacity-0' : 'opacity-100'"
       >
-        <section v-if="settingsDraft" class="grid gap-3">
-          <h2 class="text-xs font-semibold tracking-wide text-zinc-400 uppercase">rune-infer</h2>
-          <label class="grid gap-1">
-            <span class="text-xs text-zinc-400">Base URL</span>
-            <input
-              v-model="settingsDraft.baseUrl"
-              class="rounded-lg bg-zinc-800 px-3 py-1.5 outline-none focus:ring-1 focus:ring-zinc-500"
-            />
-          </label>
-          <div class="grid grid-cols-2 gap-3">
-            <label class="grid gap-1">
-              <span class="text-xs text-zinc-400">Vision model</span>
-              <input
-                v-model="settingsDraft.visionModel"
-                class="rounded-lg bg-zinc-800 px-3 py-1.5 outline-none focus:ring-1 focus:ring-zinc-500"
-              />
-            </label>
-            <label class="grid gap-1">
-              <span class="text-xs text-zinc-400">Speech model</span>
-              <input
-                v-model="settingsDraft.asrModel"
-                class="rounded-lg bg-zinc-800 px-3 py-1.5 outline-none focus:ring-1 focus:ring-zinc-500"
-              />
-            </label>
-          </div>
-          <div class="grid grid-cols-2 gap-3">
-            <label class="grid gap-1">
-              <span class="text-xs text-zinc-400">Summon hotkey</span>
-              <input
-                v-model="settingsDraft.toggleHotkey"
-                class="rounded-lg bg-zinc-800 px-3 py-1.5 outline-none focus:ring-1 focus:ring-zinc-500"
-              />
-            </label>
-            <label class="grid gap-1">
-              <span class="text-xs text-zinc-400">Stop hotkey</span>
-              <input
-                v-model="settingsDraft.stopHotkey"
-                class="rounded-lg bg-zinc-800 px-3 py-1.5 outline-none focus:ring-1 focus:ring-zinc-500"
-              />
-            </label>
-          </div>
-          <div class="flex gap-2">
-            <button
-              type="button"
-              class="rounded-lg bg-zinc-700 px-3 py-1.5 hover:bg-zinc-600"
-              @click="agent.saveSettings(settingsDraft)"
-            >
-              Save and recheck
-            </button>
-            <button
-              type="button"
-              class="rounded-lg px-3 py-1.5 text-zinc-300 hover:bg-zinc-800"
-              @click="agent.refreshBackend()"
-            >
-              Recheck
-            </button>
-          </div>
-        </section>
-
-        <section class="grid gap-2">
-          <h2 class="text-xs font-semibold tracking-wide text-zinc-400 uppercase">API key</h2>
-          <div class="flex gap-2">
-            <input
-              v-model="apiKeyDraft"
-              type="password"
-              :placeholder="
-                agent.hasApiKey.value
-                  ? 'Key stored (type to replace, empty to clear)'
-                  : 'No key stored'
-              "
-              class="min-w-0 flex-1 rounded-lg bg-zinc-800 px-3 py-1.5 outline-none focus:ring-1 focus:ring-zinc-500"
-            />
-            <button
-              type="button"
-              class="rounded-lg bg-zinc-700 px-3 py-1.5 hover:bg-zinc-600"
-              @click="saveKey"
-            >
-              Save
-            </button>
-          </div>
-        </section>
-
-        <section v-if="isDev" class="grid gap-2">
-          <h2 class="text-xs font-semibold tracking-wide text-zinc-400 uppercase">
-            Dev: force state
-          </h2>
-          <div class="flex flex-wrap gap-2">
-            <button
-              v-for="s in DEBUG_STATES"
-              :key="s"
-              type="button"
-              class="rounded-lg bg-zinc-800 px-2.5 py-1 text-xs hover:bg-zinc-700"
-              @click="agent.debugSetState(s)"
-            >
-              {{ s }}
-            </button>
-          </div>
-        </section>
+        <div
+          v-if="needsConfirm"
+          class="flex min-w-0 flex-1 items-center gap-2 font-mono text-sm text-zinc-100"
+        >
+          <span class="min-w-0 flex-1 truncate">Needs your OK</span>
+          <button
+            type="button"
+            class="rounded-full border border-[#d71921] px-3 py-1 text-xs text-[#d71921] hover:bg-[#d71921]/15"
+            @click="agent.confirm('pending', true)"
+          >
+            Yes
+          </button>
+          <button
+            type="button"
+            class="rounded-full border border-zinc-600 px-3 py-1 text-xs text-zinc-400 hover:bg-white/10"
+            @click="agent.confirm('pending', false)"
+          >
+            No
+          </button>
+        </div>
+        <input
+          v-else
+          ref="input"
+          v-model="command"
+          type="text"
+          :placeholder="agent.notice.value ?? 'Type or say a command'"
+          class="h-11 min-w-0 flex-1 bg-transparent px-1 font-mono text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
+          :class="{ 'placeholder:text-amber-300': agent.notice.value }"
+          @keydown.enter="submit"
+        />
       </div>
+
+      <button
+        type="button"
+        class="relative grid size-16 shrink-0 cursor-pointer place-items-center rounded-full bg-[#2a2a28] text-zinc-100 outline-none transition-opacity duration-200 hover:bg-[#363633] focus-visible:ring-2 focus-visible:ring-white/60"
+        :class="isAmbient ? 'pointer-events-none opacity-0' : 'opacity-100'"
+        aria-label="Listen"
+        @click="agent.toggleListening()"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          class="size-6"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.6"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <rect x="9" y="3" width="6" height="11" rx="3" />
+          <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3" />
+        </svg>
+        <span
+          v-if="agent.state.value === 'listening'"
+          class="absolute top-3 right-3 size-2 rounded-full bg-[#d71921]"
+        />
+      </button>
     </div>
+
+    <section
+      v-if="agent.mode.value === 'settings'"
+      class="flex min-h-0 w-full flex-1 flex-col gap-4 overflow-y-auto rounded-3xl bg-[#141414] p-5 text-sm text-zinc-100"
+    >
+      <BackendBadge :status="agent.backend.value" />
+
+      <div v-if="settingsDraft" class="grid gap-3">
+        <h2 class="text-xs font-semibold tracking-wide text-zinc-400 uppercase">rune-infer</h2>
+        <label class="grid gap-1">
+          <span class="text-xs text-zinc-400">Base URL</span>
+          <input v-model="settingsDraft.baseUrl" :class="FIELD" />
+        </label>
+        <div class="grid grid-cols-2 gap-3">
+          <label class="grid gap-1">
+            <span class="text-xs text-zinc-400">Vision model</span>
+            <input v-model="settingsDraft.visionModel" :class="FIELD" />
+          </label>
+          <label class="grid gap-1">
+            <span class="text-xs text-zinc-400">Speech model</span>
+            <input v-model="settingsDraft.asrModel" :class="FIELD" />
+          </label>
+          <label class="grid gap-1">
+            <span class="text-xs text-zinc-400">Summon hotkey</span>
+            <input v-model="settingsDraft.toggleHotkey" :class="FIELD" />
+          </label>
+          <label class="grid gap-1">
+            <span class="text-xs text-zinc-400">Stop hotkey</span>
+            <input v-model="settingsDraft.stopHotkey" :class="FIELD" />
+          </label>
+        </div>
+        <div class="flex gap-2">
+          <button
+            type="button"
+            class="rounded-lg bg-zinc-700 px-3 py-1.5 hover:bg-zinc-600"
+            @click="agent.saveSettings(settingsDraft)"
+          >
+            Save and recheck
+          </button>
+          <button
+            type="button"
+            class="rounded-lg px-3 py-1.5 text-zinc-300 hover:bg-zinc-800"
+            @click="agent.refreshBackend()"
+          >
+            Recheck
+          </button>
+          <button
+            type="button"
+            class="ml-auto rounded-lg px-3 py-1.5 text-zinc-300 hover:bg-zinc-800"
+            @click="agent.setMode('open')"
+          >
+            Done
+          </button>
+        </div>
+      </div>
+
+      <div class="grid gap-2">
+        <h2 class="text-xs font-semibold tracking-wide text-zinc-400 uppercase">API key</h2>
+        <div class="flex gap-2">
+          <input
+            v-model="apiKeyDraft"
+            type="password"
+            :placeholder="
+              agent.hasApiKey.value
+                ? 'Key stored (type to replace, empty to clear)'
+                : 'No key stored'
+            "
+            :class="[FIELD, 'min-w-0 flex-1']"
+          />
+          <button
+            type="button"
+            class="rounded-lg bg-zinc-700 px-3 py-1.5 hover:bg-zinc-600"
+            @click="saveKey"
+          >
+            Save
+          </button>
+        </div>
+      </div>
+
+      <div v-if="isDev" class="grid gap-2">
+        <h2 class="text-xs font-semibold tracking-wide text-zinc-400 uppercase">
+          Dev: force state
+        </h2>
+        <div class="flex flex-wrap gap-2">
+          <button
+            v-for="s in DEBUG_STATES"
+            :key="s"
+            type="button"
+            class="rounded-lg bg-zinc-800 px-2.5 py-1 text-xs hover:bg-zinc-700"
+            @click="agent.debugSetState(s)"
+          >
+            {{ s }}
+          </button>
+        </div>
+      </div>
+    </section>
   </div>
 </template>

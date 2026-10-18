@@ -6,7 +6,8 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::{hotkeys::Hotkeys, settings::Settings, window};
 
 pub const STATE_CHANGED: &str = "state_changed";
-pub const FOCUS_INPUT: &str = "focus_input";
+pub const SUMMON: &str = "summon";
+pub const OPEN_SETTINGS: &str = "open_settings";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

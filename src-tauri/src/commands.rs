@@ -45,13 +45,8 @@ pub async fn check_backend(state: State<'_, AppState>) -> AppResult<BackendStatu
 }
 
 #[tauri::command]
-pub fn set_expanded(app: AppHandle, expanded: bool) -> AppResult<()> {
-    Ok(window::set_expanded(&app, expanded)?)
-}
-
-#[tauri::command]
-pub fn hide_pill(app: AppHandle) {
-    window::hide(&app);
+pub fn set_mode(app: AppHandle, mode: window::Mode) -> AppResult<()> {
+    Ok(window::set_mode(&app, mode)?)
 }
 
 #[tauri::command]

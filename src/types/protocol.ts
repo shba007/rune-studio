@@ -28,8 +28,11 @@ export interface BackendStatus {
   error: string | null
 }
 
+export type PillMode = 'ambient' | 'open' | 'settings'
+
 export const STATE_CHANGED = 'state_changed'
-export const FOCUS_INPUT = 'focus_input'
+export const SUMMON = 'summon'
+export const OPEN_SETTINGS = 'open_settings'
 
 export interface StateChangedPayload {
   state: AgentState

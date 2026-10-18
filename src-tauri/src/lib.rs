@@ -39,7 +39,7 @@ pub fn run() {
                     }
                     let hotkeys = app.state::<AppState>().hotkeys.lock().expect("hotkeys lock poisoned").clone();
                     if shortcut == &hotkeys.toggle {
-                        window::toggle(app);
+                        window::summon(app);
                     } else if shortcut == &hotkeys.stop {
                         commands::stop(app.clone());
                     }
@@ -66,6 +66,9 @@ pub fn run() {
 
             if let Some(pill) = app.get_webview_window(window::MAIN) {
                 window::exclude_from_capture(&pill)?;
+                // Windows clamps the configured size to its minimum window width; an explicit
+                // resize is exact.
+                window::set_mode(app.handle(), window::Mode::Ambient)?;
                 window::place_top_center(&pill)?;
             }
 
@@ -73,13 +76,15 @@ pub fn run() {
             let _ = hotkeys::apply(app.handle(), None, &hotkeys);
 
             let show = MenuItem::with_id(app, "show", "Show / hide", true, None::<&str>)?;
+            let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &quit])?;
+            let menu = Menu::with_items(app, &[&show, &settings, &quit])?;
             let mut tray = TrayIconBuilder::new()
                 .menu(&menu)
                 .tooltip("Rune Studio")
                 .on_menu_event(|app, event| match event.id().as_ref() {
-                    "show" => window::toggle(app),
+                    "show" => window::toggle_visibility(app),
+                    "settings" => window::open_settings(app),
                     "quit" => app.exit(0),
                     _ => {}
                 });
@@ -96,8 +101,7 @@ pub fn run() {
             commands::has_api_key,
             commands::set_api_key,
             commands::check_backend,
-            commands::set_expanded,
-            commands::hide_pill,
+            commands::set_mode,
             commands::stop,
             commands::start_task,
             commands::steer,

@@ -106,7 +106,7 @@ src-tauri/src/
   hotkeys.rs       summon/stop hotkey parsing and (re)registration
   backend.rs       rune-infer HTTP client, health/model check
   events.rs        typed events + commands shared with the UI
-  window.rs        pill window: placement, expand/collapse, click-through, capture exclusion
+  window.rs        pill window: placement, ambient/open/settings sizing, click-through, capture exclusion
   agent/           loop, history, prompt, protocol            (M2+)
   model/           client, coords                             (M2+)
   observe/         screenshot, uia                            (M1, M4)
@@ -137,24 +137,45 @@ Design points:
 
 ## 7. UI: the pill
 
-Frameless, transparent, always-on-top, skip-taskbar window. Top-center, draggable, position remembered.
+Design language: Nothing-phone inspired. Monochrome, a circular dot-matrix glyph, one red accent used only for "needs attention", a dot or mono font for text (Doto, open licence, bundled locally; no Nothing fonts or logos). Frameless, transparent, always-on-top, skip-taskbar window, top-center, draggable (position remembered from M6).
+
+A single **bot glyph** (an 11x11 dot "orb" on a white disc) is the whole app at rest. The dark capsule grows out of it.
 
 ```
-IDLE / LISTENING   [mic]  Say or type a command...           [expand]
-PLANNING / ACTING  [dot]  Clicking "Save" - step 4/30         (click-through)
-CONFIRM            [warn] Send this email to Raj?  [Yes] [No]   (say "yes"/"no")
-EXPANDED           pill + scrollable log: one row per step (tool, reason, risk badge),
-                   last-screenshot thumbnail, Stop, task summary
+AMBIENT   [ glyph ]                                   ~76 px disc, the default resting form
+OPEN      [ glyph ][ Type or say a command...  ][ mic ]   ~480 px, stays open until dismissed
+ATTENTION [ glyph ][ Send this email to Raj?  Yes  No ][ mic ]   opens itself; "yes"/"no" by voice
+SETTINGS  capsule + a panel below (rune-infer URL, models, API key, hotkeys)   opened from the tray
 ```
 
-- **Hotkeys:** `Alt+Q` shows/focuses the pill. `Ctrl+Alt+Esc` is the global **Stop**. Both are settings (`toggleHotkey`, `stopHotkey`) and re-register on save. `Ctrl+Alt+Space` was rejected (taken by the Claude desktop app); `Alt+Tab` cannot be registered (reserved by Windows); `Ctrl+Space` would break editor autocomplete and IME toggles.
+Modes: **ambient** (glyph only), **open** (glyph + input + mic) and **settings**. The capsule opens on the summon hotkey and when the agent needs the user (`ask_user`, high-risk confirm). It stays open until dismissed (`Esc`, the summon hotkey again, or clicking the glyph while idle). Clicking the glyph while the agent runs is Stop.
+
+Glyph states (distinct by motion and shape, never colour alone; static frames under `prefers-reduced-motion`):
+
+| State                | Dot-matrix behaviour                                                  |
+| -------------------- | --------------------------------------------------------------------- |
+| Idle / stopped       | Dim ring, slow breath                                                 |
+| Listening            | Bloom that follows the voice level (needs an `audio_level` event, M5) |
+| Thinking / observing | Comet orbiting the ring                                               |
+| Acting               | One bright "cursor" dot roaming, click ripple                         |
+| Needs attention      | Red `!`, blinking (the only red)                                      |
+| Done                 | Check mark draws in dot by dot, then fades to idle                    |
+| Failed               | Red `x`                                                               |
+
+A small dot on the disc's corner shows backend problems (amber/red) and is absent when everything is fine.
+
+**Window mechanics.** The window resizes in discrete steps (ambient 76x76, open 480x76, settings 480x420) around a fixed horizontal centre. Because a transparent window still catches mouse clicks, expanding resizes the window first and then animates the capsule inside; collapsing animates first and then shrinks the window.
+
+**M6 additions.** Hover or click on the glyph opens a small ticker list in the dot font: one line per step (`click · Save`, risk, result) plus the last-screenshot thumbnail.
+
+- **Hotkeys:** `Alt+Q` opens the capsule (and shows the window if hidden); pressing it again collapses to ambient. `Ctrl+Alt+Esc` is the global **Stop**. Both are settings (`toggleHotkey`, `stopHotkey`) and re-register on save. `Ctrl+Alt+Space` was rejected (taken by the Claude desktop app); `Alt+Tab` cannot be registered (reserved by Windows); `Ctrl+Space` would break editor autocomplete and IME toggles.
 - **Click-through while acting:** the window ignores the mouse in the Acting state, so it can never block a click meant for another app. Stop is then the hotkey or the voice word "stop".
 
 ### Rust <-> Vue contract
 
-Commands (UI -> Rust): `start_task(text)`, `steer(text)`, `toggle_listening()`, `stop()`, `confirm(id, approved)`, `set_expanded(bool)`, `get_settings()`, `save_settings(...)`, `set_api_key(key)`, `check_backend()`.
+Commands (UI -> Rust): `start_task(text)`, `steer(text)`, `toggle_listening()`, `stop()`, `confirm(id, approved)`, `set_mode("ambient"|"open"|"settings")`, `get_settings()`, `save_settings(...)`, `set_api_key(key)`, `check_backend()`.
 
-Events (Rust -> UI): `state_changed(state)`, `transcript(text, final)`, `step_started{id, tool, reason, risk, target}`, `step_finished{id, ok, error?}`, `screenshot{id, thumb}`, `confirm_request{id, text, risk}`, `task_done{summary, success}`, `error{message}`.
+Events (Rust -> UI): `state_changed(state)`, `summon`, `open_settings`, `audio_level(0..1)` (M5), `transcript(text, final)`, `step_started{id, tool, reason, risk, target}`, `step_finished{id, ok, error?}`, `screenshot{id, thumb}`, `confirm_request{id, text, risk}`, `task_done{summary, success}`, `error{message}`.
 
 ## 8. Milestones
 
@@ -167,7 +188,7 @@ Events (Rust -> UI): `state_changed(state)`, `transcript(text, final)`, `step_st
 | M3   | Safety gate and confirmation (buttons)                                                                                        | "Delete this file" pauses for a yes                          | High-risk actions cannot run without a yes                                  |
 | M4   | Full tools and UIA: `scroll`, `drag`, `wait`, `ask_user`, element ids, stuck detection, history pruning                       | Copy text from a browser into Notepad                        | UIA apps use element ids; no-op loops are detected                          |
 | M5   | Voice: cpal, VAD, STT, listening toggle, steering, voice yes/no/stop                                                          | Click the mic once, talk through a task                      | Utterances cut cleanly; speaking mid-task steers                            |
-| M6   | UI polish: log, thumbnail, click-through, tray, remembered position, error states                                             | The full Spotlight-style flow                                | Every Step 7 state is real                                                  |
+| M6   | UI polish: glyph hover/click ticker list (dot font, thumbnail), tray, remembered position, error states, Doto font            | The full dot-matrix capsule flow                             | Every Step 7 state is real                                                  |
 | M7   | Hardening and packaging: eval suite of ~15 tasks (success rate, steps, latency, tokens), elevated-window detection, installer | Report card + installer                                      | Success rate measured; installs on a clean machine                          |
 
 ## 9. Risks

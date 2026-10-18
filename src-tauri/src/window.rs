@@ -1,12 +1,31 @@
+use serde::Deserialize;
 use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, WebviewWindow};
 
-use crate::events::FOCUS_INPUT;
+use crate::events::{OPEN_SETTINGS, SUMMON};
 
 pub const MAIN: &str = "main";
 
-const COLLAPSED: (f64, f64) = (680.0, 96.0);
-const EXPANDED: (f64, f64) = (680.0, 480.0);
 const TOP_MARGIN: f64 = 16.0;
+
+/// The pill's discrete window sizes. The UI animates inside the window; the window itself
+/// only ever jumps between these.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Mode {
+    Ambient,
+    Open,
+    Settings,
+}
+
+impl Mode {
+    fn size(self) -> (f64, f64) {
+        match self {
+            Mode::Ambient => (76.0, 76.0),
+            Mode::Open => (480.0, 76.0),
+            Mode::Settings => (480.0, 420.0),
+        }
+    }
+}
 
 fn main_window(app: &AppHandle) -> Option<WebviewWindow> {
     app.get_webview_window(MAIN)
@@ -28,13 +47,21 @@ pub fn place_top_center(window: &WebviewWindow) -> tauri::Result<()> {
     window.set_position(PhysicalPosition::new(x, y))
 }
 
-pub fn set_expanded(app: &AppHandle, expanded: bool) -> tauri::Result<()> {
+/// Resizes around the window's current horizontal centre, so a pill the user dragged
+/// elsewhere grows in place instead of snapping back to the top of the screen.
+pub fn set_mode(app: &AppHandle, mode: Mode) -> tauri::Result<()> {
     let Some(window) = main_window(app) else {
         return Ok(());
     };
-    let (width, height) = if expanded { EXPANDED } else { COLLAPSED };
+    let position = window.outer_position()?;
+    let old_width = window.outer_size()?.width as i32;
+    let center_x = position.x + old_width / 2;
+
+    let (width, height) = mode.size();
     window.set_size(LogicalSize::new(width, height))?;
-    place_top_center(&window)
+
+    let new_width = window.outer_size()?.width as i32;
+    window.set_position(PhysicalPosition::new(center_x - new_width / 2, position.y))
 }
 
 pub fn set_click_through(app: &AppHandle, enabled: bool) {
@@ -45,27 +72,30 @@ pub fn set_click_through(app: &AppHandle, enabled: bool) {
     }
 }
 
-pub fn show(app: &AppHandle) {
+/// Shows the window if needed and asks the UI to open (or, if already open, collapse) the capsule.
+pub fn summon(app: &AppHandle) {
     if let Some(window) = main_window(app) {
         let _ = window.show();
         let _ = window.set_focus();
-        let _ = app.emit(FOCUS_INPUT, ());
+        let _ = app.emit(SUMMON, ());
     }
 }
 
-pub fn hide(app: &AppHandle) {
+pub fn open_settings(app: &AppHandle) {
     if let Some(window) = main_window(app) {
-        let _ = window.hide();
+        let _ = window.show();
+        let _ = window.set_focus();
+        let _ = app.emit(OPEN_SETTINGS, ());
     }
 }
 
-pub fn toggle(app: &AppHandle) {
+pub fn toggle_visibility(app: &AppHandle) {
     let Some(window) = main_window(app) else {
         return;
     };
-    if window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false) {
-        hide(app);
+    if window.is_visible().unwrap_or(false) {
+        let _ = window.hide();
     } else {
-        show(app);
+        let _ = window.show();
     }
 }
