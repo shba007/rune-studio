@@ -231,17 +231,17 @@ Events (Rust -> UI): `state_changed(state)`, `summon`, `open_settings`, `audio_l
 
 ## 8. Milestones
 
-| #                  | Milestone                                                                                                                     | Demo                                                         | Done when                                                                   |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------- |
-| M0                 | Shell and plumbing: pill window, hotkeys, settings + keyring, rune-infer health/model check, typed event skeleton             | Alt+Q shows the pill with "backend OK"                       | Works on the dev monitor setup; backend status is real                      |
-| M1 (done)          | Eyes and hands, no AI: screenshot, downscale, `coords`, SendInput, global Stop                                                | Debug command clicks a normalized point and types in Notepad | Clicks land within a few pixels at 100/125/150% DPI and on a second monitor |
-| M1.5 (in progress) | Grounding probe: ~30 saved screenshots -> `qwen3.8-27b` "click X"                                                             | Hit rate and latency numbers                                 | We know if raw coordinates suffice or UIA/grounding must come earlier       |
-| M2                 | Vertical slice: model client, `click`/`type_text`/`press_keys`/`open_app`/`done`, loop, step limit, text input                | "Open Notepad and write hello"                               | End-to-end works; Stop interrupts at any moment                             |
-| M3                 | Safety gate and confirmation (buttons)                                                                                        | "Delete this file" pauses for a yes                          | High-risk actions cannot run without a yes                                  |
-| M4                 | Full tools and UIA: `scroll`, `drag`, `wait`, `ask_user`, element ids, stuck detection, history pruning                       | Copy text from a browser into Notepad                        | UIA apps use element ids; no-op loops are detected                          |
-| M5                 | Voice: mic level (done), VAD, STT, listening toggle, steering, voice yes/no/stop                                              | Click the mic once, talk through a task                      | Utterances cut cleanly; speaking mid-task steers                            |
-| M6                 | UI polish: glyph hover/click ticker list (thumbnail), tray, remembered position, error states                                 | The full orb + composer flow                                 | Every Step 7 state is real                                                  |
-| M7                 | Hardening and packaging: eval suite of ~15 tasks (success rate, steps, latency, tokens), elevated-window detection, installer | Report card + installer                                      | Success rate measured; installs on a clean machine                          |
+| #           | Milestone                                                                                                                     | Demo                                                         | Done when                                                                   |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| M0          | Shell and plumbing: pill window, hotkeys, settings + keyring, rune-infer health/model check, typed event skeleton             | Alt+Q shows the pill with "backend OK"                       | Works on the dev monitor setup; backend status is real                      |
+| M1 (done)   | Eyes and hands, no AI: screenshot, downscale, `coords`, SendInput, global Stop                                                | Debug command clicks a normalized point and types in Notepad | Clicks land within a few pixels at 100/125/150% DPI and on a second monitor |
+| M1.5 (done) | Grounding probe: ~30 saved screenshots -> `qwen3.8-27b` "click X"                                                             | Hit rate and latency numbers                                 | We know if raw coordinates suffice or UIA/grounding must come earlier       |
+| M2          | Vertical slice: model client, `click`/`type_text`/`press_keys`/`open_app`/`done`, loop, step limit, text input                | "Open Notepad and write hello"                               | End-to-end works; Stop interrupts at any moment                             |
+| M3          | Safety gate and confirmation (buttons)                                                                                        | "Delete this file" pauses for a yes                          | High-risk actions cannot run without a yes                                  |
+| M4          | Full tools and UIA: `scroll`, `drag`, `wait`, `ask_user`, element ids, stuck detection, history pruning                       | Copy text from a browser into Notepad                        | UIA apps use element ids; no-op loops are detected                          |
+| M5          | Voice: mic level (done), VAD, STT, listening toggle, steering, voice yes/no/stop                                              | Click the mic once, talk through a task                      | Utterances cut cleanly; speaking mid-task steers                            |
+| M6          | UI polish: glyph hover/click ticker list (thumbnail), tray, remembered position, error states                                 | The full orb + composer flow                                 | Every Step 7 state is real                                                  |
+| M7          | Hardening and packaging: eval suite of ~15 tasks (success rate, steps, latency, tokens), elevated-window detection, installer | Report card + installer                                      | Success rate measured; installs on a clean machine                          |
 
 ### M1 results: eyes and hands
 
@@ -292,7 +292,21 @@ A 1280x720 screenshot is about 880 image tokens (about 940 with the prompt), few
 4. Prompt-cache reuse between questions about the same screenshot is not working (log: "non-consecutive token position", similarity 0.42), so the image is re-processed every time.
 5. `usage.prompt_tokens` does not count image tokens.
 
-**To finish M1.5** the server needs to be running again. Planned (about 35 min): `ornith-1.5-9b` and `ternary-bonsai-2-27b` on all 30 targets, `qwen3.8-27b:norm` on all 30 (about 18 min), and a small screenshot-size test. Then decide between a fast model with weaker grounding, the 27B once the backend is fixed, or UI Automation first (pulling M4 forward).
+### M1.5 results (final)
+
+120 + 80 requests over 10 synthetic scenes, 40 targets, normalized 0..1000 coordinates through a `click` tool, `temperature 0`. "Hit" = inside the element; "near" = within 12 px. Thinking off means `reasoning_effort: "none"`.
+
+| Model / setting                                | Hit     | Hit or near | Median latency | Small targets (<24 px) |
+| ---------------------------------------------- | ------- | ----------- | -------------- | ---------------------- |
+| `ternary-bonsai-2-27b`, thinking off           | **93%** | 100%        | 9.7 s          | 79%                    |
+| `qwen3.8-27b`, thinking off                    | 85%     | 98%         | 20 s           | 57%                    |
+| `ornith-1.5-9b`, thinking on                   | 73%     | 85%         | 4.0 s          | 71%                    |
+| `ornith-1.5-9b`, thinking off                  | 58%     | 85%         | 1.8 s          | 71%                    |
+| `qwen3.8-27b`, thinking off, 768 px screenshot | 63%     | 90%         | 5.1 s          | 29%                    |
+
+**Findings.** (1) Raw model coordinates are good enough for medium and large targets: the best 27B hits 100% of them. Small icon buttons are the weak spot for every model (57 to 79%). (2) `ternary-bonsai-2-27b` is the best single choice: most accurate and about twice as fast as qwen 27B. (3) Thinking off helps latency a lot on the 9B but latency on the 27B is dominated by image prefill, not reasoning. (4) Downscaling to 768 px costs a lot of accuracy, especially on small targets, so keep 1280 px. (5) Latency is noisy because the GPU is shared; numbers are medians.
+
+**Decision.** Use model coordinates as the default grounding (ternary-bonsai first, qwen as fallback), with thinking off. Keep **UI Automation (M4) as the precision path for small targets**: pull element-id clicking forward as an upgrade rather than a prerequisite. Add a verify step (screenshot after each click) in M2 so a miss is caught within one step. Backend asks (prefill speed, prompt-cache reuse, grounding endpoint, usage tokens) stay open.
 
 ## 9. Risks
 
