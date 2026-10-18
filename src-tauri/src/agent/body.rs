@@ -85,7 +85,7 @@ pub fn announce(app: &AppHandle, step: u32, reason: &str, action: &Action, monit
 
 /// Tells the UI the agent is looking at the screen (or a zoomed part of it).
 pub fn announce_observe(app: &AppHandle, region: Option<[f64; 4]>) {
-    let _ = app.emit(events::OBSERVE_STARTED, events::ObserveStarted { region });
+    let _ = app.emit(events::OBSERVE_STARTED, events::ObserveStarted { region, continuous: false });
 }
 
 /// Tells the UI how a step ended.

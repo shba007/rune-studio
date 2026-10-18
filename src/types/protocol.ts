@@ -125,6 +125,8 @@ export interface TypedPayload {
 /** The agent is taking a screenshot. `region` is the zoomed part (0 to 1000 units), or null for the whole screen. */
 export interface ObserveStartedPayload {
   region: [number, number, number, number] | null
+  /** A recording: the wave keeps going until `observe_stopped`. A screenshot is one wave. */
+  continuous?: boolean
 }
 
 /** What Settings shows for the External agent group. `available` is false in normal builds. */

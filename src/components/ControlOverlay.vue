@@ -102,6 +102,7 @@ function draw(now: number) {
     ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(1, level + 0.1)})`
     ctx.fill()
   }
+  drawReticle(ctx, now, still)
   drawFlashes(ctx, now, still)
   drawRipples(ctx, now, still)
   updateTyping(now, still)
@@ -169,9 +170,9 @@ function drawRipples(ctx: CanvasRenderingContext2D, now: number, still: boolean)
 }
 
 /**
- * The area a screenshot covered: two runners of dots start at the top-left corner and trace the
- * outline of the captured area, meet at the opposite corner, hold a moment and fade. Calm: no
- * scanning and no wash over the screen, only a dotted outline that says "this is what I saw".
+ * A capture: a wave of dots crosses the captured area from its top-left corner to its
+ * bottom-right, once for a screenshot. For a recording (`continuous`) the wave keeps coming until
+ * it is told to stop. The dots sit on a 16 px grid and only the ones the wave is passing light up.
  */
 interface Flash {
   x: number
@@ -179,39 +180,102 @@ interface Flash {
   w: number
   h: number
   at: number
+  continuous: boolean
 }
-const FLASH_SECONDS = 0.9
-/** The outline is fully traced after this share of the flash. */
-const TRACE_SHARE = 0.4
-/** The outline starts to fade after this share. */
-const HOLD_SHARE = 0.55
+const WAVE_SECONDS = 1.2
+/** How thick the wave is, as a share of the diagonal. */
+const WAVE_BAND = 0.14
+const WAVE_PITCH = 2 * STEP
 let flashes: Flash[] = []
 
-/** A point `d` px clockwise from the top-left corner along a rectangle's outline. */
-function onOutline(flash: Flash, d: number): [number, number] {
-  const { x, y, w, h } = flash
-  if (d <= w) return [x + d, y]
-  if (d <= w + h) return [x + w, y + (d - w)]
-  if (d <= 2 * w + h) return [x + w - (d - w - h), y + h]
-  return [x, y + h - (d - 2 * w - h)]
-}
-
 function drawFlashes(ctx: CanvasRenderingContext2D, now: number, still: boolean) {
-  flashes = flashes.filter((flash) => (now - flash.at) / 1000 < FLASH_SECONDS)
+  flashes = flashes.filter((flash) => flash.continuous || (now - flash.at) / 1000 < WAVE_SECONDS)
   for (const flash of flashes) {
-    const t = still ? HOLD_SHARE : Math.max(0, (now - flash.at) / 1000 / FLASH_SECONDS)
-    const reach = Math.min(1, t / TRACE_SHARE)
-    const fade = t < HOLD_SHARE ? 1 : Math.max(0, 1 - (t - HOLD_SHARE) / (1 - HOLD_SHARE))
-    const outline = 2 * (flash.w + flash.h)
-    const count = Math.max(8, Math.round(outline / STEP))
-    for (let i = 0; i < count; i++) {
-      const d = (i / count) * outline
-      // Each runner has travelled `reach` of the way to the far corner.
-      if (Math.min(d, outline - d) > (reach * outline) / 2) continue
-      const [px, py] = onOutline(flash, d)
-      dot(ctx, px, py, 2, fade * 0.95)
+    const cycle = (now - flash.at) / 1000 / WAVE_SECONDS
+    // Recording repeats the wave; a screenshot has just the one.
+    const t = still ? 0.5 : flash.continuous ? cycle % 1 : cycle
+    if (t < 0) continue
+    // The front runs a little past the far corner so the last dots light too.
+    const front = t * (1 + 2 * WAVE_BAND) - WAVE_BAND
+    for (let y = flash.y; y <= flash.y + flash.h; y += WAVE_PITCH) {
+      for (let x = flash.x; x <= flash.x + flash.w; x += WAVE_PITCH) {
+        const diagonal = ((x - flash.x) / flash.w + (y - flash.y) / flash.h) / 2
+        const lit = 1 - Math.abs(diagonal - front) / WAVE_BAND
+        if (lit > 0) dot(ctx, x, y, 1.2 + 1.4 * lit, 0.9 * lit)
+      }
     }
   }
+}
+
+/**
+ * The centre of focus: where the agent is working right now (the point it clicked, the caret it
+ * typed at, the middle of what it looked at). A faint hexagonal HUD sits there, at a tenth of full
+ * strength, so it marks the spot without hiding what is under it.
+ */
+interface Focus {
+  x: number
+  y: number
+  since: number
+}
+const RETICLE_ALPHA = 0.1
+let focus: Focus | null = null
+
+function setFocus(x: number, y: number) {
+  focus = { x, y, since: performance.now() }
+}
+
+function drawReticle(ctx: CanvasRenderingContext2D, now: number, still: boolean) {
+  if (!focus) return
+  const appear = still ? 1 : Math.min(1, (now - focus.since) / 300)
+  const breathe = still ? 1 : 1 + 0.025 * Math.sin(now / 700)
+  const scale = (1.15 + 0.25 * (1 - appear)) * breathe
+  const alpha = RETICLE_ALPHA * appear
+
+  /** The reticle's strokes, in its own units (about 50 across), drawn twice: a dark edge and a light line. */
+  const paths = (): Path2D => {
+    const p = new Path2D()
+    // Hexagon with a small one inside.
+    for (const radius of [22, 11]) {
+      for (let i = 0; i <= 6; i++) {
+        const angle = (Math.PI / 3) * i
+        const px = Math.cos(angle) * radius
+        const py = Math.sin(angle) * radius
+        if (i === 0) p.moveTo(px, py)
+        else p.lineTo(px, py)
+      }
+    }
+    // Chevrons either side, and stubs above and below.
+    for (const side of [-1, 1]) {
+      p.moveTo(side * 44, -13)
+      p.lineTo(side * 34, 0)
+      p.lineTo(side * 44, 13)
+      p.moveTo(side * 30, 0)
+      p.lineTo(side * 26, 0)
+    }
+    p.moveTo(0, -46)
+    p.lineTo(0, -30)
+    p.moveTo(0, 46)
+    p.lineTo(0, 30)
+    return p
+  }
+
+  ctx.save()
+  ctx.translate(focus.x, focus.y)
+  ctx.scale(scale, scale)
+  ctx.lineJoin = 'round'
+  ctx.lineCap = 'round'
+  const shape = paths()
+  ctx.strokeStyle = `rgba(0, 0, 0, ${alpha * 0.6})`
+  ctx.lineWidth = 3.2
+  ctx.stroke(shape)
+  ctx.strokeStyle = `rgba(255, 255, 255, ${alpha * 1.4})`
+  ctx.lineWidth = 1.6
+  ctx.stroke(shape)
+  ctx.beginPath()
+  ctx.arc(0, 0, 2, 0, Math.PI * 2)
+  ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 1.4})`
+  ctx.fill()
+  ctx.restore()
 }
 
 const { pause, resume } = useRafFn(({ timestamp }) => draw(timestamp), {
@@ -293,6 +357,7 @@ function showStep(step: StepStartedPayload) {
   if (step.point) {
     // Desktop pixels to this window: the window sits at its monitor's origin.
     const dpr = window.devicePixelRatio || 1
+    setFocus(step.point.x / dpr - window.screenX, step.point.y / dpr - window.screenY)
     ripples.push({
       x: step.point.x / dpr - window.screenX,
       y: step.point.y / dpr - window.screenY,
@@ -307,6 +372,7 @@ function showStep(step: StepStartedPayload) {
 function showTyped({ point }: TypedPayload) {
   if (!point) return
   const dpr = window.devicePixelRatio || 1
+  setFocus(point.x / dpr - window.screenX, point.y / dpr - window.screenY)
   ripples.push({
     x: point.x / dpr - window.screenX,
     y: point.y / dpr - window.screenY,
@@ -319,7 +385,7 @@ function showTyped({ point }: TypedPayload) {
 let observeCount = 0
 
 /** A screenshot: the monitor icon, and a flash over the area that was captured. */
-function showObserve({ region }: ObserveStartedPayload) {
+function showObserve({ region, continuous }: ObserveStartedPayload) {
   typedCount.value = 0
   action.value = {
     key: -++observeCount,
@@ -339,7 +405,10 @@ function showObserve({ region }: ObserveStartedPayload) {
         h: (Math.abs(y1 - y0) / 1000) * height,
       }
     : { x: inset, y: inset, w: width - 2 * inset, h: height - 2 * inset }
-  flashes.push({ ...box, at: performance.now() })
+  setFocus(box.x + box.w / 2, box.y + box.h / 2)
+  // Only one recording wave at a time.
+  if (continuous) flashes = flashes.filter((flash) => !flash.continuous)
+  flashes.push({ ...box, at: performance.now(), continuous: Boolean(continuous) })
 }
 
 /**
@@ -414,7 +483,10 @@ onMounted(async () => {
     await listen<{ state: AgentState }>('state_changed', (event) => {
       const next = event.payload.state
       setActive(next === 'acting' || next === 'observing' || next === 'planning')
-      if (next !== 'acting' && next !== 'observing' && next !== 'planning') action.value = null
+      if (next !== 'acting' && next !== 'observing' && next !== 'planning') {
+        action.value = null
+        focus = null
+      }
       if (next === 'planning') void refreshPill()
       if (next === 'idle' || next === 'stopped') {
         bubbleThinking.value = ''
@@ -438,6 +510,7 @@ onMounted(async () => {
     await listen<{ summary: string }>('task_done', (event) => onSays(event.payload.summary)),
     await listen<ObserveStartedPayload>('observe_started', (event) => showObserve(event.payload)),
     await listen<TypedPayload>('typed', (event) => showTyped(event.payload)),
+    await listen('observe_stopped', () => (flashes = flashes.filter((flash) => !flash.continuous))),
     await listen<{ agent: string | null }>(
       'external_agent',
       (event) => (agentName.value = event.payload.agent),
@@ -456,6 +529,7 @@ onMounted(async () => {
       __demoStep: showStep,
       __demoObserve: showObserve,
       __demoTyped: showTyped,
+      __demoFocus: setFocus,
       __demoBubble: (thinking: string, says: string) => {
         bubbleThinking.value = thinking
         bubbleSays.value = says

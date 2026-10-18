@@ -2,9 +2,9 @@
 import { computed } from 'vue'
 
 /**
- * The orb's outer ring, as the progress of the task: one dotted arc per goal. Finished goals are
- * lit, the current one pulses, the rest are dim. While the plan is still being written a lit
- * arc circles the whole ring.
+ * The orb's outer ring as a dial: a ring of ticks that fill up as the task's goals are done, a
+ * longer tick at every goal boundary, and a small arrow at the leading edge. While the plan is
+ * still being written the arrow circles an empty dial.
  */
 const props = defineProps<{
   /** Number of goals in the plan (0 while there is none). */
@@ -12,70 +12,78 @@ const props = defineProps<{
   /** Index of the goal being worked on; equal to `goals` when everything is done. */
   current: number
   finished: boolean
-  /** A task is running, so a ring with no plan yet means "planning". */
+  /** A task is running, so a dial with no plan yet means "planning". */
   running: boolean
   failed: boolean
 }>()
 
 const SIZE = 64
 const CENTER = SIZE / 2
-const RADIUS = 30
-const GAP_DEGREES = 14
+const TICKS = 60
+const INNER = 28.6
+const OUTER = 31
+const LONG_INNER = 28
+const LONG_OUTER = 32
 
-type Status = 'done' | 'current' | 'pending'
-
-/** Where a point at `degrees` (0 = top, clockwise) on the ring is. */
-function point(degrees: number): [number, number] {
-  const radians = ((degrees - 90) * Math.PI) / 180
-  return [CENTER + RADIUS * Math.cos(radians), CENTER + RADIUS * Math.sin(radians)]
-}
-
-function arc(from: number, to: number): string {
-  const [x1, y1] = point(from)
-  const [x2, y2] = point(to)
-  return `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${RADIUS} ${RADIUS} 0 ${to - from > 180 ? 1 : 0} 1 ${x2.toFixed(2)} ${y2.toFixed(2)}`
-}
-
-const segments = computed(() => {
-  const n = props.goals
-  const slice = 360 / n
-  const gap = n === 1 ? 0 : GAP_DEGREES
-  return Array.from({ length: n }, (_, index) => {
-    const from = index * slice + gap / 2
-    // A full circle cannot be one arc, so a single goal stops just short of closing.
-    const to = from + slice - gap - (n === 1 ? 0.01 : 0)
-    const status: Status =
-      props.finished || index < props.current
-        ? 'done'
-        : index === props.current
-          ? 'current'
-          : 'pending'
-    return { d: arc(from, to), status }
-  })
+/** How far round the dial the task is (0..1). The goal being worked on counts a little. */
+const progress = computed(() => {
+  if (props.goals <= 0) return 0
+  if (props.finished) return 1
+  return Math.min(1, (props.current + 0.4) / props.goals)
 })
 
+/** Tick numbers that mark where one goal ends and the next begins. */
+const boundaries = computed(() => {
+  const marks = new Set<number>([0])
+  for (let goal = 1; goal < props.goals; goal++) marks.add(Math.round((goal * TICKS) / props.goals))
+  return marks
+})
+
+const ticks = computed(() =>
+  Array.from({ length: TICKS }, (_, index) => {
+    const angle = (index / TICKS) * Math.PI * 2 - Math.PI / 2
+    const long = boundaries.value.has(index)
+    const [from, to] = long ? [LONG_INNER, LONG_OUTER] : [INNER, OUTER]
+    return {
+      x1: CENTER + from * Math.cos(angle),
+      y1: CENTER + from * Math.sin(angle),
+      x2: CENTER + to * Math.cos(angle),
+      y2: CENTER + to * Math.sin(angle),
+      lit: props.goals > 0 && (index + 0.5) / TICKS <= progress.value,
+      long,
+    }
+  }),
+)
+
+const planning = computed(() => props.goals === 0 && props.running)
 const visible = computed(() => props.goals > 0 || props.running)
+const arrowTurn = computed(() => `${progress.value * 360}deg`)
 </script>
 
 <template>
   <svg v-if="visible" :viewBox="`0 0 ${SIZE} ${SIZE}`" class="ring" aria-hidden="true">
-    <template v-if="goals > 0">
-      <path
-        v-for="(segment, index) in segments"
-        :key="index"
-        :d="segment.d"
-        fill="none"
-        class="dots"
-        :class="[segment.status, { failed: failed && segment.status === 'current' }]"
+    <line
+      v-for="(tick, index) in ticks"
+      :key="index"
+      :x1="tick.x1"
+      :y1="tick.y1"
+      :x2="tick.x2"
+      :y2="tick.y2"
+      class="tick"
+      :class="{ lit: tick.lit, long: tick.long }"
+    />
+    <!-- The arrow rides the leading edge: it turns to the task's progress, or circles while planning. -->
+    <g
+      class="arrow-turn"
+      :class="{ planning }"
+      :style="{ transform: planning ? undefined : `rotate(${arrowTurn})` }"
+    >
+      <polygon
+        points="35.4,2.1 30.6,-0.2 30.6,4.4"
+        class="arrow"
+        :class="{ failed: failed && !finished }"
       />
-    </template>
-    <template v-else>
-      <!-- Planning: a dim ring with a lit arc running round it. -->
-      <path :d="arc(0, 359.9)" fill="none" class="dots pending" />
-      <g class="spin">
-        <path :d="arc(0, 70)" fill="none" class="dots done" />
-      </g>
-    </template>
+    </g>
   </svg>
 </template>
 
@@ -88,40 +96,44 @@ const visible = computed(() => props.goals > 0 || props.running)
   pointer-events: none;
 }
 
-/* Round caps on zero-length dashes make dots, in keeping with the dot-matrix orb. */
-.dots {
-  stroke-width: 3;
+.tick {
+  stroke: rgb(241 241 239 / 0.16);
+  stroke-width: 1;
   stroke-linecap: round;
-  stroke-dasharray: 0 4.4;
   transition: stroke 300ms ease;
 }
 
-.done {
+.tick.long {
+  stroke: rgb(241 241 239 / 0.34);
+}
+
+.tick.lit {
   stroke: #f1f1ef;
 }
 
-.pending {
-  stroke: rgb(241 241 239 / 0.2);
+.arrow-turn {
+  transform-origin: 32px 32px;
+  transition: transform 600ms cubic-bezier(0.3, 0, 0.2, 1);
 }
 
-.current {
-  stroke: #f1f1ef;
-  animation: pulse 1.4s ease-in-out infinite;
+.arrow {
+  fill: #f1f1ef;
+  animation: arrow-pulse 1.4s ease-in-out infinite;
 }
 
-.current.failed {
-  stroke: #d71921;
+.arrow.failed {
+  fill: #d71921;
   animation: none;
 }
 
-.spin {
-  transform-origin: 32px 32px;
+.planning {
   animation: spin 2.2s linear infinite;
+  transition: none;
 }
 
-@keyframes pulse {
+@keyframes arrow-pulse {
   50% {
-    opacity: 0.35;
+    opacity: 0.45;
   }
 }
 
@@ -132,8 +144,8 @@ const visible = computed(() => props.goals > 0 || props.running)
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .current,
-  .spin {
+  .arrow,
+  .planning {
     animation: none;
   }
 }

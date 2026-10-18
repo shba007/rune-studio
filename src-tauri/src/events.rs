@@ -120,6 +120,8 @@ pub const OBSERVE_STARTED: &str = "observe_started";
 pub struct ObserveStarted {
     /// The zoomed part, as `[x0, y0, x1, y1]` in model units (0 to 1000), or `None` for the whole screen.
     pub region: Option<[f64; 4]>,
+    /// A recording rather than a single screenshot: the overlay keeps the capture wave going.
+    pub continuous: bool,
 }
 
 #[derive(Clone, Serialize)]
