@@ -6,6 +6,7 @@
 pub mod body;
 pub mod prompt;
 pub mod protocol;
+pub mod quick;
 
 use std::{
     future::Future,
@@ -162,9 +163,24 @@ async fn run(app: &AppHandle, task: &str) -> Outcome {
         model: &settings.vision_model,
     };
 
-    let plan = match make_plan(app, &client, &cancel, task, think).await {
-        Ok(plan) => plan,
-        Err(outcome) => return outcome,
+    // A simple task needs no plan, and the decision model can say so in a fraction of the time the
+    // planning call takes. (With "Show thinking" on the user wants to watch the model work, so it runs.)
+    let simple = if think {
+        false
+    } else {
+        match unless_stopped(&cancel, quick::is_simple_task(app, task)).await {
+            Some(simple) => simple,
+            None => return Outcome::Stopped,
+        }
+    };
+    let plan = if simple {
+        log::info!("simple task, planning skipped");
+        vec![task.trim().chars().take(80).collect::<String>()]
+    } else {
+        match make_plan(app, &client, &cancel, task, think).await {
+            Ok(plan) => plan,
+            Err(outcome) => return outcome,
+        }
     };
     let mut current = 0_usize;
     events::emit_plan(app, &plan, current, false);
@@ -191,10 +207,28 @@ async fn run(app: &AppHandle, task: &str) -> Outcome {
             Err(err) => return Outcome::Failed(err.to_string()),
         };
 
+        let screenshot = frame.data_uri();
+
+        // Already finished? Once the last goal has had its steps, the decision model can tell from
+        // the screen, without a full chat call just to say "done". Unsure means the big model decides.
+        let succeeded = history.iter().filter(|entry| entry.outcome == "done").count();
+        if current + 1 == plan.len() && succeeded >= plan.len() && history.last().is_some_and(|entry| entry.outcome == "done") {
+            let skipped = history.len().saturating_sub(10);
+            let actions: Vec<String> = history.iter().skip(skipped).map(|entry| format!("{} -> {}", entry.action, entry.outcome)).collect();
+            let Some(finished) = unless_stopped(&cancel, quick::looks_finished(app, task, &actions.join("
+"), &screenshot)).await else {
+                return Outcome::Stopped;
+            };
+            if finished {
+                log::info!("step {step}: the decision model sees the task is finished");
+                events::emit_plan(app, &plan, plan.len(), true);
+                return Outcome::Finished { summary: format!("Done: {}", task.trim()), success: true };
+            }
+        }
+
         // Decide.
         events::set_agent_state(app, AgentState::Planning);
         let text = prompt::user_message(task, &plan, current, &history, step, settings.max_steps);
-        let screenshot = frame.data_uri();
         let request = Request {
             system: prompt::SYSTEM,
             user_text: &text,

@@ -45,6 +45,8 @@ export function installTauriMock() {
             externalAgentSince: 0,
             showThinking: false,
             askEveryAction: false,
+            fastChecks: true,
+            decisionModel: 'liquid-d1-3b',
           }
         case 'bridge_info':
           return {

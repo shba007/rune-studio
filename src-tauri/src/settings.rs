@@ -28,6 +28,10 @@ pub struct Settings {
     pub show_thinking: bool,
     /// Ask before every action, not only the risky ones.
     pub ask_every_action: bool,
+    /// Use the fast decision model for quick checks (skip planning on simple tasks, spot a finished
+    /// task, a second opinion on risk). Everything still works without it, only slower.
+    pub fast_checks: bool,
+    pub decision_model: String,
 }
 
 impl Default for Settings {
@@ -43,6 +47,8 @@ impl Default for Settings {
             external_agent_since: 0,
             show_thinking: false,
             ask_every_action: false,
+            fast_checks: true,
+            decision_model: "liquid-d1-3b".into(),
         }
     }
 }

@@ -1,7 +1,7 @@
 //! The mouse pointer while the agent is in control.
 //!
 //! The agent moves the real pointer, so the pointer is what the user watches. While it is in
-//! control the arrow and the text beam are swapped for dot-matrix ones in the app's look
+//! control the arrow becomes a small dot orb and the text cursor a line of dots, in the app's look
 //! (white dots with a dark halo, one red dot at the point that acts); everything else about the
 //! pointer is untouched, and the user's own cursors come back the moment control ends.
 
@@ -18,49 +18,33 @@ mod imp {
     };
 
     const SIZE: i32 = 32;
-    /// Distance between dots, and the margin before the first one.
-    const PITCH: f32 = 3.0;
-    const MARGIN: f32 = 2.5;
-    const DOT: f32 = 1.4;
-    const HALO: f32 = 2.5;
+    const MIDDLE: f32 = SIZE as f32 / 2.0;
+    const DOT: f32 = 1.3;
+    const HALO: f32 = 2.2;
     const RED: [u8; 3] = [0xd7, 0x19, 0x21];
     const WHITE: [u8; 3] = [0xf1, 0xf1, 0xef];
 
     static APPLIED: AtomicBool = AtomicBool::new(false);
 
-    /// One dot: its grid column and row, and whether it is the red one.
-    type Dot = (i32, i32, bool);
+    /// One dot: where it is in the 32 px image, and whether it is the red one.
+    type Dot = (f32, f32, bool);
 
-    /// The arrow: a triangle of dots with a short tail. The red dot is its tip, the point that clicks.
-    fn arrow() -> (Vec<Dot>, (i32, i32)) {
-        let mut dots: Vec<Dot> = Vec::new();
-        for row in 0..6 {
-            for col in 0..=row {
-                dots.push((col, row, col == 0 && row == 0));
+    /// The pointer is a small orb, like the app's: a red dot in the middle (the point that
+    /// clicks) inside two rings of white dots.
+    fn arrow() -> Vec<Dot> {
+        let mut dots = vec![(MIDDLE, MIDDLE, true)];
+        for (radius, count) in [(3.6_f32, 6), (7.2, 12)] {
+            for index in 0..count {
+                let angle = (index as f32 / count as f32) * std::f32::consts::TAU - std::f32::consts::FRAC_PI_2;
+                dots.push((MIDDLE + radius * angle.cos(), MIDDLE + radius * angle.sin(), false));
             }
         }
-        for col in 0..3 {
-            dots.push((col, 6, false));
-        }
-        dots.push((2, 7, false));
-        dots.push((3, 7, false));
-        dots.push((3, 8, false));
-        dots.push((4, 8, false));
-        (dots, (0, 0))
+        dots
     }
 
-    /// The text beam: a column of dots with a cap at each end. The red dot marks where text lands.
-    fn beam() -> (Vec<Dot>, (i32, i32)) {
-        let mut dots: Vec<Dot> = (0..9).map(|row| (1, row, row == 4)).collect();
-        for row in [0, 8] {
-            dots.push((0, row, false));
-            dots.push((2, row, false));
-        }
-        (dots, (1, 4))
-    }
-
-    fn centre(cell: i32) -> f32 {
-        MARGIN + cell as f32 * PITCH
+    /// The text cursor is a line of five dots with a red one in the middle, where the text lands.
+    fn beam() -> Vec<Dot> {
+        (-2..=2).map(|index| (MIDDLE, MIDDLE + index as f32 * 4.5, index == 0)).collect()
     }
 
     /// How much of the pixel at (px, py) a dot of `radius` centred at (cx, cy) covers.
@@ -75,8 +59,7 @@ mod imp {
         for py in 0..SIZE {
             for px in 0..SIZE {
                 let (mut alpha, mut colour) = (0.0f32, [0.0f32; 3]);
-                for &(col, row, red) in dots {
-                    let (cx, cy) = (centre(col), centre(row));
+                for &(cx, cy, red) in dots {
                     // A soft dark halo under each dot keeps the pointer visible on white pages.
                     let halo = coverage(px as f32, py as f32, cx, cy, HALO) * 0.55;
                     if halo > 0.0 {
@@ -108,16 +91,16 @@ mod imp {
 
     #[cfg(test)]
     pub fn arrow_pixels() -> Vec<u8> {
-        paint(&arrow().0)
+        paint(&arrow())
     }
 
     #[cfg(test)]
     pub fn beam_pixels() -> Vec<u8> {
-        paint(&beam().0)
+        paint(&beam())
     }
 
     /// Builds a cursor from dots. The system takes ownership of what it is given.
-    fn build(dots: &[Dot], hotspot: (i32, i32)) -> Option<HCURSOR> {
+    fn build(dots: &[Dot]) -> Option<HCURSOR> {
         let pixels = paint(dots);
         unsafe {
             let info = BITMAPINFO {
@@ -141,8 +124,8 @@ mod imp {
             let mask = CreateBitmap(SIZE, SIZE, 1, 1, None);
             let icon = ICONINFO {
                 fIcon: false.into(),
-                xHotspot: centre(hotspot.0).round() as u32,
-                yHotspot: centre(hotspot.1).round() as u32,
+                xHotspot: MIDDLE as u32,
+                yHotspot: MIDDLE as u32,
                 hbmMask: mask,
                 hbmColor: colour,
             };
@@ -157,8 +140,8 @@ mod imp {
         if APPLIED.swap(true, Ordering::SeqCst) {
             return;
         }
-        for (id, (dots, hotspot)) in [(OCR_NORMAL, arrow()), (OCR_IBEAM, beam())] {
-            match build(&dots, hotspot) {
+        for (id, dots) in [(OCR_NORMAL, arrow()), (OCR_IBEAM, beam())] {
+            match build(&dots) {
                 Some(cursor) => unsafe {
                     if let Err(err) = SetSystemCursor(cursor, SYSTEM_CURSOR_ID(id.0)) {
                         log::warn!("could not set the agent cursor: {err}");
@@ -215,7 +198,7 @@ mod tests {
             let red = pixels.chunks(4).filter(|p| p[3] > 200 && p[2] > 180 && p[1] < 60).count();
             let white = pixels.chunks(4).filter(|p| p[3] > 200 && p[0] > 200 && p[1] > 200).count();
             assert!(red >= 4, "a red dot");
-            assert!(white >= 20, "white dots");
+            assert!(white >= 12, "white dots");
         }
     }
 }

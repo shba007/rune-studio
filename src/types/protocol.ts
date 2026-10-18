@@ -25,6 +25,9 @@ export interface Settings {
   showThinking: boolean
   /** Ask before every action, not only the risky ones. */
   askEveryAction: boolean
+  /** Use the fast decision model for quick checks (skip planning, spot a finished task, risk). */
+  fastChecks: boolean
+  decisionModel: string
 }
 
 export interface BackendStatus {

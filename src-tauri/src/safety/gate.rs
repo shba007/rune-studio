@@ -89,11 +89,25 @@ pub async fn check(app: &AppHandle, cancel: &CancelToken, source: &str, action: 
         (ask, rules::assess(action, reason, &foreground::current()))
     };
     let Assessment { risk: found, mut reasons } = assessment;
-    let risk = found.max(stated.unwrap_or_default());
+    let mut risk = found.max(stated.unwrap_or_default());
     if stated == Some(Risk::High) && found != Risk::High {
         reasons.push("The agent marked it as high risk".into());
     }
     let text = action.describe();
+    // A quick second opinion from the decision model, only when nothing has said "high" yet.
+    // It can raise the risk, never lower it, and Stop still works while it thinks.
+    if risk != Risk::High && !rules::is_harmless(action) {
+        let window = foreground::current();
+        let window = format!("{} ({})", window.title, window.process);
+        let opinion = tokio::select! {
+            opinion = crate::agent::quick::risk_opinion(app, &text, reason, &window) => opinion,
+            () = until_stopped(cancel) => return Verdict::Stopped,
+        };
+        if let Some(opinion) = opinion {
+            risk = risk.max(opinion);
+            reasons.push("A quick safety check rated it high risk".into());
+        }
+    }
     let ask = needs_confirmation(risk, ask_every_action, rules::is_harmless(action));
 
     let verdict = if ask { ask_user(app, cancel, source, &text, reason, risk, &reasons).await } else { Verdict::Allow };
@@ -108,6 +122,13 @@ pub async fn check(app: &AppHandle, cancel: &CancelToken, source: &str, action: 
         audit::record(app, json!({ "source": source, "action": text, "reason": reason, "risk": risk, "why": reasons, "decision": decision }));
     }
     verdict
+}
+
+/// Resolves when the user presses Stop.
+async fn until_stopped(cancel: &CancelToken) {
+    while !cancel.is_cancelled() {
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
 }
 
 async fn ask_user(app: &AppHandle, cancel: &CancelToken, source: &str, text: &str, reason: &str, risk: Risk, reasons: &[String]) -> Verdict {

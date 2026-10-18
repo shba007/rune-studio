@@ -243,6 +243,28 @@ Behaviour: Stop aborts even an in-flight model request (the request future is dr
 
 Not in M2 by design: risk gating and confirmation (M3), element ids and stuck detection (M4), steering and voice (M5). Until M3 the agent clicks and types whatever the model decides, so only run it on tasks you would run yourself.
 
+### Fast checks: the decision model
+
+rune-infer has a decision model (`liquid-d1-3b`, `POST /v1/decisions`): it reads a text and optional screenshots and answers a fixed list of yes/no, pick-one and score questions in one forward pass, with no tokens generated, so an answer is far faster than a chat completion. `model/decision.rs` is the client and `agent/quick.rs` holds the questions. Settings > Models > **Fast checks** turns it on (default on) and **Decision** names the model.
+
+**Where it is used.**
+
+| Check       | Question                                       | What it saves or adds                                                                                   | Acts on              |
+| ----------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------- | -------------------- |
+| Simple task | "Can this be done as one short step?"          | Skips the planning call (a full chat completion)                                                        | yes at 0.90 or more  |
+| Finished    | "Does the screen show the whole task is done?" | Ends the run without a chat call that only says `done`; asked only once the last goal has had its steps | yes at 0.97 or more  |
+| Risk        | low, medium or high                            | A second opinion in the safety gate, for model and bridge actions alike                                 | high at 0.80 or more |
+
+**Its limits, and how the app respects them.**
+
+- It only picks from what it is offered. It cannot write text, coordinates or tool arguments, so it never replaces the vision model that chooses actions; it only skips or adds a check around it.
+- It is small, and fine print on a screenshot is beyond it. So every check acts only on a _confident_ answer, and only in the direction where a mistake is cheap: a wrong "simple" costs a one-arc ring, a wrong "risky" costs one click, and "finished" needs the highest bar and several successful steps first. "No" and "unsure" both mean "do it the usual way". The risk check can only raise the risk (to high), never lower it, and the rules in `safety/rules.rs` still apply first.
+- It has no memory between calls, so the question carries the task and the steps taken.
+- It is optional. If it is off, not loaded, slow (4 s for text, 8 s with a screenshot) or failing, the call returns nothing and the run does what it did before; after a failure it is left alone for a minute. Stop works while it is being asked.
+- Unverified: it needs the model file on the server and a live run to check the thresholds against real answers; the meaning of `probability` on a yes/no answer (probability of the chosen answer, or of yes) is read as the chosen answer, and only a "yes" is ever acted on. Where to tighten next: add each check's answer to the audit log and measure false positives before lowering any threshold.
+
+Not used on purpose: choosing the next action, clicking (needs coordinates), anything that must be right the first time. Possible later: spotting a login, CAPTCHA or permission prompt on screen and asking the user, and stuck detection.
+
 ### Live HUD (H1 built, recognition card planned)
 
 **Built (H1).** The orb's outer ring is a dial of 60 ticks: ticks light as goals are finished, a longer tick marks each goal boundary, and a small arrow rides the leading edge (it circles while the plan is still being written, and turns red if the task fails; `ProgressRing.vue`). When the agent takes a screenshot, a wave of dots on a 16 px grid crosses the captured area from its top-left corner to its bottom-right, once; the effect already has a `continuous` mode for recording (`observe_started.continuous` and an `observe_stopped` event), which only needs a recording tool to drive it. At the centre of focus (the point just clicked, the caret just typed at, or the middle of what was captured) the overlay draws a hexagonal HUD, with chevrons at its sides and stubs above and below, at ten per cent opacity so it marks the spot without covering what is there.

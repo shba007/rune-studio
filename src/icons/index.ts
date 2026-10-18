@@ -15,6 +15,7 @@ import IconBrain from '~icons/ph/brain-fill'
 import IconCheckCircle from '~icons/ph/check-circle-fill'
 import IconEye from '~icons/ph/eye-fill'
 import IconKey from '~icons/ph/key-fill'
+import IconLightning from '~icons/ph/lightning-fill'
 import IconCommand from '~icons/ph/command-fill'
 import IconX from '~icons/ph/x-fill'
 import IconCopy from '~icons/ph/copy-fill'
@@ -57,6 +58,7 @@ export const icons = {
   stop: IconStopCircle,
   trash: IconTrash,
   thinking: IconBrain,
+  fast: IconLightning,
   tune: IconSlidersHorizontal,
   video: IconVideo,
 } as const
