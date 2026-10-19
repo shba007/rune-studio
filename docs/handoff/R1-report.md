@@ -1,6 +1,6 @@
 # R1 report: the flight recorder
 
-Branch `feat/r1-flight-recorder`, from `origin/develop` (`353a1a9`, which has PR #17 and the R0.5 change: `input_audio` is in `model/client.rs`). Nine commits. Pushed the branch only; no PR.
+Branch `feat/r1-flight-recorder`, from `origin/develop` (`353a1a9`, which has PR #17 and the R0.5 change: `input_audio` is in `model/client.rs`). Ten commits (nine work commits and this report). Pushed the branch only; no PR.
 
 ## 1. Environment
 
