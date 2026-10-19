@@ -66,23 +66,56 @@ impl Question {
 #[derive(Debug, Default)]
 pub struct Answers(HashMap<String, Value>);
 
+/// The two answer shapes seen for `/v1/decisions`: what the server source returns
+/// (`{ "decision": .., "probability" | "confidence": .. }`) and what the API spec / Postman
+/// collection documents (`{ "type": "noul" | "choice" | "score", "value": .., "confidence": .. }`).
+/// Which one a given server sends is settled by `scripts/wire-audit.mjs`; both are read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Shape {
+    Source,
+    Spec,
+}
+
+fn shape_of(answer: &Value) -> Shape {
+    if answer["type"].is_string() && !answer["value"].is_null() { Shape::Spec } else { Shape::Source }
+}
+
 impl Answers {
     pub fn from_response(response: &Value) -> Self {
-        let answers = response["answers"].as_object().map(|map| map.iter().map(|(name, value)| (name.clone(), value.clone())).collect());
-        Self(answers.unwrap_or_default())
+        let answers: Option<HashMap<String, Value>> = response["answers"].as_object().map(|map| map.iter().map(|(name, value)| (name.clone(), value.clone())).collect());
+        let answers = answers.unwrap_or_default();
+        if let Some(first) = answers.values().next() {
+            static LOGGED: [std::sync::atomic::AtomicBool; 2] = [std::sync::atomic::AtomicBool::new(false), std::sync::atomic::AtomicBool::new(false)];
+            let shape = shape_of(first);
+            if !LOGGED[shape as usize].swap(true, std::sync::atomic::Ordering::Relaxed) {
+                log::info!("decision model answers in the {shape:?} shape");
+            }
+        }
+        Self(answers)
     }
 
     /// True only when the model said yes and was at least `min_probability` sure. Anything else,
     /// including a missing answer, is "not sure", never "no".
     pub fn confident_yes(&self, name: &str, min_probability: f64) -> bool {
         let Some(answer) = self.0.get(name) else { return false };
-        answer["decision"].as_bool() == Some(true) && answer["probability"].as_f64().is_some_and(|p| p >= min_probability)
+        match shape_of(answer) {
+            Shape::Source => answer["decision"].as_bool() == Some(true) && answer["probability"].as_f64().is_some_and(|p| p >= min_probability),
+            Shape::Spec => {
+                let yes = answer["type"] == "noul" && (answer["value"].as_bool() == Some(true) || answer["value"].as_str().is_some_and(|value| value.eq_ignore_ascii_case("yes")));
+                // NOT CERTAIN: that `confidence` is the probability of `value` for a yes/no answer.
+                yes && answer["confidence"].as_f64().is_some_and(|p| p >= min_probability)
+            }
+        }
     }
 
     /// The option picked for a `choice` question and how confident the model is.
     pub fn choice(&self, name: &str) -> Option<(String, f64)> {
         let answer = self.0.get(name)?;
-        Some((answer["decision"].as_str()?.to_string(), answer["confidence"].as_f64()?))
+        match shape_of(answer) {
+            Shape::Source => Some((answer["decision"].as_str()?.to_string(), answer["confidence"].as_f64()?)),
+            Shape::Spec if answer["type"] == "choice" => Some((answer["value"].as_str()?.to_string(), answer["confidence"].as_f64()?)),
+            Shape::Spec => None,
+        }
     }
 }
 
@@ -199,5 +232,44 @@ mod tests {
         let with_image = request_body("m", "state", &["data:image/jpeg;base64,AA".to_string()], &questions);
         assert_eq!(with_image["state"]["text"], "state");
         assert_eq!(with_image["state"]["images"][0], "data:image/jpeg;base64,AA");
+    }
+
+    fn answers_of(answer: Value) -> Answers {
+        Answers::from_response(&json!({ "answers": { "q": answer } }))
+    }
+
+    #[test]
+    fn the_spec_shape_is_read_too() {
+        let yes = answers_of(json!({"type":"noul","value":"yes","confidence":0.89}));
+        assert!(yes.confident_yes("q", 0.85));
+        assert!(!yes.confident_yes("q", 0.9), "the threshold is respected");
+        assert_eq!(yes.choice("q"), None, "a yes/no answer is not a choice");
+
+        let no = answers_of(json!({"type":"noul","value":"no","confidence":0.99}));
+        assert!(!no.confident_yes("q", 0.0), "a no is never a yes");
+        let as_bool = answers_of(json!({"type":"noul","value":true,"confidence":0.95}));
+        assert!(as_bool.confident_yes("q", 0.9), "a JSON bool value is accepted");
+
+        let picked = answers_of(json!({"type":"choice","value":"canary_rollout","confidence":0.94}));
+        assert_eq!(picked.choice("q"), Some(("canary_rollout".to_string(), 0.94)));
+        assert!(!picked.confident_yes("q", 0.0), "a choice is not a yes");
+    }
+
+    #[test]
+    fn the_source_shape_still_reads_with_the_documented_fixtures() {
+        let yes = answers_of(json!({"decision":true,"probability":0.96}));
+        assert!(yes.confident_yes("q", 0.9));
+        assert!(!yes.confident_yes("q", 0.97));
+        let high = answers_of(json!({"decision":"high","confidence":0.88,"probabilities":{"low":0.02,"medium":0.1,"high":0.88}}));
+        assert_eq!(high.choice("q"), Some(("high".to_string(), 0.88)));
+    }
+
+    #[test]
+    fn an_answer_in_neither_shape_is_not_sure_and_never_no_or_a_pick() {
+        for odd in [json!({}), json!({"type":"noul"}), json!({"type":"noul","value":"yes"}), json!({"decision":true}), json!({"type":"score","value":3.0,"confidence":0.9}), json!("yes")] {
+            let answers = answers_of(odd.clone());
+            assert!(!answers.confident_yes("q", 0.0), "{odd}");
+            assert_eq!(answers.choice("q"), None, "{odd}");
+        }
     }
 }
