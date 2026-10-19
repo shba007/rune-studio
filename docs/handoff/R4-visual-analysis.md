@@ -11,7 +11,7 @@ v1 scope (decisions): **current screen only** (no file picker, no drag and drop)
 ## 2. Preconditions
 
 1. R1 and R3 must be merged into `develop` (R4 adds a database migration after R3's). Check: `grep -n "verdicts" src-tauri/src/trace/schema.rs` finds the table and `VERSION` is `2`. If not, **stop** and tell the maintainer.
-2. Work on **`develop`'s successor branch only if the maintainer asks you to**; the default instruction for this milestone is: branch `feat/r4-visual-analysis` from `origin/develop`, one commit per work package, push only that branch. No force-push, no PR unless asked, never delete branches.
+2. **Do not create a branch.** Work directly on `develop`: `git switch develop && git pull --ff-only origin develop`, one commit per work package, `git pull --rebase origin develop` then `git push origin develop` after each commit (CI runs on `develop`). Never force-push, never rewrite history, never delete branches, no PR. If a push is rejected because `develop` moved, rebase and retry; if CI on `develop` goes red because of your commit, fix it in the next commit before doing anything else.
 3. Toolchain: Rust 1.98.1+, Bun 1.4.x, Node 22+. Linux needs the apt packages in `.github/workflows/rust.yml`.
 4. Baseline numbers first (put them in your report): `cargo test --lib`, `cargo test --lib --features agent-bridge`, `cargo test --lib --features eval,agent-bridge`, `node --test scripts/eval/test`, `bun run build`, `bun run test:unit`.
 
@@ -94,13 +94,13 @@ cd src-tauri
 cargo test --lib && cargo test --lib --features agent-bridge && cargo test --lib --features eval,agent-bridge
 cd .. && node --test scripts/eval/test && bun run build && bun run lint && bun run test:unit
 grep -rn "grounding\|detections\|captions" src-tauri/src --include=*.rs | grep -v probe_m15   # the endpoints are not used by the product
-git diff --stat origin/develop
+git diff --stat <the commit before your first one>..HEAD
 ```
-Also: the `Rust` workflow result for your branch on both OSes; a screenshot or description of `?view=analysis` in a browser with the mock if you can run `bun run dev`; anything that needs the real app, a model server or a Windows desktop: write "not run end to end".
+Also: the `Rust` workflow result for your last commit on `develop`, on both OSes; a screenshot or description of `?view=analysis` in a browser with the mock if you can run `bun run dev`; anything that needs the real app, a model server or a Windows desktop: write "not run end to end".
 
 ## 7. Report (required)
 
-`docs/handoff/R4-report.md`: environment; baseline and final counts; per work package status, commit hash, files, deviations; the list of `Request { ... }` call sites you touched for `max_tokens`; the exact `SYSTEM` prompt; the icon you chose and where you found it; how to run the WP1 probe; every NOT CERTAIN item; things noticed but not changed; questions for the maintainer. Conventional commits only (`feat(analysis): ...`, `feat(ui): ...`, `feat(trace): ...`, `test(probe): ...`, `docs: ...`). Push your branch, then tell the maintainer you are done.
+`docs/handoff/R4-report.md`: environment; baseline and final counts; per work package status, commit hash, files, deviations; the list of `Request { ... }` call sites you touched for `max_tokens`; the exact `SYSTEM` prompt; the icon you chose and where you found it; how to run the WP1 probe; every NOT CERTAIN item; things noticed but not changed; questions for the maintainer. Conventional commits only (`feat(analysis): ...`, `feat(ui): ...`, `feat(trace): ...`, `test(probe): ...`, `docs: ...`). Push to `develop` as you go, then tell the maintainer you are done.
 
 ## 8. What the reviewer will do (and will not)
 
