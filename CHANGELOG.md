@@ -1,5 +1,69 @@
 # Changelog
 
+## v0.0.8
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.0.7...v0.0.8)
+
+### 🚀 Enhancements
+
+- **archive:** One folder per session with a manifest, so a task's evidence is in one place ([0d6843a](https://github.com/shba007/rune-studio/commit/0d6843a))
+- **state:** One is_running answer and an AgentState::Reflecting ([3d4f954](https://github.com/shba007/rune-studio/commit/3d4f954))
+- **model:** Retry transient chat errors up to three times ([7e948f7](https://github.com/shba007/rune-studio/commit/7e948f7))
+- **model:** Read both /v1/decisions answer shapes; add scripts/wire-audit.mjs ([5c5cfbc](https://github.com/shba007/rune-studio/commit/5c5cfbc))
+- Single instance; a second launch opens the existing pill ([9cef8b3](https://github.com/shba007/rune-studio/commit/9cef8b3))
+- **safety:** Notice a front window that runs as administrator ([fd36a66](https://github.com/shba007/rune-studio/commit/fd36a66))
+- Foundations (R0): per-run cancellation, panic supervisor, retries, CI ([c0350b3](https://github.com/shba007/rune-studio/commit/c0350b3))
+- **model:** Log what the decision model answers, with the picked option's probability ([b48e973](https://github.com/shba007/rune-studio/commit/b48e973))
+- **backend:** Read the model's capabilities and warn when it lists no Audio ([8f0aa04](https://github.com/shba007/rune-studio/commit/8f0aa04))
+- **trace:** Add bundled SQLite and stop what a finished run leaves behind ([fd41c53](https://github.com/shba007/rune-studio/commit/fd41c53))
+- **trace:** Add the trace store and its writer thread ([d768a45](https://github.com/shba007/rune-studio/commit/d768a45))
+- **observe:** Keep the path of the stored screenshot in Frame ([5959d4c](https://github.com/shba007/rune-studio/commit/5959d4c))
+- **trace:** Record the built-in agent's runs ([6ba77cc](https://github.com/shba007/rune-studio/commit/6ba77cc))
+- **trace:** Record outside agents' runs ([1bd44b5](https://github.com/shba007/rune-studio/commit/1bd44b5))
+- **cli:** List and show recorded runs ([21514f2](https://github.com/shba007/rune-studio/commit/21514f2))
+- **archive:** Opt-in retention of old session folders ([c8317b2](https://github.com/shba007/rune-studio/commit/c8317b2))
+- **trace): flight recorder (R1:** SQLite record of every run ([5083a12](https://github.com/shba007/rune-studio/commit/5083a12))
+
+### 🩹 Fixes
+
+- **exec:** Give every run its own cancellation scope ([65dec10](https://github.com/shba007/rune-studio/commit/65dec10))
+- **agent:** A panic inside a run still ends the task ([842b992](https://github.com/shba007/rune-studio/commit/842b992))
+- **bridge:** Outside-agent actions take turns ([6d40588](https://github.com/shba007/rune-studio/commit/6d40588))
+- A poisoned lock can no longer take Stop down ([9634c63](https://github.com/shba007/rune-studio/commit/9634c63))
+- **model:** Send audio as input_audio and the thinking switch rune-infer honours ([23ba597](https://github.com/shba007/rune-studio/commit/23ba597))
+- **model:** Align requests with rune-infer (input_audio, thinking object) ([353a1a9](https://github.com/shba007/rune-studio/commit/353a1a9))
+- **trace:** Clear the clippy findings in the recorder code ([b703baa](https://github.com/shba007/rune-studio/commit/b703baa))
+
+### 📖 Documentation
+
+- Rewrite README and architecture doc from the code, fix CLI names in the agent guide ([8d1a928](https://github.com/shba007/rune-studio/commit/8d1a928))
+- Add roadmap for the reflective agent, ecosystem section, wire-format findings ([32b63db](https://github.com/shba007/rune-studio/commit/32b63db))
+- Record rune-infer Postman spec findings (audio, thinking, decisions, image endpoints) ([f93bf6b](https://github.com/shba007/rune-studio/commit/f93bf6b))
+- Handoff for milestone R0 (foundations) ([543e6f4](https://github.com/shba007/rune-studio/commit/543e6f4))
+- Describe the R0 foundations as built ([d800336](https://github.com/shba007/rune-studio/commit/d800336))
+- Add the foundations handoff report ([fa675bf](https://github.com/shba007/rune-studio/commit/fa675bf))
+- Handoff for merging the orchestration branch into develop ([95ad0e3](https://github.com/shba007/rune-studio/commit/95ad0e3))
+- Handoff for R0.5, align the chat request with what rune-infer accepts ([7411f42](https://github.com/shba007/rune-studio/commit/7411f42))
+- Handoff for R1, the flight recorder ([009f15d](https://github.com/shba007/rune-studio/commit/009f15d))
+- Audio is input_audio, thinking is the thinking object, decision shape confirmed ([16e663c](https://github.com/shba007/rune-studio/commit/16e663c))
+- Add the wire alignment report ([35485c3](https://github.com/shba007/rune-studio/commit/35485c3))
+- Handoff for R2, the evaluation harness ([618c054](https://github.com/shba007/rune-studio/commit/618c054))
+- Describe the trace store, its CLI commands and retention ([c5871ea](https://github.com/shba007/rune-studio/commit/c5871ea))
+- Add the flight recorder report ([91844e8](https://github.com/shba007/rune-studio/commit/91844e8))
+- Fix the commit count in the flight recorder report ([b2a08dc](https://github.com/shba007/rune-studio/commit/b2a08dc))
+- Handoff for R3, the verifier ([96dccf1](https://github.com/shba007/rune-studio/commit/96dccf1))
+- Update description of the desktop agent to 'harness' ([5e8c5a0](https://github.com/shba007/rune-studio/commit/5e8c5a0))
+
+### 🤖 CI
+
+- Run the Rust tests on Windows and Ubuntu ([c51286e](https://github.com/shba007/rune-studio/commit/c51286e))
+- Remove the Rust test workflow ([d9ae02d](https://github.com/shba007/rune-studio/commit/d9ae02d))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+- Claude <noreply@anthropic.com>
+
 ## v0.0.7
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.0.6...v0.0.7)
