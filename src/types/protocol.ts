@@ -13,6 +13,8 @@ export type AgentState =
   | 'stopped'
 
 export interface Settings {
+  /** What happens with the independent check of a finished task. No UI yet: edit settings.json. */
+  verifyMode: 'off' | 'background' | 'blocking'
   /** Delete session folders older than this many days at startup; 0 keeps everything. No UI yet. */
   archiveKeepDays: number
   baseUrl: string
@@ -86,6 +88,7 @@ export interface VoiceHeardPayload {
 }
 export const STEP_STARTED = 'step_started'
 export const TASK_DONE = 'task_done'
+export const TASK_VERIFIED = 'task_verified'
 export const EXTERNAL_AGENT = 'external_agent'
 export const OBSERVE_STARTED = 'observe_started'
 export const TYPED = 'typed'
@@ -173,4 +176,11 @@ export interface StepStartedPayload {
 export interface TaskDonePayload {
   summary: string
   success: boolean
+}
+
+/** The independent check of a finished task (`verifyMode` background). */
+export interface TaskVerifiedPayload {
+  runId: string
+  result: 'verified' | 'contradicted' | 'unsure'
+  evidence: string
 }

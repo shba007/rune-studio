@@ -7,6 +7,8 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::{bridge::lease::LeaseBook, safety::gate::Pending, exec::{self, RunScope}, hotkeys::Hotkeys, overlay, settings::Settings, voice::capture::Capture, window};
 
 pub const STATE_CHANGED: &str = "state_changed";
+/// The independent check of a finished task came back: `{ runId, result, evidence }`.
+pub const TASK_VERIFIED: &str = "task_verified";
 pub const SUMMON: &str = "summon";
 pub const OPEN_SETTINGS: &str = "open_settings";
 
@@ -41,6 +43,9 @@ pub struct AppState {
     pub mic: Mutex<Option<Capture>>,
     /// The current run's cancellation scope. Stop cancels it; the next run replaces it (`begin_run`).
     pub run: Mutex<RunScope>,
+    /// Cancels the background check of the last finished task (see `agent::verify`): starting a task
+    /// or pressing Stop cancels it first, so the check never competes with the user.
+    pub verifier: Mutex<exec::CancelToken>,
     pub agent_state: Mutex<AgentState>,
     /// Who may drive the PC from outside (see `bridge::lease`).
     pub lease: Mutex<LeaseBook>,
@@ -60,12 +65,23 @@ pub struct AppState {
 impl AppState {
     /// Cancels the previous run's scope and returns a fresh one for the run that is starting.
     pub fn begin_run(&self) -> RunScope {
+        // First: a check left over from the last task must not run next to the new one.
+        self.verifier.locked().cancel();
         exec::begin_run(&self.run)
     }
 
     /// Cancels the current run, whatever the agent state (even Idle: typing from debug commands relies on it).
     pub fn stop_current(&self) {
+        self.verifier.locked().cancel();
         exec::stop_current(&self.run);
+    }
+
+    /// A fresh token for a background check about to start; the previous check, if any, is cancelled.
+    pub fn begin_verification(&self) -> exec::CancelToken {
+        let mut current = self.verifier.locked();
+        current.cancel();
+        *current = exec::CancelToken::default();
+        current.clone()
     }
 
     /// The scope Stop would cancel right now.
@@ -73,6 +89,16 @@ impl AppState {
     pub fn current_scope(&self) -> RunScope {
         exec::current_scope(&self.run)
     }
+}
+
+/// The payload of `TASK_VERIFIED`.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskVerified {
+    pub run_id: String,
+    /// `verified`, `contradicted` or `unsure`.
+    pub result: &'static str,
+    pub evidence: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -217,5 +243,52 @@ mod tests {
             assert_eq!(state.is_running(), running, "{state:?}");
         }
         assert_eq!(serde_json::to_string(&Reflecting).unwrap(), "\"reflecting\"");
+    }
+
+    /// An `AppState` with nothing running, for the tests of how a new task and Stop reach the checks.
+    fn idle_state() -> AppState {
+        let settings = Settings::default();
+        AppState {
+            hotkeys: Mutex::new(Hotkeys::from_settings(&settings)),
+            settings: Mutex::new(settings),
+            mic: Mutex::new(None),
+            run: Mutex::new(RunScope::new()),
+            verifier: Mutex::new(exec::CancelToken::default()),
+            agent_state: Mutex::new(AgentState::Idle),
+            lease: Mutex::new(LeaseBook::default()),
+            confirm: Mutex::new(None),
+            steer: Default::default(),
+            #[cfg(feature = "agent-bridge")]
+            act_turn: Default::default(),
+            trace: crate::trace::Recorder::noop(),
+            http: reqwest::Client::new(),
+        }
+    }
+
+    #[test]
+    fn starting_a_task_cancels_the_background_check_and_the_check_after_it_is_fresh() {
+        let state = idle_state();
+        let check = state.begin_verification();
+        assert!(!check.is_cancelled());
+        let run = state.begin_run();
+        assert!(check.is_cancelled(), "a new task cancels the check of the last one");
+        assert!(!run.token.is_cancelled(), "and its own token is untouched");
+        // The next check gets a fresh token; the one before it is cancelled by then.
+        let next = state.begin_verification();
+        assert!(!next.is_cancelled());
+        let after = state.begin_verification();
+        assert!(next.is_cancelled() && !after.is_cancelled(), "only the newest check is live");
+    }
+
+    #[test]
+    fn stop_cancels_the_background_check_even_when_nothing_is_running() {
+        let state = idle_state();
+        let check = state.begin_verification();
+        let scope = exec::current_scope(&state.run);
+        state.stop_current();
+        assert!(check.is_cancelled(), "Stop reaches the check from Idle, like it reaches typing");
+        assert!(scope.token.is_cancelled());
+        // A check started after the Stop is not affected by it.
+        assert!(!state.begin_verification().is_cancelled());
     }
 }

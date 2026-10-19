@@ -119,6 +119,7 @@ pub fn run() {
                 hotkeys: Mutex::new(hotkeys.clone()),
                 mic: Mutex::new(None),
                 run: Mutex::new(exec::RunScope::new()),
+                verifier: Mutex::new(exec::CancelToken::default()),
                 agent_state: Mutex::new(AgentState::Idle),
                 lease: Mutex::new(bridge::lease::LeaseBook::default()),
                 confirm: Mutex::new(None),

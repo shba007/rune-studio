@@ -14,6 +14,7 @@ import {
   STEP_STARTED,
   SUMMON,
   TASK_DONE,
+  TASK_VERIFIED,
   THINKING,
   type AgentState,
   type BackendStatus,
@@ -28,6 +29,7 @@ import {
   type StateChangedPayload,
   type StepStartedPayload,
   type TaskDonePayload,
+  type TaskVerifiedPayload,
   type ThinkingPayload,
 } from '@/types/protocol'
 
@@ -276,6 +278,11 @@ export function useAgent() {
         resultText.value = event.payload.summary
         response.value = event.payload.summary
         thinking.value = null
+      }),
+      // Only a contradiction is worth interrupting for; verified, unsure and errors stay in the trace.
+      await listen<TaskVerifiedPayload>(TASK_VERIFIED, (event) => {
+        if (event.payload.result === 'contradicted')
+          showNotice(`Check: the screen may not show the task as done: ${event.payload.evidence}`)
       }),
       await listen<PlanUpdatedPayload>(PLAN_UPDATED, (event) => (plan.value = event.payload)),
       await listen<ConfirmRequestPayload>(CONFIRM_REQUEST, (event) => {

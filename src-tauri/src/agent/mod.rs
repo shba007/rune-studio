@@ -26,7 +26,11 @@ use crate::{
     settings,
 };
 
-use crate::trace::{self, RunInfo, StepRecord};
+use crate::{
+    settings::VerifyMode,
+    trace::{self, RunInfo, StepRecord, VerdictRecord},
+};
+use verify::VerifyInput;
 use prompt::Entry;
 use protocol::{Action, Decision};
 
@@ -75,6 +79,9 @@ pub fn start_planned(app: &AppHandle, task: String, plan: Option<Vec<String>>) {
     let run_id = if session.is_empty() { format!("norun-{}-{}", scope.id, crate::archive::now()) } else { session.clone() };
     let state = app.state::<AppState>();
     let trace = state.trace.clone();
+    // Read once: a change to the setting in the middle of a task does not change how this one ends.
+    let mode = state.settings.locked().verify_mode;
+    let handoff: Shared = Shared::default();
     trace.begin_run(RunInfo {
         id: run_id.clone(),
         scope_id: i64::try_from(scope.id).ok(),
@@ -94,12 +101,175 @@ pub fn start_planned(app: &AppHandle, task: String, plan: Option<Vec<String>>) {
         let work_app = app.clone();
         let leftovers = scope.token.clone();
         let work_id = run_id.clone();
-        let outcome = supervised(async move { run(&work_app, &task, plan, scope.token, &work_id).await }).await;
+        let work_handoff = handoff.clone();
+        let outcome = supervised(async move { run(&work_app, &task, plan, scope.token, &work_id, mode, work_handoff).await }).await;
         stop_leftovers(&leftovers, &outcome);
         end_session(&session, &outcome);
         let (label, summary) = outcome_label(&outcome);
         trace.end_run(&run_id, label, summary);
+        let (checked, evidence) = {
+            let mut left = handoff.locked();
+            (left.checked, left.evidence.take())
+        };
+        let next = after_run(mode, &outcome, checked);
         finish(&app, outcome);
+        // Only now, with the user already looking at the result: the check never delays it.
+        match next {
+            AfterRun::Nothing => {}
+            AfterRun::Check => spawn_background_check(&app, run_id, evidence),
+            AfterRun::Skip => trace.verdict(skipped_record(&run_id, mode, &app.state::<AppState>().settings.locked().model)),
+        }
+    });
+}
+
+/// What a finished run leaves for the background check: only the one latest frame is kept.
+#[derive(Debug, Clone)]
+struct Evidence {
+    task: String,
+    goals: Vec<String>,
+    history: Vec<Entry>,
+    /// What the agent says it did.
+    claim_summary: String,
+    /// The screen at the end, as a data URI. `None` when there was no frame to keep.
+    screenshot: Option<String>,
+}
+
+impl Evidence {
+    fn new(task: &str, goals: &[String], history: &[Entry], claim_summary: &str, screenshot: Option<&str>) -> Self {
+        Self { task: task.to_string(), goals: goals.to_vec(), history: history.to_vec(), claim_summary: claim_summary.to_string(), screenshot: screenshot.map(str::to_string) }
+    }
+}
+
+/// What `run` hands to `start_planned` besides its outcome.
+#[derive(Default)]
+struct Leftovers {
+    /// For the background check; filled when a task the agent claims succeeded is about to finish.
+    evidence: Option<Evidence>,
+    /// A verdict has been stored for this run already (blocking mode does it inside the run).
+    checked: bool,
+}
+
+type Shared = std::sync::Arc<std::sync::Mutex<Leftovers>>;
+
+/// What to do about the independent check once a run is over.
+#[derive(Debug, PartialEq, Eq)]
+enum AfterRun {
+    Nothing,
+    /// Run the background check.
+    Check,
+    /// Store that there was nothing to check.
+    Skip,
+}
+
+fn after_run(mode: VerifyMode, outcome: &Outcome, checked: bool) -> AfterRun {
+    let claimed_success = matches!(outcome, Outcome::Finished { success: true, .. });
+    match mode {
+        VerifyMode::Off => AfterRun::Nothing,
+        _ if checked => AfterRun::Nothing,
+        VerifyMode::Background if claimed_success => AfterRun::Check,
+        // Blocking mode checks inside the run, before it finishes; a success claim that was not
+        // checked has nothing left to do here.
+        VerifyMode::Blocking if claimed_success => AfterRun::Nothing,
+        _ => AfterRun::Skip,
+    }
+}
+
+fn mode_label(mode: VerifyMode) -> &'static str {
+    match mode {
+        VerifyMode::Off => "off",
+        VerifyMode::Background => "background",
+        VerifyMode::Blocking => "blocking",
+    }
+}
+
+/// The row for a run that was not checked because the agent did not claim success.
+fn skipped_record(run_id: &str, mode: VerifyMode, model: &str) -> VerdictRecord {
+    VerdictRecord { run_id: run_id.to_string(), mode: mode_label(mode).into(), result: "skipped".into(), model: Some(model.to_string()), created_utc: trace::now_utc(), ..VerdictRecord::default() }
+}
+
+/// The row for a check that ran (or failed to).
+fn verdict_record(run_id: &str, mode: VerifyMode, model: &str, checked: &Result<verify::Verdict, String>, latency_ms: Option<i64>, challenged: bool) -> VerdictRecord {
+    let (result, evidence, error) = match checked {
+        Ok(verdict) => (verdict.result.as_str(), Some(verdict.evidence.clone()), None),
+        Err(why) => ("error", None, Some(why.clone())),
+    };
+    VerdictRecord {
+        run_id: run_id.to_string(),
+        mode: mode_label(mode).into(),
+        result: result.into(),
+        evidence,
+        error,
+        model: Some(model.to_string()),
+        latency_ms,
+        claimed_success: true,
+        challenged,
+        created_utc: trace::now_utc(),
+    }
+}
+
+/// How blocking mode answered.
+enum Blocking {
+    /// Stop was pressed while the check ran.
+    Stopped,
+    /// The check contradicted the agent: push this line into its history and go on, once.
+    Challenge(String),
+    /// Finish as the agent wanted.
+    Finish,
+}
+
+/// Blocking mode: checks the screen before a claimed success is accepted and stores the verdict.
+/// It runs inside `unless_stopped`, so Stop works; any failure of the check is stored and the
+/// task finishes as it would have. Never challenges twice.
+async fn blocking_check(client: &ChatClient<'_>, cancel: &CancelToken, trace: &trace::Recorder, run_id: &str, handoff: &Shared, challenged: bool, input: VerifyInput<'_>) -> Blocking {
+    let started = Instant::now();
+    let Some(checked) = unless_stopped(cancel, verify::verify(client, input)).await else {
+        return Blocking::Stopped;
+    };
+    let challenge = checked.as_ref().is_ok_and(|verdict| verify::should_challenge(VerifyMode::Blocking, true, challenged, verdict.result));
+    trace.verdict(verdict_record(run_id, VerifyMode::Blocking, client.model, &checked, millis(started), challenge));
+    handoff.locked().checked = true;
+    match (challenge, checked) {
+        (true, Ok(verdict)) => {
+            trace.event(run_id, "note", r#"{"text":"the independent check contradicted the claim; the agent was asked to keep going"}"#);
+            Blocking::Challenge(format!("an independent check says the screen does not show the task as done: {}. Keep working, or use ask_user if you are stuck", verdict.evidence.trim_end_matches('.')))
+        }
+        _ => Blocking::Finish,
+    }
+}
+
+/// Resolves when the user needs the screen: the check was cancelled (a new task, Stop) or the
+/// agent is working again.
+async fn until_the_user_needs_the_screen(app: &AppHandle, token: &CancelToken) {
+    while !token.is_cancelled() && !events::agent_state(app).is_running() {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+/// Background mode: checks the finished task off its clock, stores the verdict, and tells the UI.
+/// Starting a task or pressing Stop cancels it at once; it also gives up if the agent is working again.
+fn spawn_background_check(app: &AppHandle, run_id: String, evidence: Option<Evidence>) {
+    let token = app.state::<AppState>().begin_verification();
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let state = app.state::<AppState>();
+        let (settings, api_key) = (state.settings.locked().clone(), settings::api_key());
+        let client = ChatClient { http: &state.http, base_url: &settings.base_url, api_key: api_key.as_deref(), model: &settings.model };
+        let started = Instant::now();
+        let checked: Result<verify::Verdict, String> = match &evidence {
+            Some(Evidence { task, goals, history, claim_summary, screenshot: Some(screenshot) }) => {
+                let input = VerifyInput { task, goals, history, claim_summary, screenshot };
+                tokio::select! {
+                    checked = verify::verify(&client, input) => checked,
+                    () = until_the_user_needs_the_screen(&app, &token) => Err("cancelled: the screen was needed for something else".into()),
+                }
+            }
+            _ => Err("no final screen was kept to check".into()),
+        };
+        log::info!("independent check of run {run_id}: {}", match &checked { Ok(verdict) => verdict.result.as_str().to_string(), Err(why) => format!("error ({why})") });
+        state.trace.verdict(verdict_record(&run_id, VerifyMode::Background, &settings.model, &checked, millis(started), false));
+        if let Ok(verdict) = checked {
+            let _ = app.emit(events::TASK_VERIFIED, events::TaskVerified { run_id, result: verdict.result.as_str(), evidence: verdict.evidence });
+        }
     });
 }
 
@@ -275,7 +445,7 @@ async fn make_plan(
     Ok(goals)
 }
 
-async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, cancel: CancelToken, run_id: &str) -> Outcome {
+async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, cancel: CancelToken, run_id: &str, mode: VerifyMode, handoff: Shared) -> Outcome {
     let state = app.state::<AppState>();
     let trace = state.trace.clone();
     let settings = state
@@ -321,6 +491,8 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, canc
     }
 
     let mut history: Vec<Entry> = Vec::new();
+    // Blocking mode sends the agent back to work once at most.
+    let mut challenged = false;
     let mut invalid_in_a_row = 0;
     let mut declines = 0;
 
@@ -451,8 +623,25 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, canc
                 trace.event(run_id, "note", r#"{"text":"the decision model saw the task was finished"}"#);
                 row.rec.gate = Some("none".into());
                 row.rec.result = Some("skipped".into());
+                let summary = format!("Done: {}", task.trim());
+                if mode == VerifyMode::Blocking && !challenged {
+                    let input = VerifyInput { task, goals: &plan, history: &history, claim_summary: &summary, screenshot: &screenshot };
+                    match blocking_check(&client, &cancel, &trace, run_id, &handoff, challenged, input).await {
+                        Blocking::Stopped => return Outcome::Stopped,
+                        Blocking::Challenge(line) => {
+                            history.push(Entry { action: "done".into(), outcome: line });
+                            challenged = true;
+                            row.rec.error = Some("challenged by the independent check".into());
+                            continue;
+                        }
+                        Blocking::Finish => {}
+                    }
+                }
+                if mode == VerifyMode::Background {
+                    handoff.locked().evidence = Some(Evidence::new(task, &plan, &history, &summary, Some(&screenshot)));
+                }
                 events::emit_plan(app, &plan, plan.len(), true);
-                return Outcome::Finished { summary: format!("Done: {}", task.trim()), success: true };
+                return Outcome::Finished { summary, success: true };
             }
         }
 
@@ -551,6 +740,23 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, canc
         if let Action::Done { summary, success } = action {
             row.rec.gate = Some("none".into());
             row.rec.result = Some("ok".into());
+            if success && mode == VerifyMode::Blocking && !challenged {
+                let input = VerifyInput { task, goals: &plan, history: &history, claim_summary: &summary, screenshot: &screenshot };
+                match blocking_check(&client, &cancel, &trace, run_id, &handoff, challenged, input).await {
+                    Blocking::Stopped => return Outcome::Stopped,
+                    Blocking::Challenge(line) => {
+                        history.push(Entry { action: "done".into(), outcome: line });
+                        challenged = true;
+                        row.rec.result = Some("skipped".into());
+                        row.rec.error = Some("challenged by the independent check".into());
+                        continue;
+                    }
+                    Blocking::Finish => {}
+                }
+            }
+            if success && mode == VerifyMode::Background {
+                handoff.locked().evidence = Some(Evidence::new(task, &plan, &history, &summary, Some(&screenshot)));
+            }
             events::emit_plan(app, &plan, plan.len(), true);
             return Outcome::Finished { summary, success };
         }
@@ -698,6 +904,76 @@ mod tests {
         let next_run = CancelToken::default();
         stop_leftovers(&CancelToken::default(), &Outcome::Stopped);
         assert!(!next_run.is_cancelled(), "another run's token is not touched");
+    }
+
+    fn finished(success: bool) -> Outcome {
+        Outcome::Finished { summary: "s".into(), success }
+    }
+
+    #[test]
+    fn what_to_do_about_the_check_after_a_run() {
+        use VerifyMode::*;
+        let outcomes = [finished(true), finished(false), Outcome::Stopped, Outcome::Failed("boom".into())];
+        // Off: nothing, whatever happened.
+        for outcome in &outcomes {
+            assert_eq!(after_run(Off, outcome, false), AfterRun::Nothing);
+            assert_eq!(after_run(Off, outcome, true), AfterRun::Nothing);
+        }
+        // Background: a claimed success is checked after the run; everything else is recorded as skipped.
+        assert_eq!(after_run(Background, &finished(true), false), AfterRun::Check);
+        for outcome in &outcomes[1..] {
+            assert_eq!(after_run(Background, outcome, false), AfterRun::Skip, "{outcome:?}");
+        }
+        // Blocking checks inside the run: a claimed success is left alone, the rest is skipped...
+        assert_eq!(after_run(Blocking, &finished(true), false), AfterRun::Nothing);
+        for outcome in &outcomes[1..] {
+            assert_eq!(after_run(Blocking, outcome, false), AfterRun::Skip, "{outcome:?}");
+        }
+        // ...unless the run already stored a verdict (a challenged task that later failed keeps its verdict).
+        for outcome in &outcomes {
+            for mode in [Background, Blocking] {
+                assert_eq!(after_run(mode, outcome, true), AfterRun::Nothing, "{mode:?} {outcome:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_check_becomes_a_verdict_row_and_a_failure_becomes_an_error_row() {
+        let ok = Ok(verify::Verdict { result: verify::VerdictResult::Contradicted, evidence: "The window is empty.".into() });
+        let row = verdict_record("r1", VerifyMode::Blocking, "gemma", &ok, Some(4_200), true);
+        assert_eq!((row.run_id.as_str(), row.mode.as_str(), row.result.as_str()), ("r1", "blocking", "contradicted"));
+        assert_eq!((row.evidence.as_deref(), row.error.as_deref(), row.model.as_deref()), (Some("The window is empty."), None, Some("gemma")));
+        assert_eq!((row.latency_ms, row.claimed_success, row.challenged), (Some(4_200), true, true));
+        let failed = Err("the check took longer than 30 seconds".to_string());
+        let row = verdict_record("r2", VerifyMode::Background, "gemma", &failed, Some(30_001), false);
+        assert_eq!((row.result.as_str(), row.evidence.as_deref(), row.error.as_deref()), ("error", None, Some("the check took longer than 30 seconds")));
+        assert_eq!((row.mode.as_str(), row.challenged), ("background", false));
+        let skipped = skipped_record("r3", VerifyMode::Background, "gemma");
+        assert_eq!((skipped.result.as_str(), skipped.claimed_success, skipped.challenged, skipped.latency_ms), ("skipped", false, false, None));
+        assert_eq!((mode_label(VerifyMode::Off), mode_label(VerifyMode::Background), mode_label(VerifyMode::Blocking)), ("off", "background", "blocking"));
+    }
+
+    #[test]
+    fn the_evidence_keeps_the_latest_frame_and_omits_a_missing_one() {
+        let goals = vec!["Open".to_string(), "Type".to_string()];
+        let history: Vec<Entry> = (1..=20).map(|n| Entry { action: format!("click {n}"), outcome: "done".into() }).collect();
+        let evidence = Evidence::new("write hello", &goals, &history, "Done: write hello", Some("data:image/jpeg;base64,AA"));
+        assert_eq!((evidence.task.as_str(), evidence.goals.len(), evidence.history.len()), ("write hello", 2, 20));
+        assert_eq!(evidence.screenshot.as_deref(), Some("data:image/jpeg;base64,AA"));
+        assert_eq!(Evidence::new("t", &[], &[], "", None).screenshot, None);
+        // What the check shows of those 20 steps is capped at twelve (plus the note that older ones were left out).
+        let shown = verify::user_message(&evidence.task, &evidence.goals, &evidence.history, &evidence.claim_summary);
+        assert_eq!(shown.lines().filter(|line| line.contains(" -> ")).count(), 12);
+        assert!(shown.contains("8 earlier steps omitted"));
+    }
+
+    #[test]
+    fn the_handoff_starts_empty_and_gives_up_its_evidence_once() {
+        let handoff: Shared = Shared::default();
+        assert!(handoff.locked().evidence.is_none() && !handoff.locked().checked, "a run that never finishes leaves nothing to check");
+        handoff.locked().evidence = Some(Evidence::new("t", &[], &[], "c", Some("data:x")));
+        let taken = handoff.locked().evidence.take();
+        assert!(taken.is_some() && handoff.locked().evidence.is_none(), "the evidence is taken once");
     }
 
     #[test]

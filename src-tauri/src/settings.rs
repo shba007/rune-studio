@@ -39,6 +39,10 @@ pub struct Settings {
     /// Delete session folders (screenshots, recordings) older than this many days, and their rows in
     /// the trace database, at startup. 0 keeps everything.
     pub archive_keep_days: u32,
+    /// What happens with the independent check of a finished task: `off`, `background` (the default:
+    /// the user sees Done at once and the check runs afterwards) or `blocking` (the agent gets one more
+    /// chance when the check contradicts it). No UI yet: it is edited in `settings.json`.
+    pub verify_mode: VerifyMode,
 }
 
 /// What happens with the independent check of a finished task (`agent::verify`).
@@ -73,6 +77,7 @@ impl Default for Settings {
             decision_model: "d1-3b-q8-0".into(),
             decision_url: String::new(),
             archive_keep_days: 0,
+            verify_mode: VerifyMode::default(),
         }
     }
 }
@@ -151,5 +156,38 @@ pub fn set_api_key(key: &str) -> AppResult<()> {
         }
     } else {
         Ok(entry.set_password(key)?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_verify_mode_defaults_to_background() {
+        assert_eq!(VerifyMode::default(), VerifyMode::Background);
+        assert_eq!(Settings::default().verify_mode, VerifyMode::Background);
+    }
+
+    #[test]
+    fn a_settings_file_without_verify_mode_still_loads_with_background() {
+        let old = r#"{ "baseUrl": "http://127.0.0.1:9", "model": "m", "maxSteps": 12, "askEveryAction": true }"#;
+        let settings: Settings = serde_json::from_str(old).expect("an older settings file loads");
+        assert_eq!(settings.verify_mode, VerifyMode::Background);
+        assert_eq!((settings.base_url.as_str(), settings.max_steps, settings.ask_every_action), ("http://127.0.0.1:9", 12, true), "the rest of the file is kept");
+        assert_eq!(serde_json::from_str::<Settings>("{}").unwrap().verify_mode, VerifyMode::Background);
+    }
+
+    #[test]
+    fn the_three_modes_are_spelled_in_lower_case_and_an_unknown_word_reads_as_background() {
+        for (text, mode) in [("off", VerifyMode::Off), ("background", VerifyMode::Background), ("blocking", VerifyMode::Blocking)] {
+            let settings: Settings = serde_json::from_str(&format!(r#"{{ "verifyMode": "{text}" }}"#)).unwrap();
+            assert_eq!(settings.verify_mode, mode, "{text}");
+            assert_eq!(serde_json::to_value(mode).unwrap(), text);
+        }
+        // A typo must not throw the rest of the settings away.
+        let typo: Settings = serde_json::from_str(r#"{ "verifyMode": "blokcing", "maxSteps": 7 }"#).expect("still loads");
+        assert_eq!((typo.verify_mode, typo.max_steps), (VerifyMode::Background, 7));
+        assert_eq!(serde_json::to_value(Settings::default()).unwrap()["verifyMode"], "background");
     }
 }

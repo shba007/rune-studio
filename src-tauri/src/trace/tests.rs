@@ -304,12 +304,13 @@ fn the_text_hash_is_fnv_1a_and_tells_texts_apart() {
 }
 
 #[test]
-fn the_settings_snapshot_has_only_the_four_settings() {
+fn the_settings_snapshot_has_only_the_five_settings() {
     let settings = crate::settings::Settings { max_steps: 12, ask_every_action: true, ..crate::settings::Settings::default() };
     let snapshot: serde_json::Value = serde_json::from_str(&settings_snapshot(&settings)).unwrap();
     let mut keys: Vec<&str> = snapshot.as_object().unwrap().keys().map(String::as_str).collect();
     keys.sort_unstable();
-    assert_eq!(keys, ["ask_every_action", "fast_checks", "max_steps", "show_thinking"]);
+    assert_eq!(keys, ["ask_every_action", "fast_checks", "max_steps", "show_thinking", "verify_mode"]);
+    assert_eq!(snapshot["verify_mode"], "background", "the default mode is stored with every run");
     assert_eq!(snapshot["max_steps"], 12);
     assert_eq!(snapshot["ask_every_action"], true);
 }

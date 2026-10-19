@@ -209,7 +209,7 @@ mod tests {
     }
 
     fn entry(n: usize) -> Entry {
-        Entry { action: format!("click {n}"), outcome: if n % 5 == 0 { "failed: no focus".into() } else { "done".into() } }
+        Entry { action: format!("click {n}"), outcome: if n.is_multiple_of(5) { "failed: no focus".into() } else { "done".into() } }
     }
 
     #[test]

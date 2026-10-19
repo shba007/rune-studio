@@ -200,6 +200,7 @@ pub fn settings_snapshot(settings: &crate::settings::Settings) -> String {
         "show_thinking": settings.show_thinking,
         "ask_every_action": settings.ask_every_action,
         "fast_checks": settings.fast_checks,
+        "verify_mode": settings.verify_mode,
     })
     .to_string()
 }

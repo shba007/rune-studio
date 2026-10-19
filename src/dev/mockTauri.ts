@@ -48,6 +48,7 @@ export function installTauriMock() {
             decisionModel: 'd1-3b-q8-0',
             decisionUrl: '',
             archiveKeepDays: 0,
+            verifyMode: 'background',
           }
         case 'bridge_info':
           return {
