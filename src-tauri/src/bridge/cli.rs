@@ -28,9 +28,14 @@ use super::{
     skill::{self, GUIDE},
     token,
 };
-use crate::settings;
+use crate::{
+    settings,
+    trace::{self, store::{RunDetail, RunSummary}, StepRecord},
+};
 
 const START_TIMEOUT: Duration = Duration::from_secs(30);
+/// How many runs `runs` lists when `--limit` is not given.
+const DEFAULT_RUNS: usize = 20;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
@@ -45,6 +50,10 @@ pub enum Command {
     /// Install (or with `--remove`, remove) the Claude Code skill.
     Skill(String),
     Disconnect(String),
+    /// `runs [--limit N]`: the newest runs recorded in the trace database.
+    Runs(usize),
+    /// `run <id>`: one run, its steps and events.
+    Run(String),
     Help,
     /// Not a command we know: shown as an error with the help text.
     Unknown(String),
@@ -62,6 +71,15 @@ pub fn parse(args: &[String]) -> Command {
         "guide" => Command::Guide,
         "skill" => Command::Skill(args.get(1).cloned().unwrap_or_default()),
         "disconnect" => Command::Disconnect(args.get(1).cloned().unwrap_or_default()),
+        "runs" => match args.get(1).map(String::as_str) {
+            None => Command::Runs(DEFAULT_RUNS),
+            Some("--limit") => match args.get(2).and_then(|number| number.parse::<usize>().ok()) {
+                Some(limit) => Command::Runs(limit),
+                None => Command::Unknown("runs --limit (needs a number)".into()),
+            },
+            Some(other) => Command::Unknown(format!("runs {other}")),
+        },
+        "run" => Command::Run(args.get(1).cloned().unwrap_or_default()),
         "help" | "--help" | "-h" => Command::Help,
         "connect" => Command::Connect(args.get(1).cloned().unwrap_or_default()),
         other => Command::Unknown(other.to_string()),
@@ -82,6 +100,8 @@ Rune Studio
   rune-studio-cli disable          Turn that off again.
   rune-studio-cli status           Show whether Rune Studio is running and what is allowed.
   rune-studio guide            Print the guide an agent reads.
+  rune-studio-cli runs [--limit N]  List the newest recorded runs (default 20).
+  rune-studio-cli run <id>         Show one recorded run: its steps and events.
   rune-studio-cli mcp              Used by agents: speaks MCP on stdin/stdout and opens the app if needed.
 
 You are always in control: press Stop in the app (Ctrl+Alt+Esc) and the agent loses control at once.
@@ -99,6 +119,8 @@ pub fn run() -> i32 {
         Command::Connect(target) => connect(&target),
         Command::Skill(option) => skill_command(&option),
         Command::Disconnect(target) => disconnect(&target),
+        Command::Runs(limit) => runs_command(limit),
+        Command::Run(id) => run_command(&id),
         Command::Guide => {
             say(GUIDE);
             0
@@ -114,6 +136,42 @@ pub fn run() -> i32 {
             2
         }
     }
+}
+
+/// `rune-studio-cli runs`: a table of the newest runs.
+fn runs_command(limit: usize) -> i32 {
+    with_trace(|path| match trace::store::list_runs(path, limit) {
+        Ok(rows) if rows.is_empty() => say("No runs are recorded yet."),
+        Ok(rows) => say(&runs_table(&rows)),
+        Err(err) => say(&format!("Could not read the trace database: {err}")),
+    })
+}
+
+/// `rune-studio-cli run <id>`: one run with its steps and events.
+fn run_command(id: &str) -> i32 {
+    if id.is_empty() {
+        say("Say which run: rune-studio-cli run <id>   (see rune-studio-cli runs for the ids)");
+        return 2;
+    }
+    with_trace(|path| match trace::store::get_run(path, id) {
+        Ok(Some(detail)) => say(&run_report(&detail)),
+        Ok(None) => say(&format!("There is no run \"{id}\". See rune-studio-cli runs for the ids.")),
+        Err(err) => say(&format!("Could not read the trace database: {err}")),
+    })
+}
+
+/// Finds the trace database and hands its path to `show`; says so plainly when there is none.
+fn with_trace(show: impl FnOnce(&std::path::Path)) -> i32 {
+    let Some(path) = trace::db_path_without_app() else {
+        say("Cannot tell where Rune Studio keeps its data on this system (no APPDATA folder).");
+        return 1;
+    };
+    if !path.exists() {
+        say(&format!("No trace database yet ({}). It is created the first time a task runs.", path.display()));
+        return 0;
+    }
+    show(&path);
+    0
 }
 
 fn say(text: &str) {
@@ -453,6 +511,118 @@ fn run_mcp() -> i32 {
     0
 }
 
+// ---------------------------------------------------------------- how a recorded run is shown
+
+/// `2026-10-19T12:00:05Z` as `2026-10-19 12:00:05`; `-` when there is none.
+fn shown_time(time: Option<&str>) -> String {
+    time.map_or_else(|| "-".to_string(), |time| time.trim_end_matches('Z').replacen('T', " ", 1))
+}
+
+/// `42s`, `3m 07s`, `1h 02m`; `-` when the run has not ended or the times cannot be read.
+fn shown_duration(started: Option<&str>, ended: Option<&str>) -> String {
+    let (Some(started), Some(ended)) = (started.and_then(trace::parse_iso), ended.and_then(trace::parse_iso)) else {
+        return "-".into();
+    };
+    let seconds = ended.saturating_sub(started);
+    match seconds {
+        0..=59 => format!("{seconds}s"),
+        60..=3599 => format!("{}m {:02}s", seconds / 60, seconds % 60),
+        _ => format!("{}h {:02}m", seconds / 3600, seconds % 3600 / 60),
+    }
+}
+
+/// `text` on one line, cut to `max` characters with `…`.
+fn one_line(text: &str, max: usize) -> String {
+    let flat: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    trace::cap(&flat, max)
+}
+
+/// The run list: one line per run, columns padded to their widest cell.
+fn runs_table(rows: &[RunSummary]) -> String {
+    let header = ["ID", "STARTED", "SOURCE", "OUTCOME", "STEPS", "DURATION", "TASK"].map(String::from);
+    let mut lines = vec![header];
+    for row in rows {
+        lines.push([
+            row.id.clone(),
+            shown_time(row.started_utc.as_deref()),
+            row.source.clone().unwrap_or_else(|| "-".into()),
+            row.outcome.clone().unwrap_or_else(|| "(open)".into()),
+            row.steps.to_string(),
+            shown_duration(row.started_utc.as_deref(), row.ended_utc.as_deref()),
+            one_line(row.task.as_deref().unwrap_or(""), 50),
+        ]);
+    }
+    let widths: Vec<usize> = (0..7).map(|column| lines.iter().map(|line| line[column].chars().count()).max().unwrap_or(0)).collect();
+    let mut out = String::new();
+    for line in &lines {
+        let cells: Vec<String> = line.iter().enumerate().map(|(column, cell)| if column == 6 { cell.clone() } else { format!("{cell:<width$}", width = widths[column]) }).collect();
+        out.push_str(cells.join("  ").trim_end());
+        out.push('\n');
+    }
+    out
+}
+
+fn number(value: Option<i64>) -> String {
+    value.map_or_else(|| "-".to_string(), |value| value.to_string())
+}
+
+const STEP_HEADER: &str = "  N  TOOL            RESULT     GATE                DECIDE_MS  ACT_MS  REASON";
+
+/// One step: `n tool result gate decide_ms act_ms reason`, with `-` for what did not happen.
+fn step_line(step: &StepRecord) -> String {
+    format!(
+        "{:>3}  {:<15} {:<10} {:<19} {:>9}  {:>6}  {}",
+        step.step,
+        step.tool.as_deref().unwrap_or("-"),
+        step.result.as_deref().unwrap_or("-"),
+        step.gate.as_deref().unwrap_or("-"),
+        number(step.decide_ms),
+        number(step.act_ms),
+        one_line(step.reason.as_deref().unwrap_or(""), 70),
+    )
+}
+
+/// A whole run: its facts, then its steps, then its events.
+fn run_report(detail: &RunDetail) -> String {
+    let run = &detail.run;
+    let info = &run.info;
+    let mut out = format!("Run {}\n", info.id);
+    out.push_str(&format!("  Task:      {}\n", one_line(&info.task, 200)));
+    out.push_str(&format!("  Source:    {}   Model: {}   App: {}\n", info.source, info.model.as_deref().unwrap_or("-"), info.app_version.as_deref().unwrap_or("-")));
+    out.push_str(&format!(
+        "  Started:   {}   Ended: {}   Duration: {}\n",
+        shown_time(Some(&info.started_utc)),
+        shown_time(run.ended_utc.as_deref()),
+        shown_duration(Some(&info.started_utc), run.ended_utc.as_deref())
+    ));
+    out.push_str(&format!("  Outcome:   {}", run.outcome.as_deref().unwrap_or("(still open)")));
+    if let Some(summary) = run.summary.as_deref().filter(|summary| !summary.is_empty()) {
+        out.push_str(&format!(" - {}", one_line(summary, 200)));
+    }
+    out.push('\n');
+    if let Some(folder) = &info.session_dir {
+        out.push_str(&format!("  Folder:    {folder}\n"));
+    }
+    if let Some(goals) = info.plan_json.as_deref().and_then(|plan| serde_json::from_str::<Vec<String>>(plan).ok()) {
+        let plan: Vec<String> = goals.iter().enumerate().map(|(index, goal)| format!("{}. {goal}", index + 1)).collect();
+        out.push_str(&format!("  Plan:      {}\n", plan.join("  ")));
+    }
+    out.push_str(&format!("\nSteps ({})\n", detail.steps.len()));
+    if !detail.steps.is_empty() {
+        out.push_str(STEP_HEADER);
+        out.push('\n');
+    }
+    for step in &detail.steps {
+        out.push_str(&step_line(step));
+        out.push('\n');
+    }
+    out.push_str(&format!("\nEvents ({})\n", detail.events.len()));
+    for event in &detail.events {
+        out.push_str(&format!("  {}  {:<16} {}\n", shown_time(event.at_utc.as_deref()), event.kind.as_deref().unwrap_or("-"), one_line(event.data_json.as_deref().unwrap_or(""), 100)));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -491,5 +661,106 @@ mod tests {
         for word in ["connect claude", "connect antigravity", "disconnect", "skill", "enable", "disable", "status", "guide", "mcp"] {
             assert!(HELP.contains(word), "help does not mention {word}");
         }
+    }
+
+    #[test]
+    fn the_run_commands_parse() {
+        assert_eq!(parse(&args(&["runs"])), Command::Runs(20));
+        assert_eq!(parse(&args(&["runs", "--limit", "5"])), Command::Runs(5));
+        assert!(matches!(parse(&args(&["runs", "--limit"])), Command::Unknown(_)));
+        assert!(matches!(parse(&args(&["runs", "--limit", "many"])), Command::Unknown(_)));
+        assert!(matches!(parse(&args(&["runs", "5"])), Command::Unknown(_)));
+        assert_eq!(parse(&args(&["run", "120000-1-open-notepad"])), Command::Run("120000-1-open-notepad".into()));
+        assert_eq!(parse(&args(&["run"])), Command::Run(String::new()));
+        for word in ["runs", "run <id>"] {
+            assert!(HELP.contains(word), "help does not mention {word}");
+        }
+    }
+
+    fn summary(id: &str, started: &str, ended: Option<&str>, outcome: Option<&str>, steps: i64, task: &str) -> RunSummary {
+        RunSummary { id: id.into(), started_utc: Some(started.into()), ended_utc: ended.map(String::from), source: Some("built-in".into()), outcome: outcome.map(String::from), task: Some(task.into()), steps }
+    }
+
+    #[test]
+    fn the_run_table_is_laid_out_exactly() {
+        let rows = [
+            summary("120000-1-open-notepad", "2026-10-19T12:00:00Z", Some("2026-10-19T12:03:07Z"), Some("succeeded"), 4, "open notepad"),
+            summary("130000-2-x", "2026-10-19T13:00:00Z", None, None, 0, &"a very long task description that goes on and on past the limit of fifty characters"),
+        ];
+        let expected = "\
+ID                     STARTED              SOURCE    OUTCOME    STEPS  DURATION  TASK
+120000-1-open-notepad  2026-10-19 12:00:00  built-in  succeeded  4      3m 07s    open notepad
+130000-2-x             2026-10-19 13:00:00  built-in  (open)     0      -         a very long task description that goes on and on …
+";
+        assert_eq!(runs_table(&rows), expected);
+    }
+
+    #[test]
+    fn durations_are_short_and_honest() {
+        assert_eq!(shown_duration(Some("2026-10-19T12:00:00Z"), Some("2026-10-19T12:00:42Z")), "42s");
+        assert_eq!(shown_duration(Some("2026-10-19T12:00:00Z"), Some("2026-10-19T12:03:07Z")), "3m 07s");
+        assert_eq!(shown_duration(Some("2026-10-19T12:00:00Z"), Some("2026-10-19T13:02:00Z")), "1h 02m");
+        assert_eq!(shown_duration(Some("2026-10-19T12:00:00Z"), None), "-");
+        assert_eq!(shown_duration(Some("garbage"), Some("2026-10-19T12:00:00Z")), "-");
+    }
+
+    #[test]
+    fn a_step_line_has_the_columns_in_order_and_dashes_for_what_did_not_run() {
+        let mut step = StepRecord::new("r", 3);
+        step.tool = Some("click".into());
+        step.result = Some("ok".into());
+        step.gate = Some("none".into());
+        step.decide_ms = Some(812);
+        step.act_ms = Some(40);
+        step.reason = Some("press the\nsave button".into());
+        assert_eq!(step_line(&step), "  3  click           ok         none                      812      40  press the save button");
+        let bare = StepRecord::new("r", 12);
+        assert_eq!(step_line(&bare), " 12  -               -          -                           -       -  ");
+    }
+
+    #[test]
+    fn a_whole_run_reads_top_to_bottom() {
+        use crate::trace::{RunInfo, store::{EventRow, RunRow}};
+        let mut step = StepRecord::new("r1", 1);
+        step.tool = Some("done".into());
+        step.result = Some("ok".into());
+        step.gate = Some("none".into());
+        let detail = RunDetail {
+            run: RunRow {
+                info: RunInfo {
+                    id: "r1".into(),
+                    task: "open notepad".into(),
+                    source: "Claude".into(),
+                    started_utc: "2026-10-19T12:00:00Z".into(),
+                    plan_json: Some(r#"["open","type"]"#.into()),
+                    model: Some("gemma".into()),
+                    app_version: Some("0.1.0".into()),
+                    session_dir: Some("D:/Documents/Rune Studio/sessions/2026-10-19/r1".into()),
+                    ..RunInfo::default()
+                },
+                ended_utc: Some("2026-10-19T12:00:09Z".into()),
+                outcome: Some("succeeded".into()),
+                summary: Some("Done".into()),
+            },
+            steps: vec![step],
+            events: vec![EventRow { id: 1, at_utc: Some("2026-10-19T12:00:01Z".into()), kind: Some("plan".into()), data_json: Some(r#"["open","type"]"#.into()) }],
+        };
+        let expected = "\
+Run r1
+  Task:      open notepad
+  Source:    Claude   Model: gemma   App: 0.1.0
+  Started:   2026-10-19 12:00:00   Ended: 2026-10-19 12:00:09   Duration: 9s
+  Outcome:   succeeded - Done
+  Folder:    D:/Documents/Rune Studio/sessions/2026-10-19/r1
+  Plan:      1. open  2. type
+
+Steps (1)
+  N  TOOL            RESULT     GATE                DECIDE_MS  ACT_MS  REASON
+  1  done            ok         none                        -       -  
+
+Events (1)
+  2026-10-19 12:00:01  plan             [\"open\",\"type\"]
+";
+        assert_eq!(run_report(&detail), expected);
     }
 }
