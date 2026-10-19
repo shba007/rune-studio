@@ -31,7 +31,6 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.7", features = [] }
 
 [features]
-# Lets an outside agent drive Rune Studio's eyes and hands over a local MCP server. Off by default.
 agent-bridge = ["dep:axum", "dep:getrandom"]
 
 [dependencies]
@@ -40,7 +39,7 @@ axum = { version = "0.8", optional = true, default-features = false, features = 
   "json",
   "tokio",
 ] }
-getrandom = { version = "0.3", optional = true }
+getrandom = { version = "0.4", optional = true }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
@@ -60,7 +59,6 @@ thiserror = "2"
 tokio = { version = "1", features = ["time", "macros", "rt", "net", "sync"] }
 
 [dev-dependencies]
-# The M1.5 probe loads its scene screenshots from PNG.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 
 [target.'cfg(windows)'.dependencies]
@@ -81,8 +79,6 @@ windows = { version = "0.62", features = [
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2.14"
 
-# Screenshot downscaling and JPEG encoding are ~15x slower unoptimised (generic image code is
-# compiled into this crate), which would make every dev-build capture take about a second.
 [profile.dev.package.image]
 opt-level = 3
 

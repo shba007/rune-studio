@@ -4150,7 +4150,7 @@ dependencies = [
  "cpal",
  "dotenvy",
  "enigo",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "image",
  "keyring",
  "log",
