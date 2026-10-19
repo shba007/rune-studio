@@ -128,12 +128,10 @@ pub fn refusal(status: Status, task_running: bool, outside_agent: bool) -> Optio
 /// again (`asking`) or replaced by a new capture.
 pub fn may_follow(from: Status, to: Status) -> bool {
     use Status::*;
-    match (from, to) {
-        (Idle | Done | Error | Cancelled, Capturing | Asking) => true,
-        (Capturing, Asking | Error | Cancelled) => true,
-        (Asking, Done | Error | Cancelled) => true,
-        _ => false,
-    }
+    matches!(
+        (from, to),
+        (Idle | Done | Error | Cancelled, Capturing | Asking) | (Capturing, Asking | Error | Cancelled) | (Asking, Done | Error | Cancelled)
+    )
 }
 
 #[cfg(test)]
