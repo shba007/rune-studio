@@ -1,16 +1,16 @@
-//! The `rune-studio` command line, for people and agents on a machine with nothing but the app.
+//! The `rune-studio-cli` command line, for people and agents on a machine with nothing but the app.
 //!
 //! ```text
 //! rune-studio                 open the app
-//! rune-studio mcp             speak MCP on stdin/stdout (what an agent runs); starts the app if needed
+//! rune-studio-cli mcp             speak MCP on stdin/stdout (what an agent runs); starts the app if needed
 //! rune-studio connect claude  register Rune Studio with Claude Code, for every project
-//! rune-studio enable          allow outside agents      (rune-studio disable turns it off)
-//! rune-studio status          show what is running and allowed
+//! rune-studio-cli enable          allow outside agents      (rune-studio-cli disable turns it off)
+//! rune-studio-cli status          show what is running and allowed
 //! rune-studio guide           print the guide an agent reads
 //! ```
 //!
-//! This is its own small console program (`rune-studio.exe`), next to the windowed app
-//! (`rune-studio-app.exe`), so a terminal waits for it and shows what it prints. It is plain Rust:
+//! This is its own small console program (`rune-studio-cli.exe`), next to the windowed app
+//! (`rune-studio.exe`), so a terminal waits for it and shows what it prints. It is plain Rust:
 //! no Node, Python or other tool is needed. `mcp` is a small bridge between an agent's stdio and
 //! the app's local door.
 
@@ -78,11 +78,11 @@ Rune Studio
   rune-studio connect --print  Show the settings to paste into any other MCP-capable agent.
   rune-studio skill            Install or refresh the Claude Code skill only (--remove deletes it).
   rune-studio disconnect <agent>  Remove Rune Studio from claude or antigravity (tools and skill).
-  rune-studio enable           Allow outside agents to see and use this PC through Rune Studio.
-  rune-studio disable          Turn that off again.
-  rune-studio status           Show whether Rune Studio is running and what is allowed.
+  rune-studio-cli enable           Allow outside agents to see and use this PC through Rune Studio.
+  rune-studio-cli disable          Turn that off again.
+  rune-studio-cli status           Show whether Rune Studio is running and what is allowed.
   rune-studio guide            Print the guide an agent reads.
-  rune-studio mcp              Used by agents: speaks MCP on stdin/stdout and opens the app if needed.
+  rune-studio-cli mcp              Used by agents: speaks MCP on stdin/stdout and opens the app if needed.
 
 You are always in control: press Stop in the app (Ctrl+Alt+Esc) and the agent loses control at once.
 ";
@@ -140,7 +140,7 @@ fn status() -> i32 {
         "Rune Studio {}\n  App:               {}\n  Outside agents:    {}",
         env!("CARGO_PKG_VERSION"),
         if running { "running" } else { "not running (it opens when an agent connects, or run: rune-studio)" },
-        if switch_is_on() { "allowed" } else { "not allowed (run: rune-studio enable)" },
+        if switch_is_on() { "allowed" } else { "not allowed (run: rune-studio-cli enable)" },
     ));
     0
 }
@@ -173,7 +173,7 @@ fn app_path() -> String {
 
 /// The windowed app, which sits next to this program.
 fn app_exe() -> Result<std::path::PathBuf, String> {
-    let exe = std::env::current_exe().map_err(|err| err.to_string())?.with_file_name("rune-studio-app.exe");
+    let exe = std::env::current_exe().map_err(|err| err.to_string())?.with_file_name("rune-studio.exe");
     if exe.exists() { Ok(exe) } else { Err(format!("cannot find {} next to this program", exe.display())) }
 }
 

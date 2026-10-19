@@ -68,8 +68,8 @@ async fn watch_for_idle(app: AppHandle) {
 }
 
 /// Whether the user allows outside agents. Read from the settings file on every request, so the
-/// switch in Settings and `rune-studio enable` / `disable` take effect at once. Turning it back on,
-/// or running `rune-studio enable` again, also re-arms an agent that Stop locked out.
+/// switch in Settings and `rune-studio-cli enable` / `disable` take effect at once. Turning it back on,
+/// or running `rune-studio-cli enable` again, also re-arms an agent that Stop locked out.
 fn switch_is_on(app: &AppHandle) -> bool {
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     static WAS_ON: AtomicBool = AtomicBool::new(false);
