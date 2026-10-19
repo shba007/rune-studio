@@ -33,15 +33,21 @@ Decisions:
 - Studio has an MCP **server** (bridge) but **no MCP client**. No SQLite crate, no dialog plugin, no single-instance plugin in `Cargo.toml`. CI runs no Rust tests.
 - Tool set is a fixed Rust enum (`agent/protocol.rs::Action`) with `tool_choice: "required"`; the gate takes an `Action`.
 
-**rune-infer** (`/home/user/shba007/rune-infer`; read from code, not run):
+**rune-infer** has two sources that disagree in places; both are recorded. *Source* = the GitHub repo at commit `bd155a5` (2026-10-19), read, not run. *Spec* = the Postman collection "Rune REST API" the maintainer supplied on 2026-10-19 as the latest API spec (115 files; examples only, not executed). Where they differ, which one the running server follows is **NOT CERTAIN** until a live call is made (R0).
 - Endpoints include: `/v1/chat/completions`, `/v1/models`, `/v1/decisions`, `/v1/embeddings`, `/v1/ocr`, `/v1/images/{grounding, recognize, detections, captions, embeddings, ...}`, `/v1/audio/*`, `/v1/inference`, plus `/health`, `/livez`, `/readyz`. `/v1/responses` and Anthropic `/v1/messages` are disabled.
-- Chat accepts `text`, `image_url`, `video_url` parts. **No `audio_url`/`input_audio` anywhere in `src`.** Studio's voice path sends `audio_url`.
-- Thinking is read from `thinking`, then `chat_template_kwargs.thinking`, then `reasoning_effort`. `enable_thinking` is **not** read (Studio sends `chat_template_kwargs.enable_thinking`).
-- `response_format` supports `json_object` and `json_schema` (strict needs `additionalProperties:false`). `usage` has only prompt/completion/total tokens (no image tokens, no `include_usage`); image tokens are estimated pre-flight.
+- Audio in chat. *Source*: `text`, `image_url`, `video_url` parts only; no `audio_url` or `input_audio` in `src`. *Spec*: a part `{"type":"input_audio","input_audio":{"data":<base64>,"format":"wav"|"mp3"}}` (other formats return 400 `unsupported_audio_format`), mixed with `image_url` and `tools` in one message. Studio sends `{"type":"audio_url","audio_url":{"url":"data:audio/wav;base64,..."}}`, which **neither** source documents.
+- Thinking. *Source*: read from `thinking`, then `chat_template_kwargs.thinking`, then `reasoning_effort`; `enable_thinking` is not read. *Spec*: `reasoning_effort: "high"` plus `"thinking": {"type":"enabled","budget_tokens":2048}`; reply carries `message.reasoning_content`. Studio sends `chat_template_kwargs.enable_thinking`, which neither documents. How to switch thinking **off** (e.g. `thinking.type:"disabled"`) is **NOT CERTAIN**.
+- `response_format` supports `json_object` and `json_schema` (strict needs `additionalProperties:false`). `usage` has only prompt/completion/total tokens (no image-token field); image tokens are estimated pre-flight. *Spec* shows `stream_options: {"include_usage": true}` for streaming; *source* has no `include_usage` (**NOT CERTAIN** which holds). *Spec* examples use `tool_choice: "auto"`; Studio's `"required"` is supported per source (**NOT CERTAIN** per spec).
 - Client disconnect sets a cancel flag and stops generation (logged 499); whether this interrupts `llama-server` mid-prefill is **NOT CERTAIN**.
 - `/v1/models` items carry a `capabilities` list (Chat, Tool Call, Vision, ...). No dedicated capabilities endpoint. `/health` has no queue depth. `llama-server` runs with `--parallel 1` by default; `max_loaded_models` default 1 (models swap). **No request priority anywhere.**
-- `/v1/decisions` code path **does** pass images to the engine (`src/api/decisions.rs`). The maintainer's own observation (2026-10-19) was that images had no effect, so whether the engine uses them is **NOT CERTAIN**.
-- `/v1/images/grounding` returns `point`, `point_pixels`, `box_2d` as **[ymin,xmin,ymax,xmax]** in 0-1000 (Studio's own regions are `[x0,y0,x1,y1]`; watch the order). The earlier M1.5 probe saw `[500,500]` every time, so output quality is **NOT CERTAIN**. `/v1/images/recognize` is a similarity matcher (`image, top_k, targets[]`), **not** a describe/detect endpoint. `/v1/ocr` takes `{document:{image_url|url}, model?}`. Request/response shapes of `detections` and `captions` were not read: **NOT CERTAIN**.
+- `/v1/decisions`: the maintainer states the decision engine supports images; the source decodes `images` and passes them to the engine (`src/api/decisions.rs`) and the spec has a multimodal example (`state: {text, images[]}`). **The response shape differs:** *Spec*: `answers.<name> = {"type", "value", "confidence"}` with `noul` value `"yes"`/`"no"`, `choice` value a string, `score` value a number; *source* (`DecisionAnswer` in `src/types.rs`): `noul {decision: bool, probability}`, `choice {decision: string, confidence, probabilities}`, `score {level, score, probabilities}`. Studio's parser (`model/decision.rs`) matches the **source** shape. If the running server follows the spec, `confident_yes` can never be true and every fast check would silently answer "no", which would explain the earlier "images have no effect" observation; this is a **hypothesis, NOT CERTAIN** until a live call shows which shape is returned. Default decision model in the spec's environment is `liquid-d1-3b`; Studio's default is `d1-3b-q8-0`.
+- Image endpoints (*Spec* examples; request in, response out):
+  - `/v1/images/grounding`: `{model, image, query}` -> `point` as **0-1 fractions** (example `[0.85, 0.75]`), `point_pixels`, `box_2d` (example `[740, 830, 796, 910]`, which looks like **pixels**, order **NOT CERTAIN**), `box_normalized` (example `[0.72, 0.81, 0.78, 0.89]`, order **NOT CERTAIN**), `confidence`. This contradicts my earlier note that boxes are 0-1000. The earlier M1.5 probe saw `[500, 500]` every time, so output quality is **NOT CERTAIN**.
+  - `/v1/images/detections`: `{model, image, prompt, categories[], confidence_threshold, iou_threshold, features[boxes|masks|keypoints|attributes]}` -> `data[]` of `{label, confidence, box{x,y,width,height} (fractions; whether x,y is the corner or centre is NOT CERTAIN), bbox_pixels{x_min,y_min,...}}`.
+  - `/v1/images/captions`: `{model, image, detail, max_tokens}` -> `{caption, usage}`.
+  - `/v1/images/recognize`: a similarity matcher (`{image, top_k, targets[{label, text|collection}]}` -> `data[{label, similarity}]`), **not** a describe/detect endpoint.
+  - `/v1/ocr`: `{model, document{type, image_url}, features[text|selection_marks], response_format}` -> `text` and `pages[{dimensions, lines[{text, bbox}]}]`.
+- `/health` (*Spec*): `{status, service, version, backend, loaded_models[]}`; `/readyz`: `{status, models_configured, models_loaded[], models_loading[]}`. `GET /v1/models/{id}` (*Spec*) lists capabilities such as `Chat, Vision, Audio, Video, Omni, Tool Call`; the example omni model is `gemma-4-12b-it`, the same as Studio's default.
 - Auth: bearer or `x-api-key`; off if no key configured.
 
 **rune-kit** (`/home/user/shba007/rune-kit`):
@@ -62,7 +68,7 @@ Decisions:
 - Panic supervisor for `agent::run`; retry/backoff on transient model errors; serialise bridge actions.
 - Single-instance (plugin choice **NOT CERTAIN**), elevated-window detection (Windows API **NOT CERTAIN**).
 - CI: `cargo test`, `clippy`, `fmt --check` for Studio.
-- **Wire-format audit against the real rune-infer**: record what actually happens for chat with image, tool_choice required, thinking on/off, and audio. Output: a table of "Studio sends / rune-infer accepts". Voice stays **enabled** and unchanged: `audio_url` is to be implemented in rune-infer, so Studio keeps sending it. For thinking, Studio additionally sends `thinking` next to `enable_thinking` (assumption: harmless to other servers, **NOT CERTAIN** until measured).
+- **Wire-format audit against the real rune-infer**: record what actually happens for chat with image, tool_choice required, thinking on/off, and audio. Output: a table of "Studio sends / rune-infer accepts". Voice stays **enabled**. Decision pending: the earlier plan was that rune-infer would add `audio_url` (Studio's current part); the Spec instead documents `input_audio {data, format}`. Which side changes is **an open question for the maintainer**; until answered, the audit only records what a live server does with each form. For thinking, the audit tries `thinking` / `reasoning_effort` alongside `enable_thinking` (assumption: harmless to other servers, **NOT CERTAIN** until measured). The audit also records the real `/v1/decisions` response shape and makes `model/decision.rs` accept both the Spec and Source shapes.
 Exit: tests green in CI; stop/new-task race test; forced panic leaves the app usable; wire-format table committed.
 
 ### R1 Flight recorder — M / high
@@ -122,13 +128,13 @@ Exit: on seeded failing episodes, reports name the right category at a hand-meas
 ## Expectations of other repos (none verified to be planned)
 
 **rune-infer**
-1. Accept `thinking` **and** `enable_thinking` in `chat_template_kwargs`, and accept `audio_url`/`input_audio` content parts (or tell Studio the supported audio route).
+1. Settle the audio part: either accept `audio_url` (what Studio sends) or Studio moves to the documented `input_audio {data, format}`; and settle how thinking is switched (`thinking` object / `reasoning_effort` per the Spec, or also `chat_template_kwargs.enable_thinking`).
 2. Capability discovery: per-model vision/audio/tools/thinking/max image size/context in one place (today a free-text `capabilities` list on `/v1/models`).
 3. Request priority or busy signal (header, `429/503 + Retry-After`, or queue depth in `/health`), so reflection yields.
 4. `usage` with image tokens and `stream_options.include_usage`.
 5. Confirm that disconnect aborts `llama-server` prefill; document it.
-6. `/v1/decisions` honouring images in the engine; a test showing an obviously-yes image answers yes.
-7. Documented request/response for `detections`, `captions`, `ocr`, and a describe-with-boxes route (or confirm chat + json_schema is the intended path); grounding quality notes.
+6. Make the `/v1/decisions` response match its published spec (or the spec match the code): `{type, value, confidence}` versus `{decision, probability}` / `{decision, confidence, probabilities}` / `{level, score, probabilities}`. Add a test with an image whose answer is obviously yes.
+7. Specify coordinate conventions in the Postman examples: grounding `box_2d` units and order, detection `box` corner vs centre. Confirm whether a describe-with-boxes route exists or chat + `json_schema` is the intended path.
 8. Real backend in `/health` (it currently reports a hardcoded string).
 
 **rune-kit**
