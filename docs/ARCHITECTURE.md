@@ -9,7 +9,7 @@ All AI inference goes to **rune-infer**, a local OpenAI-compatible server (Postm
 | Decision   | Choice                                                                               | Notes                                                          |
 | ---------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
 | OS         | Windows 11 only                                                                      | macOS/Linux later behind the native-layer traits               |
-| Brain      | rune-infer, `qwen3.8-27b` (vision + tools)                                           | Our own function-calling protocol, no vendor computer-use tool |
+| Brain      | One omni model, `gemma-4-12b-it` (see + hear + tools)| Our own function-calling protocol, no vendor computer-use tool |
 | Voice      | Hands-free: click the mic once to start a listening session, click again to stop     | VAD cuts utterances; no push-to-talk                           |
 | Autonomy   | Runs freely, confirms risky actions                                                  | Confirm by button or voice "yes"/"no"                          |
 | Stack      | Tauri 2 (Rust core) + Vue 3 + Tailwind                                               | Rust owns capture, input, UIA, audio, the agent loop           |
@@ -43,25 +43,23 @@ UI shell (pill) <-events/commands-> Agent core (state machine, history, budget)
 6. **Executor:** performs actions in physical pixels. Owns coordinate mapping.
 7. **Safety gate:** decides allow / confirm / block, and owns the kill switch.
 
-## 4. rune-infer integration
+## 4. Model server integration
 
-| Need                            | Endpoint                                                                        |
-| ------------------------------- | ------------------------------------------------------------------------------- |
-| Decide next action              | `POST /v1/chat/completions` (vision model, `tools`, `tool_choice: "required"`)  |
-| Speech to text                  | `POST /v1/audio/transcriptions` (multipart; 16 kHz mono WAV is the native path) |
-| Locate a UI target (fallback)   | `POST /v1/images/grounding` (`{image, query}` -> `point`, `box_2d`)             |
-| Read text with boxes (fallback) | `POST /v1/ocr`                                                                  |
-| Health / models                 | `GET /health` (no auth), `GET /v1/models`                                       |
+**One omni model, one endpoint.** Everything (hearing the user, planning, choosing actions) is a call to `POST /v1/chat/completions` with the single `model` setting (default `gemma-4-12b-it`). There is no separate speech-to-text, vision or voice model. The optional decision model (`fast_checks`, default off) is the only other endpoint, `POST /v1/decisions` at `decision_url`, and the omni model stays the orchestrator.
 
-Facts confirmed with the backend:
+What the server must support:
 
-- Base64 `image_url` data URIs and multiple images per request work. Body limit is 128 MB.
-- `qwen3.8-27b` supports Vision + Tool Call. `tool_choice: "required"` is enforced.
-- Coordinates: Qwen-native **0-1000 normalized**. Boxes are `[ymin, xmin, ymax, xmax]`; points are `[x, y]`. The Model client normalizes everything to `[x, y]` so the ordering never leaks.
-- Auth: every `/v1/*` route needs `Authorization: Bearer <key>` when a key is configured; health probes are open.
-- Context is 131k tokens. A 1080p screenshot costs about 2.7k tokens, so keep only the last 2-3 screenshots in history.
-- Language is auto-detected when omitted from STT. The STT model is `parakeet-tdt-0.6b-v3` or `whisper-large-v3`.
-- `audio8-asr-infinite` offers streaming STT with rolling VAD (possible later upgrade).
+| Need | How |
+| ---- | --- |
+| Multimodal content in one request | `text`, `image_url` (data-URI JPEG) and `audio_url` (data-URI WAV, 16 kHz mono, up to 20 s) parts |
+| Tool calls with those inputs | `tools` + `tool_choice: "required"` |
+| Thinking on/off per request | `chat_template_kwargs: {"enable_thinking": bool}`; with a reasoning parser the thinking comes back in `reasoning` (or `reasoning_content`), never in `content` |
+| Streaming | SSE with reasoning and tool-call deltas (used by Show thinking) |
+| Health / models | `GET /health` (no auth), `GET /v1/models`, `Authorization: Bearer <key>` |
+
+Serving: any OpenAI-compatible server that meets the table works (for example vLLM with audio support installed). The tool-call parser, reasoning parser and audio flags are specific to the model, so take them from the model's own serving recipe. `enable_thinking` only has an effect if the model's chat template reads it; otherwise thinking stays off and "Show thinking" shows nothing.
+
+Facts that came from the previous Qwen/rune-infer setup and still need re-checking on this model: the **0-1000 normalized click coordinates** (`model/coords.rs`; re-run the M1.5 grounding probe before trusting them), the 131k context and the screenshot token cost.
 
 ## 5. Action protocol
 
@@ -247,7 +245,7 @@ Not in M2 by design: risk gating and confirmation (M3), element ids and stuck de
 
 Built: `voice/{capture,vad,stt,intent,mod}.rs`, `commands::{begin_task, push_steer, close_microphone}`, `safety::gate::answer_by_voice`.
 
-**The path.** The mic button opens the default microphone. Its audio goes through a resampler to 16 kHz mono, then `vad::Segmenter`: plain energy-based speech detection, no model. It tracks the room's noise level, calls a 20 ms frame speech when it is 12 dB above that (and above -50 dBFS), starts an utterance after 60 ms of speech with 200 ms of audio from before (so the first syllable is kept), ends it after 700 ms of silence, drops anything shorter than 200 ms of speech (clicks, coughs) and cuts a monologue at 20 s. Each utterance goes to `POST /v1/audio/transcriptions` on rune-infer (the `asr_model` setting, `parakeet-tdt-0.6b-v3` by default; the audio goes only to the local server) as a 16 kHz WAV. Stock phrases models invent for noise ("you", "thank you", an empty or punctuation-only text) are ignored. The words are then interpreted by `voice/intent.rs`.
+**The path.** The mic button opens the default microphone. Its audio goes through a resampler to 16 kHz mono, then `vad::Segmenter`: plain energy-based speech detection, no model. It tracks the room's noise level, calls a 20 ms frame speech when it is 12 dB above that (and above -50 dBFS), starts an utterance after 60 ms of speech with 200 ms of audio from before (so the first syllable is kept), ends it after 700 ms of silence, drops anything shorter than 200 ms of speech (clicks, coughs) and cuts a monologue at 20 s. Each utterance goes to the omni model as a 16 kHz WAV (see "Hearing" below), which says what it was; the audio goes only to the configured model server.
 
 **What the words do.**
 
@@ -262,6 +260,10 @@ Built: `voice/{capture,vad,stt,intent,mod}.rs`, `commands::{begin_task, push_ste
 A longer sentence that only contains a control word ("stop the music in Spotify") is a request, not a command. A spoken yes never approves a risky action, because a TV or a colleague must not be able to allow something; a spoken no and stop always work. The mic stays open when a task is started by voice (typing a task closes it), and goes back to the listening state a few seconds after the task ends or is stopped. Every spoken command shows as a notice ("Starting: ...", "Passed to the agent: ...", "Answered no: ...") so a misheard task is visible at once, and the safety gate applies to voice tasks exactly as to typed ones.
 
 **Verified.** Unit tests cover the segmenter (one utterance between silences, a short pause does not split, a click and steady noise are not speech, speech over noise gets through, a long monologue is cut, resampling 48 kHz stereo and 44.1 kHz), the WAV header, transcript cleaning and the interpretation table. Live: Windows speech synthesis of "Open Notepad and write hello" went to rune-infer and came back as "Open notepad and write hello." (8 s on the first call, which loads the model). End to end with the real app, the mic and a spoken sentence played through the speakers: the mic opened, the utterance was detected, transcribed, started a task ("Starting: ..."), a second utterance was passed to the running agent, and the agent asked its own yes/no question on the confirm card ("Asks you"). The speaker-to-mic path garbled the words ("path of my money"), so this proves the chain, not recognition quality; try it with your own voice. Not verified live: the spoken stop, yes and no, and resuming to listening after a task. A bug found on the way and fixed: the confirm card's countdown always started at 0:00.
+
+**Hearing (no speech-to-text model).** Each utterance goes to the omni model as an `audio_url` part with one forced `heard` tool call (`voice/direct.rs`). The model says whether it was stop, stop listening, yes, no, a task or noise; for a task it returns the request in one sentence plus the goals, so the separate planning call is skipped (`agent::start_planned`). The agent loop, the safety gate and the rule that a spoken yes never approves a risky action are unchanged, and the model's sentence is what the UI shows. There is no fallback transcriber: if the call fails, the UI says the model is not answering. Not yet tried against the real model.
+
+**The record (`archive.rs`).** Everything the agent sees or hears is stored in the user's Documents folder (`Documents/Rune Studio/` on Windows, the OS's equivalent elsewhere) in `screenshots/`, `voice/` and `recordings/`, each split by UTC date with unique, never-overwritten names. It has no setting, tool or command to turn it off or move it, and it fails closed: `observe::screenshot::capture_region`, the single place every screenshot (built-in loop, outside agents, debug) goes through, saves the exact JPEG before returning it and returns an error if that fails, and `voice::handle` stores the WAV before sending it to the model and drops the utterance if that fails. If the folder cannot be created at startup the agent simply cannot see or hear. Screen recording does not exist yet; a future recorder must write through `archive::path_for(Kind::Recordings, ..)`. The safety gate rates any action taken while File Explorer shows a "Rune Studio" folder as high risk, so the agent cannot quietly clear its own record. Limits: these are ordinary files, so the user (or another program) can still delete them outside the app, and the Explorer rule goes by the window title only.
 
 **Limits.** Any speech near the open mic becomes a task (there is no wake word and no speaker check), so keep the mic closed when others are talking; the safety gate is the backstop. Detection is energy-based, so loud steady noise or music can start false utterances and a very quiet speaker can be missed (thresholds are constants at the top of `voice/vad.rs`). Transcription takes about a second per utterance on a warm server, and the first one after a model load took 8 s. There is no spoken reply (no text to speech yet).
 

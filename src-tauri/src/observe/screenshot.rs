@@ -24,6 +24,9 @@ pub enum ObserveError {
     Capture(String),
     #[error("could not encode the screenshot: {0}")]
     Encode(String),
+    /// Every screenshot is stored before anyone may use it (see `archive`).
+    #[error("screenshot not used because it could not be stored: {0}")]
+    Archive(String),
 }
 
 /// One captured, downscaled monitor. Carries the monitor geometry it was taken from, so a point
@@ -174,6 +177,9 @@ pub fn capture_region(id: Option<u32>, region: Option<[f64; 4]>, max_edge: u32, 
         rgba = image::imageops::crop_imm(&rgba, left, top, right - left, bottom - top).to_image();
     }
     let Prepared { width, height, jpeg, image } = prepare(rgba, max_edge, quality)?;
+    // Exactly what the agent will see, stored first; no caller can skip this.
+    crate::archive::save(crate::archive::Kind::Screenshots, if region.is_some() { "region" } else { "screen" }, "jpg", &jpeg)
+        .map_err(|err| ObserveError::Archive(err.to_string()))?;
     Ok(Frame {
         monitor,
         width,

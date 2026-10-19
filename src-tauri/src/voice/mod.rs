@@ -1,7 +1,8 @@
-//! Talking to the agent: the microphone, cutting speech into utterances, turning them into text,
-//! and acting on what was said.
+//! Talking to the agent: the microphone, cutting speech into utterances, hearing them with the omni
+//! model, and acting on what was said.
 //!
-//! While listening, every utterance is transcribed by rune-infer (locally) and then:
+//! While listening, every utterance goes to the omni model (`direct` hears it, with no
+//! transcript in between), and then:
 //! - **Stop** (the word, on its own) stops the agent at once, like the Stop button.
 //! - **Yes / No** answer the question on screen. A spoken **no** always works. A spoken **yes**
 //!   works for the agent's own questions, but not for an action that needs approval: a TV or a
@@ -10,15 +11,17 @@
 //!   agent reads before its next step) when it is working.
 
 pub mod capture;
+pub mod direct;
 pub mod intent;
-pub mod stt;
 pub mod vad;
 
+use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{
     events::{self, AgentState, AppState},
+    model::client::ChatClient,
     safety::gate::{self, VoiceAnswer},
     settings,
 };
@@ -55,31 +58,47 @@ pub fn resume_listening_soon(app: &AppHandle) {
     });
 }
 
-/// One utterance, start to finish: transcribe, interpret, act.
+/// One utterance, start to finish: the omni model hears it, then the app acts on what it was.
 pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
     let state = app.state::<AppState>();
     let (base_url, model) = {
         let settings = state.settings.lock().expect("settings lock poisoned");
-        (settings.base_url.clone(), settings.asr_model.clone())
+        (settings.base_url.clone(), settings.model.clone())
     };
     let api_key = settings::api_key();
-    let text = match stt::transcribe(&state.http, &base_url, api_key.as_deref(), &model, &utterance).await {
-        Ok(Some(text)) => text,
-        Ok(None) => return,
-        Err(err) => {
-            log::warn!("speech to text failed: {err}");
-            heard(app, "", "Could not understand that: the speech model is not answering");
-            return;
+    // The recording is stored before anything is done with it; if it cannot be, it is not acted on.
+    let wav = direct::wav(&utterance);
+    if let Err(err) = crate::archive::save(crate::archive::Kind::Voice, "utterance", "wav", &wav) {
+        log::error!("{err}");
+        heard(app, "", "Not acted on: the recording could not be stored");
+        return;
+    }
+    let client = ChatClient { http: &state.http, base_url: &base_url, api_key: api_key.as_deref(), model: &model };
+    let audio = BASE64.encode(&wav);
+    match direct::listen(&client, &audio, events::agent_state(app)).await {
+        Ok(Some(listened)) => {
+            log::info!("heard: {:?}", listened.intent);
+            apply(app, listened.intent, listened.goals, "");
         }
-    };
-    log::info!("heard: {text}");
-    act(app, &text);
+        Ok(None) => {}
+        Err(err) => {
+            log::warn!("hearing failed: {err}");
+            heard(app, "", "Could not understand that: the model is not answering");
+        }
+    }
 }
 
 /// Does what the words ask for. Separate from `handle` so it can be tested without audio.
 pub fn act(app: &AppHandle, text: &str) {
+    apply(app, intent::interpret(text), None, text);
+}
+
+/// Does what an intent asks for. `text` is what was typed or heard, if there is a transcript; for
+/// speech the model's own wording of a task is shown instead. `goals` are the plan an
+/// audio model already made for a new task.
+fn apply(app: &AppHandle, intent: Intent, goals: Option<Vec<String>>, text: &str) {
     let now = events::agent_state(app);
-    match intent::interpret(text) {
+    match intent {
         Intent::Stop => {
             if running(now) {
                 heard(app, text, "Stopped");
@@ -114,7 +133,7 @@ pub fn act(app: &AppHandle, text: &str) {
                     heard(app, &said, "Passed to the agent");
                 }
             } else {
-                match crate::commands::begin_task(app, &said, true) {
+                match crate::commands::begin_task_planned(app, &said, true, goals) {
                     Ok(()) => heard(app, &said, "Starting"),
                     Err(err) => heard(app, &said, err.to_string()),
                 }

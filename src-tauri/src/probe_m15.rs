@@ -64,7 +64,7 @@ struct Mode {
     convention: Convention,
     /// Longest edge of the screenshot sent, in pixels.
     edge: u32,
-    /// Ask the server not to think (`reasoning_effort: "none"`).
+    /// Ask the server not to think (`chat_template_kwargs.enable_thinking: false`).
     no_think: bool,
 }
 
@@ -192,7 +192,7 @@ async fn ask(
         "tool_choice": "required",
     });
     if mode.no_think {
-        body["reasoning_effort"] = json!("none");
+        body["chat_template_kwargs"] = json!({ "enable_thinking": false });
     }
     let value = post(client, &format!("{base}/v1/chat/completions"), key, &body).await?;
 
@@ -203,7 +203,7 @@ async fn ask(
     Ok(Reply {
         point,
         completion_tokens: value["usage"]["completion_tokens"].as_u64(),
-        reasoning_chars: message["reasoning_content"].as_str().map_or(0, |text| text.chars().count()),
+        reasoning_chars: message["reasoning"].as_str().or(message["reasoning_content"].as_str()).map_or(0, |text| text.chars().count()),
         finish: value["choices"][0]["finish_reason"].as_str().unwrap_or("").to_string(),
         note: if point.is_none() {
             format!("no usable tool call; content: {}", message["content"].as_str().unwrap_or("").chars().take(200).collect::<String>())

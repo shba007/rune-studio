@@ -36,8 +36,7 @@ export function installTauriMock() {
         case 'get_settings':
           return {
             baseUrl: 'http://127.0.0.1:8080',
-            visionModel: 'qwen3.8-27b',
-            asrModel: 'parakeet-tdt-0.6b-v3',
+            model: 'gemma-4-12b-it',
             maxSteps: 30,
             toggleHotkey: 'Alt+Q',
             stopHotkey: 'Ctrl+Alt+Escape',
@@ -45,8 +44,9 @@ export function installTauriMock() {
             externalAgentSince: 0,
             showThinking: false,
             askEveryAction: false,
-            fastChecks: true,
+            fastChecks: false,
             decisionModel: 'd1-3b-q8-0',
+            decisionUrl: '',
           }
         case 'bridge_info':
           return {

@@ -1,6 +1,7 @@
-//! The chat call to rune-infer: the task (and usually a screenshot) in, one tool call out.
+//! The chat call to the omni model: the task (a screenshot and/or what the user just said) in,
+//! one tool call out. Every model role goes through this one call.
 //!
-//! Two modes. By default thinking is off (`reasoning_effort: "none"`): the M1.5 probe showed
+//! Two modes. By default thinking is off (`chat_template_kwargs.enable_thinking: false`): the M1.5 probe showed
 //! grounding does not need it, and it only adds latency. With `think` on, the reply is streamed so
 //! the model's thinking can be shown while it happens.
 
@@ -53,6 +54,8 @@ pub struct Request<'a> {
     pub user_text: &'a str,
     /// The screen as a data URI. The planning call has none.
     pub screenshot: Option<&'a str>,
+    /// What the user just said, as base64 WAV (16 kHz mono).
+    pub audio: Option<&'a str>,
     pub tools: &'a Value,
     /// Let the model think, and stream that thinking to `on_thinking`.
     pub think: bool,
@@ -66,13 +69,19 @@ impl ChatClient<'_> {
     /// Asks for a tool call. `on_thinking` receives the thinking so far (all of it, each time) as
     /// it streams in; it is never called when `think` is off.
     pub async fn call(&self, request: &Request<'_>, on_thinking: &mut (dyn FnMut(&str) + Send)) -> Result<Reply, ModelError> {
-        let content = match request.screenshot {
-            // Image first, text last, like the probe: the screenshot is the expensive part.
-            Some(screenshot) => json!([
-                { "type": "image_url", "image_url": { "url": screenshot } },
-                { "type": "text", "text": request.user_text },
-            ]),
-            None => json!(request.user_text),
+        let content = if request.screenshot.is_none() && request.audio.is_none() {
+            json!(request.user_text)
+        } else {
+            // Audio and image first, text last, like the probe: the screenshot is the expensive part.
+            let mut parts = Vec::new();
+            if let Some(audio) = request.audio {
+                parts.push(json!({ "type": "audio_url", "audio_url": { "url": format!("data:audio/wav;base64,{audio}") } }));
+            }
+            if let Some(screenshot) = request.screenshot {
+                parts.push(json!({ "type": "image_url", "image_url": { "url": screenshot } }));
+            }
+            parts.push(json!({ "type": "text", "text": request.user_text }));
+            json!(parts)
         };
         let mut body = json!({
             "model": self.model,
@@ -85,10 +94,11 @@ impl ChatClient<'_> {
             "tools": request.tools,
             "tool_choice": "required",
         });
+        // The thinking switch is a chat-template flag; the server's reasoning parser keeps the
+        // thinking out of `content`.
+        body["chat_template_kwargs"] = json!({ "enable_thinking": request.think });
         if request.think {
             body["stream"] = json!(true);
-        } else {
-            body["reasoning_effort"] = json!("none");
         }
 
         let mut http = self
@@ -122,6 +132,12 @@ impl ChatClient<'_> {
     }
 }
 
+/// The model's thinking in a message or stream delta: servers call the field `reasoning` (vLLM)
+/// or `reasoning_content` (older ones).
+fn reasoning_of(message: &Value) -> &str {
+    ["reasoning", "reasoning_content"].iter().filter_map(|key| message[*key].as_str()).find(|text| !text.is_empty()).unwrap_or("")
+}
+
 /// Pulls the first tool call out of a chat completion.
 pub fn parse_reply(value: &Value) -> Result<Reply, ModelError> {
     let message = &value["choices"][0]["message"];
@@ -132,7 +148,7 @@ pub fn parse_reply(value: &Value) -> Result<Reply, ModelError> {
     Ok(Reply {
         call: ToolCall { name, arguments: parse_arguments(&call["function"]["arguments"])? },
         completion_tokens: value["usage"]["completion_tokens"].as_u64(),
-        thinking: message["reasoning_content"].as_str().unwrap_or("").to_string(),
+        thinking: reasoning_of(message).to_string(),
     })
 }
 
@@ -197,7 +213,7 @@ impl Stream {
         if let Some(text) = delta["content"].as_str() {
             self.content.push_str(text);
         }
-        match delta["reasoning_content"].as_str().filter(|text| !text.is_empty()) {
+        match Some(reasoning_of(delta)).filter(|text| !text.is_empty()) {
             Some(text) => {
                 self.thinking.push_str(text);
                 true
@@ -270,6 +286,13 @@ mod tests {
         assert_eq!(reply.thinking, "The user wants Notepad");
         assert_eq!(reply.call.name, "set_plan");
         assert_eq!(reply.call.arguments["goals"], json!(["Open", "Type"]));
+    }
+
+    #[test]
+    fn thinking_is_read_from_either_field_name() {
+        assert_eq!(reasoning_of(&json!({ "reasoning": "a" })), "a");
+        assert_eq!(reasoning_of(&json!({ "reasoning_content": "b" })), "b");
+        assert_eq!(reasoning_of(&json!({ "content": "c" })), "");
     }
 
     #[test]

@@ -86,7 +86,7 @@ export function useAgent() {
   /** How healthy the model server is, as one colour and a sentence for the tooltip. */
   const health = computed<{ tone: 'ok' | 'warn' | 'down' | 'checking'; title: string }>(() => {
     const status = backend.value
-    const model = settings.value?.visionModel ?? ''
+    const model = settings.value?.model ?? ''
     if (!status) return { tone: 'checking', title: 'Checking the model server' }
     if (!status.reachable) return { tone: 'down', title: status.error ?? 'Model server offline' }
     if (!status.authOk) return { tone: 'warn', title: 'API key rejected' }
