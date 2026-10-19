@@ -18,9 +18,19 @@ pub enum AgentState {
     AwaitingConfirm,
     Acting,
     Observing,
+    /// After a task: looking back at what happened (nothing produces it yet). Not a running state.
+    Reflecting,
     Done,
     Failed,
     Stopped,
+}
+
+impl AgentState {
+    /// Whether a task is under way: a new one is refused and Stop has something to stop.
+    /// `Reflecting` is not running: the task is over and the agent is only looking back.
+    pub fn is_running(self) -> bool {
+        matches!(self, Self::Planning | Self::AwaitingConfirm | Self::Acting | Self::Observing)
+    }
 }
 
 pub struct AppState {
@@ -182,4 +192,22 @@ pub struct StepFinished {
 pub struct TaskDone {
     pub summary: String,
     pub success: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_the_four_working_states_count_as_running() {
+        use AgentState::*;
+        let table = [
+            (Idle, false), (Listening, false), (Planning, true), (AwaitingConfirm, true), (Acting, true),
+            (Observing, true), (Reflecting, false), (Done, false), (Failed, false), (Stopped, false),
+        ];
+        for (state, running) in table {
+            assert_eq!(state.is_running(), running, "{state:?}");
+        }
+        assert_eq!(serde_json::to_string(&Reflecting).unwrap(), "\"reflecting\"");
+    }
 }

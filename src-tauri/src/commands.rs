@@ -126,10 +126,7 @@ pub fn begin_task_planned(app: &AppHandle, text: &str, keep_mic: bool, plan: Opt
     if task.is_empty() {
         return Err(AppError::Invalid("Type or say what you want done".into()));
     }
-    if matches!(
-        events::agent_state(&app),
-        AgentState::Planning | AgentState::AwaitingConfirm | AgentState::Acting | AgentState::Observing
-    ) {
+    if events::agent_state(&app).is_running() {
         return Err(AppError::Invalid("A task is already running".into()));
     }
     if state.lease.lock().expect("lease lock poisoned").is_held() {
@@ -156,10 +153,7 @@ pub fn push_steer(app: &AppHandle, text: &str) -> bool {
 
 #[tauri::command]
 pub fn steer(app: AppHandle, text: String) -> AppResult<()> {
-    if !matches!(
-        events::agent_state(&app),
-        AgentState::Planning | AgentState::Acting | AgentState::Observing | AgentState::AwaitingConfirm
-    ) {
+    if !events::agent_state(&app).is_running() {
         return Err(AppError::Invalid("There is no running task to give instructions to".into()));
     }
     if push_steer(&app, &text) { Ok(()) } else { Err(AppError::Invalid("Say what the agent should do differently".into())) }
@@ -185,10 +179,7 @@ pub async fn toggle_listening(app: AppHandle, state: State<'_, AppState>) -> App
         return Ok(());
     }
 
-    if matches!(
-        events::agent_state(&app),
-        AgentState::Planning | AgentState::AwaitingConfirm | AgentState::Acting | AgentState::Observing
-    ) {
+    if events::agent_state(&app).is_running() {
         return Err(AppError::Invalid("Stop the current task before listening".into()));
     }
 

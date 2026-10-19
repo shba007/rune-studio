@@ -277,10 +277,7 @@ async fn capture(region: Option<[f64; 4]>) -> Result<Frame, Reply> {
 
 fn begin(app: &AppHandle, arguments: &Value) -> Reply {
     let state = app.state::<AppState>();
-    if matches!(
-        events::agent_state(app),
-        AgentState::Planning | AgentState::AwaitingConfirm | AgentState::Acting | AgentState::Observing
-    ) && !state.lease.lock().expect("lease lock poisoned").is_held()
+    if events::agent_state(app).is_running() && !state.lease.lock().expect("lease lock poisoned").is_held()
     {
         return LeaseError::Busy.into();
     }

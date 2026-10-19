@@ -11,6 +11,7 @@ type Kind = 'idle' | 'listening' | 'thinking' | 'acting' | 'attention' | 'done' 
 const KIND: Record<AgentState, Kind> = {
   idle: 'idle',
   stopped: 'idle',
+  reflecting: 'idle',
   listening: 'listening',
   planning: 'thinking',
   observing: 'thinking',

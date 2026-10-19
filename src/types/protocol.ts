@@ -7,6 +7,7 @@ export type AgentState =
   | 'awaiting_confirm'
   | 'acting'
   | 'observing'
+  | 'reflecting'
   | 'done'
   | 'failed'
   | 'stopped'

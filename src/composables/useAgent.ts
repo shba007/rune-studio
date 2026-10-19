@@ -40,6 +40,7 @@ const STATE_LABELS: Record<AgentState, string> = {
   awaiting_confirm: 'Needs your OK',
   acting: 'Acting',
   observing: 'Looking',
+  reflecting: 'Reflecting',
   done: 'Done',
   failed: 'Failed',
   stopped: 'Stopped',
