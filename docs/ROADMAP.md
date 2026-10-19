@@ -171,6 +171,21 @@ Decisions: a forced tool call through the existing client rather than `response_
 
 ### R4 Visual analysis v1 — M-H / medium
 
+**Status (branch `develop`, 2026-10-19):**
+
+| Item                                                                                              | Status                                                                                            |
+| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Box probe: `box` convention, IoU, centre inside, IoU >= 0.5 per size class, report                | built, unit tested; **never run against a model**                                                 |
+| Analysis core: forced `report` tool, tolerant parser, box normalisation, per-request `max_tokens` | built, unit tested                                                                                |
+| Storage: `analyses` table (schema 3), CLI `analyses` and `analysis <id>`                          | built, unit tested (migration, round trip, cap, order)                                            |
+| Commands, state machine, window excluded from capture, cancel by Stop / button / closing          | built; pure parts unit tested; **window and commands not run on a Windows desktop**               |
+| View: boxes, brackets, chips with leader lines, evidence list linked both ways, pill button, mock | built, layout function unit tested, seen in a browser with the mock; **not seen in the real app** |
+| **Box accuracy of the chat path**                                                                 | **unmeasured** until the maintainer runs the probe and judges three real screens                  |
+
+R4 is **built, unmeasured**. If the chat boxes are poor, the next step is a work package that uses `/v1/images/grounding` (units and axis order of `box_2d` not documented), not prompt tuning.
+
+Original plan:
+
 - Input: **current screen only** in v1 (decision); files/drag-drop are out of scope.
 - Pipeline options, to be settled by a probe on the synthetic scenes (`scripts/m15`): (a) chat with a forced `report` tool/JSON schema returning findings `{label, kind, box, confidence, description, evidence}`; (b) compose rune-infer's `/v1/images/grounding` (box), `/v1/ocr` (text) and `captions`/`detections` (shapes **NOT CERTAIN**). Normalise box order ([ymin,xmin,ymax,xmax] from grounding vs Studio's [x0,y0,x1,y1]).
 - Kit helpers (optional): `rune-image__compare_images` for before/after diffs; `rune-filesystem__read_media_file` for files. Not required.

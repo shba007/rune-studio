@@ -103,6 +103,8 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full design and [`doc
 | **Stop**                 | `Ctrl+Alt+Esc` | Setting `stopHotkey`. Also: the tray menu's **Stop**, the orb while a task runs, the word "stop" by voice. |
 | Voice                    | Mic button     | Click once to listen, again to stop. Anything spoken becomes a task (idle) or steering (working).          |
 
+**Analyse the screen.** The scan button in the composer takes a screenshot of the primary monitor, asks the model about it and opens a separate window (excluded from screen capture) that shows the screenshot with numbered regions, label tags and an evidence column; type a question about the same screen, or press New capture. It is refused while a task runs; Stop and closing the window cancel it. Each analysis is stored (see `rune-studio-cli analyses`). The model's boxes are unmeasured: see the roadmap.
+
 Launching Rune Studio a second time shows the existing pill instead of starting another copy.
 
 The window is a frameless, always-on-top, capture-excluded pill anchored to the bottom-right of the primary monitor. While the agent acts it is click-through, so it can never block a click meant for another app.
@@ -192,6 +194,8 @@ rune-studio-cli disconnect claude   # remove (also: antigravity)
 rune-studio-cli status              # is the app running, are outside agents allowed
 rune-studio-cli runs [--limit N]    # the newest recorded runs (default 20), read from trace.sqlite3
 rune-studio-cli run <id>            # one recorded run: its steps and events
+rune-studio-cli analyses [--limit N] # the newest screen analyses (default 20)
+rune-studio-cli analysis <id>       # one screen analysis: question, answer, findings with boxes and evidence
 rune-studio-cli guide               # print the guide an agent reads
 rune-studio-cli mcp                 # what agents run: MCP over stdio, starts the app if needed
 ```
@@ -217,7 +221,7 @@ One agent holds control at a time (the "lease"). It ends on `rune_done`, on Stop
 
 ## Related projects
 
-Rune Studio is one of four projects. **rune-infer** is the model server it calls; **rune-kit** (the `rune` CLI, an MCP package manager and gateway) and **rune-tools** (its plugin registry) are intended to own MCP servers, skills, plugins and external tools so the app does not. The app does not use kit or tools yet. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) section 18 and the plan in [`docs/ROADMAP.md`](docs/ROADMAP.md) (flight recorder, verifier, idle reflection mode, visual analysis; none of it built).
+Rune Studio is one of four projects. **rune-infer** is the model server it calls; **rune-kit** (the `rune` CLI, an MCP package manager and gateway) and **rune-tools** (its plugin registry) are intended to own MCP servers, skills, plugins and external tools so the app does not. The app does not use kit or tools yet. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) section 18 and the plan in [`docs/ROADMAP.md`](docs/ROADMAP.md) (flight recorder, verifier and visual analysis are built, unmeasured; idle reflection mode is not built).
 
 ---
 
