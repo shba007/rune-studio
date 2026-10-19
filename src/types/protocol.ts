@@ -28,6 +28,7 @@ export interface Settings {
   /** Use the fast decision model for quick checks (skip planning, spot a finished task, risk). */
   fastChecks: boolean
   directVoice: boolean
+  voiceModel: string
   decisionModel: string
 }
 

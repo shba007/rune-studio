@@ -32,9 +32,12 @@ pub struct Settings {
     /// task, a second opinion on risk). Everything still works without it, only slower.
     pub fast_checks: bool,
     pub decision_model: String,
-    /// Send what the user says straight to the model (it must take audio, like a Qwen Omni build)
-    /// instead of transcribing it first. Falls back to transcription if the model refuses audio.
+    /// Send what the user says straight to an audio model instead of transcribing it first.
+    /// Falls back to transcription if that model does not answer.
     pub direct_voice: bool,
+    /// The audio-capable chat model that hears the user (Qwen Omni). Only used for hearing: the
+    /// agent still acts with `vision_model`.
+    pub voice_model: String,
 }
 
 impl Default for Settings {
@@ -52,7 +55,8 @@ impl Default for Settings {
             ask_every_action: false,
             fast_checks: true,
             decision_model: "d1-3b-q8-0".into(),
-            direct_voice: false,
+            direct_voice: true,
+            voice_model: "qwen3.8-omni-flash".into(),
         }
     }
 }

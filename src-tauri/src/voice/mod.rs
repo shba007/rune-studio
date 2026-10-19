@@ -62,15 +62,15 @@ pub fn resume_listening_soon(app: &AppHandle) {
 /// One utterance, start to finish: transcribe, interpret, act.
 pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
     let state = app.state::<AppState>();
-    let (base_url, model, vision_model, direct_voice) = {
+    let (base_url, model, voice_model, direct_voice) = {
         let settings = state.settings.lock().expect("settings lock poisoned");
-        (settings.base_url.clone(), settings.asr_model.clone(), settings.vision_model.clone(), settings.direct_voice)
+        (settings.base_url.clone(), settings.asr_model.clone(), settings.voice_model.clone(), settings.direct_voice)
     };
     let api_key = settings::api_key();
     if direct_voice {
         // No transcript: the audio model hears it and says what it was. If it cannot (the model
         // does not take audio, or the server is down) fall through to transcription below.
-        let client = ChatClient { http: &state.http, base_url: &base_url, api_key: api_key.as_deref(), model: &vision_model };
+        let client = ChatClient { http: &state.http, base_url: &base_url, api_key: api_key.as_deref(), model: &voice_model };
         let audio = BASE64.encode(stt::wav(&utterance));
         match direct::listen(&client, &audio, events::agent_state(app)).await {
             Ok(Some(listened)) => {

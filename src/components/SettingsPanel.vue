@@ -108,6 +108,7 @@ async function save() {
       <SettingsGroup title="Models">
         <SettingsRow v-model="draft.visionModel" label="Vision" icon="eye" />
         <SettingsRow v-model="draft.asrModel" label="Speech" icon="mic" />
+        <SettingsRow v-model="draft.voiceModel" label="Voice" icon="mic" />
         <SettingsRow v-model="draft.decisionModel" label="Decision" icon="fast" />
         <SettingsToggle v-model="draft.fastChecks" label="Fast checks" icon="fast" />
         <SettingsToggle v-model="draft.directVoice" label="Direct voice" icon="mic" />
