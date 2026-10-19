@@ -72,6 +72,25 @@ export function installTauriMock() {
           }
         case 'debug_click':
           return { monitor: monitor(), pixelX: 960, pixelY: 540, cursorX: 960, cursorY: 540 }
+        case 'plugin:app|version':
+          return '0.0.3'
+        case 'plugin:updater|check':
+          return new Promise((resolve) =>
+            setTimeout(
+              () =>
+                resolve({
+                  rid: 1,
+                  currentVersion: '0.0.3',
+                  version: '0.0.4',
+                  date: null,
+                  body: 'Preview update',
+                  rawJson: {},
+                }),
+              800,
+            ),
+          )
+        case 'plugin:updater|download_and_install':
+          return undefined
         default:
           return undefined
       }
