@@ -271,7 +271,7 @@ pwsh scripts/m15/run-probe.ps1            # grounding probe against a local rune
 bun run test:unit                         # frontend
 ```
 
-CI runs `cargo test --lib`, with and without `--features agent-bridge`, on Windows and Ubuntu (`.github/workflows/rust.yml`); clippy and `cargo fmt --check` run too but do not fail the build yet.
+CI does **not** run `cargo test`, `clippy` or `fmt`; run them locally before pushing.
 
 ### Project layout
 
@@ -307,8 +307,7 @@ scripts/                     m1-system-test.ps1, m15/ (grounding probe), make-lo
 
 | Workflow                          | Trigger                                              | What it does                                                                                                                                                                                                                                                                  |
 | --------------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.github/workflows/rust.yml`      | pull requests, push to `develop` and `main`          | Runs `cargo test --lib` and `cargo test --lib --features agent-bridge` on `windows-latest` and `ubuntu-latest`; clippy and `cargo fmt --check` are advisory (they do not fail the build).                                                                                     |
-| `.github/workflows/integrate.yml` | push to `develop` (skips release/merge commits)      | `bun run build`, lint (failures are ignored: the step ends in `echo`), format, auto-commit fixes, bump version and changelog with `changelogen`, open the `release/update-version` PR. No tests; the Rust workflow covers Rust.                                               |
+| `.github/workflows/integrate.yml` | push to `develop` (skips release/merge commits)      | `bun run build`, lint (failures are ignored: the step ends in `echo`), format, auto-commit fixes, bump version and changelog with `changelogen`, open the `release/update-version` PR. **No tests and no Rust checks.**                                                       |
 | `.github/workflows/release.yml`   | push to `main` whose message contains `ci(release):` | Creates the GitHub release notes with `changelogen gh release`.                                                                                                                                                                                                               |
 | `.github/workflows/deploy.yml`    | release published                                    | Builds the desktop app with `tauri-action` on Windows, Ubuntu and macOS (Apple Silicon and Intel), all with `--features agent-bridge`, signs updater artifacts, and uploads `rune-studio-cli` as its own release asset. The web-container and Android jobs are commented out. |
 

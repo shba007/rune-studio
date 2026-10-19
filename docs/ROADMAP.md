@@ -71,20 +71,20 @@ Decisions:
 
 **Status as of 2026-10-19 (merged into `develop`):**
 
-| Item                                              | Status                                                                                                                                               |
-| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `RunScope`, `is_running`, `Reflecting`            | built, tests pass                                                                                                                                    |
-| Panic supervisor for `agent::run`                 | built, tests pass                                                                                                                                    |
-| Retry/backoff on transient model errors           | built, tests pass                                                                                                                                    |
-| Serialised bridge actions                         | built, tests pass                                                                                                                                    |
-| Lock helper (`sync::LockExt`)                     | built, tests pass                                                                                                                                    |
-| `model/decision.rs` accepts both response shapes  | built, tests pass (which shape a live server sends is not known)                                                                                     |
-| CI                                                | built: `rust.yml` ran `cargo test --lib` (both feature sets) green on Windows and Ubuntu for the feature branch (PR 15); clippy and fmt are advisory |
-| Wire-format audit script `scripts/wire-audit.mjs` | built, **never run against a real rune-infer**; no table committed yet, so the exit criterion for the audit is open                                  |
-| Single-instance                                   | built, **not run on Windows**                                                                                                                        |
-| Elevated-window detection                         | built, **not run on Windows**; Windows may refuse the token of a higher-level process (**NOT CERTAIN**)                                              |
-| Stop/new-task race test                           | built as unit tests on `RunScope`; no end-to-end test                                                                                                |
-| Forced-panic test                                 | built as a unit test on the supervisor; not tried in the running app                                                                                 |
+| Item                                              | Status                                                                                                                                                                        |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RunScope`, `is_running`, `Reflecting`            | built, tests pass                                                                                                                                                             |
+| Panic supervisor for `agent::run`                 | built, tests pass                                                                                                                                                             |
+| Retry/backoff on transient model errors           | built, tests pass                                                                                                                                                             |
+| Serialised bridge actions                         | built, tests pass                                                                                                                                                             |
+| Lock helper (`sync::LockExt`)                     | built, tests pass                                                                                                                                                             |
+| `model/decision.rs` accepts both response shapes  | built, tests pass (which shape a live server sends is not known)                                                                                                              |
+| CI                                                | built, then **removed on 2026-10-19** at the maintainer's request (queued runs); it had passed on Windows and Ubuntu for PR 15. CI runs no Rust tests again; run them locally |
+| Wire-format audit script `scripts/wire-audit.mjs` | built, **never run against a real rune-infer**; no table committed yet, so the exit criterion for the audit is open                                                           |
+| Single-instance                                   | built, **not run on Windows**                                                                                                                                                 |
+| Elevated-window detection                         | built, **not run on Windows**; Windows may refuse the token of a higher-level process (**NOT CERTAIN**)                                                                       |
+| Stop/new-task race test                           | built as unit tests on `RunScope`; no end-to-end test                                                                                                                         |
+| Forced-panic test                                 | built as a unit test on the supervisor; not tried in the running app                                                                                                          |
 
 The original plan:
 
