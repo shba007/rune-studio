@@ -46,3 +46,41 @@ The first line of the report is `Gate: PASS` or `Gate: FAIL` with the reason; th
 With three repeats of 15 tasks (45 runs) one run is about 2 percentage points, so the gate is
 indicative, not a statistical test: look at the per-task table and at where the model and the check
 disagree before trusting a verdict either way.
+
+## Measure the verifier (R3)
+
+The independent check of a finished task (`verifyMode`, see ARCHITECTURE.md "The verifier") is judged
+from three runs of the suite: the check off, in the background, and blocking. In eval runs the check is
+**off unless the suite says otherwise**, so the baselines above stay comparable. Make a suite file per
+mode by setting `config.verify_mode` (`"off"`, `"background"` or `"blocking"`), for example copies of
+`scripts/eval/suite.desktop-15.json` named `suite.verify-background.json` and `suite.verify-blocking.json`.
+Fast checks stay as in your baseline (use the same `-FastChecks` for all three).
+
+```powershell
+pwsh scripts/eval/run.ps1 -Repeats 3 -FastChecks off -Out eval-out\verify-off
+pwsh scripts/eval/run.ps1 -Suite scripts\eval\suite.verify-background.json -Repeats 3 -FastChecks off -Out eval-out\verify-background
+pwsh scripts/eval/run.ps1 -Suite scripts\eval\suite.verify-blocking.json   -Repeats 3 -FastChecks off -Out eval-out\verify-blocking
+```
+
+Then, for each of the two checking runs, compare with the one that had the check off and read the report:
+
+```powershell
+node scripts/eval/report.mjs eval-out\verify-background\results.jsonl --compare eval-out\verify-off\results.jsonl --out eval-out\verify-background\report.md
+node scripts/eval/report.mjs eval-out\verify-blocking\results.jsonl   --compare eval-out\verify-off\results.jsonl --out eval-out\verify-blocking\report.md
+```
+
+What to look at:
+
+- **Gate and overhead** (top of the report): success not lower, median task duration within +10%. A
+  background check should add nothing to the duration (it runs after the task, and the harness waits
+  for it outside the task's clock); a blocking check adds one model call per claimed success and is
+  expected to be near or over the limit.
+- **Verifier vs the checkers**: the confusion matrix of the verdict against the machine's check, the
+  agreement among decisive verdicts, **false contradictions** (the check said the task was not done but
+  the machine says it was) and **missed failures** (the check said done but the machine says not). The
+  background and blocking runs make the same call on the same kind of screen; the numbers should be close.
+- Rows with verdict `timeout` or `error` are checks that did not finish; many of them mean the model
+  server is too slow or busy for the check, not that the check is wrong.
+
+Commit the three reports with their `results.jsonl` and `env.json`, named `verify-<mode>-<YYYY-MM-DD>`.
+Until they exist, R3 is built, not measured.

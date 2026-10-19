@@ -151,9 +151,23 @@ Exit: baseline for the current default model. Every later milestone is gated: su
 
 ### R3 Verifier — M / high
 
-- One omni-model call at `done` (no thinking, small `max_tokens`, reuse the already captured frame): `verified | contradicted | unsure` + evidence, stored. Default **background** (0% perceived overhead); optional blocking mode (one more ~10 s call on a ~90 s run is ~11%, over budget, so off by default; estimate from one recorded run, **NOT CERTAIN** for the current model).
-- Prefer `response_format: json_schema` on rune-infer (supported per code) over a forced tool call; choose after R0's wire audit.
-  Exit: agreement with human labels measured; overhead <= 10%; no success drop.
+**Status (branch `develop`, 2026-10-19):**
+
+| Item                                                                                                                                      | Status                                                                                                                                                       |
+| ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Storage: `verdicts` table, schema version 2, migration from 1, CLI column                                                                 | built, unit tested (migration, round trip, purge)                                                                                                            |
+| The check itself (`agent/verify.rs`): forced `verdict` tool call, thinking off, no retries, 30 s, forgiving parser                        | built, unit tested including against a throwaway server (success, failure without retry, time limit)                                                         |
+| Wiring: `verifyMode` setting (default `background`), background check after the task, blocking check with one challenge                   | built; the pure parts and the cancellation of the background check by a new task or Stop (on `AppState`) are unit tested; **the Tauri wiring was never run** |
+| Notice for a contradiction in the UI                                                                                                      | built (about 7 lines), not seen running                                                                                                                      |
+| Eval support: `config.verify_mode`, wait for the verdict, new result fields, "Verifier vs the checkers" report, overhead next to the gate | built, tested on hand-computed fixtures; **never run on Windows**                                                                                            |
+| Measurement of the exit criteria (overhead <= 10%, success not lower, agreement acceptable)                                               | **not done**: the maintainer runs the suite three times (`off`, `background`, `blocking`) and reads the report                                               |
+| Outside agents (`rune_done`)                                                                                                              | not checked: there is no final screenshot there                                                                                                              |
+| Checking claimed failures; a settings UI; `response_format: json_schema`                                                                  | not built                                                                                                                                                    |
+
+Decisions: a forced tool call through the existing client rather than `response_format: json_schema` (the path the whole agent already uses and tests); only claimed successes are checked.
+
+- One omni-model call at `done` (no thinking, reuse the already captured frame): `verified | contradicted | unsure` + evidence, stored. Default **background** (0% perceived overhead); optional blocking mode (one more ~10 s call on a ~90 s run is ~11%, over budget, so opt-in; estimate from one recorded run, **NOT CERTAIN** for the current model).
+  Exit: agreement with the machine checkers measured (the label data the eval harness collects); overhead <= 10%; no success drop. Until those numbers exist, R3 is **built, not measured**.
 
 ### R4 Visual analysis v1 — M-H / medium
 

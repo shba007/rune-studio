@@ -135,7 +135,7 @@ Settings are saved to `settings.json` in the app config folder (identifier `dev.
 | Updates        | Check for updates              | automatic at launch               |
 | Developer      | Eyes and hands, state switcher | development builds only           |
 
-`maxSteps` (default 30) is in `settings.json` but has no UI control.
+`maxSteps` (default 30) is in `settings.json` but has no UI control. So is `verifyMode`, which controls the **independent check** of a finished task: one more call to the model that looks at the final screen and says `verified`, `contradicted` or `unsure`. `background` (the default) shows "Done" at once and checks afterwards, telling you only if the screen seems to contradict the task; `blocking` checks before finishing and gives the agent one more chance when it is contradicted (slower: one more model call); `off` does nothing. Each result is stored in the trace database (see `rune-studio-cli runs`).
 
 ### The model server
 
