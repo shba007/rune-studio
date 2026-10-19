@@ -7,6 +7,8 @@ mod cursor;
 #[cfg(debug_assertions)]
 mod debug;
 mod error;
+#[cfg(feature = "eval")]
+mod eval;
 mod events;
 mod exec;
 mod hotkeys;

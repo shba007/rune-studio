@@ -32,6 +32,8 @@ tauri-build = { version = "2.7", features = [] }
 
 [features]
 agent-bridge = ["dep:axum", "dep:getrandom"]
+# The evaluation harness (docs/ARCHITECTURE.md, "The evaluation harness"). Never in a release build.
+eval = []
 
 [dependencies]
 axum = { version = "0.8", optional = true, default-features = false, features = [
