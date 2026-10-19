@@ -3,7 +3,7 @@
 use rusqlite::Connection;
 
 /// The version this code writes. `PRAGMA user_version` holds the version of a database file.
-pub const VERSION: i64 = 2;
+pub const VERSION: i64 = 3;
 
 /// Version 1.
 pub const CREATE_V1: &str = "
@@ -81,6 +81,25 @@ CREATE TABLE verdicts (
 );
 ";
 
+/// Version 3: visual analyses (see `analysis`). One row per analysis; the id is the archive session id.
+pub const CREATE_V3: &str = "
+CREATE TABLE analyses (
+    id TEXT PRIMARY KEY,
+    created_utc TEXT,
+    question TEXT,
+    answer TEXT,
+    findings_json TEXT,
+    model TEXT,
+    latency_ms INTEGER,
+    status TEXT,
+    error TEXT,
+    screenshot_path TEXT,
+    monitor_json TEXT
+);
+
+CREATE INDEX analyses_created ON analyses(created_utc);
+";
+
 /// How opening a database went.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Opened {
@@ -100,9 +119,11 @@ pub fn open(db: &Connection) -> rusqlite::Result<Opened> {
     db.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;")?;
     // One transaction per step, so a crash cannot leave half a schema behind.
     if found < 1 {
-        db.execute_batch(&format!("BEGIN; {CREATE_V1} {CREATE_V2} PRAGMA user_version = 2; COMMIT;"))?;
+        db.execute_batch(&format!("BEGIN; {CREATE_V1} {CREATE_V2} {CREATE_V3} PRAGMA user_version = 3; COMMIT;"))?;
     } else if found < 2 {
-        db.execute_batch(&format!("BEGIN; {CREATE_V2} PRAGMA user_version = 2; COMMIT;"))?;
+        db.execute_batch(&format!("BEGIN; {CREATE_V2} {CREATE_V3} PRAGMA user_version = 3; COMMIT;"))?;
+    } else if found < 3 {
+        db.execute_batch(&format!("BEGIN; {CREATE_V3} PRAGMA user_version = 3; COMMIT;"))?;
     }
     Ok(Opened::Ready)
 }

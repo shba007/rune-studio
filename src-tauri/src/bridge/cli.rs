@@ -30,7 +30,8 @@ use super::{
 };
 use crate::{
     settings,
-    trace::{self, store::{RunDetail, RunSummary}, StepRecord},
+    analysis::Finding,
+    trace::{self, store::{RunDetail, RunSummary}, AnalysisRecord, StepRecord},
 };
 
 const START_TIMEOUT: Duration = Duration::from_secs(30);
@@ -54,6 +55,10 @@ pub enum Command {
     Runs(usize),
     /// `run <id>`: one run, its steps and events.
     Run(String),
+    /// `analyses [--limit N]`: the newest visual analyses.
+    Analyses(usize),
+    /// `analysis <id>`: one visual analysis with its findings.
+    Analysis(String),
     Help,
     /// Not a command we know: shown as an error with the help text.
     Unknown(String),
@@ -80,6 +85,15 @@ pub fn parse(args: &[String]) -> Command {
             Some(other) => Command::Unknown(format!("runs {other}")),
         },
         "run" => Command::Run(args.get(1).cloned().unwrap_or_default()),
+        "analyses" => match args.get(1).map(String::as_str) {
+            None => Command::Analyses(DEFAULT_RUNS),
+            Some("--limit") => match args.get(2).and_then(|number| number.parse::<usize>().ok()) {
+                Some(limit) => Command::Analyses(limit),
+                None => Command::Unknown("analyses --limit (needs a number)".into()),
+            },
+            Some(other) => Command::Unknown(format!("analyses {other}")),
+        },
+        "analysis" => Command::Analysis(args.get(1).cloned().unwrap_or_default()),
         "help" | "--help" | "-h" => Command::Help,
         "connect" => Command::Connect(args.get(1).cloned().unwrap_or_default()),
         other => Command::Unknown(other.to_string()),
@@ -102,6 +116,8 @@ Rune Studio
   rune-studio guide            Print the guide an agent reads.
   rune-studio-cli runs [--limit N]  List the newest recorded runs (default 20).
   rune-studio-cli run <id>         Show one recorded run: its steps and events.
+  rune-studio-cli analyses [--limit N]  List the newest screen analyses (default 20).
+  rune-studio-cli analysis <id>    Show one screen analysis: question, answer and findings.
   rune-studio-cli mcp              Used by agents: speaks MCP on stdin/stdout and opens the app if needed.
 
 You are always in control: press Stop in the app (Ctrl+Alt+Esc) and the agent loses control at once.
@@ -121,6 +137,8 @@ pub fn run() -> i32 {
         Command::Disconnect(target) => disconnect(&target),
         Command::Runs(limit) => runs_command(limit),
         Command::Run(id) => run_command(&id),
+        Command::Analyses(limit) => analyses_command(limit),
+        Command::Analysis(id) => analysis_command(&id),
         Command::Guide => {
             say(GUIDE);
             0
@@ -156,6 +174,28 @@ fn run_command(id: &str) -> i32 {
     with_trace(|path| match trace::store::get_run(path, id) {
         Ok(Some(detail)) => say(&run_report(&detail)),
         Ok(None) => say(&format!("There is no run \"{id}\". See rune-studio-cli runs for the ids.")),
+        Err(err) => say(&format!("Could not read the trace database: {err}")),
+    })
+}
+
+/// `rune-studio-cli analyses`: a table of the newest screen analyses.
+fn analyses_command(limit: usize) -> i32 {
+    with_trace(|path| match trace::store::list_analyses(path, limit) {
+        Ok(rows) if rows.is_empty() => say("No screen analyses are recorded yet."),
+        Ok(rows) => say(&analyses_table(&rows)),
+        Err(err) => say(&format!("Could not read the trace database: {err}")),
+    })
+}
+
+/// `rune-studio-cli analysis <id>`: one analysis with its findings.
+fn analysis_command(id: &str) -> i32 {
+    if id.is_empty() {
+        say("Say which analysis: rune-studio-cli analysis <id>   (see rune-studio-cli analyses for the ids)");
+        return 2;
+    }
+    with_trace(|path| match trace::store::get_analysis(path, id) {
+        Ok(Some(record)) => say(&analysis_report(&record)),
+        Ok(None) => say(&format!("There is no analysis \"{id}\". See rune-studio-cli analyses for the ids.")),
         Err(err) => say(&format!("Could not read the trace database: {err}")),
     })
 }
@@ -563,6 +603,55 @@ fn runs_table(rows: &[RunSummary]) -> String {
     out
 }
 
+/// The analysis list: one line per analysis, columns padded to their widest cell.
+fn analyses_table(rows: &[AnalysisRecord]) -> String {
+    let mut lines = vec![["ID", "CREATED", "STATUS", "TIME", "QUESTION"].map(String::from)];
+    for row in rows {
+        lines.push([
+            row.id.clone(),
+            shown_time(Some(&row.created_utc).filter(|time| !time.is_empty()).map(String::as_str)),
+            row.status.clone(),
+            row.latency_ms.map_or_else(|| "-".into(), |ms| format!("{:.1}s", ms as f64 / 1000.0)),
+            one_line(&row.question, 50),
+        ]);
+    }
+    let widths: Vec<usize> = (0..5).map(|column| lines.iter().map(|line| line[column].chars().count()).max().unwrap_or(0)).collect();
+    let mut out = String::new();
+    for line in &lines {
+        let cells: Vec<String> = line.iter().enumerate().map(|(column, cell)| if column == 4 { cell.clone() } else { format!("{cell:<width$}", width = widths[column]) }).collect();
+        out.push_str(cells.join("  ").trim_end());
+        out.push('\n');
+    }
+    out
+}
+
+/// One analysis, top to bottom: question, answer, then a line per finding with its box and evidence.
+fn analysis_report(record: &AnalysisRecord) -> String {
+    let mut out = format!("Analysis {}\n  Created:   {}\n  Status:    {}", record.id, shown_time(Some(&record.created_utc).filter(|time| !time.is_empty()).map(String::as_str)), record.status);
+    if let Some(error) = record.error.as_deref().filter(|error| !error.is_empty()) {
+        out.push_str(&format!(" ({error})"));
+    }
+    let latency = record.latency_ms.map(|ms| format!(", {:.1}s", ms as f64 / 1000.0)).unwrap_or_default();
+    out.push_str(&format!("   [{}{latency}]\n", record.model.as_deref().unwrap_or("-")));
+    if let Some(path) = &record.screenshot_path {
+        out.push_str(&format!("  Screenshot: {path}\n"));
+    }
+    out.push_str(&format!("  Question:  {}\n  Answer:    {}\n", one_line(&record.question, 400), one_line(&record.answer, 1000)));
+    match serde_json::from_str::<Vec<Finding>>(&record.findings_json) {
+        Ok(findings) if findings.is_empty() => out.push_str("\nNo findings.\n"),
+        Ok(findings) => {
+            out.push_str("\nFindings:\n");
+            for finding in &findings {
+                let at = finding.bbox.map_or_else(|| "no location".to_string(), |b| format!("[{:.0}, {:.0}, {:.0}, {:.0}]", b[0], b[1], b[2], b[3]));
+                out.push_str(&format!("  {}. {} ({:?}) {at}\n     {}\n     evidence: {}\n", finding.n, finding.label, finding.kind, finding.description, finding.evidence));
+            }
+        }
+        Err(_) if record.findings_json.is_empty() => out.push_str("\nNo findings.\n"),
+        Err(_) => out.push_str("\nThe findings were too long to keep whole and cannot be shown.\n"),
+    }
+    out
+}
+
 fn number(value: Option<i64>) -> String {
     value.map_or_else(|| "-".to_string(), |value| value.to_string())
 }
@@ -688,6 +777,57 @@ mod tests {
         for word in ["runs", "run <id>"] {
             assert!(HELP.contains(word), "help does not mention {word}");
         }
+    }
+
+    #[test]
+    fn the_analysis_commands_parse() {
+        assert_eq!(parse(&args(&["analyses"])), Command::Analyses(20));
+        assert_eq!(parse(&args(&["analyses", "--limit", "3"])), Command::Analyses(3));
+        assert!(matches!(parse(&args(&["analyses", "--limit"])), Command::Unknown(_)));
+        assert!(matches!(parse(&args(&["analyses", "3"])), Command::Unknown(_)));
+        assert_eq!(parse(&args(&["analysis", "abc"])), Command::Analysis("abc".into()));
+        assert_eq!(parse(&args(&["analysis"])), Command::Analysis(String::new()));
+        for word in ["analyses [--limit N]", "analysis <id>"] {
+            assert!(HELP.contains(word), "help does not mention {word}");
+        }
+    }
+
+    fn stored(id: &str, status: &str, findings: &str) -> AnalysisRecord {
+        AnalysisRecord {
+            id: id.into(),
+            created_utc: "2026-10-19T12:00:05Z".into(),
+            question: "which button deletes?".into(),
+            answer: "The red one.".into(),
+            findings_json: findings.into(),
+            model: Some("gemma".into()),
+            latency_ms: Some(2500),
+            status: status.into(),
+            ..AnalysisRecord::default()
+        }
+    }
+
+    #[test]
+    fn the_analysis_table_is_laid_out_exactly() {
+        let rows = [stored("a1", "ok", "[]"), AnalysisRecord { latency_ms: None, ..stored("long-id-2", "error", "[]") }];
+        assert_eq!(
+            analyses_table(&rows),
+            "ID         CREATED              STATUS  TIME  QUESTION\na1         2026-10-19 12:00:05  ok      2.5s  which button deletes?\nlong-id-2  2026-10-19 12:00:05  error   -     which button deletes?\n"
+        );
+    }
+
+    #[test]
+    fn an_analysis_reads_top_to_bottom_with_a_line_per_finding() {
+        let findings = r#"[{"n":1,"label":"Delete","kind":"control","box":[100,200,300,260],"description":"Removes the file","evidence":"red button labelled Delete"},
+                          {"n":2,"label":"Title bar","kind":"region","box":null,"description":"Window title","evidence":"text at the top"}]"#;
+        let report = analysis_report(&stored("a1", "ok", findings));
+        assert_eq!(
+            report,
+            "Analysis a1\n  Created:   2026-10-19 12:00:05\n  Status:    ok   [gemma, 2.5s]\n  Question:  which button deletes?\n  Answer:    The red one.\n\nFindings:\n  1. Delete (Control) [100, 200, 300, 260]\n     Removes the file\n     evidence: red button labelled Delete\n  2. Title bar (Region) no location\n     Window title\n     evidence: text at the top\n"
+        );
+        assert!(analysis_report(&stored("a2", "ok", "[]")).contains("No findings."));
+        assert!(analysis_report(&stored("a3", "ok", "[{\"n\":1,\"lab")).contains("too long to keep whole"));
+        let failed = AnalysisRecord { error: Some("timed out".into()), ..stored("a4", "error", "") };
+        assert!(analysis_report(&failed).contains("Status:    error (timed out)"));
     }
 
     fn summary(id: &str, started: &str, ended: Option<&str>, outcome: Option<&str>, steps: i64, task: &str) -> RunSummary {

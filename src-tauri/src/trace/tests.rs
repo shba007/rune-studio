@@ -50,8 +50,8 @@ fn a_new_database_is_created_at_the_current_version() {
     let dir = TempDir::new();
     let recorder = Recorder::start(&dir.db());
     recorder.flush();
-    assert_eq!(version_of(&dir.db()), 2);
-    assert_eq!(tables_of(&dir.db()), ["events", "runs", "steps", "verdicts"]);
+    assert_eq!(version_of(&dir.db()), 3);
+    assert_eq!(tables_of(&dir.db()), ["analyses", "events", "runs", "steps", "verdicts"]);
 }
 
 #[test]
@@ -62,7 +62,7 @@ fn opening_twice_is_idempotent() {
     first.flush();
     let second = Recorder::start(&dir.db());
     second.flush();
-    assert_eq!(version_of(&dir.db()), 2);
+    assert_eq!(version_of(&dir.db()), 3);
     assert_eq!(list_runs(&dir.db(), 10).unwrap().len(), 1, "the second open keeps the data");
 }
 
@@ -356,7 +356,7 @@ fn a_version_1_database_is_migrated_without_losing_a_run() {
 
     let recorder = Recorder::start(&dir.db());
     recorder.flush();
-    assert_eq!(version_of(&dir.db()), 2);
+    assert_eq!(version_of(&dir.db()), 3);
     assert!(tables_of(&dir.db()).contains(&"verdicts".to_string()));
     let after = get_run(&dir.db(), "old").unwrap().expect("and still reads");
     assert_eq!((after.run.info.task.as_str(), after.steps.len(), after.verdict), ("open notepad", 1, None), "a run without a verdict reads as before");
@@ -430,4 +430,69 @@ fn purging_a_session_removes_its_verdict_too() {
     recorder.flush();
     assert_eq!(get_run(&dir.db(), "old").unwrap(), None, "a verdict does not keep its run from being purged");
     assert_eq!(get_run(&dir.db(), "keep").unwrap().unwrap().verdict.unwrap().result, "unsure");
+}
+
+fn analysis(id: &str, created: &str) -> AnalysisRecord {
+    AnalysisRecord {
+        id: id.into(),
+        created_utc: created.into(),
+        question: "what is here?".into(),
+        answer: "a settings window".into(),
+        findings_json: "[{\"n\":1}]".into(),
+        model: Some("m".into()),
+        latency_ms: Some(1200),
+        status: "ok".into(),
+        screenshot_path: Some("a/b.jpg".into()),
+        monitor_json: Some("{\"w\":1920}".into()),
+        ..AnalysisRecord::default()
+    }
+}
+
+#[test]
+fn a_version_2_database_is_migrated_and_reads_as_having_no_analyses() {
+    let dir = TempDir::new();
+    {
+        let db = Connection::open(dir.db()).unwrap();
+        db.execute_batch(&format!("{} {} PRAGMA user_version = 2;", schema::CREATE_V1, schema::CREATE_V2)).unwrap();
+        db.execute("INSERT INTO runs (id, task) VALUES ('old', 'x')", []).unwrap();
+    }
+    assert_eq!(list_analyses(&dir.db(), 5).unwrap(), vec![]);
+    assert_eq!(get_analysis(&dir.db(), "any").unwrap(), None);
+    let recorder = Recorder::start(&dir.db());
+    recorder.flush();
+    assert_eq!(version_of(&dir.db()), 3);
+    assert!(tables_of(&dir.db()).contains(&"analyses".to_string()));
+    assert_eq!(list_runs(&dir.db(), 5).unwrap().len(), 1, "the run survives");
+    recorder.analysis(analysis("a1", "2026-10-19T10:00:00Z"));
+    recorder.flush();
+    assert_eq!(get_analysis(&dir.db(), "a1").unwrap().unwrap().answer, "a settings window");
+}
+
+#[test]
+fn an_analysis_round_trips_and_the_same_id_replaces_it() {
+    let dir = TempDir::new();
+    let recorder = Recorder::start(&dir.db());
+    recorder.analysis(analysis("a1", "2026-10-19T10:00:00Z"));
+    recorder.flush();
+    assert_eq!(get_analysis(&dir.db(), "a1").unwrap(), Some(analysis("a1", "2026-10-19T10:00:00Z")));
+    recorder.analysis(AnalysisRecord { status: "error".into(), error: Some("timed out".into()), ..analysis("a1", "2026-10-19T10:00:00Z") });
+    recorder.flush();
+    let now = get_analysis(&dir.db(), "a1").unwrap().unwrap();
+    assert_eq!((now.status.as_str(), now.error.as_deref()), ("error", Some("timed out")));
+    assert_eq!(get_analysis(&dir.db(), "missing").unwrap(), None);
+}
+
+#[test]
+fn analyses_are_listed_newest_first_up_to_the_limit_and_findings_are_capped() {
+    let dir = TempDir::new();
+    let recorder = Recorder::start(&dir.db());
+    recorder.analysis(analysis("old", "2026-10-19T09:00:00Z"));
+    recorder.analysis(AnalysisRecord { findings_json: "x".repeat(FINDINGS_CAP + 500), ..analysis("new", "2026-10-19T11:00:00Z") });
+    recorder.analysis(analysis("mid", "2026-10-19T10:00:00Z"));
+    recorder.flush();
+    let ids: Vec<String> = list_analyses(&dir.db(), 10).unwrap().into_iter().map(|record| record.id).collect();
+    assert_eq!(ids, ["new", "mid", "old"]);
+    assert_eq!(list_analyses(&dir.db(), 2).unwrap().len(), 2);
+    let capped = get_analysis(&dir.db(), "new").unwrap().unwrap();
+    assert_eq!(capped.findings_json.chars().count(), FINDINGS_CAP);
 }

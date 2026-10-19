@@ -107,6 +107,27 @@ pub struct VerdictRecord {
     pub created_utc: String,
 }
 
+/// One visual analysis (`analysis`). The id is the archive session id of its folder.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct AnalysisRecord {
+    pub id: String,
+    pub created_utc: String,
+    pub question: String,
+    pub answer: String,
+    /// The findings as JSON (cut to `FINDINGS_CAP` characters).
+    pub findings_json: String,
+    pub model: Option<String>,
+    pub latency_ms: Option<i64>,
+    /// `ok`, `error` or `cancelled`.
+    pub status: String,
+    pub error: Option<String>,
+    pub screenshot_path: Option<String>,
+    pub monitor_json: Option<String>,
+}
+
+/// Longest findings JSON kept in an analysis row.
+pub const FINDINGS_CAP: usize = 20_000;
+
 /// Longest evidence text kept.
 pub const EVIDENCE_CAP: usize = 400;
 
@@ -227,6 +248,7 @@ pub enum Msg {
     /// Delete the runs whose session folder is one of these (retention), with their steps and events.
     PurgeSessions(Vec<String>),
     Verdict(Box<VerdictRecord>),
+    Analysis(Box<AnalysisRecord>),
     /// Answered once everything queued before it has been written.
     #[cfg(test)]
     Flush(std::sync::mpsc::Sender<()>),
@@ -361,6 +383,18 @@ impl Recorder {
             ..record
         };
         self.send(Msg::Verdict(Box::new(record)));
+    }
+
+    /// Stores one visual analysis (the newest one for an id replaces an older one).
+    pub fn analysis(&self, record: AnalysisRecord) {
+        let record = AnalysisRecord {
+            question: cap(&record.question, TEXT_CAP),
+            answer: cap(&record.answer, TEXT_CAP),
+            findings_json: cap(&record.findings_json, FINDINGS_CAP),
+            error: record.error.map(|text| cap(&text, TEXT_CAP)),
+            ..record
+        };
+        self.send(Msg::Analysis(Box::new(record)));
     }
 
     pub fn purge_sessions(&self, session_dirs: Vec<String>) {

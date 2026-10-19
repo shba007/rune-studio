@@ -6,7 +6,7 @@ use std::path::Path;
 
 use rusqlite::{Connection, OpenFlags, Row, params, params_from_iter, types::Value};
 
-use super::{Msg, RunInfo, STEP_COLUMNS, StepRecord, VerdictRecord, schema};
+use super::{AnalysisRecord, Msg, RunInfo, STEP_COLUMNS, StepRecord, VerdictRecord, schema};
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum StoreError {
@@ -96,6 +96,16 @@ fn apply(db: &Connection, message: &Msg) -> rusqlite::Result<()> {
                     model = excluded.model, latency_ms = excluded.latency_ms, claimed_success = excluded.claimed_success,
                     challenged = excluded.challenged, created_utc = excluded.created_utc",
                 params![record.run_id, record.mode, record.result, record.evidence, record.error, record.model, record.latency_ms, record.claimed_success, record.challenged, record.created_utc],
+            )?;
+        }
+        Msg::Analysis(record) => {
+            db.execute(
+                "INSERT INTO analyses (id, created_utc, question, answer, findings_json, model, latency_ms, status, error, screenshot_path, monitor_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                 ON CONFLICT(id) DO UPDATE SET created_utc = excluded.created_utc, question = excluded.question, answer = excluded.answer,
+                    findings_json = excluded.findings_json, model = excluded.model, latency_ms = excluded.latency_ms, status = excluded.status,
+                    error = excluded.error, screenshot_path = excluded.screenshot_path, monitor_json = excluded.monitor_json",
+                params![record.id, record.created_utc, record.question, record.answer, record.findings_json, record.model, record.latency_ms, record.status, record.error, record.screenshot_path, record.monitor_json],
             )?;
         }
         Msg::PurgeSessions(dirs) => {
@@ -260,6 +270,56 @@ pub fn get_run_in(db: &Connection, id: &str) -> Result<Option<RunDetail>, StoreE
         None
     };
     Ok(Some(RunDetail { run, steps, events, verdict }))
+}
+
+/// The newest analyses first, at most `limit`. A database older than version 3 has none.
+pub fn list_analyses(path: &Path, limit: usize) -> Result<Vec<AnalysisRecord>, StoreError> {
+    let db = open_read(path)?;
+    if !has_analyses(&db)? {
+        return Ok(Vec::new());
+    }
+    let mut statement = db.prepare(&format!(
+        "SELECT {ANALYSIS_COLUMNS} FROM analyses ORDER BY created_utc DESC, rowid DESC LIMIT ?1"
+    ))?;
+    let rows = statement.query_map([i64::try_from(limit).unwrap_or(i64::MAX)], analysis_from_row)?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// One analysis. `None` when there is no such id.
+pub fn get_analysis(path: &Path, id: &str) -> Result<Option<AnalysisRecord>, StoreError> {
+    let db = open_read(path)?;
+    if !has_analyses(&db)? {
+        return Ok(None);
+    }
+    match db.query_row(&format!("SELECT {ANALYSIS_COLUMNS} FROM analyses WHERE id = ?1"), [id], analysis_from_row) {
+        Ok(record) => Ok(Some(record)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(err) => Err(err.into()),
+    }
+}
+
+const ANALYSIS_COLUMNS: &str = "id, created_utc, question, answer, findings_json, model, latency_ms, status, error, screenshot_path, monitor_json";
+
+fn has_analyses(db: &Connection) -> Result<bool, StoreError> {
+    let version: i64 = db.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    Ok(version >= 3)
+}
+
+fn analysis_from_row(row: &Row<'_>) -> rusqlite::Result<AnalysisRecord> {
+    let text = |index: usize| row.get::<_, Option<String>>(index).map(Option::unwrap_or_default);
+    Ok(AnalysisRecord {
+        id: row.get(0)?,
+        created_utc: text(1)?,
+        question: text(2)?,
+        answer: text(3)?,
+        findings_json: text(4)?,
+        model: row.get(5)?,
+        latency_ms: row.get(6)?,
+        status: text(7)?,
+        error: row.get(8)?,
+        screenshot_path: row.get(9)?,
+        monitor_json: row.get(10)?,
+    })
 }
 
 fn step_from_row(row: &Row<'_>) -> rusqlite::Result<StepRecord> {
