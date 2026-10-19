@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.0.5
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.0.4...v0.0.5)
+
+### 🚀 Enhancements
+
+- **updater:** Check at start-up, prompt, install with orb progress and restart; version and manual check in settings ([936fd88](https://github.com/shba007/rune-studio/commit/936fd88))
+- **updater:** In-app update check, prompt, orb progress and auto restart ([35f8a6b](https://github.com/shba007/rune-studio/commit/35f8a6b))
+
+### 🩹 Fixes
+
+- Add missing newlines at the end of files for consistency ([71f661b](https://github.com/shba007/rune-studio/commit/71f661b))
+
+### ✅ Tests
+
+- **updater:** Type the mock functions to satisfy lint ([85cba67](https://github.com/shba007/rune-studio/commit/85cba67))
+- **updater:** Type the mock functions to satisfy lint ([083198c](https://github.com/shba007/rune-studio/commit/083198c))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+- Claude <noreply@anthropic.com>
+
 ## v0.0.4
 
 ### 🚀 Enhancements
