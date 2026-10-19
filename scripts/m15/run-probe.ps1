@@ -6,6 +6,9 @@
 #   norm    point as 0..1000 across the screenshot, through a click tool
 #   px      point in pixels of the downscaled screenshot, through a click tool
 #   ground  rune-infer's /v1/images/grounding endpoint
+#   box     the bounding box of the element, 0..1000, through a locate tool (R4: how well can the
+#           chat model draw boxes?). The report adds an IoU table. Example:
+#           pwsh scripts/m15/run-probe.ps1 -Modes "gemma-4-12b-it:box" -Fresh
 #
 # Everything stays on this machine: scenes are rendered locally and sent only to rune-infer.
 # It makes no mouse or keyboard input and does not touch your desktop.

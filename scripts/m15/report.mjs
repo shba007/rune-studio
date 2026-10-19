@@ -5,6 +5,8 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
+import { boxReport } from './box-stats.mjs'
+
 const file = process.argv[2] ?? 'temp/m15/results.jsonl'
 const rows = readFileSync(file, 'utf8')
   .split('\n')
@@ -125,7 +127,7 @@ if (problems.length) {
 }
 
 const worst = rows
-  .filter((r) => r.ok && !r.hit)
+  .filter((r) => r.ok && !r.hit && r.dist_px != null)
   .sort((a, b) => b.dist_px - a.dist_px)
   .slice(0, 8)
 if (worst.length) {
@@ -146,6 +148,8 @@ if (reasoning.length) {
     )} characters.`,
   )
 }
+
+for (const line of boxReport(rows)) out(line)
 
 writeFileSync(join(dirname(file), 'summary.md'), lines.join('\n'))
 console.log(`\n(saved ${join(dirname(file), 'summary.md')})`)

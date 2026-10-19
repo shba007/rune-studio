@@ -17,6 +17,7 @@
     "lint": "vp lint . --fix",
     "format": "vp fmt src/",
     "test:unit": "vp test",
+    "test:m15": "node --test \"scripts/m15/test/*.test.mjs\"",
     "test:eval": "node --test \"scripts/eval/test/*.test.mjs\"",
     "build": "vp build",
     "preview": "vp preview",
