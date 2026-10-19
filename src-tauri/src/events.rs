@@ -62,6 +62,7 @@ impl AppState {
     }
 
     /// The scope Stop would cancel right now.
+    #[cfg(feature = "agent-bridge")]
     pub fn current_scope(&self) -> RunScope {
         exec::current_scope(&self.run)
     }

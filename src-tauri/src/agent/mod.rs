@@ -57,12 +57,35 @@ pub fn start_planned(app: &AppHandle, task: String, plan: Option<Vec<String>>) {
     // Synchronously, so a second start_task sees a running agent and is refused. The new scope
     // also cancels the previous run's, so nothing from an earlier task can carry on.
     let scope = app.state::<AppState>().begin_run();
+    log::info!("run {} started", scope.id);
     events::set_agent_state(app, AgentState::Planning);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        let outcome = run(&app, &task, plan, scope.token).await;
+        // The run is its own task, so a panic inside it cannot skip `finish`: the state would stay
+        // at Planning/Acting, the pill would stay click-through and the voice session would hang.
+        let work_app = app.clone();
+        let outcome = supervised(async move { run(&work_app, &task, plan, scope.token).await }).await;
         finish(&app, outcome);
     });
+}
+
+/// Runs `work` as a separate task and turns a panic or an abort into an `Outcome`, so the caller
+/// always gets one back and can end the task cleanly.
+async fn supervised(work: impl Future<Output = Outcome> + Send + 'static) -> Outcome {
+    settle(tokio::spawn(work)).await
+}
+
+async fn settle(run: tokio::task::JoinHandle<Outcome>) -> Outcome {
+    match run.await {
+        Ok(outcome) => outcome,
+        Err(err) if err.is_panic() => {
+            let payload = err.into_panic();
+            let message = payload.downcast_ref::<&str>().map(|text| text.to_string()).or_else(|| payload.downcast_ref::<String>().cloned()).unwrap_or_else(|| "(no message)".into());
+            log::error!("the agent run panicked: {message}");
+            Outcome::Failed("Something went wrong inside Rune: the task was stopped".into())
+        }
+        Err(_) => Outcome::Stopped,
+    }
 }
 
 fn finish(app: &AppHandle, outcome: Outcome) {
@@ -462,6 +485,33 @@ mod tests {
         });
         let outcome = unless_stopped(&cancel, tokio::time::sleep(Duration::from_secs(30))).await;
         assert!(outcome.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_panic_in_a_run_becomes_a_failed_outcome() {
+        let outcome = supervised(async {
+            if true {
+                panic!("boom");
+            }
+            Outcome::Stopped
+        })
+        .await;
+        assert_eq!(outcome, Outcome::Failed("Something went wrong inside Rune: the task was stopped".into()));
+    }
+
+    #[tokio::test]
+    async fn a_run_that_returns_passes_its_outcome_through() {
+        let finished = Outcome::Finished { summary: "ok".into(), success: true };
+        assert_eq!(supervised(async { Outcome::Finished { summary: "ok".into(), success: true } }).await, finished);
+        assert_eq!(supervised(async { Outcome::Stopped }).await, Outcome::Stopped);
+        assert_eq!(supervised(async { Outcome::Failed("no".into()) }).await, Outcome::Failed("no".into()));
+    }
+
+    #[tokio::test]
+    async fn an_aborted_run_counts_as_stopped() {
+        let run = tokio::spawn(std::future::pending::<Outcome>());
+        run.abort();
+        assert_eq!(settle(run).await, Outcome::Stopped);
     }
 
     #[tokio::test]

@@ -86,6 +86,7 @@ pub fn stop_current(slot: &Mutex<RunScope>) {
 }
 
 /// The scope a call to Stop would cancel right now.
+#[cfg(any(test, feature = "agent-bridge"))]
 pub fn current_scope(slot: &Mutex<RunScope>) -> RunScope {
     slot.lock().expect("run scope lock poisoned").clone()
 }
