@@ -122,6 +122,7 @@ pub struct CheckResult {
 
 /// Weighs an action and, if it needs a yes, asks for one. `source` is who chose the action.
 /// `stated` is the risk the agent itself declared, if any.
+#[allow(dead_code)] // both drivers use `check_detailed` now; this is the same decision without the details
 pub async fn check(app: &AppHandle, cancel: &CancelToken, source: &str, action: &Action, reason: &str, stated: Option<Risk>) -> Verdict {
     check_detailed(app, cancel, source, action, reason, stated).await.verdict
 }

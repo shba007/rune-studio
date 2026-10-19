@@ -195,9 +195,9 @@ pub fn db_path_without_app() -> Option<std::path::PathBuf> {
 
 /// What the writer thread is asked to do.
 pub enum Msg {
-    BeginRun(RunInfo),
+    BeginRun(Box<RunInfo>),
     SetPlan { run_id: String, plan_json: String },
-    Step(StepRecord),
+    Step(Box<StepRecord>),
     Event { run_id: String, at_utc: String, kind: String, data_json: String },
     EndRun { run_id: String, ended_utc: String, outcome: String, summary: String },
     /// Delete the runs whose session folder is one of these (retention), with their steps and events.
@@ -268,6 +268,7 @@ impl Recorder {
     }
 
     /// How many messages were dropped because the queue was full or the writer was gone.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn dropped(&self) -> u64 {
         self.dropped.load(Ordering::Relaxed)
     }
@@ -292,7 +293,7 @@ impl Recorder {
     pub fn begin_run(&self, info: RunInfo) {
         let info = RunInfo { task: cap(&info.task, TEXT_CAP), ..info };
         *self.open_run() = Some(info.id.clone());
-        self.send(Msg::BeginRun(info));
+        self.send(Msg::BeginRun(Box::new(info)));
     }
 
     /// Ends whichever run is open (Stop, the idle timer, an outside agent's `rune_done`). Does
@@ -310,7 +311,7 @@ impl Recorder {
 
     /// Adds a piece of a step: only the fields it carries are written, the rest are kept.
     pub fn step(&self, record: StepRecord) {
-        self.send(Msg::Step(record.capped()));
+        self.send(Msg::Step(Box::new(record.capped())));
     }
 
     pub fn event(&self, run_id: &str, kind: &str, data: &str) {

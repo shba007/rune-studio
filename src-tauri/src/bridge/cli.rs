@@ -685,7 +685,7 @@ mod tests {
     fn the_run_table_is_laid_out_exactly() {
         let rows = [
             summary("120000-1-open-notepad", "2026-10-19T12:00:00Z", Some("2026-10-19T12:03:07Z"), Some("succeeded"), 4, "open notepad"),
-            summary("130000-2-x", "2026-10-19T13:00:00Z", None, None, 0, &"a very long task description that goes on and on past the limit of fifty characters"),
+            summary("130000-2-x", "2026-10-19T13:00:00Z", None, None, 0, "a very long task description that goes on and on past the limit of fifty characters"),
         ];
         let expected = "\
 ID                     STARTED              SOURCE    OUTCOME    STEPS  DURATION  TASK

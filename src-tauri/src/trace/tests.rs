@@ -305,9 +305,7 @@ fn the_text_hash_is_fnv_1a_and_tells_texts_apart() {
 
 #[test]
 fn the_settings_snapshot_has_only_the_four_settings() {
-    let mut settings = crate::settings::Settings::default();
-    settings.max_steps = 12;
-    settings.ask_every_action = true;
+    let settings = crate::settings::Settings { max_steps: 12, ask_every_action: true, ..crate::settings::Settings::default() };
     let snapshot: serde_json::Value = serde_json::from_str(&settings_snapshot(&settings)).unwrap();
     let mut keys: Vec<&str> = snapshot.as_object().unwrap().keys().map(String::as_str).collect();
     keys.sort_unstable();
