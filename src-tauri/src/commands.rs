@@ -89,7 +89,7 @@ pub fn pill_rect(app: AppHandle) -> Option<PillRect> {
 #[tauri::command]
 pub fn stop(app: AppHandle) {
     // Always cancel, even from Idle: Stop must interrupt typing the instant it is pressed.
-    app.state::<AppState>().cancel.cancel();
+    app.state::<AppState>().stop_current();
     // An outside agent loses control and may not simply start again.
     let had_agent = {
         let state = app.state::<AppState>();

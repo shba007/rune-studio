@@ -289,7 +289,8 @@ fn begin(app: &AppHandle, arguments: &Value) -> Reply {
     if let Err(err) = state.lease.lock().expect("lease lock poisoned").begin(&agent, &task, Instant::now()) {
         return err.into();
     }
-    state.cancel.reset();
+    // A fresh cancellation scope for this lease; it also cancels whatever the last run left behind.
+    state.begin_run();
     let _ = app.emit(events::EXTERNAL_AGENT, ExternalAgent { agent: Some(agent.clone()) });
     events::set_agent_state(app, AgentState::Observing);
     log::info!("agent bridge: {agent} took control for \"{task}\"");
@@ -384,7 +385,7 @@ async fn act(app: &AppHandle, tool: &'static str, arguments: &Value) -> Reply {
     }
 
     let state = app.state::<AppState>();
-    let cancel = state.cancel.clone();
+    let cancel = state.current_scope().token;
     // Risky actions wait for the user's yes, exactly as the built-in agent's do.
     let source = state.lease.lock().expect("lease lock poisoned").agent().unwrap_or("External agent").to_string();
     match gate::check(app, &cancel, &source, &decision.action, &decision.reason, decision.risk).await {

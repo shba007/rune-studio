@@ -3,7 +3,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::{bridge::lease::LeaseBook, safety::gate::Pending, exec::CancelToken, hotkeys::Hotkeys, overlay, settings::Settings, voice::capture::Capture, window};
+use crate::{bridge::lease::LeaseBook, safety::gate::Pending, exec::{self, RunScope}, hotkeys::Hotkeys, overlay, settings::Settings, voice::capture::Capture, window};
 
 pub const STATE_CHANGED: &str = "state_changed";
 pub const SUMMON: &str = "summon";
@@ -28,8 +28,8 @@ pub struct AppState {
     pub hotkeys: Mutex<Hotkeys>,
     /// Present while the microphone is open.
     pub mic: Mutex<Option<Capture>>,
-    /// Set by every Stop; checked by the executor between steps.
-    pub cancel: CancelToken,
+    /// The current run's cancellation scope. Stop cancels it; the next run replaces it (`begin_run`).
+    pub run: Mutex<RunScope>,
     pub agent_state: Mutex<AgentState>,
     /// Who may drive the PC from outside (see `bridge::lease`).
     pub lease: Mutex<LeaseBook>,
@@ -38,6 +38,23 @@ pub struct AppState {
     /// Things the user said while the agent was working; read before its next step.
     pub steer: Mutex<Vec<String>>,
     pub http: reqwest::Client,
+}
+
+impl AppState {
+    /// Cancels the previous run's scope and returns a fresh one for the run that is starting.
+    pub fn begin_run(&self) -> RunScope {
+        exec::begin_run(&self.run)
+    }
+
+    /// Cancels the current run, whatever the agent state (even Idle: typing from debug commands relies on it).
+    pub fn stop_current(&self) {
+        exec::stop_current(&self.run);
+    }
+
+    /// The scope Stop would cancel right now.
+    pub fn current_scope(&self) -> RunScope {
+        exec::current_scope(&self.run)
+    }
 }
 
 #[derive(Clone, Serialize)]

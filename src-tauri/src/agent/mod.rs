@@ -1,6 +1,6 @@
 //! The agent loop: plan, then look at the screen, ask the model for one action, do it, repeat.
 //!
-//! One run is one task. Stop (hotkey, tray or button) cancels the shared token; every wait in
+//! One run is one task. Stop (hotkey, tray or button) cancels the run's own token; every wait in
 //! here, including the model request, watches it, so Stop is felt within milliseconds.
 
 pub mod body;
@@ -54,12 +54,13 @@ pub fn start(app: &AppHandle, task: String) {
 /// Like `start`, with the goals already worked out (a spoken task heard by an audio model comes
 /// with its plan, so the separate planning call is skipped).
 pub fn start_planned(app: &AppHandle, task: String, plan: Option<Vec<String>>) {
-    // Synchronously, so a second start_task sees a running agent and is refused.
-    app.state::<AppState>().cancel.reset();
+    // Synchronously, so a second start_task sees a running agent and is refused. The new scope
+    // also cancels the previous run's, so nothing from an earlier task can carry on.
+    let scope = app.state::<AppState>().begin_run();
     events::set_agent_state(app, AgentState::Planning);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        let outcome = run(&app, &task, plan).await;
+        let outcome = run(&app, &task, plan, scope.token).await;
         finish(&app, outcome);
     });
 }
@@ -157,9 +158,8 @@ async fn make_plan(
     Ok(goals)
 }
 
-async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>) -> Outcome {
+async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, cancel: CancelToken) -> Outcome {
     let state = app.state::<AppState>();
-    let cancel = state.cancel.clone();
     let settings = state
         .settings
         .lock()

@@ -377,7 +377,6 @@ mod tests {
         let cancel = CancelToken::default();
         cancel.cancel();
         assert!(matches!(cancel.sleep(Duration::from_secs(5)), Err(ExecError::Cancelled)));
-        cancel.reset();
-        assert!(cancel.sleep(Duration::from_millis(5)).is_ok());
+        assert!(CancelToken::default().sleep(Duration::from_millis(5)).is_ok());
     }
 }
