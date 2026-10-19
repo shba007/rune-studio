@@ -386,7 +386,7 @@ fn finish(app: &AppHandle, outcome: Outcome) {
 
 /// Resolves to `None` if Stop is pressed before the future completes. The future is dropped, so
 /// an in-flight model request is aborted rather than waited for.
-async fn unless_stopped<T>(cancel: &CancelToken, work: impl Future<Output = T>) -> Option<T> {
+pub(crate) async fn unless_stopped<T>(cancel: &CancelToken, work: impl Future<Output = T>) -> Option<T> {
     tokio::select! {
         output = work => Some(output),
         () = async { while !cancel.is_cancelled() { tokio::time::sleep(Duration::from_millis(25)).await } } => None,

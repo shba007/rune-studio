@@ -87,21 +87,6 @@ pub enum Status {
     Cancelled,
 }
 
-/// One finished (or failed) analysis.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Analysis {
-    /// The archive session id.
-    pub id: String,
-    pub question: String,
-    pub answer: String,
-    pub findings: Vec<Finding>,
-    pub model: String,
-    pub latency_ms: u64,
-    pub created_utc: String,
-    pub status: Status,
-}
-
 /// What the model said, made safe to show.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParsedReport {
@@ -311,9 +296,6 @@ mod tests {
     fn a_finding_is_written_for_the_ui_with_box_and_camel_case() {
         let f = Finding { n: 2, label: "L".into(), kind: Kind::Issue, bbox: Some([1.0, 2.0, 30.0, 40.0]), description: "d".into(), evidence: "e".into() };
         assert_eq!(serde_json::to_value(&f).unwrap(), json!({ "n": 2, "label": "L", "kind": "issue", "box": [1.0, 2.0, 30.0, 40.0], "description": "d", "evidence": "e" }));
-        let a = Analysis { id: "i".into(), question: "q".into(), answer: "a".into(), findings: vec![], model: "m".into(), latency_ms: 5, created_utc: "t".into(), status: Status::Done };
-        let value = serde_json::to_value(&a).unwrap();
-        assert_eq!((value["latencyMs"].as_u64(), value["createdUtc"].as_str(), value["status"].as_str()), (Some(5), Some("t"), Some("done")));
     }
 
     #[test]

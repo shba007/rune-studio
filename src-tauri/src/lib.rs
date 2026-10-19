@@ -121,6 +121,7 @@ pub fn run() {
                 mic: Mutex::new(None),
                 run: Mutex::new(exec::RunScope::new()),
                 verifier: Mutex::new(exec::CancelToken::default()),
+                analysis: Default::default(),
                 agent_state: Mutex::new(AgentState::Idle),
                 lease: Mutex::new(bridge::lease::LeaseBook::default()),
                 confirm: Mutex::new(None),
@@ -188,6 +189,10 @@ pub fn run() {
             commands::steer,
             commands::toggle_listening,
             commands::confirm,
+            commands::analyze_screen,
+            commands::analyze_again,
+            commands::analysis_state,
+            commands::cancel_analysis,
             commands::bridge_info,
             commands::get_control_label,
             #[cfg(debug_assertions)]

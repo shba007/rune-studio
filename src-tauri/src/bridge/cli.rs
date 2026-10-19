@@ -30,7 +30,7 @@ use super::{
 };
 use crate::{
     settings,
-    analysis::Finding,
+    analysis::report::Finding,
     trace::{self, store::{RunDetail, RunSummary}, AnalysisRecord, StepRecord},
 };
 

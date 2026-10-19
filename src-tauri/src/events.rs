@@ -9,6 +9,8 @@ use crate::{bridge::lease::LeaseBook, safety::gate::Pending, exec::{self, RunSco
 pub const STATE_CHANGED: &str = "state_changed";
 /// The independent check of a finished task came back: `{ runId, result, evidence }`.
 pub const TASK_VERIFIED: &str = "task_verified";
+/// The screen analysis changed (see `analysis`): the whole snapshot.
+pub const ANALYSIS_UPDATED: &str = "analysis_updated";
 pub const SUMMON: &str = "summon";
 pub const OPEN_SETTINGS: &str = "open_settings";
 
@@ -46,6 +48,8 @@ pub struct AppState {
     /// Cancels the background check of the last finished task (see `agent::verify`): starting a task
     /// or pressing Stop cancels it first, so the check never competes with the user.
     pub verifier: Mutex<exec::CancelToken>,
+    /// The screen analysis window's state (see `analysis`).
+    pub analysis: Mutex<crate::analysis::state::AnalysisState>,
     pub agent_state: Mutex<AgentState>,
     /// Who may drive the PC from outside (see `bridge::lease`).
     pub lease: Mutex<LeaseBook>,
@@ -73,6 +77,7 @@ impl AppState {
     /// Cancels the current run, whatever the agent state (even Idle: typing from debug commands relies on it).
     pub fn stop_current(&self) {
         self.verifier.locked().cancel();
+        self.analysis.locked().cancel.cancel();
         exec::stop_current(&self.run);
     }
 
@@ -254,6 +259,7 @@ mod tests {
             mic: Mutex::new(None),
             run: Mutex::new(RunScope::new()),
             verifier: Mutex::new(exec::CancelToken::default()),
+            analysis: Default::default(),
             agent_state: Mutex::new(AgentState::Idle),
             lease: Mutex::new(LeaseBook::default()),
             confirm: Mutex::new(None),

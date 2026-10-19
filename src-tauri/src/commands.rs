@@ -259,3 +259,27 @@ pub fn bridge_info() -> BridgeInfo {
         BridgeInfo { available: false, url: String::new(), command: String::new() }
     }
 }
+
+/// Captures the current screen and asks the model about it (no question: what is on it). The
+/// result arrives in the analysis window through `analysis_updated`.
+#[tauri::command]
+pub async fn analyze_screen(app: AppHandle, question: Option<String>) -> AppResult<()> {
+    crate::analysis::run::run(&app, question.as_deref().unwrap_or(""), true).await
+}
+
+/// Asks a new question about the screen the window already shows (no new capture).
+#[tauri::command]
+pub async fn analyze_again(app: AppHandle, question: String) -> AppResult<()> {
+    crate::analysis::run::run(&app, &question, false).await
+}
+
+/// Where the analysis is now, so a window that opens late catches up.
+#[tauri::command]
+pub fn analysis_state(state: State<'_, AppState>) -> crate::analysis::state::Snapshot {
+    state.analysis.locked().snapshot()
+}
+
+#[tauri::command]
+pub fn cancel_analysis(app: AppHandle) {
+    crate::analysis::run::cancel(&app);
+}

@@ -4,5 +4,7 @@
 //! desktop. See `docs/ARCHITECTURE.md`, "Visual analysis".
 
 pub mod report;
+pub mod run;
+pub mod state;
+pub mod window;
 
-pub use report::{Analysis, Finding, Kind, Status};
