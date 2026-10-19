@@ -295,3 +295,70 @@ fn a_failure_task_needs_the_check_and_an_accepted_ending() {
     assert!(passed(&lenient, true, "failed"));
     assert!(!passed(&lenient, false, "failed"));
 }
+
+// ---------------------------------------------------------------- the suite that ships
+
+const SHIPPED: &str = include_str!("../../../scripts/eval/suite.desktop-15.json");
+
+const SHIPPED_IDS: [&str; 15] = [
+    "notepad-write-save", "notepad-edit-existing", "explorer-create-folder", "explorer-rename-file", "settings-open", "calculator-open", "web-click-button", "web-fill-form",
+    "web-scroll-find", "web-checkbox-select", "web-popup-dismiss", "web-small-target", "web-drag-slider", "impossible-task", "delete-denied",
+];
+
+#[test]
+fn the_shipped_suite_has_the_fifteen_tasks_in_order() {
+    let suite = Suite::parse(SHIPPED).expect("the shipped suite is valid");
+    assert_eq!(suite.name, "desktop-15");
+    assert_eq!(suite.tasks.iter().map(|task| task.id.as_str()).collect::<Vec<_>>(), SHIPPED_IDS);
+    let failing: Vec<&str> = suite.tasks.iter().filter(|task| task.expect == Expect::Failure).map(|task| task.id.as_str()).collect();
+    assert_eq!(failing, ["impossible-task", "delete-denied"]);
+}
+
+#[test]
+fn every_shipped_task_stays_inside_the_work_folder_once_resolved() {
+    let (work, out) = (TempDir::new("shipped-work"), TempDir::new("shipped-out"));
+    // The suite is written with Windows separators; on other systems `\` is not one, so use `/` there.
+    let suite = Suite::parse(&if cfg!(windows) { SHIPPED.to_string() } else { SHIPPED.replace("\\\\", "/") }).unwrap();
+    for task in &suite.tasks {
+        let resolved = task.resolve(&Vars { work: work.0.clone(), run: "r1x1-1".into(), fixtures: PathBuf::from("/repo/scripts/eval/fixtures"), fixtures_url: "file:///repo/scripts/eval/fixtures".into() });
+        assert_eq!(resolved.confine(&roots(&work, &out)), Ok(()), "{}", task.id);
+        assert!(!resolved.prompt.contains('{'), "{} still has a placeholder: {}", task.id, resolved.prompt);
+    }
+}
+
+#[test]
+fn every_web_task_opens_a_fixture_page_that_exists_and_checks_its_own_run() {
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../scripts/eval/fixtures");
+    let suite = Suite::parse(SHIPPED).unwrap();
+    let mut pages = 0;
+    for task in suite.tasks.iter().filter(|task| task.prompt.contains("{fixtures_url}/")) {
+        let page = task.prompt.split("{fixtures_url}/").nth(1).and_then(|rest| rest.split('?').next()).unwrap();
+        let html = std::fs::read_to_string(fixtures.join(page)).unwrap_or_else(|_| panic!("{}: fixtures/{page} is missing", task.id));
+        assert!(task.prompt.contains("?run={run}"), "{}: the page must be told the run id", task.id);
+        assert!(html.contains("URLSearchParams(location.search).get('run')"), "{page} does not read the run id");
+        // The success title must name the run, so a page left over from an earlier run cannot pass this one.
+        let text = match &task.check {
+            Check::AnyWindowTitleContains { text } => text.clone(),
+            Check::Not { check } => match check.as_ref() {
+                Check::AnyWindowTitleContains { text } => text.clone(),
+                other => panic!("{}: unexpected {other:?}", task.id),
+            },
+            other => panic!("{}: a web task is checked by a window title, not {other:?}", task.id),
+        };
+        assert!(text.starts_with("RUNE-OK {run}"), "{}: {text}", task.id);
+        pages += 1;
+    }
+    assert_eq!(pages, 8, "seven web tasks and the impossible one");
+    let missing = std::fs::read_to_string(fixtures.join("missing.html")).unwrap();
+    assert!(!missing.contains("ok("), "the page of the impossible task never reports success");
+    assert!(!missing.to_lowercase().contains("submit\""), "and has no Submit button to find");
+}
+
+#[test]
+fn the_calculator_task_accepts_either_program_name_and_closes_both() {
+    let suite = Suite::parse(SHIPPED).unwrap();
+    let task = suite.tasks.iter().find(|task| task.id == "calculator-open").unwrap();
+    assert_eq!(task.check, Check::Any { checks: vec![Check::ProcessRunning { name: "CalculatorApp.exe".into() }, Check::ProcessRunning { name: "Calculator.exe".into() }] });
+    let killed: Vec<&str> = task.teardown.iter().filter_map(|step| if let Step::KillProcess { name } = step { Some(name.as_str()) } else { None }).collect();
+    assert_eq!(killed, ["CalculatorApp.exe", "Calculator.exe"]);
+}
