@@ -1,4 +1,5 @@
 mod agent;
+mod archive;
 mod backend;
 mod bridge;
 mod commands;
@@ -79,6 +80,9 @@ pub fn run() {
                         .build(),
                 )?;
             }
+
+            // Before anything can look or listen: see `archive` for why this has no off switch.
+            let _ = archive::init(app.handle());
 
             let loaded = settings::load(app.handle());
             let hotkeys = Hotkeys::from_settings(&loaded);

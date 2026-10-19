@@ -66,6 +66,11 @@ pub fn assess(action: &Action, reason: &str, foreground: &Foreground) -> Assessm
         return result;
     }
 
+    // The folder that holds the record of what the agent saw and heard is not the agent's to touch.
+    if foreground.process == "explorer" && contains_phrase(&foreground.title, &crate::archive::FOLDER.to_lowercase()) {
+        result.raise(Risk::High, "This is Rune Studio's own record folder".to_string());
+    }
+
     // What the agent says it is doing is the cheapest and most reliable signal.
     if let Some(word) = mentions_any(reason, HIGH_WORDS) {
         result.raise(Risk::High, format!("The agent describes it as \"{word}\""));
@@ -193,6 +198,12 @@ mod tests {
         let mut calm = Assessment::low();
         assess_control("Save", &mut calm);
         assert_eq!(calm.risk, Risk::Low);
+    }
+
+    #[test]
+    fn anything_in_the_record_folder_needs_a_yes() {
+        assert_eq!(risk(&click(), "open it", &fg("Rune Studio", "explorer")), Risk::High);
+        assert_eq!(risk(&click(), "open it", &fg("Rune Studio", "notepad")), Risk::Low);
     }
 
     #[test]

@@ -66,8 +66,15 @@ pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
         (settings.base_url.clone(), settings.model.clone())
     };
     let api_key = settings::api_key();
+    // The recording is stored before anything is done with it; if it cannot be, it is not acted on.
+    let wav = direct::wav(&utterance);
+    if let Err(err) = crate::archive::save(crate::archive::Kind::Voice, "utterance", "wav", &wav) {
+        log::error!("{err}");
+        heard(app, "", "Not acted on: the recording could not be stored");
+        return;
+    }
     let client = ChatClient { http: &state.http, base_url: &base_url, api_key: api_key.as_deref(), model: &model };
-    let audio = BASE64.encode(direct::wav(&utterance));
+    let audio = BASE64.encode(&wav);
     match direct::listen(&client, &audio, events::agent_state(app)).await {
         Ok(Some(listened)) => {
             log::info!("heard: {:?}", listened.intent);
