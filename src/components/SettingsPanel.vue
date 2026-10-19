@@ -108,8 +108,18 @@ async function save() {
       <SettingsGroup title="Models">
         <SettingsRow v-model="draft.model" label="Model" icon="eye" />
         <SettingsToggle v-model="draft.fastChecks" label="Fast checks" icon="fast" />
-        <SettingsRow v-if="draft.fastChecks" v-model="draft.decisionModel" label="Decision" icon="fast" />
-        <SettingsRow v-if="draft.fastChecks" v-model="draft.decisionUrl" label="Decision URL" icon="fast" />
+        <SettingsRow
+          v-if="draft.fastChecks"
+          v-model="draft.decisionModel"
+          label="Decision"
+          icon="fast"
+        />
+        <SettingsRow
+          v-if="draft.fastChecks"
+          v-model="draft.decisionUrl"
+          label="Decision URL"
+          icon="fast"
+        />
         <SettingsToggle v-model="draft.showThinking" label="Show thinking" icon="thinking" />
       </SettingsGroup>
 
