@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const check = vi.fn()
-const relaunch = vi.fn()
+const check = vi.fn<(options?: { timeout?: number }) => Promise<unknown>>()
+const relaunch = vi.fn<() => Promise<void>>()
 
 vi.mock('@tauri-apps/plugin-updater', () => ({ check: (...args: unknown[]) => check(...args) }))
 vi.mock('@tauri-apps/plugin-process', () => ({ relaunch: () => relaunch() }))
@@ -9,16 +9,18 @@ vi.mock('@tauri-apps/api/app', () => ({ getVersion: () => Promise.resolve('0.0.3
 
 import { resetUpdaterForTests, useUpdater } from './useUpdater'
 
-type Event =
+type DownloadEvent =
   | { event: 'Started'; data: { contentLength?: number } }
   | { event: 'Progress'; data: { chunkLength: number } }
   | { event: 'Finished' }
 
-function fakeUpdate(events: Event[] = []) {
+function fakeUpdate(events: DownloadEvent[] = []) {
   return {
     version: '0.0.4',
     body: 'notes',
-    downloadAndInstall: vi.fn(async (on: (event: Event) => void) => events.forEach(on)),
+    downloadAndInstall: vi.fn<(on: (event: DownloadEvent) => void) => Promise<void>>(async (on) =>
+      events.forEach(on),
+    ),
   }
 }
 
@@ -68,7 +70,7 @@ describe('useUpdater', () => {
     const updater = useUpdater()
     await updater.check(true)
     const seen: (number | null)[] = []
-    update.downloadAndInstall.mockImplementation(async (on: (event: Event) => void) => {
+    update.downloadAndInstall.mockImplementation(async (on: (event: DownloadEvent) => void) => {
       on({ event: 'Started', data: { contentLength: 200 } })
       on({ event: 'Progress', data: { chunkLength: 50 } })
       seen.push(updater.progress.value)
