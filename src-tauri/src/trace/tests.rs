@@ -315,3 +315,23 @@ fn the_settings_snapshot_has_only_the_four_settings() {
     assert_eq!(snapshot["max_steps"], 12);
     assert_eq!(snapshot["ask_every_action"], true);
 }
+
+#[test]
+fn the_open_run_is_tracked_so_stop_can_end_it() {
+    let dir = TempDir::new();
+    let recorder = Recorder::start(&dir.db());
+    assert_eq!(recorder.open_run_id(), None);
+    recorder.end_open_run("stopped", "nothing is open: nothing happens");
+    recorder.begin_run(run("a", "2026-10-19T09:00:00Z"));
+    assert_eq!(recorder.open_run_id().as_deref(), Some("a"));
+    recorder.end_open_run("stopped", "");
+    assert_eq!(recorder.open_run_id(), None);
+    recorder.begin_run(run("b", "2026-10-19T10:00:00Z"));
+    recorder.end_run("a", "failed", "a late end of another run leaves b open");
+    assert_eq!(recorder.open_run_id().as_deref(), Some("b"));
+    recorder.end_run("b", "succeeded", "Done");
+    assert_eq!(recorder.open_run_id(), None);
+    recorder.flush();
+    let outcome = |id: &str| get_run(&dir.db(), id).unwrap().unwrap().run.outcome;
+    assert_eq!((outcome("a").as_deref(), outcome("b").as_deref()), (Some("stopped"), Some("succeeded")));
+}

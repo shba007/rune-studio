@@ -105,20 +105,20 @@ pub fn start_planned(app: &AppHandle, task: String, plan: Option<Vec<String>>) {
 /// One step's row for the flight recorder. It is sent when it goes out of scope, so every way out of
 /// a step (a `continue`, a `return`, even a panic) leaves its row. A step that ends with no result
 /// recorded counts as cancelled: the early returns of the loop are all Stop.
-struct StepRow {
+pub(crate) struct StepRow {
     trace: trace::Recorder,
-    rec: StepRecord,
+    pub(crate) rec: StepRecord,
 }
 
 impl StepRow {
-    fn new(trace: &trace::Recorder, run_id: &str, step: u32) -> Self {
+    pub(crate) fn new(trace: &trace::Recorder, run_id: &str, step: u32) -> Self {
         let mut rec = StepRecord::new(run_id, step);
         rec.started_utc = Some(trace::now_utc());
         Self { trace: trace.clone(), rec }
     }
 
     /// Ends the step as failed with a message.
-    fn fail(&mut self, message: &str) {
+    pub(crate) fn fail(&mut self, message: &str) {
         self.rec.result = Some("failed".into());
         self.rec.error = Some(message.to_string());
     }
@@ -132,7 +132,7 @@ impl Drop for StepRow {
     }
 }
 
-fn millis(started: Instant) -> Option<i64> {
+pub(crate) fn millis(started: Instant) -> Option<i64> {
     i64::try_from(started.elapsed().as_millis()).ok()
 }
 

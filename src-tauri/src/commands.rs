@@ -104,6 +104,7 @@ pub fn stop(app: AppHandle) {
     }
     // Whatever task was running is over: close its session folder (a no-op when none is open).
     crate::archive::end_session(None, "stopped", "");
+    app.state::<AppState>().trace.end_open_run("stopped", "");
     if events::agent_state(&app) != AgentState::Idle {
         events::set_agent_state(&app, AgentState::Stopped);
         crate::voice::resume_listening_soon(&app);

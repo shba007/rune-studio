@@ -212,6 +212,8 @@ pub enum Msg {
 pub struct Recorder {
     tx: Option<SyncSender<Msg>>,
     dropped: Arc<AtomicU64>,
+    /// The run that has begun and not ended, so Stop and the idle timer can end it without knowing its id.
+    open: Arc<Mutex<Option<String>>>,
 }
 
 static LAST_WARNING: Mutex<Option<Instant>> = Mutex::new(None);
@@ -228,7 +230,7 @@ pub(crate) fn warn_rarely(message: impl FnOnce() -> String) {
 impl Recorder {
     /// A recorder that records nothing (the database could not be opened).
     pub fn noop() -> Self {
-        Self { tx: None, dropped: Arc::default() }
+        Self { tx: None, dropped: Arc::default(), open: Arc::default() }
     }
 
     /// Opens (creating if needed) the database at `path` and starts its writer thread. If that
@@ -257,7 +259,7 @@ impl Recorder {
         };
         let (tx, rx) = sync_channel(capacity);
         match std::thread::Builder::new().name("trace-writer".into()).spawn(move || writer(db, rx)) {
-            Ok(_) => Self { tx: Some(tx), dropped: Arc::default() },
+            Ok(_) => Self { tx: Some(tx), dropped: Arc::default(), open: Arc::default() },
             Err(err) => {
                 log::error!("could not start the trace writer: {err}");
                 Self::noop()
@@ -278,9 +280,28 @@ impl Recorder {
         }
     }
 
+    fn open_run(&self) -> std::sync::MutexGuard<'_, Option<String>> {
+        self.open.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// The id of the run that has begun and not ended, if any.
+    pub fn open_run_id(&self) -> Option<String> {
+        self.open_run().clone()
+    }
+
     pub fn begin_run(&self, info: RunInfo) {
         let info = RunInfo { task: cap(&info.task, TEXT_CAP), ..info };
+        *self.open_run() = Some(info.id.clone());
         self.send(Msg::BeginRun(info));
+    }
+
+    /// Ends whichever run is open (Stop, the idle timer, an outside agent's `rune_done`). Does
+    /// nothing when none is.
+    pub fn end_open_run(&self, outcome: &str, summary: &str) {
+        let open = self.open_run().take();
+        if let Some(id) = open {
+            self.end_run(&id, outcome, summary);
+        }
     }
 
     pub fn set_plan(&self, run_id: &str, plan_json: &str) {
@@ -298,6 +319,11 @@ impl Recorder {
 
     /// Ends a run. Only the first end counts, like the session folder's.
     pub fn end_run(&self, run_id: &str, outcome: &str, summary: &str) {
+        let mut open = self.open_run();
+        if open.as_deref() == Some(run_id) {
+            *open = None;
+        }
+        drop(open);
         self.send(Msg::EndRun { run_id: run_id.to_string(), ended_utc: now_utc(), outcome: outcome.to_string(), summary: cap(summary, TEXT_CAP) });
     }
 
@@ -317,7 +343,7 @@ impl Recorder {
     #[cfg(test)]
     fn undrained(capacity: usize) -> (Self, Receiver<Msg>) {
         let (tx, rx) = sync_channel(capacity);
-        (Self { tx: Some(tx), dropped: Arc::default() }, rx)
+        (Self { tx: Some(tx), dropped: Arc::default(), open: Arc::default() }, rx)
     }
 }
 
