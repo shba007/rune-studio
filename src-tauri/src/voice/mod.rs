@@ -65,17 +65,20 @@ pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
     let api_key = settings::api_key();
     // The recording is stored before anything is done with it; if it cannot be, it is not acted on.
     let wav = direct::wav(&utterance);
-    if let Err(err) = crate::archive::save(crate::archive::Kind::Voice, "utterance", "wav", &wav) {
-        log::error!("{err}");
-        heard(app, "", "Not acted on: the recording could not be stored");
-        return;
-    }
+    let saved = match crate::archive::save(crate::archive::Kind::Voice, "utterance", "wav", &wav) {
+        Ok(path) => path,
+        Err(err) => {
+            log::error!("{err}");
+            heard(app, "", "Not acted on: the recording could not be stored");
+            return;
+        }
+    };
     let client = ChatClient { http: &state.http, base_url: &base_url, api_key: api_key.as_deref(), model: &model };
     let audio = BASE64.encode(&wav);
     match direct::listen(&client, &audio, events::agent_state(app)).await {
         Ok(Some(listened)) => {
             log::info!("heard: {:?}", listened.intent);
-            apply(app, listened.intent, listened.goals, "");
+            apply(app, listened.intent, listened.goals, "", Some(saved.as_path()));
         }
         Ok(None) => {}
         Err(err) => {
@@ -87,13 +90,14 @@ pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
 
 /// Does what the words ask for. Separate from `handle` so it can be tested without audio.
 pub fn act(app: &AppHandle, text: &str) {
-    apply(app, intent::interpret(text), None, text);
+    apply(app, intent::interpret(text), None, text, None);
 }
 
 /// Does what an intent asks for. `text` is what was typed or heard, if there is a transcript; for
 /// speech the model's own wording of a task is shown instead. `goals` are the plan an
-/// audio model already made for a new task.
-fn apply(app: &AppHandle, intent: Intent, goals: Option<Vec<String>>, text: &str) {
+/// audio model already made for a new task. `recording` is the stored audio of what was said, if
+/// any: when it starts a task it is moved into that task's session folder.
+fn apply(app: &AppHandle, intent: Intent, goals: Option<Vec<String>>, text: &str, recording: Option<&std::path::Path>) {
     let now = events::agent_state(app);
     match intent {
         Intent::Stop => {
@@ -131,7 +135,13 @@ fn apply(app: &AppHandle, intent: Intent, goals: Option<Vec<String>>, text: &str
                 }
             } else {
                 match crate::commands::begin_task_planned(app, &said, true, goals) {
-                    Ok(()) => heard(app, &said, "Starting"),
+                    Ok(()) => {
+                        // The task's session folder exists now; the words that started it belong in it.
+                        if let Some(recording) = recording {
+                            crate::archive::adopt(recording);
+                        }
+                        heard(app, &said, "Starting");
+                    }
                     Err(err) => heard(app, &said, err.to_string()),
                 }
             }

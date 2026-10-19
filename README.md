@@ -8,7 +8,7 @@
 <h1 align="center">Rune Studio</h1>
 
 <p align="center">
-  <strong>Multimodal AI Workflow Harness & 3D Agentic Studio for Rune Kit & Rune Infer</strong>
+  <strong>A voice and text driven desktop agent that controls your PC through a local model server (rune-infer)</strong>
 </p>
 
 <p align="center">
@@ -25,291 +25,294 @@
 
 ## Overview
 
-**Rune Studio** is an extensible desktop GUI and multimodal AI workflow harness designed for **Rune Kit / Tools** and **Rune Infer**. It bridges ComfyUI-style generative asset pipelines (dual-image VLM forensic arbitration, continuous fidelity ranking, and star clustering) with modern agentic execution harnesses (3D spatial interactive studio, LLM tool calling, and MCP/skill extensible orchestration).
+Rune Studio is a small floating desktop app. You give it a command by typing or speaking, and it carries the command out on your PC: it looks at the screen, picks **one** action, performs it with the real mouse and keyboard, checks the result and repeats until the task is done.
 
-Engineered on **Tauri v2**, **Vue 3**, **Three.js / TresJS**, and **Rust**, Rune Studio operates entirely locally with zero telemetry, fast disk caching in `.rune_cache`, and optional local S3/RustFS streaming.
+- **Windows 11 is the supported platform.** Screen capture, input, UI Automation, app launching, foreground-window detection and the pointer effects are implemented for Windows only. The release workflow also builds macOS and Linux bundles, but on those systems the Windows-only parts are empty stubs (see [Platform support](#platform-support)).
+- **All AI inference goes to rune-infer**, a local OpenAI-compatible model server that you run yourself. The app never talks to a cloud model directly.
+- **The model only proposes actions.** Nothing reaches the OS except through the [safety gate](#safety) and the executor.
+- **Everything the agent sees or hears is recorded** on your disk, and this cannot be switched off (see [Privacy and the record](#privacy-and-the-record)).
 
-### Key Capabilities
+Rust owns capture, input, UI Automation, audio and the agent loop (`src-tauri/`). Vue 3 + Tailwind 4 render the pill and the screen overlay (`src/`).
 
-- 🧠 **Dual-Engine VLM Arbitration & Deduplication**: Automated side-by-side forensic image and video analysis across 4 evaluation intents (biometrics, product models, exact/near deduplication, and scene themes).
-- 🔬 **Quality-Gated Multi-Exemplar Star Clustering**: Continuous forensic fidelity scoring (0.0 to 10.0) that filters occluded or blurred captures and clusters assets into coherent identity groups in $O(N \cdot K)$ time.
-- 🌐 **3D Spatial Agent Simulation Studio**: Interactive Three.js/TresJS canvas with dynamic physical elements (monitor, printer, chair, lighting) driven by real-time LLM function calling and tool dispatch.
-- ⚡ **High-Throughput Native Rust IPC**: Multi-threaded thumbnail generation (parallel JPEG scaling + FFmpeg video keyframe extraction), recursive directory walking, and non-destructive batch file operations.
-- 🗄️ **Local Disk Cache & S3 Streaming**: Zero-cloud dependency caching in `.rune_cache` with optional AWS SigV4 curl uploads to local MinIO/RustFS or remote S3 buckets.
-- 🖥️ **Cross-Platform Target Architecture**: Native desktop execution for Windows, macOS (Apple Silicon & Intel), and Linux, with containerized Docker web deployment and Android mobile builds.
+### What it can do
+
+| Area                | Behaviour                                                                                                                                                                                                          |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Actions**         | `click`, `click_element` (by UI Automation id), `type_text`, `press_keys`, `scroll`, `drag`, `open_app`, `wait`, `ask_user`, `done`. One action per model turn.                                                    |
+| **Planning**        | A short planning call splits a task into one to six goals, shown as arcs around the orb. A simple task can skip the plan (needs the optional decision model).                                                      |
+| **Voice**           | Hands-free: click the mic once and talk. An energy-based detector cuts utterances; the omni model hears the audio directly (there is no separate speech-to-text model).                                            |
+| **Safety gate**     | Every action is assessed; high-risk ones wait for your Yes. "Ask before every action" asks about everything. See [Safety](#safety).                                                                                |
+| **Stuck detection** | If the screen is unchanged after two actions the model is warned; after five the run stops.                                                                                                                        |
+| **Outside agents**  | In builds with the `agent-bridge` feature, an MCP server on `127.0.0.1:47600` lets agents such as Claude Code use the same eyes and hands, behind the same gate. See [Outside agents](#outside-agents-mcp-bridge). |
+| **Auto-update**     | Checks GitHub releases (signed with the Tauri updater key) 5 s after launch and offers an Update / Later prompt. Never interrupts a running task.                                                                  |
 
 ---
 
-## System Architecture
+## How it works
+
+```
+input (voice/text) -> intent -> observe screen -> choose ONE action -> safety gate -> execute -> verify -> repeat
+```
 
 ```mermaid
-flowchart TD
-    subgraph Frontend["Frontend Client (Vue 3 + Vite-Plus + TresJS)"]
-        UI["App Shell (AppSidebar + AppHeader)"]
-        MCView["Media Comparator View"]
-        StudioView["3D World Studio View"]
-        TR["ToolRegistry (globalTools)"]
-        Store["Pinia mediaStore"]
-
-        UI --> MCView
-        UI --> StudioView
-        StudioView --> TR
-        MCView --> Store
+flowchart LR
+    subgraph UI["Vue 3 webview (src/)"]
+        Pill["AgentPill: orb, composer, settings, task panel"]
+        Overlay["ControlOverlay: one transparent click-through window per monitor"]
     end
 
-    subgraph TauriIPC["Tauri v2 Native Bridge (Rust 'app_lib')"]
-        Scanner["media::scan_directory"]
-        Thumbs["media::generate_thumbnails (Parallel Threadpool)"]
-        FileOps["media::execute_file_actions (MOVE / COPY)"]
-        CacheOps["media::save_artifact / load_artifact / clear_cache"]
-        S3Up["media::upload_media_to_s3 (curl + AWS SigV4)"]
+    subgraph Core["Rust core (src-tauri/src/)"]
+        Loop["agent::run (loop, plan, steer, stuck)"]
+        Gate["safety::gate (rules + optional risk opinion)"]
+        Body["agent::body + exec (SendInput via enigo)"]
+        Eyes["observe::screenshot (xcap) + exec::uia"]
+        Voice["voice (cpal, VAD, intent)"]
+        Bridge["bridge (axum MCP, feature agent-bridge)"]
+        Archive["archive (Documents/Rune Studio)"]
     end
 
-    subgraph InferenceEngine["Inference Runtime (Rune Infer / VLM)"]
-        HealthEndpoint["GET /health"]
-        ModelsEndpoint["GET /v1/models"]
-        DirectRoute["POST /v1/inference?engine=..."]
-        ChatRoute["POST /v1/chat/completions"]
-    end
+    Infer["rune-infer (OpenAI-compatible)\n/v1/chat/completions, /health, /v1/models, /v1/decisions"]
 
-    subgraph Storage["Storage & Hardware"]
-        LocalFS["Local Filesystem (Photos / Videos)"]
-        RuneCache["Disk Cache (.rune_cache/thumbnails & assessments)"]
-        S3Bucket["RustFS / MinIO S3 Object Storage (:9000)"]
-        FFmpeg["FFmpeg (Video Frame Extraction)"]
-    end
-
-    MCView -- "invoke()" --> TauriIPC
-    StudioView -- "Execute Task" --> DirectRoute
-    StudioView -- "Fallback ToolCall" --> ChatRoute
-    MCView -- "Assess / Arbitrate" --> ChatRoute
-    Store -- "Probe Capabilities" --> HealthEndpoint
-    Store -- "List Modalities" --> ModelsEndpoint
-
-    Scanner --> LocalFS
-    Thumbs --> FFmpeg
-    Thumbs --> RuneCache
-    CacheOps --> RuneCache
-    FileOps --> LocalFS
-    S3Up --> S3Bucket
+    Pill <-- "Tauri commands / events" --> Core
+    Overlay <-- "events" --> Core
+    Voice --> Loop
+    Loop --> Eyes --> Archive
+    Loop -- "chat + tools" --> Infer
+    Loop --> Gate --> Body
+    Bridge --> Gate
+    Bridge --> Eyes
 ```
 
----
+1. **Observe.** The primary monitor is captured, downscaled to at most 1280 px on the long edge and encoded as JPEG (quality 80). In parallel, the controls of the front window that can take the keyboard are listed through UI Automation as ids `e1`, `e2`, ... (at most 60, 1.5 s budget).
+2. **Decide.** One `POST /v1/chat/completions` carries the system prompt, the task, the plan, the last 12 steps as text, the control list and the screenshot. `tool_choice` is `required`, `temperature` is 0, and thinking is switched with `chat_template_kwargs.enable_thinking`.
+3. **Gate.** The action's risk is the higher of what the model said and what the local rules find. High risk pauses for your Yes.
+4. **Act.** The cursor glides to the target and the action runs; Stop is checked between characters, wheel notches and cursor steps.
+5. **Settle.** A fixed pause (0.5 s, or 1.8 s after launching an app) before the next look.
 
-## Workspaces
+Coordinates are model-space `0..1000` on both axes across the whole screenshot; `model/coords.rs` is the only place that converts them to physical pixels (per-monitor DPI aware, negative monitor origins supported).
 
-### 1. Media Comparator & Forensic Profiler
-
-Accessible at `/media-comparator`. Designed for high-volume visual dataset organization, biometric clustering, and duplicate pruning.
-
-#### Comparison Intent Presets
-
-| Intent Key      | Label                  | Badge                | Evaluation Strategy                                                                                                                                                                                                                 |
-| --------------- | ---------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `same_person`   | Identity / Person      | `👤 Face & Identity` | Examines invariant anatomical landmarks: craniofacial bone structure, interpupillary distance ratio, ear shape/lobule attachment, nasal root/bridge profile. Strictly ignores clothing, hair changes, accessories, and backgrounds. |
-| `same_product`  | Product / Item         | `📦 Product Model`   | Forensic product verification analyzing silhouette geometry, edge contours, seams, hardware, logos, and materials, ignoring the wearer or scene setting.                                                                            |
-| `duplicates`    | Near / Exact Duplicate | `📑 Deduplication`   | Photographic deduplication analyzing framing, camera angle, subject pose, and composition.                                                                                                                                          |
-| `same_category` | Theme / Category       | `🎨 Scene Theme`     | Visual scene and environmental context classification evaluating lighting ambiance and scene category.                                                                                                                              |
-
-#### Forensic Fidelity Scoring Formula ($0.0 - 10.0$)
-
-Before clustering, each media item is evaluated using a continuous multi-factor fidelity metric (`calculateFidelityScore`):
-
-$$\text{Score} = \text{Resolution} + \text{Illumination} + \text{Occlusion} + \text{MotionBlur} + \text{AngleBonus}$$
-
-- **Resolution (Max 3.0 pts)**: `high` (+3.0) | `medium` (+2.0) | `low` (+1.0)
-- **Illumination (Max 2.5 pts)**: `uniform` (+2.5) | `side_shadow` (+1.8) | `backlit` (+1.2) | `dim`/`harsh` (+0.8)
-- **Occlusion (Max 2.5 pts)**: `none` (+2.5) | `partial_under_25` (+1.5) | `heavy_under_60` (+0.5) | `severe_over_60` (0.0)
-- **Motion Blur (Max 1.0 pt)**: `none` (+1.0) | `slight` (+0.5) | `severe` (+0.1)
-- **Angle Bonus (Max 1.0 pt)**: `frontal` (+1.0) | `three_quarter` (+0.8) | `profile` (+0.4) | `unobservable`/other (+0.1)
-
-> **Exemplar Qualification**: Items with $\text{Score} \ge 8.0$ are classified as **Optimal Anchor Candidates**. Only assets with $\text{Score} \ge 7.0$ presenting complementary unobserved angles are promoted to a cluster's exemplar pool (up to 3 exemplars per cluster).
-
-#### Quality-Gated Multi-Exemplar Star Clustering
-
-1. **Sort Assets**: Candidate assets are sorted by `fidelityScore` descending so degraded captures never seed clusters.
-2. **Probing ($O(N \cdot K)$)**: Candidate is tested against exemplar pools of existing clusters via direct side-by-side VLM arbitration.
-3. **Boundary Reconciliation ($O(K^2)$)**: Boundary clusters are merged if secondary exemplars confirm identity match.
-4. **Safe Staging**: Duplicates and clusters are reviewed in `StagedActionsModal` before any physical file move occurs. Collisions are automatically avoided with numeric suffixes (`_1`, `_2`).
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full design and [`docs/AGENT-GUIDE.md`](docs/AGENT-GUIDE.md) for the contract outside agents are written against.
 
 ---
 
-### 2. 3D World Studio & AI Tool Registry
+## Using the app
 
-Accessible at `/studio`. Provides an interactive spatial 3D viewport powered by `@tresjs/core` and `three` where physical entities respond to AI function calls in real time.
+| Action                   | Default        | Notes                                                                                                      |
+| ------------------------ | -------------- | ---------------------------------------------------------------------------------------------------------- |
+| Open / collapse the card | `Alt+Q`        | Setting `toggleHotkey`. Also opens by itself when the agent needs you.                                     |
+| **Stop**                 | `Ctrl+Alt+Esc` | Setting `stopHotkey`. Also: the tray menu's **Stop**, the orb while a task runs, the word "stop" by voice. |
+| Voice                    | Mic button     | Click once to listen, again to stop. Anything spoken becomes a task (idle) or steering (working).          |
 
-#### Registered AI Tools (`ToolRegistry`)
+Launching Rune Studio a second time shows the existing pill instead of starting another copy.
 
-The `globalTools` singleton normalizes, validates, and dispatches LLM tool calls with fuzzy name and alias resolution:
+The window is a frameless, always-on-top, capture-excluded pill anchored to the bottom-right of the primary monitor. While the agent acts it is click-through, so it can never block a click meant for another app.
 
-| Tool Name            | Aliases                                                                                    | Parameters Schema                              | Action Performed                                                                                                        |
-| -------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `print_document`     | `print`, `printer_print`, `start_print`                                                    | `{ document_name?: string, copies?: number }`  | Triggers 3D printer animation, ejects paper plane (+0.35 Y), activates status indicator light.                          |
-| `scan_document`      | `scan`, `printer_scan`, `start_scan`                                                       | `{ target?: string }`                          | Triggers scanner illumination sequence (2.5s duration).                                                                 |
-| `set_room_lighting`  | `toggle_room_lights`, `set_ambient_light`, `room_lights`                                   | `{ state: "on" \| "off", intensity?: number }` | Toggles ambient/directional Three.js lighting and adjusts dynamic intensity ($0.1 - 2.0$).                              |
-| `rotate_chair`       | `rotate_item`, `turn_chair`                                                                | `{ degrees?: number }`                         | Rotates desk chair mesh around the Y-axis by specified degrees (default `45°`).                                         |
-| `set_monitor_power`  | `toggle_monitor`, `turn_on_monitor`, `turn_off_monitor`, `power_monitor`, `set_pc_power`   | `{ state: "on" \| "off" }` _(required)_        | Switches PC monitor screen mesh emissive illumination on/off.                                                           |
-| `set_screen_display` | `set_screen_theme`, `display_on_monitor`, `change_wallpaper`, `open_editor`, `matrix_mode` | `{ theme: string }` _(required)_               | Updates PC monitor emissive theme (`code`, `matrix`, `terminal`, `cyberpunk`, `blue`, `white`, `amber`, or custom hex). |
+### Voice words
+
+| Said (whole utterance)                 | Agent idle       | Agent working           | A question is on screen                                                                   |
+| -------------------------------------- | ---------------- | ----------------------- | ----------------------------------------------------------------------------------------- |
+| "stop", "cancel", "never mind"         | nothing          | stops                   | stops                                                                                     |
+| "stop listening", "mute", "that's all" | closes the mic   | closes the mic          | closes the mic                                                                            |
+| "no", "don't", "deny"                  | nothing          | nothing                 | answers no                                                                                |
+| "yes", "go ahead", "do it"             | nothing          | nothing                 | answers yes **only to the agent's own questions**; approving a risky action needs a click |
+| anything else                          | starts that task | steers the running task | asks you to say yes or no                                                                 |
+
+### Settings
+
+Settings are saved to `settings.json` in the app config folder (identifier `dev.shirsendu-bairagi.rune-studio`). The rune-infer API key is kept in the OS credential store, never in the file.
+
+| Group          | Setting                        | Default                           |
+| -------------- | ------------------------------ | --------------------------------- |
+| Connection     | Base URL                       | `http://127.0.0.1:8080`           |
+| Connection     | API key                        | none (credential store)           |
+| Models         | Model                          | `gemma-4-12b-it`                  |
+| Models         | Fast checks                    | off                               |
+| Models         | Decision model / URL           | `d1-3b-q8-0` / empty              |
+| Models         | Show thinking                  | off                               |
+| Safety         | Ask before every action        | off                               |
+| Shortcuts      | Open and close / Stop          | `Alt+Q` / `Ctrl+Alt+Escape`       |
+| External agent | Allow outside agent            | off (only shown in bridge builds) |
+| Updates        | Check for updates              | automatic at launch               |
+| Developer      | Eyes and hands, state switcher | development builds only           |
+
+`maxSteps` (default 30) is in `settings.json` but has no UI control.
+
+### The model server
+
+Any OpenAI-compatible server works if it supports:
+
+| Need                                | How                                                                                                        |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Multimodal content                  | `text`, `image_url` (data-URI JPEG) and `audio_url` (data-URI WAV, 16 kHz mono) parts                      |
+| Tool calls                          | `tools` + `tool_choice: "required"`                                                                        |
+| Thinking on/off                     | `chat_template_kwargs: {"enable_thinking": bool}`; thinking returned in `reasoning` or `reasoning_content` |
+| Streaming (only with Show thinking) | SSE with reasoning and tool-call deltas                                                                    |
+| Health / models                     | `GET /health` (no auth), `GET /v1/models`, `Authorization: Bearer <key>`                                   |
+| Optional fast checks                | `POST /v1/decisions` at the Decision URL                                                                   |
+
+Output is capped at 512 tokens per turn (3000 with Show thinking) and a request times out after 300 s. The settings page probes `/health` and `/v1/models` (4 s timeout) and reports whether the configured model is served.
 
 ---
 
-## Tauri IPC Command Reference (Rust Backend)
+## Safety
 
-All commands are defined in `src-tauri/src/media.rs` and bound via `tauri::generate_handler!`:
+Nothing risky runs without your Yes, whoever chose the action (the built-in model or an outside agent).
 
-| Command Name                | Input Arguments                                                              | Return Type                             | Implementation Details                                                                                                                                                                                                                         |
-| --------------------------- | ---------------------------------------------------------------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pick_directory`            | _(none)_                                                                     | `Result<Option<String>, String>`        | Launches native async directory picker dialog via `rfd::AsyncFileDialog`. Returns absolute path or `None`.                                                                                                                                     |
-| `scan_directory`            | `path: String`, `recursive: bool`                                            | `Result<Vec<MediaItemPayload>, String>` | Recursively or shallowly traverses folder with `walkdir`. Filters hidden entries. Supports images (`jpg`, `jpeg`, `png`, `webp`, `gif`, `bmp`, `avif`) and videos (`mp4`, `webm`, `mov`, `mkv`). Checks for existing `.rune_cache/thumbnails`. |
-| `generate_thumbnails`       | `items: Vec<MediaItemPayload>`, `folder_path: String`                        | `Result<Vec<ThumbnailResult>, String>`  | Multi-threaded worker pool (bounded between 4 and 8 threads). Generates 360x360 JPEG thumbnails. For videos, invokes `ffmpeg` with `-ss 00:00:01` (fallback `00:00:00`). Saves to `.rune_cache/thumbnails/{size}_{modified}.jpg`.              |
-| `get_media_base64`          | `path: String`                                                               | `Result<String, String>`                | Reads file from disk, detects MIME type, and returns `data:<mime>;base64,<base64_data>`.                                                                                                                                                       |
-| `upload_media_to_s3`        | `file_path: String`, `bucket_url: String`                                    | `Result<String, String>`                | Invokes system `curl` with AWS SigV4 authentication (`--aws-sigv4 aws:amz:<region>:s3`, `--user <key>:<secret>`). Falls back to unauthenticated upload for local emulators. Returns object URL.                                                |
-| `execute_file_actions`      | `actions: Vec<FileActionRequest>`                                            | `Result<ActionResultPayload, String>`   | Executes batch file operations (`MOVE` or `COPY`). Automatically creates destination directories and resolves name collisions by appending `_1`, `_2`, etc. Returns `{ successCount, errors }`.                                                |
-| `save_artifact_to_disk`     | `folder_path: String`, `file_hash: String`, `intent: String`, `data: String` | `Result<(), String>`                    | Persists JSON evaluation artifact to `<folder>/.rune_cache/assessments/<hash>.<intent>.json`.                                                                                                                                                  |
-| `load_artifact_from_disk`   | `folder_path: String`, `file_hash: String`, `intent: String`                 | `Result<Option<String>, String>`        | Reads cached JSON assessment from disk. Returns `None` if file does not exist.                                                                                                                                                                 |
-| `clear_directory_cache`     | `folder_path: String`                                                        | `Result<(), String>`                    | Recursively purges the entire `<folder>/.rune_cache` directory.                                                                                                                                                                                |
-| `delete_artifact_from_disk` | `folder_path: String`, `file_hash: String`, `intent: String`                 | `Result<(), String>`                    | Deletes a single evaluation artifact file from `.rune_cache/assessments/`.                                                                                                                                                                     |
+- **Risk** = the higher of the agent's own `risk` and the local rules in `safety/rules.rs`. The rules look at the action, the agent's stated reason (whole words such as delete, send, pay, install), the control's name for `click_element`, and the window in front (title and program). They catch Alt+F4, Ctrl+Alt+Delete, Shift+Delete, Delete in File Explorer, Enter/Space/Y in a dialog about something irreversible, dangerous commands typed into a shell, typing into a sign-in page, launching regedit/diskpart/cmd or a program file from a path, and anything done in an Explorer window showing the "Rune Studio" record folder.
+- The rules lean towards asking and are a net for honest mistakes, **not** a security boundary against a determined attacker or a prompt-injected page.
+- **High** pauses for a Yes/No card. **No answer in two minutes counts as No.** Stop answers No. Three Nos end a task.
+- A spoken **yes** never approves a risky action (a TV or a colleague must not be able to); a spoken no and stop always work.
+- Every weighed action is appended to `audit.log` in the app data folder (`wait`, `done`, `scroll` and `ask_user` are not logged).
+- With the optional decision model on, a text-only second opinion can raise (never lower) the risk.
+
+## Privacy and the record
+
+Everything the agent sees or hears is stored under `Documents/Rune Studio/`, **one folder per session** (one task run, built-in or by an outside agent): `sessions/<UTC date>/<hhmmss>-<n>-<task-slug>/` holds `session.json` (task, source, start and end time, outcome, summary, file counts) and `screenshots/`, `voice/`, `recordings/`. Files saved while no session is open (debug captures, speech that is not a command) go in `screenshots/<date>/`, `voice/<date>/`. Nothing is overwritten. There is **no setting to turn it off or move it**, no size limit and no automatic cleanup. It fails closed: if a screenshot or recording cannot be stored, the agent gets no screenshot and the utterance is not acted on. Screens can contain sensitive content, so treat this folder as sensitive and clear it yourself. The audio and screenshots are sent only to the configured model server.
 
 ---
 
-## Inference & Network Protocol
+## Outside agents (MCP bridge)
 
-Rune Studio interfaces with **Rune Infer** or any OpenAI-compatible multimodal endpoint:
+Builds made with `--features agent-bridge` (all release builds) contain:
 
-```
-VITE_AI_API_URL (default: http://localhost:3423)
-├── GET  /health                        -> Probes server status, version, and loaded_models
-├── GET  /v1/models                     -> Queries model IDs and checks capabilities.vision
-├── POST /v1/inference?engine=<model>   -> Direct fast tool-call execution
-└── POST /v1/chat/completions           -> OpenAI-compatible tool calling and multimodal VLM arbitration
-```
+- an MCP server (JSON-RPC over HTTP) at `http://127.0.0.1:47600/mcp`: loopback only, bearer token (32 random bytes in the credential store, constant-time compared), `Host` must be local, requests with a browser `Origin` are refused, 256 KB body limit, and **Settings > Allow outside agent** must be on;
+- the `rune-studio-cli` console program, installed next to the app (Windows: added to the per-user PATH; macOS/Linux: linked into `~/.local/bin` on first run).
 
-### Thinking Mode Configuration
-
-Configurable via the top header bar:
-
-- **Strict Mode** (`0.2` Temperature): Low hallucination, deterministic JSON extraction for categorization and arbitration.
-- **Deep Mode** (`0.6` Temperature): Extended reasoning and detailed visual landmark profiling with `<think>` tag stripping.
-
----
-
-## Configuration & Environment Variables
-
-Create a `.env` file in the project root:
-
-```env
-# URL of Rune Infer or OpenAI-compatible VLM server
-VITE_AI_API_URL=http://localhost:3423
-
-# S3 / MinIO / RustFS Object Storage endpoint
-VITE_S3_BUCKET_URL=http://localhost:9000/videos
-
-# S3 Authentication Credentials (used by curl SigV4 in Rust backend)
-S3_ACCESS_KEY=rustfsadmin
-S3_SECRET_KEY=rustfsadmin
-S3_REGION=us-east-1
-S3_BUCKET=videos
+```bash
+rune-studio-cli enable              # allow outside agents (disable turns it off)
+rune-studio-cli connect claude      # register with Claude Code for every project, and install the skill
+rune-studio-cli connect antigravity # same for Antigravity
+rune-studio-cli connect --print     # settings to paste into any other MCP-capable agent
+rune-studio-cli skill [--remove]    # install / remove only the Claude Code skill
+rune-studio-cli disconnect claude   # remove (also: antigravity)
+rune-studio-cli status              # is the app running, are outside agents allowed
+rune-studio-cli guide               # print the guide an agent reads
+rune-studio-cli mcp                 # what agents run: MCP over stdio, starts the app if needed
 ```
 
+> The built-in `--help` text of the CLI still prints some commands as `rune-studio ...`; the executable is `rune-studio-cli`.
+
+One agent holds control at a time (the "lease"). It ends on `rune_done`, on Stop (which also locks agents out until you turn the switch off and on, or run `rune-studio-cli enable` again), or after 5 minutes without a call. The tools are `rune_guide`, `rune_begin`, `rune_plan`, `rune_observe`, `rune_elements`, `rune_click`, `rune_click_element`, `rune_scroll`, `rune_drag`, `rune_type_text`, `rune_press_keys`, `rune_open_app`, `rune_wait`, `rune_status` and `rune_done`; see [`docs/AGENT-GUIDE.md`](docs/AGENT-GUIDE.md).
+
 ---
 
-## Development Workflow
+## Platform support
+
+| Capability                                    | Windows                                                | macOS / Linux builds              |
+| --------------------------------------------- | ------------------------------------------------------ | --------------------------------- |
+| Screenshot (`xcap`), mouse/keyboard (`enigo`) | yes                                                    | compiled; not a supported target  |
+| `open_app` (`ShellExecuteW`)                  | yes                                                    | returns an error                  |
+| UI Automation control list / `click_element`  | yes                                                    | empty list                        |
+| Foreground window for the safety rules        | yes                                                    | empty (rules lose window context) |
+| Typed-text caret position, pointer effects    | yes                                                    | not available                     |
+| Elevated windows                              | cannot receive injected input (UIPI); not detected yet | n/a                               |
+
+---
+
+## Related projects
+
+Rune Studio is one of four projects. **rune-infer** is the model server it calls; **rune-kit** (the `rune` CLI, an MCP package manager and gateway) and **rune-tools** (its plugin registry) are intended to own MCP servers, skills, plugins and external tools so the app does not. The app does not use kit or tools yet. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) section 18 and the plan in [`docs/ROADMAP.md`](docs/ROADMAP.md) (flight recorder, verifier, idle reflection mode, visual analysis; none of it built).
+
+---
+
+## Development
 
 ### Prerequisites
 
-- **Bun**: `^1.2.9` (pinned to `bun@1.4.3`)
-- **Node.js**: `^22.18.0 || ^24.11.0 || >=26.0.0`
-- **Rust Toolchain**: `1.98.1+` (2024 edition) with `cargo`
-- **FFmpeg**: Required in system `PATH` for video thumbnail extraction
-- **OS Libraries (Linux only)**: `libwebkit2gtk-4.1-dev`, `libappindicator3-dev`, `librsvg2-dev`, `patchelf`
-
-### Installation
+- **Bun** `^1.2.9` (pinned to `bun@1.4.3`), **Node.js** `^22.18.0 || ^24.11.0 || >=26.0.0`
+- **Rust** `1.98.1+` (edition 2024)
+- Windows: WebView2 (Windows 11 includes it). Linux builds need `libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libpipewire-0.3-dev libspa-0.2-dev libclang-dev libgbm-dev libegl1-mesa-dev libxcb1-dev libxcb-randr0-dev libxcb-shm0-dev libxdo-dev libasound2-dev`
+- A running rune-infer (or compatible) server to actually drive the agent
 
 ```bash
-# Clone the repository
 git clone https://github.com/shba007/rune-studio.git
 cd rune-studio
-
-# Install dependencies using Bun
 bun install --frozen-lockfile
 ```
 
-<details>
-<summary><strong>Manifest Scripts Reference</strong></summary>
+### Scripts
 
-| Script                       | Command                         | Description                                                         |
-| ---------------------------- | ------------------------------- | ------------------------------------------------------------------- |
-| `bun run dev`                | `vp dev`                        | Launches Vite-Plus dev server on `http://localhost:5173`.           |
-| `bun run tauri:dev`          | `tauri dev`                     | Launches full native Tauri desktop application in development mode. |
-| `bun run build`              | `vp build`                      | Bundles web production assets into `dist/`.                         |
-| `bun run preview`            | `vp preview`                    | Previews production web build locally.                              |
-| `bun run lint`               | `vp lint . --fix`               | Runs oxlint linter across workspace with automatic fixes.           |
-| `bun run format`             | `vp fmt src/`                   | Runs Vite-Plus code formatter on `src/`.                            |
-| `bun run test:unit`          | `vp test`                       | Runs unit tests using Vitest and jsdom.                             |
-| `bun run detect`             | `gitleaks git --verbose`        | Scans git history for exposed credentials or secrets.               |
-| `bun run clean`              | `(cd src-tauri && cargo clean)` | Removes Rust build artifacts.                                       |
-| `bun run tauri:build`        | `tauri build`                   | Compiles native desktop production installers/binaries.             |
-| `bun run tauri:dev:mobile`   | `tauri android dev`             | Starts Android emulator development.                                |
-| `bun run tauri:build:mobile` | `tauri android build`           | Compiles Android universal APK and AAB packages.                    |
+| Script                                            | Command                         | Description                                                                                             |
+| ------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `bun run dev`                                     | `vp dev`                        | Vite-Plus dev server on `http://localhost:5173` (UI renders in a browser using `src/dev/mockTauri.ts`). |
+| `bun run tauri:dev`                               | `tauri dev`                     | Full desktop app in development. Add `-- --features agent-bridge` for the MCP bridge and CLI.           |
+| `bun run tauri:build`                             | `tauri build`                   | Production installers. Add `--features agent-bridge` as the release workflow does.                      |
+| `bun run build` / `preview`                       | `vp build` / `vp preview`       | Frontend bundle into `dist/`.                                                                           |
+| `bun run lint`                                    | `vp lint . --fix`               | oxlint (type-aware) with auto-fix.                                                                      |
+| `bun run format`                                  | `vp fmt src/`                   | Formatter for `src/` (no semicolons, single quotes).                                                    |
+| `bun run test:unit`                               | `vp test`                       | Vitest + jsdom (currently `useUpdater.test.ts`).                                                        |
+| `bun run detect`                                  | `gitleaks git --verbose`        | Secret scan of git history.                                                                             |
+| `bun run clean`                                   | `(cd src-tauri && cargo clean)` | Removes Rust build artifacts.                                                                           |
+| `bun run tauri:dev:mobile` / `tauri:build:mobile` | `tauri android dev/build`       | Present in `package.json` but Android is **not** a supported target: the CI job is commented out.       |
 
-</details>
+Git hooks (husky): `pre-commit` runs gitleaks (if installed), lint and format on staged files; `commit-msg` enforces Conventional Commits (`commitlint.config.ts`).
+
+### Environment
+
+`src-tauri` loads `../.env` (or `.env`) with `dotenvy` at startup; `tauri.conf.json` runs the frontend through `dotenvx run -f .env.native`. Variables read by the code:
+
+| Variable                                          | Purpose                                                               |
+| ------------------------------------------------- | --------------------------------------------------------------------- |
+| `RUNE_API_KEY`                                    | Dev-only fallback for the API key when the credential store has none. |
+| `RUNE_TYPE_DELAY_MS`                              | Overrides the pause between typed characters (default 15 ms).         |
+| `RUNE_PROBE_*`, `RUNE_TARGET_DIR`, `RUNE_CLICK_*` | Only for the `#[ignore]`d probe and system tests.                     |
+
+### Tests
+
+```bash
+cd src-tauri
+cargo test --lib                          # unit tests (pure logic: lease, rules, parsers, VAD, protocol)
+cargo test --lib --features agent-bridge  # also the bridge, CLI, skill and agent tests
+cargo test --lib -- --ignored             # need a Windows desktop or a live rune-infer server
+pwsh scripts/m1-system-test.ps1           # end to end: real mouse, keyboard and capture (moves your mouse!)
+pwsh scripts/m15/run-probe.ps1            # grounding probe against a local rune-infer (see ARCHITECTURE.md)
+bun run test:unit                         # frontend
+```
+
+CI runs `cargo test --lib`, with and without `--features agent-bridge`, on Windows and Ubuntu (`.github/workflows/rust.yml`); clippy and `cargo fmt --check` run too but do not fail the build yet.
+
+### Project layout
+
+```
+src/                         Vue 3 frontend
+  components/                AgentPill, Composer, TaskPanel, ConfirmCard, SettingsPanel, ControlOverlay, GlyphOrb, ProgressRing, ...
+  composables/               useAgent (state, events, commands), useUpdater
+  config/                    layout.ts (pill geometry, mirrors window.rs), actions.ts (tool -> device icon)
+  icons/                     the only place that names an icon set; assets/icons/ holds custom SVGs
+  types/protocol.ts          TypeScript mirror of the Rust events/settings (kept in sync by hand)
+  dev/mockTauri.ts           browser-only mock of the startup commands
+src-tauri/src/
+  lib.rs, main.rs            Tauri setup, tray, hotkeys, command registration
+  agent/                     loop (mod.rs), prompt, protocol (tools), body (acting + announcing), quick (decision-model checks), stuck
+  model/                     client (chat call, SSE), coords (0..1000 <-> pixels), decision (/v1/decisions)
+  observe/                   screenshot (capture, downscale, JPEG)
+  exec/                      input (enigo), uia (UI Automation), apps (ShellExecute), caret, CancelToken
+  safety/                    gate (ask + audit), rules, foreground, audit
+  voice/                     capture (cpal), vad (energy), direct (omni-model hearing), intent
+  bridge/                    lease (always compiled); server, mcp, token, cli, agents, skill, path_link (feature agent-bridge)
+  archive.rs                 the record of screenshots/voice
+  settings.rs, hotkeys.rs, backend.rs, events.rs, commands.rs, window.rs, overlay.rs, cursor.rs, error.rs
+  debug.rs                   debug builds only
+  system_tests.rs, probe_m15.rs   test-only (#[ignore]d)
+  bin/rune-studio-cli.rs     console CLI (feature agent-bridge)
+docs/                        ARCHITECTURE.md, AGENT-GUIDE.md
+scripts/                     m1-system-test.ps1, m15/ (grounding probe), make-logo.mjs
+```
 
 ---
 
-## Build & Distribution
+## Build and release pipeline
 
-### 1. Native Desktop Bundles
+| Workflow                          | Trigger                                              | What it does                                                                                                                                                                                                                                                                  |
+| --------------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.github/workflows/rust.yml`      | pull requests, push to `develop` and `main`          | Runs `cargo test --lib` and `cargo test --lib --features agent-bridge` on `windows-latest` and `ubuntu-latest`; clippy and `cargo fmt --check` are advisory (they do not fail the build).                                                                                     |
+| `.github/workflows/integrate.yml` | push to `develop` (skips release/merge commits)      | `bun run build`, lint (failures are ignored: the step ends in `echo`), format, auto-commit fixes, bump version and changelog with `changelogen`, open the `release/update-version` PR. No tests; the Rust workflow covers Rust.                                               |
+| `.github/workflows/release.yml`   | push to `main` whose message contains `ci(release):` | Creates the GitHub release notes with `changelogen gh release`.                                                                                                                                                                                                               |
+| `.github/workflows/deploy.yml`    | release published                                    | Builds the desktop app with `tauri-action` on Windows, Ubuntu and macOS (Apple Silicon and Intel), all with `--features agent-bridge`, signs updater artifacts, and uploads `rune-studio-cli` as its own release asset. The web-container and Android jobs are commented out. |
 
-```bash
-# Builds desktop bundle for your current operating system
-bun run tauri:build
-```
+`Dockerfile` and `nginx.conf` build and serve the Vue bundle as a web page; they are not used by any active workflow and the app is a desktop app, so they are leftovers.
 
-Outputs installer artifacts in `src-tauri/target/release/bundle/` (`.msi`/`.exe` on Windows, `.dmg`/`.app` on macOS, `.deb`/`.AppImage` on Linux).
-
-### 2. Android Mobile Build
-
-Ensure `ANDROID_HOME` and `NDK_HOME` (NDK `29.0.13846066`) are exported:
-
-```bash
-bun run tauri:build:mobile
-```
-
-Outputs:
-
-- APK: `src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk`
-- AAB: `src-tauri/gen/android/app/build/outputs/bundle/universalRelease/app-universal-release.aab`
-
-### 3. Containerized Web Build (Docker)
-
-```bash
-docker build -t rune-studio:latest .
-docker run -d -p 8080:8080 --name rune-studio rune-studio:latest
-```
-
----
-
-## CI/CD Pipeline & Secrets
-
-The repository includes a multi-platform GitHub Actions workflow (`.github/workflows/deploy.yml`) triggering on published releases:
-
-- **Web Container**: Builds multi-arch Docker image and pushes to `ghcr.io/shba007/rune-studio` with build provenance attestations.
-- **Desktop Matrix**: Builds on `windows-latest`, `ubuntu-latest`, and `macos-latest` (both `x86_64` and `aarch64`).
-- **Android Matrix**: Compiles universal `.apk` and `.aab` artifacts.
-
-A separate workflow (`.github/workflows/rust.yml`, on pull requests and pushes to `develop` and `main`) runs `cargo test --lib` with and without `--features agent-bridge` on `windows-latest` and `ubuntu-latest`. Clippy and `cargo fmt --check` run too but do not fail the build yet.
-
-### Required Repository Secrets & Variables
-
-| Secret / Variable                            | Scope         | Description                                                   |
-| -------------------------------------------- | ------------- | ------------------------------------------------------------- |
-| `vars.USERNAME`                              | Repo Variable | GitHub container registry username                            |
-| `vars.SITE_URL`                              | Repo Variable | Target deployed URL                                           |
-| `secrets.TAURI_SIGNING_PRIVATE_KEY`          | Repo Secret   | Private key for Tauri auto-updater artifacts (`.key`)         |
-| `secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Repo Secret   | Password for the updater signing private key                  |
-| `secrets.ANDROID_KEY_BASE64`                 | Repo Secret   | Base64-encoded `release-keystore.jks` for Android APK signing |
-| `secrets.ANDROID_KEY_ALIAS`                  | Repo Secret   | Alias name in the Android keystore (`release-key`)            |
-| `secrets.ANDROID_KEY_PASSWORD`               | Repo Secret   | Password for the Android signing key                          |
+Secrets used: `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (updater signatures), `GITHUB_TOKEN`, `GH_TOKEN` (release notes).
 
 ---
 
@@ -317,9 +320,3 @@ A separate workflow (`.github/workflows/rust.yml`, on pull requests and pushes t
 
 Published under the [MIT](https://github.com/shba007/rune-studio/blob/main/LICENSE) License.  
 Copyright &copy; 2024 Shirsendu Bairagi.
-
-<br>
-
-<a href="https://github.com/shba007/rune-studio/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=shba007/rune-studio" alt="Contributors" />
-</a>

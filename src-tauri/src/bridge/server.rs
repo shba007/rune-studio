@@ -60,6 +60,7 @@ async fn watch_for_idle(app: AppHandle) {
         let expired = app.state::<AppState>().lease.locked().expire_if_idle(std::time::Instant::now());
         if expired {
             log::info!("agent bridge: the agent was silent too long, control released");
+            crate::archive::end_session(None, "lease_expired", "");
             let _ = app.emit(events::EXTERNAL_AGENT, ExternalAgent { agent: None });
             if matches!(events::agent_state(&app), AgentState::Acting | AgentState::Observing) {
                 events::set_agent_state(&app, AgentState::Idle);
