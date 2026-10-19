@@ -32,6 +32,23 @@ impl Watch {
     }
 }
 
+/// After this many looks in a row at an elevated front window the run ends: it cannot be controlled.
+pub const ELEVATED_GIVE_UP_AFTER: u32 = 2;
+
+/// Counts consecutive looks at a front window that runs as administrator.
+#[derive(Default)]
+pub struct ElevatedWatch {
+    streak: u32,
+}
+
+impl ElevatedWatch {
+    /// Records one look and returns how many in a row were elevated; a normal look resets it.
+    pub fn look(&mut self, elevated: bool) -> u32 {
+        self.streak = if elevated { self.streak + 1 } else { 0 };
+        self.streak
+    }
+}
+
 fn same(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() || a.is_empty() {
         return false;
@@ -87,5 +104,15 @@ mod tests {
         assert!(warning(1).is_none());
         assert!(warning(WARN_AFTER).unwrap().contains("last 2 actions"));
         assert!(GIVE_UP_AFTER > WARN_AFTER);
+    }
+
+    #[test]
+    fn elevated_looks_are_counted_in_a_row_and_a_normal_look_resets() {
+        let mut watch = ElevatedWatch::default();
+        assert_eq!(watch.look(false), 0);
+        assert_eq!(watch.look(true), 1);
+        assert!(watch.look(true) >= ELEVATED_GIVE_UP_AFTER);
+        assert_eq!(watch.look(false), 0, "a normal look starts the count again");
+        assert_eq!(watch.look(true), 1);
     }
 }

@@ -20,7 +20,10 @@ use crate::{
 
 use super::lease::{IDLE_LIMIT, LeaseError};
 use crate::agent::quick;
-use crate::safety::gate::{self, Verdict};
+use crate::safety::{
+    foreground,
+    gate::{self, Verdict},
+};
 
 use super::skill::GUIDE;
 const LATEST_PROTOCOL: &str = "2025-06-18";
@@ -261,6 +264,9 @@ fn clip(text: &str, max: usize) -> String {
     text.trim().chars().take(max).collect()
 }
 
+/// Added to a reply when the front window runs as administrator and so ignores our input.
+const ELEVATED_NOTE: &str = " Note: the front window runs as administrator, so clicks and typing are ignored there. Tell the user, or finish with rune_done.";
+
 fn screen_note(frame: &Frame) -> String {
     format!(
         "The screen is {}x{} pixels, shown here at {}x{}. Coordinates run 0 to 1000 on both axes: x left to right, y top to bottom, centre (500, 500).",
@@ -345,7 +351,10 @@ async fn observe(app: &AppHandle, arguments: &Value) -> Reply {
         ),
         None => "Here is the whole screen right now.".to_string(),
     };
-    let text = format!("{what} {}", screen_note(&frame));
+    let mut text = format!("{what} {}", screen_note(&frame));
+    if foreground::blocked_by_elevation() {
+        text.push_str(ELEVATED_NOTE);
+    }
     Reply::shot(text, frame.jpeg)
 }
 
@@ -455,6 +464,9 @@ async fn act_turn(app: &AppHandle, tool: &'static str, arguments: &Value) -> Rep
         }
         if let Some(hint) = notes.hint {
             text.push_str(&format!(" Note: {hint}"));
+        }
+        if foreground::blocked_by_elevation() {
+            text.push_str(ELEVATED_NOTE);
         }
         return Reply::shot(text, frame.jpeg);
     }

@@ -28,7 +28,10 @@ use crate::{
 use prompt::Entry;
 use protocol::{Action, Decision};
 
-use crate::safety::gate::{self, Verdict};
+use crate::safety::{
+    foreground,
+    gate::{self, Verdict},
+};
 
 /// Give up after this many unusable model answers in a row.
 const MAX_INVALID_IN_A_ROW: u32 = 3;
@@ -227,6 +230,7 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, canc
     let mut declines = 0;
 
     let mut watch = stuck::Watch::default();
+    let mut elevated_watch = stuck::ElevatedWatch::default();
     // Whether an action ran since the last look, for noticing a screen that does not change.
     let mut acted = false;
     // Ids from an earlier task must never be clicked in this one.
@@ -300,8 +304,13 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, canc
         if unchanged >= stuck::GIVE_UP_AFTER {
             return Outcome::Failed("Stopped: the screen stopped changing, so the actions are not working".into());
         }
-        // What to tell the big model: that it is stuck, and anything in the way of the page.
-        let warning = [stuck::warning(unchanged), notes.and_then(|notes| notes.hint).map(String::from)].into_iter().flatten().collect::<Vec<_>>().join(" ");
+        // A window that runs as administrator ignores our clicks and typing: say so, and give up if it stays in front.
+        let elevated = foreground::blocked_by_elevation();
+        if elevated_watch.look(elevated) >= stuck::ELEVATED_GIVE_UP_AFTER {
+            return Outcome::Failed("I can't control this window because it runs as administrator.".into());
+        }
+        // What to tell the big model: that it is stuck, anything in the way of the page, and the administrator window.
+        let warning = [stuck::warning(unchanged), notes.and_then(|notes| notes.hint).map(String::from), elevated.then(|| foreground::ELEVATED_WARNING.to_string())].into_iter().flatten().collect::<Vec<_>>().join(" ");
         let warning = (!warning.is_empty()).then_some(warning);
 
         // Already finished? Once the last goal has had its steps, the decision model can tell from
