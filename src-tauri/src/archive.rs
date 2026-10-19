@@ -148,7 +148,7 @@ struct Session {
     started: u64,
 }
 
-fn now() -> u64 {
+pub(crate) fn now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|elapsed| elapsed.as_secs()).unwrap_or(0)
 }
 
@@ -161,7 +161,7 @@ fn write_error(err: impl std::fmt::Display) -> ArchiveError {
 }
 
 /// `2026-10-19T07:59:12Z` for a Unix time in seconds.
-fn iso(seconds: u64) -> String {
+pub(crate) fn iso(seconds: u64) -> String {
     let (date, time) = stamp(seconds);
     format!("{date}T{}:{}:{}Z", &time[0..2], &time[2..4], &time[4..6])
 }
