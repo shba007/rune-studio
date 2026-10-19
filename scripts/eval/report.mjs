@@ -123,6 +123,80 @@ export function gate(current, baseline) {
   return { verdict: reasons.length === 0 ? 'PASS' : 'FAIL', reasons, now, before }
 }
 
+/** The words a run's `verdict` can hold, in the order the matrix lists them. */
+export const VERDICTS = ['verified', 'contradicted', 'unsure', 'error', 'skipped', 'timeout']
+
+/**
+ * The independent check against the machine's checkers. Only runs that have a verdict and should
+ * succeed count (a task that should fail has no "check passed" to compare with). Returns the confusion
+ * matrix (verdict by `check_passed`) and four numbers:
+ *  - agreement among decisive verdicts: (verified and the check passed, or contradicted and it failed) over verified plus contradicted;
+ *  - false contradictions: contradicted while the check passed;
+ *  - missed failures: verified while the check failed;
+ *  - unsure rate: unsure over verified plus contradicted plus unsure (runs that were really checked).
+ */
+export function verifierStats(rows) {
+  const counted = rows.filter(
+    (row) => row.verdict !== undefined && row.verdict !== null && row.expect !== 'failure',
+  )
+  const matrix = Object.fromEntries(VERDICTS.map((verdict) => [verdict, { pass: 0, fail: 0 }]))
+  for (const row of counted) {
+    const cell = (matrix[row.verdict] ??= { pass: 0, fail: 0 })
+    if (row.check_passed) cell.pass++
+    else cell.fail++
+  }
+  const total = (verdict) => matrix[verdict].pass + matrix[verdict].fail
+  const decisive = total('verified') + total('contradicted')
+  const agreeing = matrix.verified.pass + matrix.contradicted.fail
+  const judged = decisive + total('unsure')
+  return {
+    runs: counted.length,
+    matrix,
+    decisive,
+    agreement: decisive === 0 ? null : agreeing / decisive,
+    falseContradictions: matrix.contradicted.pass,
+    missedFailures: matrix.verified.fail,
+    unsureRate: judged === 0 ? null : total('unsure') / judged,
+  }
+}
+
+/** Which check modes a file's runs were made in (a file from before the verifier has none: that is `off`). */
+export function modesOf(rows) {
+  return [...new Set(rows.map((row) => row.verify_mode ?? 'off'))].sort((a, b) =>
+    a.localeCompare(b),
+  )
+}
+
+/**
+ * What the check cost in time: the median task duration and median steps now against the baseline.
+ * Blocking mode's check happens inside the task, so it is in `duration_ms`; a background check is not.
+ */
+export function overhead(current, baseline) {
+  const now = summarize(current)
+  const before = summarize(baseline)
+  const durationPercent =
+    now.medianDuration === null || before.medianDuration === null || before.medianDuration === 0
+      ? null
+      : (now.medianDuration / before.medianDuration - 1) * 100
+  return {
+    currentModes: modesOf(current),
+    baselineModes: modesOf(baseline),
+    medianDuration: {
+      now: now.medianDuration,
+      before: before.medianDuration,
+      percent: durationPercent,
+    },
+    medianSteps: {
+      now: now.medianSteps,
+      before: before.medianSteps,
+      delta:
+        now.medianSteps === null || before.medianSteps === null
+          ? null
+          : now.medianSteps - before.medianSteps,
+    },
+  }
+}
+
 function pct(rate) {
   return rate === null ? '-' : `${(rate * 100).toFixed(1)}%`
 }
@@ -170,6 +244,41 @@ export function render(current, baseline) {
         : verdict.reasons.map((reason) => `- ${reason}`)),
     )
     out.push('', '_With this few repeats the gate is indicative, not a statistical test._', '')
+  }
+  if (baseline) {
+    const cost = overhead(current, baseline)
+    const percent =
+      cost.medianDuration.percent === null
+        ? '-'
+        : `${cost.medianDuration.percent >= 0 ? '+' : ''}${cost.medianDuration.percent.toFixed(1)}%`
+    const steps =
+      cost.medianSteps.delta === null
+        ? '-'
+        : `${cost.medianSteps.delta >= 0 ? '+' : ''}${String(Number(cost.medianSteps.delta.toFixed(1)))}`
+    out.push('## Verifier overhead (this run against the baseline)', '')
+    out.push(
+      `Check modes: this run \`${cost.currentModes.join(', ')}\`, baseline \`${cost.baselineModes.join(', ')}\`.`,
+      '',
+    )
+    out.push(
+      table(
+        ['', 'now', 'baseline', 'change'],
+        [
+          [
+            'median duration',
+            seconds(cost.medianDuration.now),
+            seconds(cost.medianDuration.before),
+            percent,
+          ],
+          ['median steps', num(cost.medianSteps.now), num(cost.medianSteps.before), steps],
+        ],
+      ),
+      '',
+    )
+    out.push(
+      'A blocking check runs inside the task, so it is in these durations. A background check runs after it and is not.',
+      '',
+    )
   }
   const base = baseline ? aggregate(baseline) : null
   const o = now.overall
@@ -279,6 +388,48 @@ export function render(current, baseline) {
     runList(split.claimedSuccessOnImpossible),
     '',
   )
+  out.push('## Verifier vs the checkers', '')
+  const stats = verifierStats(current)
+  if (stats.runs === 0) {
+    out.push(
+      '_No verdicts recorded (the check was off, or no run that should succeed has one)._',
+      '',
+    )
+  } else {
+    out.push(
+      `The independent check against \`check_passed\`, for the ${String(stats.runs)} runs that should succeed and have a verdict.`,
+      '',
+    )
+    out.push(
+      table(
+        ['verdict', 'check passed', 'check failed', 'total'],
+        VERDICTS.map((verdict) => [
+          verdict,
+          String(stats.matrix[verdict].pass),
+          String(stats.matrix[verdict].fail),
+          String(stats.matrix[verdict].pass + stats.matrix[verdict].fail),
+        ]),
+      ),
+      '',
+    )
+    out.push(
+      table(
+        ['', 'value'],
+        [
+          [
+            'agreement among decisive verdicts',
+            stats.agreement === null
+              ? '-'
+              : `${pct(stats.agreement)} (${String(stats.decisive)} decisive)`,
+          ],
+          ['false contradictions (contradicted, check passed)', String(stats.falseContradictions)],
+          ['missed failures (verified, check failed)', String(stats.missedFailures)],
+          ['unsure rate', pct(stats.unsureRate)],
+        ],
+      ),
+      '',
+    )
+  }
   const problems = current.filter((row) => row.error)
   if (problems.length > 0) {
     out.push(

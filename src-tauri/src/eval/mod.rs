@@ -31,6 +31,9 @@ use crate::{
 };
 use spec::{Expect, KILL_ALLOWLIST, Suite, Task, Vars};
 
+use crate::settings::VerifyMode;
+use crate::trace::VerdictRecord;
+
 /// How often the run is looked at.
 const POLL_EVERY: Duration = Duration::from_millis(500);
 /// A pause before the next task, so the desktop settles.
@@ -40,6 +43,8 @@ const BEFORE_CHECK: Duration = Duration::from_secs(1);
 /// How long to wait for the agent to be idle, and for the recorder to have written the run's end.
 const IDLE_WAIT: Duration = Duration::from_secs(60);
 const TRACE_WAIT: Duration = Duration::from_secs(10);
+/// How long a background check may take before the harness stops waiting for it.
+const VERIFY_WAIT: Duration = Duration::from_secs(60);
 
 // ---------------------------------------------------------------- pure decisions
 
@@ -99,6 +104,46 @@ pub fn totals(steps: &[StepRecord]) -> (i64, i64, i64, i64) {
     (sum(|step| step.decide_ms), sum(|step| step.observe_ms), sum(|step| step.act_ms), sum(|step| step.completion_tokens))
 }
 
+/// What the independent check said about a run, for `results.jsonl`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Verification {
+    /// The mode the run was made in: `off`, `background` or `blocking`.
+    pub mode: &'static str,
+    /// The check's result, `timeout` when the harness gave up waiting, or nothing.
+    pub verdict: Option<String>,
+    /// How long the check took.
+    pub verify_ms: Option<i64>,
+    /// Blocking mode sent the agent back to work.
+    pub challenged: bool,
+}
+
+impl Verification {
+    pub fn off() -> Self {
+        Self { mode: "off", verdict: None, verify_ms: None, challenged: false }
+    }
+}
+
+fn mode_word(mode: VerifyMode) -> &'static str {
+    match mode {
+        VerifyMode::Off => "off",
+        VerifyMode::Background => "background",
+        VerifyMode::Blocking => "blocking",
+    }
+}
+
+/// What to report about the check of one run: the stored verdict, or `timeout` if the harness
+/// waited for a background check and it never came.
+pub fn verification(mode: VerifyMode, stored: Option<&VerdictRecord>, waited_out: bool) -> Verification {
+    if mode == VerifyMode::Off {
+        return Verification::off();
+    }
+    match (stored, waited_out) {
+        (Some(record), _) => Verification { mode: mode_word(mode), verdict: Some(record.result.clone()), verify_ms: record.latency_ms, challenged: record.challenged },
+        (None, true) => Verification { mode: mode_word(mode), verdict: Some("timeout".into()), verify_ms: None, challenged: false },
+        (None, false) => Verification { mode: mode_word(mode), verdict: None, verify_ms: None, challenged: false },
+    }
+}
+
 /// One line of `results.jsonl`.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct RunResult {
@@ -121,6 +166,13 @@ pub struct RunResult {
     pub act_ms_total: i64,
     pub completion_tokens_total: i64,
     pub denied_prompts: u32,
+    /// The mode of the independent check, its verdict (`verified`, `contradicted`, `unsure`, `error`,
+    /// `skipped`, or `timeout`), how long it took, and whether blocking mode challenged the agent.
+    /// `duration_ms` is the task's own time: a background check is outside it, a blocking one inside.
+    pub verify_mode: &'static str,
+    pub verdict: Option<String>,
+    pub verify_ms: Option<i64>,
+    pub challenged: bool,
     /// Preflight, setup, teardown or checker problems.
     pub error: Option<String>,
 }
@@ -133,7 +185,7 @@ impl RunResult {
 
 /// Builds the result of one run from what was measured.
 #[allow(clippy::too_many_arguments)]
-pub fn build_result(task: &Task, repeat: u32, run_id: &str, outcome: &str, check_passed: bool, steps: &[StepRecord], duration: Duration, denied_prompts: u32, error: Option<String>) -> RunResult {
+pub fn build_result(task: &Task, repeat: u32, run_id: &str, outcome: &str, check_passed: bool, steps: &[StepRecord], duration: Duration, denied_prompts: u32, error: Option<String>, verification: Verification) -> RunResult {
     let (decide_ms_total, observe_ms_total, act_ms_total, completion_tokens_total) = totals(steps);
     RunResult {
         task: task.id.clone(),
@@ -151,6 +203,10 @@ pub fn build_result(task: &Task, repeat: u32, run_id: &str, outcome: &str, check
         act_ms_total,
         completion_tokens_total,
         denied_prompts,
+        verify_mode: verification.mode,
+        verdict: verification.verdict,
+        verify_ms: verification.verify_ms,
+        challenged: verification.challenged,
         error,
     }
 }
@@ -207,6 +263,8 @@ async fn execute(app: &AppHandle, suite_path: &Path, out: &Path) -> i32 {
             settings.model = model.clone();
         }
         settings.max_steps = suite.defaults.max_steps;
+        // Off unless the suite says otherwise, so an earlier baseline stays comparable.
+        settings.verify_mode = suite.verify_mode();
     }
     let effective = state.settings.locked().clone();
 
@@ -250,7 +308,7 @@ async fn execute(app: &AppHandle, suite_path: &Path, out: &Path) -> i32 {
                 fixtures_url: file_url(&fixtures),
             };
             let timeout = Duration::from_secs(task.timeout_secs.unwrap_or(suite.defaults.timeout_secs));
-            let (result, housekeeping_failed) = run_one(app, &database, &task.resolve(&vars), repeat, out, &vars.work, timeout).await;
+            let (result, housekeeping_failed) = run_one(app, &database, &task.resolve(&vars), repeat, out, &vars.work, timeout, suite.verify_mode()).await;
             log::info!("eval: {} #{repeat}: outcome {} check {} passed {}", result.task, result.outcome, result.check_passed, result.passed);
             any_problem |= housekeeping_failed;
             let written = std::fs::OpenOptions::new().create(true).append(true).open(&results).and_then(|mut file| writeln!(file, "{}", result.to_line()));
@@ -264,11 +322,12 @@ async fn execute(app: &AppHandle, suite_path: &Path, out: &Path) -> i32 {
 
 /// One run of one task, start to finish. Never fails: problems go in the result's `error`. The
 /// second value says whether setup or teardown failed (which makes the whole run exit with 1).
-async fn run_one(app: &AppHandle, database: &Path, task: &Task, repeat: u32, out: &Path, work: &Path, timeout: Duration) -> (RunResult, bool) {
+#[allow(clippy::too_many_arguments)]
+async fn run_one(app: &AppHandle, database: &Path, task: &Task, repeat: u32, out: &Path, work: &Path, timeout: Duration, verify_mode: VerifyMode) -> (RunResult, bool) {
     let roots = vec![work.to_path_buf(), out.to_path_buf()];
     let started = Instant::now();
     let mut problems: Vec<String> = Vec::new();
-    let failed = |problems: Vec<String>, started: Instant| (build_result(task, repeat, "", "setup_failed", false, &[], started.elapsed(), 0, Some(problems.join("; "))), true);
+    let failed = |problems: Vec<String>, started: Instant| (build_result(task, repeat, "", "setup_failed", false, &[], started.elapsed(), 0, Some(problems.join("; ")), verification(verify_mode, None, false)), true);
 
     if let Err(why) = task.confine(&roots) {
         return failed(vec![why], started);
@@ -335,8 +394,30 @@ async fn run_one(app: &AppHandle, database: &Path, task: &Task, repeat: u32, out
     if detail.is_none() {
         problems.push("the run could not be read back from the trace database".into());
     }
-    let result = build_result(task, repeat, &run_id, &outcome, check_passed, &recorded_steps, duration, denied, (!problems.is_empty()).then(|| problems.join("; ")));
+    // A background check runs after the task. Wait for it here, off the task's clock, so it never
+    // competes with the next task for the model server (and is not cancelled by that task starting).
+    let mut stored = detail.as_ref().and_then(|detail| detail.verdict.clone());
+    let mut waited_out = false;
+    if verify_mode == VerifyMode::Background && !run_id.is_empty() && stored.is_none() {
+        stored = wait_for_verdict(database, &run_id).await;
+        waited_out = stored.is_none();
+    }
+    let result = build_result(task, repeat, &run_id, &outcome, check_passed, &recorded_steps, duration, denied, (!problems.is_empty()).then(|| problems.join("; ")), verification(verify_mode, stored.as_ref(), waited_out));
     (result, teardown_failed)
+}
+
+/// Waits (up to a minute) for the verdict of a run to appear in the trace database.
+async fn wait_for_verdict(database: &Path, run_id: &str) -> Option<VerdictRecord> {
+    let started = Instant::now();
+    while started.elapsed() < VERIFY_WAIT {
+        if let Ok(Some(detail)) = store::get_run(database, run_id)
+            && detail.verdict.is_some()
+        {
+            return detail.verdict;
+        }
+        tokio::time::sleep(POLL_EVERY).await;
+    }
+    None
 }
 
 /// Waits for the agent to be idle (or done), then a few seconds more.

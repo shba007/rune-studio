@@ -133,3 +133,80 @@ test('a line that is not JSON is reported with its number', () => {
   assert.throws(() => parseResults('{"a":1}\nnot json\n'), /line 2/)
   assert.deepEqual(parseResults('\n{"a":1}\n\n'), [{ a: 1 }])
 })
+test('the verifier is compared with the checkers: the matrix and the four numbers', async () => {
+  const { VERDICTS, verifierStats } = await import('../report.mjs')
+  const stats = verifierStats(load('verdicts.jsonl'))
+  // 13 rows: one has no verdict (check off) and one should fail, so 11 count.
+  assert.equal(stats.runs, 11)
+  assert.deepEqual(stats.matrix.verified, { pass: 2, fail: 1 })
+  assert.deepEqual(stats.matrix.contradicted, { pass: 1, fail: 2 })
+  assert.deepEqual(stats.matrix.unsure, { pass: 1, fail: 1 })
+  assert.deepEqual(stats.matrix.error, { pass: 1, fail: 0 })
+  assert.deepEqual(stats.matrix.skipped, { pass: 0, fail: 1 })
+  assert.deepEqual(
+    stats.matrix.timeout,
+    { pass: 1, fail: 0 },
+    'a verdict the harness gave up waiting for is its own row',
+  )
+  assert.equal(stats.decisive, 6, 'verified plus contradicted')
+  assert.equal(
+    stats.agreement,
+    4 / 6,
+    'verified and passed (2) plus contradicted and failed (2), of 6',
+  )
+  assert.equal(stats.falseContradictions, 1)
+  assert.equal(stats.missedFailures, 1)
+  assert.equal(stats.unsureRate, 2 / 8, 'unsure over verified, contradicted and unsure')
+  assert.deepEqual(VERDICTS, ['verified', 'contradicted', 'unsure', 'error', 'skipped', 'timeout'])
+})
+
+test('without verdicts the verifier numbers are empty, not zero', async () => {
+  const { verifierStats } = await import('../report.mjs')
+  const stats = verifierStats(load('base.jsonl'))
+  assert.equal(stats.runs, 0)
+  assert.equal(stats.agreement, null)
+  assert.equal(stats.unsureRate, null)
+  assert.equal(stats.falseContradictions, 0)
+  assert.match(render(load('base.jsonl'), null).markdown, /No verdicts recorded/)
+  // Only a decided mix has an agreement; a file of "unsure" alone has none.
+  assert.equal(
+    verifierStats(load('verdicts.jsonl').filter((row) => row.verdict === 'unsure')).agreement,
+    null,
+  )
+})
+
+test('the report shows the matrix and the four numbers', () => {
+  const { markdown } = render(load('verdicts.jsonl'), null)
+  assert.match(markdown, /## Verifier vs the checkers/)
+  assert.match(markdown, /\| verified \| 2 \| 1 \| 3 \|/)
+  assert.match(markdown, /\| contradicted \| 1 \| 2 \| 3 \|/)
+  assert.match(markdown, /\| timeout \| 1 \| 0 \| 1 \|/)
+  assert.match(markdown, /agreement among decisive verdicts \| 66\.7% \(6 decisive\)/)
+  assert.match(markdown, /false contradictions \(contradicted, check passed\) \| 1 \|/)
+  assert.match(markdown, /missed failures \(verified, check failed\) \| 1 \|/)
+  assert.match(markdown, /unsure rate \| 25\.0% \|/)
+})
+
+test('compare prints what blocking mode costs next to the gate', async () => {
+  const { overhead } = await import('../report.mjs')
+  const cost = overhead(load('blocking.jsonl'), load('base.jsonl'))
+  assert.deepEqual(cost.currentModes, ['blocking'])
+  assert.deepEqual(
+    cost.baselineModes,
+    ['off'],
+    'a baseline from before the verifier was made with the check off',
+  )
+  assert.equal(cost.medianDuration.now, 11000)
+  assert.equal(cost.medianDuration.before, 10000)
+  assert.ok(Math.abs(cost.medianDuration.percent - 10) < 1e-9)
+  assert.equal(cost.medianSteps.delta, 1)
+  const { markdown, verdict } = render(load('blocking.jsonl'), load('base.jsonl'))
+  assert.ok(
+    markdown.indexOf('## Gate:') < markdown.indexOf('## Verifier overhead'),
+    'the gate stays first',
+  )
+  assert.match(markdown, /Check modes: this run `blocking`, baseline `off`/)
+  assert.match(markdown, /\| median duration \| 11\.0s \| 10\.0s \| \+10\.0% \|/)
+  assert.match(markdown, /\| median steps \| 5 \| 4 \| \+1 \|/)
+  assert.equal(verdict.verdict, 'PASS', 'exactly 10% slower is inside the gate, as before')
+})

@@ -54,7 +54,7 @@ const SUITE: &str = r#"{ "version": 1, "name": "t", "repeats": 3, "defaults": { 
 fn a_valid_suite_parses_with_its_settings() {
     let suite = Suite::parse(SUITE).unwrap();
     assert_eq!((suite.name.as_str(), suite.repeats, suite.defaults.timeout_secs, suite.defaults.max_steps), ("t", 3, 60, 10));
-    assert_eq!(suite.config, Config { fast_checks: Some(false), show_thinking: Some(false), model: None });
+    assert_eq!(suite.config, Config { fast_checks: Some(false), show_thinking: Some(false), model: None, verify_mode: None });
     assert_eq!(suite.tasks.len(), 1);
     assert_eq!(suite.tasks[0].expect, Expect::Success);
     assert_eq!(suite.tasks[0].setup, [Step::MakeDir { path: "{work}".into() }]);
@@ -367,7 +367,7 @@ fn the_calculator_task_accepts_either_program_name_and_closes_both() {
 
 use std::time::Duration;
 
-use super::{Poll, build_result, file_url, poll_decision, preflight, steps, totals, windows::parse_tasklist};
+use super::{Poll, Verification, build_result, file_url, poll_decision, preflight, steps, totals, verification, windows::parse_tasklist};
 use crate::{events::AgentState, trace::StepRecord};
 
 #[test]
@@ -420,23 +420,23 @@ fn sample_task(expect: Expect) -> Task {
 #[test]
 fn a_result_line_has_exactly_the_documented_fields() {
     let steps = [step(Some(800), Some(300), Some(40), Some(55)), step(Some(900), Some(310), Some(60), Some(45))];
-    let result = build_result(&sample_task(Expect::Success), 2, "120000-1-open-notepad", "reported_failure", true, &steps, Duration::from_millis(18_250), 0, None);
-    let expected = r#"{"task":"notepad-write-save","repeat":2,"run_id":"120000-1-open-notepad","outcome":"reported_failure","self_reported_success":false,"check_passed":true,"expect":"success","passed":true,"steps":2,"duration_ms":18250,"decide_ms_total":1700,"observe_ms_total":610,"act_ms_total":100,"completion_tokens_total":100,"denied_prompts":0,"error":null}"#;
+    let result = build_result(&sample_task(Expect::Success), 2, "120000-1-open-notepad", "reported_failure", true, &steps, Duration::from_millis(18_250), 0, None, Verification::off());
+    let expected = r#"{"task":"notepad-write-save","repeat":2,"run_id":"120000-1-open-notepad","outcome":"reported_failure","self_reported_success":false,"check_passed":true,"expect":"success","passed":true,"steps":2,"duration_ms":18250,"decide_ms_total":1700,"observe_ms_total":610,"act_ms_total":100,"completion_tokens_total":100,"denied_prompts":0,"verify_mode":"off","verdict":null,"verify_ms":null,"challenged":false,"error":null}"#;
     assert_eq!(result.to_line(), expected);
     assert!(result.passed, "the model said it failed but the file is there: passed");
 }
 
 #[test]
 fn the_models_claim_and_the_check_are_kept_apart() {
-    let claimed_but_wrong = build_result(&sample_task(Expect::Success), 1, "r", "succeeded", false, &[], Duration::from_secs(1), 0, None);
+    let claimed_but_wrong = build_result(&sample_task(Expect::Success), 1, "r", "succeeded", false, &[], Duration::from_secs(1), 0, None, Verification::off());
     assert!((claimed_but_wrong.self_reported_success, claimed_but_wrong.check_passed, claimed_but_wrong.passed) == (true, false, false));
-    let timeout = build_result(&sample_task(Expect::Success), 1, "r", "timeout", true, &[], Duration::from_secs(240), 0, None);
+    let timeout = build_result(&sample_task(Expect::Success), 1, "r", "timeout", true, &[], Duration::from_secs(240), 0, None, Verification::off());
     assert!(!timeout.self_reported_success && timeout.passed);
     // An expect-failure task: the check holds but the agent claimed success, or never stopped.
-    let should_not_have = build_result(&sample_task(Expect::Failure), 1, "r", "succeeded", true, &[], Duration::from_secs(5), 1, None);
+    let should_not_have = build_result(&sample_task(Expect::Failure), 1, "r", "succeeded", true, &[], Duration::from_secs(5), 1, None, Verification::off());
     assert!(should_not_have.check_passed && !should_not_have.passed);
     assert_eq!(should_not_have.expect, "failure");
-    let right = build_result(&sample_task(Expect::Failure), 1, "r", "reported_failure", true, &[], Duration::from_secs(5), 2, Some("teardown: x".into()));
+    let right = build_result(&sample_task(Expect::Failure), 1, "r", "reported_failure", true, &[], Duration::from_secs(5), 2, Some("teardown: x".into()), Verification::off());
     assert!(right.passed);
     assert_eq!((right.denied_prompts, right.error.as_deref()), (2, Some("teardown: x")));
 }
@@ -506,4 +506,50 @@ fn deleting_through_a_link_that_leads_out_is_refused() {
     std::os::unix::fs::symlink(&elsewhere.0, work.0.join("door")).unwrap();
     assert!(steps::apply(&Step::DeletePath { path: work.path("door/precious.txt") }, &roots(&work, &out)).is_err());
     assert!(elsewhere.0.join("precious.txt").exists());
+}
+
+// ---------------------------------------------------------------- the independent check
+
+use crate::{settings::VerifyMode, trace::VerdictRecord};
+
+fn stored(result: &str, latency: Option<i64>, challenged: bool) -> VerdictRecord {
+    VerdictRecord { run_id: "r".into(), mode: "background".into(), result: result.into(), latency_ms: latency, challenged, claimed_success: true, ..VerdictRecord::default() }
+}
+
+#[test]
+fn the_suite_says_which_check_mode_a_run_uses_and_the_default_is_off() {
+    let with = |mode: &str| SUITE.replace("\"model\": null", &format!("\"model\": null, \"verify_mode\": \"{mode}\""));
+    assert_eq!(Suite::parse(SUITE).unwrap().verify_mode(), VerifyMode::Off, "left out means off, so earlier baselines stay comparable");
+    for (word, mode) in [("off", VerifyMode::Off), ("background", VerifyMode::Background), ("blocking", VerifyMode::Blocking)] {
+        assert_eq!(Suite::parse(&with(word)).unwrap().verify_mode(), mode, "{word}");
+    }
+    assert!(Suite::parse(&with("blokcing")).unwrap_err().contains("verify_mode"), "a typo in a suite is an error, not a quiet default");
+    assert!(Suite::parse(&with("Background")).is_err());
+    assert_eq!(Suite::parse(SHIPPED).unwrap().verify_mode(), VerifyMode::Off, "the shipped suite keeps the baselines comparable");
+}
+
+#[test]
+fn what_is_reported_about_the_check_of_a_run() {
+    // Off: nothing, whatever is stored.
+    assert_eq!(verification(VerifyMode::Off, Some(&stored("verified", Some(5), false)), false), Verification::off());
+    // A stored verdict, with its latency, and whether blocking mode challenged.
+    let blocking = verification(VerifyMode::Blocking, Some(&stored("contradicted", Some(4_200), true)), false);
+    assert_eq!((blocking.mode, blocking.verdict.as_deref(), blocking.verify_ms, blocking.challenged), ("blocking", Some("contradicted"), Some(4_200), true));
+    let skipped = verification(VerifyMode::Background, Some(&stored("skipped", None, false)), false);
+    assert_eq!((skipped.verdict.as_deref(), skipped.verify_ms), (Some("skipped"), None));
+    // A background check that never came: the harness stopped waiting.
+    let late = verification(VerifyMode::Background, None, true);
+    assert_eq!((late.mode, late.verdict.as_deref(), late.verify_ms, late.challenged), ("background", Some("timeout"), None, false));
+    // No row and no waiting (blocking mode, a run that ended some other way): unknown, not invented.
+    assert_eq!(verification(VerifyMode::Blocking, None, false).verdict, None);
+}
+
+#[test]
+fn a_result_line_carries_the_check_next_to_the_task_time() {
+    let task = sample_task(Expect::Success);
+    let result = build_result(&task, 1, "r", "succeeded", false, &[], Duration::from_millis(9_000), 0, None, verification(VerifyMode::Background, Some(&stored("contradicted", Some(3_100), false)), false));
+    let line: serde_json::Value = serde_json::from_str(&result.to_line()).unwrap();
+    assert_eq!((line["verify_mode"].as_str(), line["verdict"].as_str(), line["verify_ms"].as_i64(), line["challenged"].as_bool()), (Some("background"), Some("contradicted"), Some(3_100), Some(false)));
+    assert_eq!(line["duration_ms"], 9_000, "the task's own time, without the check");
+    assert!(result.self_reported_success && !result.check_passed && !result.passed, "the claim and the machine still disagree");
 }

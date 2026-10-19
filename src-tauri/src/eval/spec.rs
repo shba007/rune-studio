@@ -5,6 +5,8 @@ use std::path::{Component, Path, PathBuf};
 
 use serde::Deserialize;
 
+use crate::settings::VerifyMode;
+
 /// The only suite format this code reads.
 pub const SUITE_VERSION: u32 = 1;
 
@@ -52,6 +54,9 @@ pub struct Config {
     pub fast_checks: Option<bool>,
     pub show_thinking: Option<bool>,
     pub model: Option<String>,
+    /// `off`, `background` or `blocking`: the independent check of a finished task. Left out means
+    /// **off** in an eval run, so that earlier baselines stay comparable.
+    pub verify_mode: Option<String>,
 }
 
 /// What the right behaviour is.
@@ -224,7 +229,22 @@ impl Task {
     }
 }
 
+/// Reads one of the three words, strictly: a typo in a suite is an error, not a quiet default.
+pub fn parse_verify_mode(word: &str) -> Option<VerifyMode> {
+    match word {
+        "off" => Some(VerifyMode::Off),
+        "background" => Some(VerifyMode::Background),
+        "blocking" => Some(VerifyMode::Blocking),
+        _ => None,
+    }
+}
+
 impl Suite {
+    /// The check mode of this run: what the suite says, else **off**.
+    pub fn verify_mode(&self) -> VerifyMode {
+        self.config.verify_mode.as_deref().and_then(parse_verify_mode).unwrap_or(VerifyMode::Off)
+    }
+
     pub fn parse(text: &str) -> Result<Suite, String> {
         let suite: Suite = serde_json::from_str(text).map_err(|err| format!("the suite is not valid: {err}"))?;
         suite.validate()?;
@@ -241,6 +261,11 @@ impl Suite {
         }
         if self.repeats == 0 || self.repeats > MAX_REPEATS {
             return Err(format!("repeats must be from 1 to {MAX_REPEATS}"));
+        }
+        if let Some(word) = &self.config.verify_mode
+            && parse_verify_mode(word).is_none()
+        {
+            return Err(format!("config.verify_mode \"{word}\" must be off, background or blocking"));
         }
         if self.defaults.timeout_secs == 0 || self.defaults.max_steps == 0 {
             return Err("the defaults need a timeout and a step limit above zero".into());
