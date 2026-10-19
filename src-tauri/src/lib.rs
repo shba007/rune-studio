@@ -100,6 +100,17 @@ pub fn run() {
 
             let loaded = settings::load(app.handle());
             let hotkeys = Hotkeys::from_settings(&loaded);
+            // Retention is opt-in: with the default of 0 days nothing is ever deleted.
+            let keep_days = loaded.archive_keep_days;
+            let retention_trace = trace.clone();
+            if keep_days > 0 {
+                std::thread::spawn(move || {
+                    let removed = archive::purge_expired(keep_days);
+                    if !removed.is_empty() {
+                        retention_trace.purge_sessions(removed);
+                    }
+                });
+            }
             app.manage(AppState {
                 steer: Default::default(),
                 settings: Mutex::new(loaded),

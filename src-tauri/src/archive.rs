@@ -283,6 +283,81 @@ pub fn session_dir(id: &str) -> Option<PathBuf> {
     current().as_ref().filter(|session| session.id == id).map(|session| session.dir.clone())
 }
 
+/// Days since 1970-01-01 for a calendar date (Howard Hinnant's days_from_civil).
+fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
+    let year = if month <= 2 { year - 1 } else { year };
+    let era = year.div_euclid(400);
+    let year_of_era = year.rem_euclid(400);
+    let month_index = i64::from((month + 9) % 12);
+    let day_of_year = (153 * month_index + 2) / 5 + i64::from(day) - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    era * 146_097 + day_of_era - 719_468
+}
+
+/// Days since 1970-01-01 for a name of exactly the form `YYYY-MM-DD` that is a real date.
+fn day_number(name: &str) -> Option<i64> {
+    let bytes = name.as_bytes();
+    if bytes.len() != 10 || bytes[4] != b'-' || bytes[7] != b'-' || !bytes.iter().enumerate().all(|(index, byte)| index == 4 || index == 7 || byte.is_ascii_digit()) {
+        return None;
+    }
+    let (year, month, day) = (name[0..4].parse::<i64>().ok()?, name[5..7].parse::<u32>().ok()?, name[8..10].parse::<u32>().ok()?);
+    let days = days_from_civil(year, month, day);
+    // 2026-02-30 and the like come back as another date.
+    (civil_from_days(days) == (year, month, day)).then_some(days)
+}
+
+/// Which of the date-named folders in `names` are older than `keep_days` days before `today`
+/// (`YYYY-MM-DD`). A folder from exactly `keep_days` days ago is kept. 0 keeps everything, and
+/// names that are not dates are never listed.
+pub fn expired_dates(names: &[String], today: &str, keep_days: u32) -> Vec<String> {
+    let Some(today) = day_number(today).filter(|_| keep_days > 0) else {
+        return Vec::new();
+    };
+    let cutoff = today - i64::from(keep_days);
+    names.iter().filter(|name| day_number(name).is_some_and(|day| day < cutoff)).cloned().collect()
+}
+
+/// Deletes the session folders of `base/sessions/<date>/` for every expired date, and nothing
+/// else. Returns the paths of the session folders that were removed (as the trace database
+/// records them), so their rows can go too.
+fn purge_in(base: &Path, today: &str, keep_days: u32) -> Vec<String> {
+    let sessions = base.join(SESSIONS_FOLDER);
+    let Ok(entries) = fs::read_dir(&sessions) else {
+        return Vec::new();
+    };
+    // Real folders only: a link in here is not ours to follow.
+    let names: Vec<String> = entries
+        .flatten()
+        .filter(|entry| entry.path().symlink_metadata().is_ok_and(|meta| meta.is_dir()))
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .collect();
+    let mut removed = Vec::new();
+    for date in expired_dates(&names, today, keep_days) {
+        let day_dir = sessions.join(&date);
+        let sessions_inside: Vec<String> = fs::read_dir(&day_dir).map(|entries| entries.flatten().map(|entry| entry.path().display().to_string()).collect()).unwrap_or_default();
+        match fs::remove_dir_all(&day_dir) {
+            Ok(()) => {
+                log::info!("record retention: removed {} ({} session folder(s)) older than {keep_days} days", day_dir.display(), sessions_inside.len());
+                removed.extend(sessions_inside);
+            }
+            Err(err) => log::warn!("record retention: could not remove {}: {err}", day_dir.display()),
+        }
+    }
+    removed
+}
+
+/// Applies the retention setting once: removes old session folders. Returns the removed folders'
+/// paths. Does nothing when `keep_days` is 0 (the default) or the record folder is not set up.
+pub fn purge_expired(keep_days: u32) -> Vec<String> {
+    if keep_days == 0 {
+        return Vec::new();
+    }
+    match root() {
+        Ok(base) => purge_in(base, &stamp(now()).0, keep_days),
+        Err(_) => Vec::new(),
+    }
+}
+
 /// Moves a voice file saved just before a task started (the words that started it) into the open
 /// session's `voice/` folder. Returns the new path. If no session is open or the move fails, the
 /// file stays where it is.
@@ -445,5 +520,62 @@ mod tests {
     #[test]
     fn folders_are_the_three_kinds() {
         assert_eq!([Kind::Screenshots, Kind::Voice, Kind::Recordings].map(Kind::folder), ["screenshots", "voice", "recordings"]);
+    }
+
+    fn names(list: &[&str]) -> Vec<String> {
+        list.iter().map(|name| name.to_string()).collect()
+    }
+
+    #[test]
+    fn zero_days_keeps_everything() {
+        assert!(expired_dates(&names(&["2020-01-01", "2026-10-18"]), "2026-10-19", 0).is_empty());
+    }
+
+    #[test]
+    fn a_folder_exactly_keep_days_old_is_kept_and_one_day_older_goes() {
+        let all = names(&["2026-10-11", "2026-10-12", "2026-10-13", "2026-10-19"]);
+        // Today is the 19th; 7 days back is the 12th: the 12th stays, the 11th goes.
+        assert_eq!(expired_dates(&all, "2026-10-19", 7), ["2026-10-11"]);
+        assert_eq!(expired_dates(&all, "2026-10-19", 1), ["2026-10-11", "2026-10-12", "2026-10-13"]);
+        // Across a month and a year boundary, and a leap day.
+        assert_eq!(expired_dates(&names(&["2025-12-30", "2025-12-31", "2026-01-01"]), "2026-01-31", 31), ["2025-12-30"]);
+        assert_eq!(expired_dates(&names(&["2024-02-28", "2024-02-29", "2024-03-01"]), "2024-03-01", 1), ["2024-02-28"]);
+    }
+
+    #[test]
+    fn names_that_are_not_dates_are_ignored() {
+        let odd = names(&["notes", "2026-1-1", "2026-13-01", "2026-02-30", "20261001", "2026-10-1x", "2026-10-11-extra", ""]);
+        assert!(expired_dates(&odd, "2030-01-01", 1).is_empty());
+        assert!(expired_dates(&names(&["2020-01-01"]), "not a date", 5).is_empty(), "an unreadable today deletes nothing");
+    }
+
+    #[test]
+    fn only_expired_date_folders_below_sessions_are_removed() {
+        let base = std::env::temp_dir().join(format!("rune-retention-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        for dir in [
+            "sessions/2026-01-01/120000-001-old",
+            "sessions/2026-01-01/130000-002-old-too",
+            "sessions/2026-10-19/120000-003-new",
+            "sessions/not-a-date/x",
+            "screenshots/2026-01-01",
+            "voice/2026-01-01",
+        ] {
+            fs::create_dir_all(base.join(dir)).unwrap();
+        }
+        fs::write(base.join("sessions/2026-01-01/120000-001-old/shot.jpg"), b"x").unwrap();
+        fs::write(base.join("sessions/readme.txt"), b"x").unwrap();
+
+        let mut removed = purge_in(&base, "2026-10-19", 30);
+        removed.sort();
+        let expected: Vec<String> = ["sessions/2026-01-01/120000-001-old", "sessions/2026-01-01/130000-002-old-too"].iter().map(|dir| base.join(dir).display().to_string()).collect();
+        assert_eq!(removed, expected);
+        assert!(!base.join("sessions/2026-01-01").exists());
+        for kept in ["sessions/2026-10-19/120000-003-new", "sessions/not-a-date/x", "screenshots/2026-01-01", "voice/2026-01-01", "sessions/readme.txt"] {
+            assert!(base.join(kept).exists(), "{kept} must survive");
+        }
+        assert!(purge_in(&base, "2026-10-19", 0).is_empty(), "0 days removes nothing");
+        assert!(base.join("sessions/2026-10-19").exists());
+        let _ = fs::remove_dir_all(&base);
     }
 }
