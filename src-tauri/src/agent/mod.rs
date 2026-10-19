@@ -163,7 +163,7 @@ async fn make_plan(
     };
     let mut send_thinking = thinking_sender(app);
     let started = Instant::now();
-    let Some(result) = unless_stopped(cancel, client.call(&request, &mut send_thinking)).await
+    let Some(result) = unless_stopped(cancel, client.call_retrying(&request, &mut send_thinking)).await
     else {
         return Err(Outcome::Stopped);
     };
@@ -333,7 +333,7 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, canc
         };
         let mut send_thinking = thinking_sender(app);
         let started = Instant::now();
-        let Some(reply) = unless_stopped(&cancel, client.call(&request, &mut send_thinking)).await
+        let Some(reply) = unless_stopped(&cancel, client.call_retrying(&request, &mut send_thinking)).await
         else {
             return Outcome::Stopped;
         };
