@@ -1,5 +1,40 @@
 # Changelog
 
+## v0.0.11
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.0.10...v0.0.11)
+
+### 🚀 Enhancements
+
+- **analysis:** Ask the model for an annotated report ([3fac51f](https://github.com/shba007/rune-studio/commit/3fac51f))
+- **trace:** Store visual analyses (schema v3) ([1775b53](https://github.com/shba007/rune-studio/commit/1775b53))
+- **analysis:** Capture, ask and show in its own window ([d9ec139](https://github.com/shba007/rune-studio/commit/d9ec139))
+- **ui:** The screen analysis window and its pill button ([3555518](https://github.com/shba007/rune-studio/commit/3555518))
+
+### 💅 Refactors
+
+- **analysis:** Express the status order as matches! ([781a5cc](https://github.com/shba007/rune-studio/commit/781a5cc))
+
+### 📖 Documentation
+
+- Remove the handoff for the completed R3 milestone ([b2e3691](https://github.com/shba007/rune-studio/commit/b2e3691))
+- Field test guide for milestones R0 to R4 ([be1db1e](https://github.com/shba007/rune-studio/commit/be1db1e))
+- Take the field test guide out of the repository ([0863638](https://github.com/shba007/rune-studio/commit/0863638))
+- Visual analysis (architecture, readme, roadmap) and the R4 report ([fab608a](https://github.com/shba007/rune-studio/commit/fab608a))
+
+### 🏡 Chore
+
+- Apply code fixes [skip ci] ([54ae37a](https://github.com/shba007/rune-studio/commit/54ae37a))
+
+### ✅ Tests
+
+- **probe:** Measure bounding boxes, not just points ([c68c681](https://github.com/shba007/rune-studio/commit/c68c681))
+
+### ❤️ Contributors
+
+- Claude <noreply@anthropic.com>
+- Shba007
+
 ## v0.0.10
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.0.9...v0.0.10)
