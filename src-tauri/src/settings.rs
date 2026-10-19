@@ -42,7 +42,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             base_url: "http://127.0.0.1:8080".into(),
-            model: "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-FP8".into(),
+            model: "gemma-4-12b-it".into(),
             max_steps: 30,
             toggle_hotkey: hotkeys::DEFAULT_TOGGLE.into(),
             stop_hotkey: hotkeys::DEFAULT_STOP.into(),

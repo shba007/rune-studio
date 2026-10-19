@@ -130,6 +130,14 @@ pub fn execute_reporting(app: &AppHandle, action: &Action, monitor: &Monitor, ca
     result
 }
 
+/// Glides the cursor to the middle of the monitor, where the agent starts from, so a person
+/// watching sees control change hands instead of the cursor staying wherever it was left.
+pub fn centre_cursor(monitor: &Monitor, cancel: &CancelToken) -> Result<(), ExecError> {
+    let x = monitor.x + (monitor.width / 2) as i32;
+    let y = monitor.y + (monitor.height / 2) as i32;
+    Input::new()?.glide_to(x, y, cancel)
+}
+
 /// Performs one action on the real desktop. `Done` does nothing here: ending a task is the
 /// caller's business.
 pub fn execute(action: &Action, monitor: &Monitor, cancel: &CancelToken) -> Result<(), ExecError> {

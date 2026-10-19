@@ -9,7 +9,7 @@ All AI inference goes to **rune-infer**, a local OpenAI-compatible server (Postm
 | Decision   | Choice                                                                               | Notes                                                          |
 | ---------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
 | OS         | Windows 11 only                                                                      | macOS/Linux later behind the native-layer traits               |
-| Brain      | One omni model, `nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-FP8` (see + hear + tools) | Our own function-calling protocol, no vendor computer-use tool |
+| Brain      | One omni model, `gemma-4-12b-it` (see + hear + tools)| Our own function-calling protocol, no vendor computer-use tool |
 | Voice      | Hands-free: click the mic once to start a listening session, click again to stop     | VAD cuts utterances; no push-to-talk                           |
 | Autonomy   | Runs freely, confirms risky actions                                                  | Confirm by button or voice "yes"/"no"                          |
 | Stack      | Tauri 2 (Rust core) + Vue 3 + Tailwind                                               | Rust owns capture, input, UIA, audio, the agent loop           |
@@ -45,7 +45,7 @@ UI shell (pill) <-events/commands-> Agent core (state machine, history, budget)
 
 ## 4. Model server integration
 
-**One omni model, one endpoint.** Everything (hearing the user, planning, choosing actions) is a call to `POST /v1/chat/completions` with the single `model` setting (default `nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-FP8`). There is no separate speech-to-text, vision or voice model. The optional decision model (`fast_checks`, default off) is the only other endpoint, `POST /v1/decisions` at `decision_url`, and the omni model stays the orchestrator.
+**One omni model, one endpoint.** Everything (hearing the user, planning, choosing actions) is a call to `POST /v1/chat/completions` with the single `model` setting (default `gemma-4-12b-it`). There is no separate speech-to-text, vision or voice model. The optional decision model (`fast_checks`, default off) is the only other endpoint, `POST /v1/decisions` at `decision_url`, and the omni model stays the orchestrator.
 
 What the server must support:
 
@@ -57,15 +57,7 @@ What the server must support:
 | Streaming | SSE with reasoning and tool-call deltas (used by Show thinking) |
 | Health / models | `GET /health` (no auth), `GET /v1/models`, `Authorization: Bearer <key>` |
 
-Serving with vLLM (>= 0.20, `pip install "vllm[audio]"`); flag names follow the vLLM recipe for this model family, so check them against your version:
-
-```
-vllm serve nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-FP8 \
-  --enable-auto-tool-choice --tool-call-parser qwen3_coder \
-  --reasoning-parser nemotron_v3
-```
-
-The FP8 checkpoint is about 30 GB of weights, so it needs a larger GPU than the 16 GB development card.
+Serving: any OpenAI-compatible server that meets the table works (for example vLLM with audio support installed). The tool-call parser, reasoning parser and audio flags are specific to the model, so take them from the model's own serving recipe. `enable_thinking` only has an effect if the model's chat template reads it; otherwise thinking stays off and "Show thinking" shows nothing.
 
 Facts that came from the previous Qwen/rune-infer setup and still need re-checking on this model: the **0-1000 normalized click coordinates** (`model/coords.rs`; re-run the M1.5 grounding probe before trusting them), the 131k context and the screenshot token cost.
 

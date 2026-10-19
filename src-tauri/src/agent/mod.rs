@@ -209,6 +209,15 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>) -> O
     // Ids from an earlier task must never be clicked in this one.
     uia::forget();
 
+    // Control starts from the middle of the screen. Failing to move the cursor is not worth a task.
+    if let Ok(monitor) = screenshot::monitor(None) {
+        let worker_cancel = cancel.clone();
+        let moved = tauri::async_runtime::spawn_blocking(move || body::centre_cursor(&monitor, &worker_cancel)).await;
+        if matches!(moved, Ok(Err(ExecError::Cancelled))) {
+            return Outcome::Stopped;
+        }
+    }
+
     for step in 1..=settings.max_steps {
         if cancel.is_cancelled() {
             return Outcome::Stopped;

@@ -36,7 +36,7 @@ export function installTauriMock() {
         case 'get_settings':
           return {
             baseUrl: 'http://127.0.0.1:8080',
-            model: 'nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-FP8',
+            model: 'gemma-4-12b-it',
             maxSteps: 30,
             toggleHotkey: 'Alt+Q',
             stopHotkey: 'Ctrl+Alt+Escape',
