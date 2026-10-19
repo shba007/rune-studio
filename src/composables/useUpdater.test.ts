@@ -1,9 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
-const check = vi.fn<(options?: { timeout?: number }) => Promise<unknown>>()
-const relaunch = vi.fn<() => Promise<void>>()
+const check = vi.fn<(options?: { timeout?: number }) => unknown>()
+const relaunch = vi.fn<() => void>()
 
-vi.mock('@tauri-apps/plugin-updater', () => ({ check: (...args: unknown[]) => check(...args) }))
+vi.mock('@tauri-apps/plugin-updater', () => ({
+  check: (options?: { timeout?: number }) => check(options),
+}))
 vi.mock('@tauri-apps/plugin-process', () => ({ relaunch: () => relaunch() }))
 vi.mock('@tauri-apps/api/app', () => ({ getVersion: () => Promise.resolve('0.0.3') }))
 

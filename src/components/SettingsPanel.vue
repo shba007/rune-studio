@@ -168,7 +168,9 @@ async function save() {
             <AppIcon name="logo" />
           </span>
           <span class="flex min-w-0 flex-1 flex-col">
-            <span class="text-label text-zinc-300">Version {{ updater.version.value || '...' }}</span>
+            <span class="text-label text-zinc-300"
+              >Version {{ updater.version.value || '...' }}</span
+            >
             <span class="truncate text-label text-zinc-500" :title="updater.error.value ?? ''">{{
               updater.phase.value === 'checking'
                 ? 'Checking...'
@@ -191,7 +193,9 @@ async function save() {
           :disabled="agent.isRunning.value"
           @click="updater.install(agent.isRunning.value)"
         >
-          <span class="grid size-8 shrink-0 place-items-center rounded-full bg-white/8 text-zinc-300">
+          <span
+            class="grid size-8 shrink-0 place-items-center rounded-full bg-white/8 text-zinc-300"
+          >
             <AppIcon name="ok" />
           </span>
           <span class="text-label text-zinc-300"
@@ -206,7 +210,9 @@ async function save() {
           :disabled="updater.phase.value === 'checking' || updater.updating.value"
           @click="updater.check()"
         >
-          <span class="grid size-8 shrink-0 place-items-center rounded-full bg-white/8 text-zinc-300">
+          <span
+            class="grid size-8 shrink-0 place-items-center rounded-full bg-white/8 text-zinc-300"
+          >
             <AppIcon name="refresh" />
           </span>
           <span class="text-label text-zinc-300">Check for updates</span>
