@@ -119,7 +119,7 @@ The window is a frameless, always-on-top, capture-excluded pill anchored to the 
 
 ### Settings
 
-Settings are saved to `settings.json` in the app config folder (identifier `dev.shirsendu-bairagi.rune-studio`). The rune-infer API key is kept in the OS credential store, never in the file.
+Settings are saved to `settings.json` in the app config folder (identifier `dev.shirsendu-bairagi.rune-studio`). The rune-infer API key is kept in the OS credential store, never in the file. `archiveKeepDays` (default `0`, which keeps everything) has no UI: edit the file to delete session folders older than that many days at startup.
 
 | Group          | Setting                        | Default                           |
 | -------------- | ------------------------------ | --------------------------------- |
@@ -169,7 +169,9 @@ Nothing risky runs without your Yes, whoever chose the action (the built-in mode
 
 ## Privacy and the record
 
-Everything the agent sees or hears is stored under `Documents/Rune Studio/`, **one folder per session** (one task run, built-in or by an outside agent): `sessions/<UTC date>/<hhmmss>-<n>-<task-slug>/` holds `session.json` (task, source, start and end time, outcome, summary, file counts) and `screenshots/`, `voice/`, `recordings/`. Files saved while no session is open (debug captures, speech that is not a command) go in `screenshots/<date>/`, `voice/<date>/`. Nothing is overwritten. There is **no setting to turn it off or move it**, no size limit and no automatic cleanup. It fails closed: if a screenshot or recording cannot be stored, the agent gets no screenshot and the utterance is not acted on. Screens can contain sensitive content, so treat this folder as sensitive and clear it yourself. The audio and screenshots are sent only to the configured model server.
+Everything the agent sees or hears is stored under `Documents/Rune Studio/`, **one folder per session** (one task run, built-in or by an outside agent): `sessions/<UTC date>/<hhmmss>-<n>-<task-slug>/` holds `session.json` (task, source, start and end time, outcome, summary, file counts) and `screenshots/`, `voice/`, `recordings/`. Files saved while no session is open (debug captures, speech that is not a command) go in `screenshots/<date>/`, `voice/<date>/`. Nothing is overwritten. There is **no setting to turn it off or move it**, no size limit and no automatic cleanup. It fails closed: if a screenshot or recording cannot be stored, the agent gets no screenshot and the utterance is not acted on. Screens can contain sensitive content, so treat this folder as sensitive. Cleanup is opt-in: set `archiveKeepDays` in `settings.json` (no UI yet) to delete session folders older than that many days at startup; the default 0 keeps everything.
+
+**The trace database.** Alongside the files, every run (built-in or outside agent) is written to `trace.sqlite3` in the app data folder (the folder that holds `audit.log`; on Windows `%APPDATA%\dev.shirsendu-bairagi.rune-studio\`): what was asked, each step (the prompt text the model saw, the tool and its arguments, the safety decision, the result, how long each phase took, the path of the screenshot) and how the run ended. It stores paths to the screenshots, not the images. It holds the **task text, the model's prompts and the arguments of typed text**, so it is as sensitive as the screenshots. It never stores the API key, the base URL, the bridge token or image data. Unlike the screenshots it is best-effort: if it cannot be written, the task goes on. With `archiveKeepDays` set, the rows of deleted session folders are removed too. The audio and screenshots are sent only to the configured model server.
 
 ---
 
@@ -188,6 +190,8 @@ rune-studio-cli connect --print     # settings to paste into any other MCP-capab
 rune-studio-cli skill [--remove]    # install / remove only the Claude Code skill
 rune-studio-cli disconnect claude   # remove (also: antigravity)
 rune-studio-cli status              # is the app running, are outside agents allowed
+rune-studio-cli runs [--limit N]    # the newest recorded runs (default 20), read from trace.sqlite3
+rune-studio-cli run <id>            # one recorded run: its steps and events
 rune-studio-cli guide               # print the guide an agent reads
 rune-studio-cli mcp                 # what agents run: MCP over stdio, starts the app if needed
 ```
@@ -293,6 +297,7 @@ src-tauri/src/
   voice/                     capture (cpal), vad (energy), direct (omni-model hearing), intent
   bridge/                    lease (always compiled); server, mcp, token, cli, agents, skill, path_link (feature agent-bridge)
   archive.rs                 the record of screenshots/voice
+  trace/                     the flight recorder: trace.sqlite3 (writer thread, schema, read API)
   settings.rs, hotkeys.rs, backend.rs, events.rs, commands.rs, window.rs, overlay.rs, cursor.rs, error.rs
   debug.rs                   debug builds only
   system_tests.rs, probe_m15.rs   test-only (#[ignore]d)
