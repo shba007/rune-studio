@@ -131,8 +131,23 @@ The original plan:
 
 ### R2 Eval harness and baseline — M-H / medium
 
-- ~15 fixed desktop tasks plus a few kit-tool tasks; records success, steps, time, tokens; fast checks on/off. Replay mode against stored episodes (needs Observer/Actor traits). Local PowerShell script first; a self-hosted Windows runner is **NOT CERTAIN**.
-  Exit: baseline for the current default model. Every later milestone is gated: success not lower, median task time within +10%.
+**Scope change (2026-10-19):** R2 is the harness and the baseline. Replay mode against stored episodes is **moved to a later milestone** (it needs Observer/Actor traits that do not exist yet) and is not built. The kit-tool tasks wait for K1.
+
+**Status (branch `develop`, 2026-10-19):**
+
+| Item                                                                                                  | Status                                                                                                                              |
+| ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Suite format, path jail, kill allowlist, checkers, pass rule (`eval/spec.rs`, `check.rs`, `steps.rs`) | built, unit tests on Linux                                                                                                          |
+| The 15 tasks and 8 fixture pages (`scripts/eval/`)                                                    | built; the fixture pages were checked in a headless browser (including the negative cases), **the tasks were never run on Windows** |
+| Eval mode (`--features eval`, two environment variables)                                              | built; type-checks for `x86_64-pc-windows-gnu`; **not run end to end**                                                              |
+| Runner `run.ps1`                                                                                      | written, **never run** (no PowerShell in the build environment)                                                                     |
+| `report.mjs` and the gate                                                                             | built, tested on fixture results (equal, one run lower, success drop, 12% slower)                                                   |
+| CI for the harness                                                                                    | **not built** (there is no Rust workflow; run the commands in the README)                                                           |
+| Baseline (`docs/evals/`)                                                                              | **not done**: the maintainer runs it on a Windows desktop with a live rune-infer                                                    |
+| Replay, kit-tool tasks, a self-hosted runner                                                          | not built; the runner is still **NOT CERTAIN**                                                                                      |
+
+~15 fixed desktop tasks, success measured by checkers on the machine, steps, time and tokens recorded, fast checks on and off.
+Exit: baseline for the current default model. Every later milestone is gated: success not lower, median task time within +10%. Until a baseline exists, R2 is **built, not measured**.
 
 ### R3 Verifier — M / high
 

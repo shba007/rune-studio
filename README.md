@@ -277,6 +277,20 @@ bun run test:unit                         # frontend
 
 CI does **not** run `cargo test`, `clippy` or `fmt`; run them locally before pushing.
 
+### Evaluating changes
+
+A fixed suite of 15 desktop tasks measures whether a change makes the agent worse: success rate not lower, median task time within +10%. It is a separate build (`--features eval`, never in a release) and needs **Windows 11, a clean desktop, a running rune-infer and Rune Studio closed**. It moves your real mouse and types, so read `scripts/eval/README.md` first.
+
+```bash
+cd src-tauri && cargo test --lib --features eval,agent-bridge    # the harness's own tests
+bun run test:eval                                                 # the report and the gate
+pwsh scripts/eval/run.ps1 -DryRun                                 # validate the suite, print the plan
+pwsh scripts/eval/run.ps1 -Repeats 3 -FastChecks off              # the run (then again with -FastChecks on)
+node scripts/eval/report.mjs <results.jsonl> --compare <baseline.jsonl>   # judge a change
+```
+
+Each run is judged by looking at the machine (files, windows, processes), not by what the model says. How to commit a baseline is in `docs/evals/README.md`.
+
 ### Project layout
 
 ```
