@@ -8,7 +8,7 @@
 <h1 align="center">Rune Studio</h1>
 
 <p align="center">
-  <strong>A voice and text driven desktop agent that controls your PC through a local model server (rune-infer)</strong>
+  <strong>A voice and text driven desktop harness that controls your PC through a local model server (rune-infer)</strong>
 </p>
 
 <p align="center">
