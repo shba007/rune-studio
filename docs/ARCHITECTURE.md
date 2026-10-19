@@ -61,6 +61,8 @@ Errors are `ModelError::{Request, Status, Reply, NoToolCall}`. A reply with no t
 
 Health: `backend::check` calls `GET /health` (no auth), then `GET /v1/models` (authenticated), each with a 4 s timeout, and reports reachable / key rejected / configured model missing / latency.
 
+**Against rune-infer specifically** (read from `shba007/rune-infer` source on 2026-10-19; not run): its chat handler accepts `text`, `image_url` and `video_url` parts but has no `audio_url` or `input_audio` part, so Studio's voice call is not accepted by it as written; and it reads thinking from `thinking`, `chat_template_kwargs.thinking` or `reasoning_effort`, **not** from `chat_template_kwargs.enable_thinking`, which is what `model/client.rs` sends. Both are tracked in `docs/ROADMAP.md` (R0 wire-format audit; rune-infer expectations). Its `usage` has no image-token count, so screenshot token cost cannot be read from responses.
+
 What the server must support: multimodal content parts (`text`, `image_url` as data-URI JPEG, `audio_url` as data-URI WAV 16 kHz mono), tool calls with those inputs, the `enable_thinking` template flag, SSE with reasoning and tool-call deltas, `/health`, `/v1/models`, and bearer auth. `enable_thinking` only has an effect if the model's chat template reads it. The 0-1000 click-coordinate convention, the context size and the screenshot token cost were measured on earlier models (see the appendix) and should be re-checked for the current default.
 
 ## 5. Action protocol
@@ -313,6 +315,8 @@ rune-infer can serve a decision model (`d1-3b-q8-0` by default, `POST /v1/decisi
 
 Rules the code follows: it only picks from what it is offered, so it never replaces the model that chooses actions; every check acts only on a **confident** answer and only in the direction where a mistake is cheap ("no" and "unsure" both mean "do it the usual way"); the risk check can only raise the risk; it has no memory between calls; it is optional. Timeouts are 4 s for text and 8 s with a screenshot, and after a failure the decision model is left alone for 60 s (a process-wide cooldown). Stop works while it is being asked. These checks run serially on the loop's critical path, so each adds its latency to a step when it is on.
 
+What rune-infer's code does (read, not run): `/v1/decisions` decodes the request's `images` and passes them to its decision engine, so the image path exists in the server code. Whether the engine uses them is **NOT CERTAIN**; the observation below says it did not.
+
 An observation from 2026-10-19 against one server build: text questions answered correctly in about 70 ms, but screenshots did not influence the answers (the server appeared not to feed images to the model), so the screen-reading and finished checks effectively always answered "no". Re-test with an image whose answer is obviously yes before relying on them.
 
 ## 12. External agent bridge (feature `agent-bridge`)
@@ -347,6 +351,8 @@ An outside agent can use Rune Studio's eyes and hands directly, skipping the loc
 - **Supply chain note:** `Cargo.toml` pins `zip` to a git tag through `[patch.crates-io]`.
 
 ## 14. Status
+
+Planned work beyond this table (flight recorder, verifier, reflection mode, visual analysis, kit integration) is in [`ROADMAP.md`](ROADMAP.md). None of it is built.
 
 | #             | Milestone                                                                                      | State                                                                                                                       |
 | ------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
@@ -390,7 +396,23 @@ These are properties of the current code, not plans:
 
 - Streaming STT exposed through the API, for lower voice latency.
 - Make the decision endpoint honour screenshots (section 11).
-- A stateless recognition endpoint for the optional M7 card: `POST /v1/images/recognize` taking `image`, optional `region` (0-1000) and `point`, returning labelled results with boxes in the same 0-1000 space; stateless, deterministic at temperature 0, not storing or logging the image, and describing people without identifying them.
+- For the optional M7 recognition card and for visual analysis: rune-infer already has `/v1/images/recognize`, but it is a similarity matcher (`image`, `top_k`, `targets[]`), not a describe-and-locate endpoint. It also has `/v1/images/grounding` (`box_2d` as `[ymin,xmin,ymax,xmax]` in 0-1000), `/v1/ocr`, `/v1/images/detections` and `/v1/images/captions` (the last two were not read: **NOT CERTAIN** of their shapes). A card would need either one of those or chat with a JSON schema; see `docs/ROADMAP.md` R4. Whatever is used should be stateless, deterministic at temperature 0, not store or log the image, and describe people without identifying them.
+- The full list of expectations of rune-infer, rune-kit and rune-tools is in `docs/ROADMAP.md`.
+
+## 18. Ecosystem: rune-infer, rune-kit, rune-tools
+
+Rune Studio is one of four projects by the same author. Facts below were read from the other repositories' source on 2026-10-19 and not run.
+
+| Project | What it is | Relation to Studio today |
+| --- | --- | --- |
+| `shba007/rune-infer` | Rust gateway exposing OpenAI-style HTTP APIs in front of local engines (`llama-server`, audio, encoder, ...) and cloud adapters | **The model server.** Studio's only network dependency (sections 4 and 11) |
+| `shba007/rune-kit` | The `rune` CLI: an MCP plugin package manager and a stdio MCP gateway (`rune run --all`). Plugins are WASM (Extism) or native child processes; skills are markdown installed under `skills/` | **Not used by the app today.** Studio has no MCP client. The user's agents reach Studio through Studio's own MCP server (section 12), not through kit |
+| `shba007/rune-tools` | The registry and source of 14 kit plugins (filesystem, fetch, memory, git, browser, email, audio, video, image, slides, figma, time, sequential-thinking, one private email-template plugin) | None directly; reached only through kit |
+
+- rune-kit speaks MCP over **stdio only** (no HTTP), prints tables from `install`/`list`/`search` (no JSON), and namespaces tools `<plugin>__<tool>`.
+- Native kit plugins have no sandbox in the code read, and an empty host list for a WASM plugin allows any host; a call to a kit tool would therefore have to pass Studio's safety gate (section 7), which today only knows Studio's own actions.
+- rune-tools has no desktop screen-capture, OCR or vision plugin; `rune-browser` has `browser_screenshot` for a browser.
+- The planned link (Studio spawns `rune` as an MCP client, kit owns MCP servers, skills, plugins and external binaries) is described in `docs/ROADMAP.md` milestone K1. **None of it is built.**
 
 ---
 

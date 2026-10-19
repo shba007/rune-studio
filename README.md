@@ -207,6 +207,12 @@ One agent holds control at a time (the "lease"). It ends on `rune_done`, on Stop
 
 ---
 
+## Related projects
+
+Rune Studio is one of four projects. **rune-infer** is the model server it calls; **rune-kit** (the `rune` CLI, an MCP package manager and gateway) and **rune-tools** (its plugin registry) are intended to own MCP servers, skills, plugins and external tools so the app does not. The app does not use kit or tools yet. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) section 18 and the plan in [`docs/ROADMAP.md`](docs/ROADMAP.md) (flight recorder, verifier, idle reflection mode, visual analysis; none of it built).
+
+---
+
 ## Development
 
 ### Prerequisites
