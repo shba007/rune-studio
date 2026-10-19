@@ -297,6 +297,8 @@ The repository includes a multi-platform GitHub Actions workflow (`.github/workf
 - **Desktop Matrix**: Builds on `windows-latest`, `ubuntu-latest`, and `macos-latest` (both `x86_64` and `aarch64`).
 - **Android Matrix**: Compiles universal `.apk` and `.aab` artifacts.
 
+A separate workflow (`.github/workflows/rust.yml`, on pull requests and pushes to `develop` and `main`) runs `cargo test --lib` with and without `--features agent-bridge` on `windows-latest` and `ubuntu-latest`. Clippy and `cargo fmt --check` run too but do not fail the build yet.
+
 ### Required Repository Secrets & Variables
 
 | Secret / Variable                            | Scope         | Description                                                   |
