@@ -362,3 +362,148 @@ fn the_calculator_task_accepts_either_program_name_and_closes_both() {
     let killed: Vec<&str> = task.teardown.iter().filter_map(|step| if let Step::KillProcess { name } = step { Some(name.as_str()) } else { None }).collect();
     assert_eq!(killed, ["CalculatorApp.exe", "Calculator.exe"]);
 }
+
+// ---------------------------------------------------------------- the run's decisions
+
+use std::time::Duration;
+
+use super::{Poll, build_result, file_url, poll_decision, preflight, steps, totals, windows::parse_tasklist};
+use crate::{events::AgentState, trace::StepRecord};
+
+#[test]
+fn the_poll_decision_follows_the_state_and_the_clock() {
+    let timeout = Duration::from_secs(240);
+    let early = Duration::from_secs(10);
+    use AgentState::*;
+    for running in [Planning, Acting, Observing] {
+        assert_eq!(poll_decision(running, early, timeout), Poll::Running, "{running:?}");
+    }
+    assert_eq!(poll_decision(AwaitingConfirm, early, timeout), Poll::NeedsDenial);
+    for finished in [Idle, Done, Failed, Stopped, Listening, Reflecting] {
+        assert_eq!(poll_decision(finished, early, timeout), Poll::Finished, "{finished:?}");
+    }
+    // The clock wins, whatever the state: a run stuck on a question still times out.
+    for state in [Planning, AwaitingConfirm, Done] {
+        assert_eq!(poll_decision(state, timeout, timeout), Poll::TimedOut, "{state:?}");
+        assert_eq!(poll_decision(state, timeout + Duration::from_secs(1), timeout), Poll::TimedOut);
+    }
+    assert_eq!(poll_decision(Acting, timeout - Duration::from_millis(1), timeout), Poll::Running);
+}
+
+#[test]
+fn preflight_refuses_open_programs_and_an_unhealthy_server() {
+    let none: Vec<String> = vec![];
+    let names = |list: &[&str]| list.iter().map(|name| name.to_string()).collect::<Vec<_>>();
+    assert_eq!(preflight(&names(&["svchost.exe", "chrome.exe", "explorer.exe"]), true, true, &none, None), Ok(()), "a browser and Explorer being open is fine");
+    let open = preflight(&names(&["Notepad.exe", "mspaint.exe", "svchost.exe"]), true, true, &none, None).unwrap_err();
+    assert!(open.contains("notepad.exe") && open.contains("mspaint.exe") && !open.contains("svchost"), "{open}");
+    assert!(preflight(&names(&["CalculatorApp.exe"]), true, true, &none, None).is_err());
+    assert!(preflight(&none, false, false, &none, Some("connection refused")).unwrap_err().contains("connection refused"));
+    assert!(preflight(&none, true, false, &none, None).unwrap_err().contains("API key"));
+    assert!(preflight(&none, true, true, &names(&["gemma-4-12b-it"]), None).unwrap_err().contains("gemma-4-12b-it"));
+}
+
+fn step(decide: Option<i64>, observe: Option<i64>, act: Option<i64>, tokens: Option<i64>) -> StepRecord {
+    StepRecord { decide_ms: decide, observe_ms: observe, act_ms: act, completion_tokens: tokens, ..StepRecord::new("r", 1) }
+}
+
+#[test]
+fn totals_add_up_what_ran_and_skip_what_did_not() {
+    assert_eq!(totals(&[]), (0, 0, 0, 0));
+    assert_eq!(totals(&[step(Some(800), Some(300), Some(40), Some(55)), step(Some(900), None, None, None), step(None, Some(250), Some(60), Some(12))]), (1700, 550, 100, 67));
+}
+
+fn sample_task(expect: Expect) -> Task {
+    Task { id: "notepad-write-save".into(), expect, ..task(expect, None) }
+}
+
+#[test]
+fn a_result_line_has_exactly_the_documented_fields() {
+    let steps = [step(Some(800), Some(300), Some(40), Some(55)), step(Some(900), Some(310), Some(60), Some(45))];
+    let result = build_result(&sample_task(Expect::Success), 2, "120000-1-open-notepad", "reported_failure", true, &steps, Duration::from_millis(18_250), 0, None);
+    let expected = r#"{"task":"notepad-write-save","repeat":2,"run_id":"120000-1-open-notepad","outcome":"reported_failure","self_reported_success":false,"check_passed":true,"expect":"success","passed":true,"steps":2,"duration_ms":18250,"decide_ms_total":1700,"observe_ms_total":610,"act_ms_total":100,"completion_tokens_total":100,"denied_prompts":0,"error":null}"#;
+    assert_eq!(result.to_line(), expected);
+    assert!(result.passed, "the model said it failed but the file is there: passed");
+}
+
+#[test]
+fn the_models_claim_and_the_check_are_kept_apart() {
+    let claimed_but_wrong = build_result(&sample_task(Expect::Success), 1, "r", "succeeded", false, &[], Duration::from_secs(1), 0, None);
+    assert!((claimed_but_wrong.self_reported_success, claimed_but_wrong.check_passed, claimed_but_wrong.passed) == (true, false, false));
+    let timeout = build_result(&sample_task(Expect::Success), 1, "r", "timeout", true, &[], Duration::from_secs(240), 0, None);
+    assert!(!timeout.self_reported_success && timeout.passed);
+    // An expect-failure task: the check holds but the agent claimed success, or never stopped.
+    let should_not_have = build_result(&sample_task(Expect::Failure), 1, "r", "succeeded", true, &[], Duration::from_secs(5), 1, None);
+    assert!(should_not_have.check_passed && !should_not_have.passed);
+    assert_eq!(should_not_have.expect, "failure");
+    let right = build_result(&sample_task(Expect::Failure), 1, "r", "reported_failure", true, &[], Duration::from_secs(5), 2, Some("teardown: x".into()));
+    assert!(right.passed);
+    assert_eq!((right.denied_prompts, right.error.as_deref()), (2, Some("teardown: x")));
+}
+
+#[test]
+fn file_addresses_are_built_from_paths() {
+    assert_eq!(file_url(std::path::Path::new("C:\\Users\\me\\rune studio\\scripts\\eval\\fixtures")), "file:///C:/Users/me/rune%20studio/scripts/eval/fixtures");
+    assert_eq!(file_url(std::path::Path::new("\\\\?\\C:\\a\\fixtures")), "file:///C:/a/fixtures");
+    assert_eq!(file_url(std::path::Path::new("/home/me/fixtures")), "file:///home/me/fixtures");
+}
+
+#[test]
+fn tasklist_output_gives_program_names() {
+    let output = "\"System Idle Process\",\"0\",\"Services\",\"0\",\"8 K\"\r\n\"notepad.exe\",\"1234\",\"Console\",\"1\",\"9,000 K\"\r\n\"CalculatorApp.exe\",\"88\",\"Console\",\"1\",\"30 K\"\r\n\r\nnot csv\r\n";
+    assert_eq!(parse_tasklist(output), ["System Idle Process", "notepad.exe", "CalculatorApp.exe"]);
+    assert!(parse_tasklist("").is_empty());
+}
+
+// ---------------------------------------------------------------- setup and teardown
+
+#[test]
+fn setup_steps_make_write_and_delete_inside_the_jail() {
+    let (work, out) = (TempDir::new("steps-work"), TempDir::new("steps-out"));
+    let roots = roots(&work, &out);
+    let make = |path: String| Step::MakeDir { path };
+    steps::apply_all(&[make(work.path("alpha/beta")), Step::WriteFile { path: work.path("note.txt"), content: "foo bar foo".into() }, Step::WriteFile { path: work.path("sub/deep.txt"), content: "x".into() }], &roots).unwrap();
+    assert!(work.0.join("alpha/beta").is_dir());
+    assert_eq!(std::fs::read_to_string(work.0.join("note.txt")).unwrap(), "foo bar foo");
+    assert!(work.0.join("sub/deep.txt").is_file(), "parent folders are made for a file");
+
+    steps::apply(&Step::DeletePath { path: work.path("note.txt") }, &roots).unwrap();
+    steps::apply(&Step::DeletePath { path: work.path("alpha") }, &roots).unwrap();
+    assert!(!work.0.join("note.txt").exists() && !work.0.join("alpha").exists());
+    steps::apply(&Step::DeletePath { path: work.path("never-existed") }, &roots).unwrap();
+    steps::apply(&Step::WaitMs { ms: 1 }, &roots).unwrap();
+}
+
+#[test]
+fn steps_cannot_leave_the_jail_or_remove_a_root_or_close_the_wrong_program() {
+    let (work, out) = (TempDir::new("steps2-work"), TempDir::new("steps2-out"));
+    let roots = roots(&work, &out);
+    let outside = TempDir::new("steps2-outside");
+    std::fs::write(outside.path("precious.txt"), "keep").unwrap();
+
+    assert!(steps::apply(&Step::WriteFile { path: outside.path("evil.txt"), content: "x".into() }, &roots).is_err());
+    assert!(!outside.0.join("evil.txt").exists());
+    assert!(steps::apply(&Step::DeletePath { path: outside.path("precious.txt") }, &roots).is_err());
+    assert!(outside.0.join("precious.txt").exists(), "a file outside the jail is never deleted");
+    assert!(steps::apply(&Step::MakeDir { path: format!("{}/../made", work.0.display()) }, &roots).is_err());
+    assert!(steps::apply(&Step::DeletePath { path: work.0.display().to_string() }, &roots).unwrap_err().contains("root folder"));
+    assert!(work.0.is_dir());
+    assert!(steps::apply(&Step::DeletePath { path: out.0.display().to_string() }, &roots).is_err());
+    for program in ["explorer.exe", "chrome.exe", "msedge.exe"] {
+        assert!(steps::apply(&Step::KillProcess { name: program.into() }, &roots).unwrap_err().contains("not on the list"), "{program}");
+    }
+    // A step list stops at its first failure.
+    let list = [Step::WriteFile { path: work.path("first.txt"), content: "1".into() }, Step::DeletePath { path: "/etc/passwd".into() }, Step::WriteFile { path: work.path("never.txt"), content: "2".into() }];
+    assert!(steps::apply_all(&list, &roots).is_err());
+    assert!(work.0.join("first.txt").exists() && !work.0.join("never.txt").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn deleting_through_a_link_that_leads_out_is_refused() {
+    let (work, out, elsewhere) = (TempDir::new("steps3-work"), TempDir::new("steps3-out"), TempDir::new("steps3-else"));
+    std::fs::write(elsewhere.path("precious.txt"), "keep").unwrap();
+    std::os::unix::fs::symlink(&elsewhere.0, work.0.join("door")).unwrap();
+    assert!(steps::apply(&Step::DeletePath { path: work.path("door/precious.txt") }, &roots(&work, &out)).is_err());
+    assert!(elsewhere.0.join("precious.txt").exists());
+}

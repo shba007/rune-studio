@@ -26,6 +26,9 @@ pub struct Pending {
     pub id: String,
     /// "approval" or "question" (see `ConfirmRequest`).
     pub kind: &'static str,
+    /// What is being asked, in a short line (for the evaluation harness, which answers No).
+    #[cfg(feature = "eval")]
+    text: String,
     sender: oneshot::Sender<bool>,
 }
 
@@ -101,6 +104,13 @@ pub fn answer(app: &AppHandle, id: &str, approved: bool) -> bool {
             false
         }
     }
+}
+
+/// The question waiting for an answer, if any: its id, its kind ("approval" or "question") and
+/// its text. It only looks; nothing about asking or answering changes.
+#[cfg(feature = "eval")]
+pub fn pending_question(app: &AppHandle) -> Option<(String, &'static str, String)> {
+    app.state::<AppState>().confirm.locked().as_ref().map(|pending| (pending.id.clone(), pending.kind, pending.text.clone()))
 }
 
 fn new_id() -> String {
@@ -189,7 +199,13 @@ pub async fn ask_question(app: &AppHandle, cancel: &CancelToken, source: &str, q
 async fn ask_user(app: &AppHandle, cancel: &CancelToken, source: &str, text: &str, reason: &str, risk: Risk, reasons: &[String], kind: &'static str) -> Verdict {
     let id = new_id();
     let (sender, receiver) = oneshot::channel();
-    *app.state::<AppState>().confirm.locked() = Some(Pending { id: id.clone(), kind, sender });
+    *app.state::<AppState>().confirm.locked() = Some(Pending {
+        id: id.clone(),
+        kind,
+        #[cfg(feature = "eval")]
+        text: text.to_string(),
+        sender,
+    });
 
     let _ = app.emit(
         CONFIRM_REQUEST,

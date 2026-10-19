@@ -166,6 +166,10 @@ pub fn run() {
             }
             tray.build(app)?;
 
+            // The evaluation harness: only in an `eval` build, and only if both variables are set.
+            #[cfg(feature = "eval")]
+            eval::start(app.handle());
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

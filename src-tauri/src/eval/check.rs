@@ -15,9 +15,11 @@ pub trait Machine {
     fn process_names(&self) -> Result<Vec<String>, String>;
 }
 
-/// For systems where windows and processes cannot be listed.
+/// For tests of the "cannot be listed" case; on a real system `windows::System` says so itself.
+#[cfg(test)]
 pub struct Unsupported;
 
+#[cfg(test)]
 impl Machine for Unsupported {
     fn window_titles(&self) -> Result<Vec<String>, String> {
         Err("listing windows is not supported on this system".into())
@@ -32,7 +34,7 @@ impl Machine for Unsupported {
 pub fn read_text(path: &Path) -> Result<String, String> {
     let bytes = std::fs::read(path).map_err(|err| format!("could not read {}: {err}", path.display()))?;
     if let Some(rest) = bytes.strip_prefix(&[0xFF, 0xFE]) {
-        let units: Vec<u16> = rest.chunks_exact(2).map(|pair| u16::from_le_bytes([pair[0], pair[1]])).collect();
+        let units: Vec<u16> = rest.as_chunks::<2>().0.iter().map(|pair| u16::from_le_bytes(*pair)).collect();
         return Ok(String::from_utf16_lossy(&units));
     }
     let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&bytes);
