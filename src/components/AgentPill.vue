@@ -130,7 +130,12 @@ function onOrb() {
       :style="{ width: isAmbient ? '0px' : `${PAGE_WIDTH + PAGE_GAP}px` }"
     >
       <div class="ml-2 flex h-full flex-col justify-end" :style="{ width: `${PAGE_WIDTH}px` }">
-        <div ref="content" class="flex flex-col">
+        <!-- Settings fills the window and scrolls inside; the other pages are as tall as their content. -->
+        <div
+          ref="content"
+          class="flex flex-col"
+          :class="agent.mode.value === 'settings' ? 'h-full min-h-0' : ''"
+        >
           <Transition name="page" mode="out-in">
             <SettingsPanel v-if="agent.mode.value === 'settings'" key="settings" :agent="agent" />
             <div v-else key="main" class="flex flex-col gap-2">

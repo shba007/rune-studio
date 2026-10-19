@@ -108,6 +108,8 @@ pub fn run() {
 
             #[cfg(feature = "agent-bridge")]
             bridge::server::start(app.handle());
+            #[cfg(all(feature = "agent-bridge", unix))]
+            bridge::path_link::ensure();
 
             // Failures are already logged; the pill stays reachable from the tray.
             let _ = hotkeys::apply(app.handle(), None, &hotkeys);
