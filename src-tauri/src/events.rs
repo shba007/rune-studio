@@ -47,6 +47,10 @@ pub struct AppState {
     pub confirm: Mutex<Option<Pending>>,
     /// Things the user said while the agent was working; read before its next step.
     pub steer: Mutex<Vec<String>>,
+    /// Held for a whole outside-agent action (gate, announce, execute, settle), so two parallel
+    /// calls take turns instead of driving the mouse and the confirm slot at once.
+    #[cfg(feature = "agent-bridge")]
+    pub act_turn: tokio::sync::Mutex<()>,
     pub http: reqwest::Client,
 }
 

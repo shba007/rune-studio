@@ -91,6 +91,18 @@ pub fn current_scope(slot: &Mutex<RunScope>) -> RunScope {
     slot.lock().expect("run scope lock poisoned").clone()
 }
 
+/// Waits for `lock`, but gives up with `Cancelled` as soon as `cancel` is set (also if it already
+/// is). Outside agents' actions take turns through this: a call that is queued behind another one
+/// must not outlive Stop.
+#[cfg(any(test, feature = "agent-bridge"))]
+pub async fn lock_unless_stopped<'a>(lock: &'a tokio::sync::Mutex<()>, cancel: &CancelToken) -> Result<tokio::sync::MutexGuard<'a, ()>, ExecError> {
+    cancel.check()?;
+    tokio::select! {
+        guard = lock.lock() => Ok(guard),
+        () = async { while !cancel.is_cancelled() { tokio::time::sleep(Duration::from_millis(25)).await } } => Err(ExecError::Cancelled),
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ExecError {
     #[error("stopped")]
@@ -143,5 +155,48 @@ mod tests {
             assert!(next > last);
             last = next;
         }
+    }
+
+    #[tokio::test]
+    async fn turns_are_strictly_sequential() {
+        use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
+        let lock = Arc::new(tokio::sync::Mutex::new(()));
+        let inside = Arc::new(AtomicUsize::new(0));
+        let overlapped = Arc::new(AtomicBool::new(false));
+        let mut turns = Vec::new();
+        for _ in 0..4 {
+            let (lock, inside, overlapped) = (lock.clone(), inside.clone(), overlapped.clone());
+            turns.push(tokio::spawn(async move {
+                let _turn = lock_unless_stopped(&lock, &CancelToken::default()).await.expect("nobody pressed Stop");
+                if inside.fetch_add(1, SeqCst) != 0 {
+                    overlapped.store(true, SeqCst);
+                }
+                tokio::time::sleep(Duration::from_millis(30)).await;
+                inside.fetch_sub(1, SeqCst);
+            }));
+        }
+        for turn in turns {
+            turn.await.unwrap();
+        }
+        assert!(!overlapped.load(SeqCst), "two turns ran at the same time");
+    }
+
+    #[tokio::test]
+    async fn a_waiter_is_released_by_stop() {
+        let lock = tokio::sync::Mutex::new(());
+        let first = lock_unless_stopped(&lock, &CancelToken::default()).await.unwrap();
+        let stop = CancelToken::default();
+        let stopper = stop.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(60)).await;
+            stopper.cancel();
+        });
+        let started = Instant::now();
+        let second = lock_unless_stopped(&lock, &stop).await;
+        assert!(matches!(second, Err(ExecError::Cancelled)));
+        assert!(started.elapsed() < Duration::from_secs(2), "released by Stop, not by the first holder");
+        drop(first);
+        // And a token that is already cancelled never takes the lock, even when it is free.
+        assert!(matches!(lock_unless_stopped(&lock, &stop).await, Err(ExecError::Cancelled)));
     }
 }

@@ -13,7 +13,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::{
     agent::{body, protocol},
     events::{self, AgentState, AppState, ExternalAgent, TaskDone},
-    exec::{ExecError, input::parse_key, uia},
+    exec::{ExecError, input::parse_key, lock_unless_stopped, uia},
     observe::screenshot::{self, Frame, MODEL_JPEG_QUALITY, MODEL_MAX_EDGE},
 };
 
@@ -362,7 +362,19 @@ async fn elements(app: &AppHandle) -> Reply {
     Reply::text(format!("Controls in the front window. Use the id with rune_click_element; the ids are valid until the next list.\n{text}"))
 }
 
+/// One action by the outside agent. Calls take turns: the guard is held from before the lease is
+/// touched until the reply (with its screenshot) is built, so the gate's single confirm slot and the
+/// mouse are never shared. A call waiting for its turn is released by Stop.
 async fn act(app: &AppHandle, tool: &'static str, arguments: &Value) -> Reply {
+    let state = app.state::<AppState>();
+    let _turn = match lock_unless_stopped(&state.act_turn, &state.current_scope().token).await {
+        Ok(turn) => turn,
+        Err(_) => return LeaseError::StoppedByUser.into(),
+    };
+    act_turn(app, tool, arguments).await
+}
+
+async fn act_turn(app: &AppHandle, tool: &'static str, arguments: &Value) -> Reply {
     let step = match touch(app) {
         Ok(step) => step,
         Err(reply) => return reply,

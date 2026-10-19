@@ -95,6 +95,8 @@ pub fn run() {
                 agent_state: Mutex::new(AgentState::Idle),
                 lease: Mutex::new(bridge::lease::LeaseBook::default()),
                 confirm: Mutex::new(None),
+                #[cfg(feature = "agent-bridge")]
+                act_turn: Default::default(),
                 http: reqwest::Client::new(),
             });
 
