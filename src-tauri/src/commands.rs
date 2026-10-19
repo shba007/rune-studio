@@ -186,6 +186,16 @@ pub async fn toggle_listening(app: AppHandle, state: State<'_, AppState>) -> App
         return Err(AppError::Invalid("Stop the current task before listening".into()));
     }
 
+    // Voice goes to the omni model as audio. If the server says the model cannot hear, say so in the
+    // log; this runs in the background so opening the microphone is not delayed by the probe.
+    let (settings, http) = (state.settings.locked().clone(), state.http.clone());
+    tauri::async_runtime::spawn(async move {
+        let status = backend::check(&http, &settings, settings::api_key().as_deref()).await;
+        if backend::lacks_audio(&status.model_capabilities) {
+            log::warn!("the configured model does not list Audio: voice will not be understood");
+        }
+    });
+
     let handle = app.clone();
     let capture = tauri::async_runtime::spawn_blocking(move || Capture::start(handle))
         .await

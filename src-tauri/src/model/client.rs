@@ -1,9 +1,11 @@
 //! The chat call to the omni model: the task (a screenshot and/or what the user just said) in,
 //! one tool call out. Every model role goes through this one call.
 //!
-//! Two modes. By default thinking is off (`chat_template_kwargs.enable_thinking: false`): the M1.5 probe showed
-//! grounding does not need it, and it only adds latency. With `think` on, the reply is streamed so
-//! the model's thinking can be shown while it happens.
+//! Two modes. By default thinking is off: the M1.5 probe showed grounding does not need it, and it
+//! only adds latency. The switch is sent two ways, `thinking: {"type": "disabled" | "enabled"}`
+//! (which rune-infer honours) and `chat_template_kwargs.enable_thinking` (which it does not, but
+//! other servers read). With `think` on, the reply is streamed so the model's thinking can be shown
+//! while it happens. Audio goes as an `input_audio` part (base64 WAV), the only form rune-infer reads.
 
 use std::{collections::BTreeMap, time::Duration};
 
@@ -88,6 +90,42 @@ fn snippet(text: &str) -> String {
     text.chars().take(300).collect()
 }
 
+/// The JSON body of one chat completion request.
+fn chat_body(model: &str, request: &Request<'_>) -> Value {
+    let content = if request.screenshot.is_none() && request.audio.is_none() {
+        json!(request.user_text)
+    } else {
+        // Audio and image first, text last, like the probe: the screenshot is the expensive part.
+        let mut parts = Vec::new();
+        if let Some(audio) = request.audio {
+            parts.push(json!({ "type": "input_audio", "input_audio": { "data": audio, "format": "wav" } }));
+        }
+        if let Some(screenshot) = request.screenshot {
+            parts.push(json!({ "type": "image_url", "image_url": { "url": screenshot } }));
+        }
+        parts.push(json!({ "type": "text", "text": request.user_text }));
+        json!(parts)
+    };
+    let mut body = json!({
+        "model": model,
+        "temperature": 0,
+        "max_tokens": if request.think { MAX_OUTPUT_TOKENS_THINKING } else { MAX_OUTPUT_TOKENS },
+        "messages": [
+            { "role": "system", "content": request.system },
+            { "role": "user", "content": content },
+        ],
+        "tools": request.tools,
+        "tool_choice": "required",
+    });
+    // The server's reasoning parser keeps the thinking out of `content`.
+    body["thinking"] = json!({ "type": if request.think { "enabled" } else { "disabled" } });
+    body["chat_template_kwargs"] = json!({ "enable_thinking": request.think });
+    if request.think {
+        body["stream"] = json!(true);
+    }
+    body
+}
+
 impl ChatClient<'_> {
     /// `call`, tried again when the failure is transient (see `is_retryable`), at most
     /// `MAX_ATTEMPTS` times. The waits are plain sleeps inside this future, so a caller that races
@@ -110,37 +148,7 @@ impl ChatClient<'_> {
     /// Asks for a tool call. `on_thinking` receives the thinking so far (all of it, each time) as
     /// it streams in; it is never called when `think` is off.
     pub async fn call(&self, request: &Request<'_>, on_thinking: &mut (dyn FnMut(&str) + Send)) -> Result<Reply, ModelError> {
-        let content = if request.screenshot.is_none() && request.audio.is_none() {
-            json!(request.user_text)
-        } else {
-            // Audio and image first, text last, like the probe: the screenshot is the expensive part.
-            let mut parts = Vec::new();
-            if let Some(audio) = request.audio {
-                parts.push(json!({ "type": "audio_url", "audio_url": { "url": format!("data:audio/wav;base64,{audio}") } }));
-            }
-            if let Some(screenshot) = request.screenshot {
-                parts.push(json!({ "type": "image_url", "image_url": { "url": screenshot } }));
-            }
-            parts.push(json!({ "type": "text", "text": request.user_text }));
-            json!(parts)
-        };
-        let mut body = json!({
-            "model": self.model,
-            "temperature": 0,
-            "max_tokens": if request.think { MAX_OUTPUT_TOKENS_THINKING } else { MAX_OUTPUT_TOKENS },
-            "messages": [
-                { "role": "system", "content": request.system },
-                { "role": "user", "content": content },
-            ],
-            "tools": request.tools,
-            "tool_choice": "required",
-        });
-        // The thinking switch is a chat-template flag; the server's reasoning parser keeps the
-        // thinking out of `content`.
-        body["chat_template_kwargs"] = json!({ "enable_thinking": request.think });
-        if request.think {
-            body["stream"] = json!(true);
-        }
+        let body = chat_body(self.model, request);
 
         let mut http = self
             .http
@@ -440,5 +448,50 @@ mod tests {
         let error = client.call_retrying(&a_click_request(&tools), &mut |_| {}).await.err().expect("a 400 is final");
         assert!(matches!(error, ModelError::Status { status: 400, .. }));
         assert_eq!(served.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn the_audio_part_is_input_audio_with_the_whole_wav_and_comes_first() {
+        let tools = json!([]);
+        let request = Request { system: "sys", user_text: "what now", screenshot: Some("data:image/jpeg;base64,AA"), audio: Some("UklGRg=="), tools: &tools, think: false };
+        let body = chat_body("m", &request);
+        let parts = body["messages"][1]["content"].as_array().expect("parts");
+        assert_eq!(parts.len(), 3);
+        assert_eq!(parts[0], json!({ "type": "input_audio", "input_audio": { "data": "UklGRg==", "format": "wav" } }));
+        assert_eq!(parts[1], json!({ "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,AA" } }));
+        assert_eq!(parts[2], json!({ "type": "text", "text": "what now" }));
+        assert!(!body.to_string().contains("audio_url"), "the old part name is gone");
+    }
+
+    #[test]
+    fn the_thinking_switch_is_sent_both_ways() {
+        let tools = json!([]);
+        let mut request = Request { system: "s", user_text: "u", screenshot: None, audio: None, tools: &tools, think: false };
+        let off = chat_body("m", &request);
+        assert_eq!(off["thinking"], json!({ "type": "disabled" }));
+        assert_eq!(off["chat_template_kwargs"], json!({ "enable_thinking": false }));
+        assert_eq!(off["max_tokens"], 512);
+        assert!(off.get("stream").is_none());
+        assert!(off.get("reasoning_effort").is_none());
+
+        request.think = true;
+        let on = chat_body("m", &request);
+        assert_eq!(on["thinking"], json!({ "type": "enabled" }));
+        assert_eq!(on["chat_template_kwargs"], json!({ "enable_thinking": true }));
+        assert_eq!(on["stream"], true);
+        assert_eq!(on["max_tokens"], 3000);
+    }
+
+    #[test]
+    fn a_text_only_request_keeps_its_shape() {
+        let tools = json!([{ "type": "function", "function": { "name": "click" } }]);
+        let request = Request { system: "sys", user_text: "plan this", screenshot: None, audio: None, tools: &tools, think: false };
+        let body = chat_body("the-model", &request);
+        assert_eq!(body["model"], "the-model");
+        assert_eq!(body["messages"][0], json!({ "role": "system", "content": "sys" }));
+        assert_eq!(body["messages"][1], json!({ "role": "user", "content": "plan this" }));
+        assert_eq!(body["tools"], tools);
+        assert_eq!(body["tool_choice"], "required");
+        assert_eq!(body["temperature"], 0);
     }
 }

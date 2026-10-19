@@ -21,7 +21,7 @@ Decisions:
 - Idle = no task and no Rune interaction for 10 minutes. Reflection uses the same rune-infer server. A prompt in the pill offers **Deny**; a timeout starts reflection.
 - Autonomy: reflection writes **notes and reports only**. Prompts and safety thresholds change only through approved diffs.
 - Verifier runs at the end of a task only; overhead target **<= 10%** of task time. Traces go in **SQLite**.
-- Model server: rune-infer, and rune-infer will change to match Studio's calls (see expectations). Voice stays enabled; `audio_url` support is to be implemented in rune-infer.
+- Model server: rune-infer, and rune-infer will change to match Studio's calls (see expectations). Voice stays enabled; as of 2026-10-19 Studio sends audio as `input_audio` (the only form rune-infer reads) and rune-infer does not need to add `audio_url`.
 - Kit link: Studio is an MCP client of `rune`. Kit tools are offered to Studio's model **through the safety gate**.
 
 ## Ground facts
@@ -38,8 +38,8 @@ Decisions:
 **rune-infer** has two sources that disagree in places; both are recorded. _Source_ = the GitHub repo at commit `bd155a5` (2026-10-19), read, not run. _Spec_ = the Postman collection "Rune REST API" the maintainer supplied on 2026-10-19 as the latest API spec (115 files; examples only, not executed). Where they differ, which one the running server follows is **NOT CERTAIN** until a live call is made (R0).
 
 - Endpoints include: `/v1/chat/completions`, `/v1/models`, `/v1/decisions`, `/v1/embeddings`, `/v1/ocr`, `/v1/images/{grounding, recognize, detections, captions, embeddings, ...}`, `/v1/audio/*`, `/v1/inference`, plus `/health`, `/livez`, `/readyz`. `/v1/responses` and Anthropic `/v1/messages` are disabled.
-- Audio in chat. _Source_: `text`, `image_url`, `video_url` parts only; no `audio_url` or `input_audio` in `src`. _Spec_: a part `{"type":"input_audio","input_audio":{"data":<base64>,"format":"wav"|"mp3"}}` (other formats return 400 `unsupported_audio_format`), mixed with `image_url` and `tools` in one message. Studio sends `{"type":"audio_url","audio_url":{"url":"data:audio/wav;base64,..."}}`, which **neither** source documents.
-- Thinking. _Source_: read from `thinking`, then `chat_template_kwargs.thinking`, then `reasoning_effort`; `enable_thinking` is not read. _Spec_: `reasoning_effort: "high"` plus `"thinking": {"type":"enabled","budget_tokens":2048}`; reply carries `message.reasoning_content`. Studio sends `chat_template_kwargs.enable_thinking`, which neither documents. How to switch thinking **off** (e.g. `thinking.type:"disabled"`) is **NOT CERTAIN**.
+- Audio in chat. _Source_: `text`, `image_url`, `video_url` parts only; no `audio_url` or `input_audio` in `src`. _Spec_: a part `{"type":"input_audio","input_audio":{"data":<base64>,"format":"wav"|"mp3"}}` (other formats return 400 `unsupported_audio_format`), mixed with `image_url` and `tools` in one message. Studio sends `{"type":"audio_url","audio_url":{"url":"data:audio/wav;base64,..."}}`, which **neither** source documents. _Resolved 2026-10-19: the running server reads only `input_audio`; Studio now sends it (expectation 1)._
+- Thinking. _Source_: read from `thinking`, then `chat_template_kwargs.thinking`, then `reasoning_effort`; `enable_thinking` is not read. _Spec_: `reasoning_effort: "high"` plus `"thinking": {"type":"enabled","budget_tokens":2048}`; reply carries `message.reasoning_content`. Studio sends `chat_template_kwargs.enable_thinking`, which neither documents. _Resolved 2026-10-19: `thinking: {"type":"disabled"}` and `reasoning_effort: "none"` are honoured, `enable_thinking` is not; Studio now sends `thinking` (expectation 1)._
 - `response_format` supports `json_object` and `json_schema` (strict needs `additionalProperties:false`). `usage` has only prompt/completion/total tokens (no image-token field); image tokens are estimated pre-flight. _Spec_ shows `stream_options: {"include_usage": true}` for streaming; _source_ has no `include_usage` (**NOT CERTAIN** which holds). _Spec_ examples use `tool_choice: "auto"`; Studio's `"required"` is supported per source (**NOT CERTAIN** per spec).
 - Client disconnect sets a cancel flag and stops generation (logged 499); whether this interrupts `llama-server` mid-prefill is **NOT CERTAIN**.
 - `/v1/models` items carry a `capabilities` list (Chat, Tool Call, Vision, ...). No dedicated capabilities endpoint. `/health` has no queue depth. `llama-server` runs with `--parallel 1` by default; `max_loaded_models` default 1 (models swap). **No request priority anywhere.**
@@ -163,12 +163,12 @@ The original plan:
 
 **rune-infer**
 
-1. Settle the audio part: either accept `audio_url` (what Studio sends) or Studio moves to the documented `input_audio {data, format}`; and settle how thinking is switched (`thinking` object / `reasoning_effort` per the Spec, or also `chat_template_kwargs.enable_thinking`).
+1. ~~Settle the audio part and the thinking switch.~~ **Resolved 2026-10-19:** Studio moved to `input_audio {data, format: "wav"}` (rune-infer commit `9a34e50`, unreleased at the time of writing) and `thinking: {"type": "disabled" | "enabled"}`; `enable_thinking` is still sent but rune-infer does not read it.
 2. Capability discovery: per-model vision/audio/tools/thinking/max image size/context in one place (today a free-text `capabilities` list on `/v1/models`).
 3. Request priority or busy signal (header, `429/503 + Retry-After`, or queue depth in `/health`), so reflection yields.
 4. `usage` with image tokens and `stream_options.include_usage`.
 5. Confirm that disconnect aborts `llama-server` prefill; document it.
-6. Make the `/v1/decisions` response match its published spec (or the spec match the code): `{type, value, confidence}` versus `{decision, probability}` / `{decision, confidence, probabilities}` / `{level, score, probabilities}`. Add a test with an image whose answer is obviously yes.
+6. ~~Make the `/v1/decisions` response match its published spec.~~ **Resolved 2026-10-19:** the server returns `{decision, probability}` / `{decision, confidence, probabilities}` / `{level, score, probabilities}`; the Postman `{type, value, confidence}` is legacy, and images are used. Still wanted: a test with an image whose answer is obviously yes.
 7. Specify coordinate conventions in the Postman examples: grounding `box_2d` units and order, detection `box` corner vs centre. Confirm whether a describe-with-boxes route exists or chat + `json_schema` is the intended path.
 8. Real backend in `/health` (it currently reports a hardcoded string).
 
@@ -185,6 +185,15 @@ The original plan:
 2. Fix README/AGENTS lists of plugins that do not exist.
 
 ## Open questions (defaults noted)
+
+**For the rune-infer maintainer (all NOT CERTAIN, raised 2026-10-19):**
+
+- What is the default thinking when no parameter is sent? A pasted reply with none contained `reasoning_content`, so it may be on by default, which would add hidden thinking tokens to every step.
+- What does a choice answer's `confidence` mean? It was 0.1374 for a pick whose probability was 0.4249.
+- `usage` token counts looked unreliable (prompt 786 = completion 786 for an audio call; prompt 1, completion 1 for the reply "Four").
+- Does `thinking: {"type":"enabled"}` need `budget_tokens`?
+- For WAV, should `input_audio.data` include the header, or is it raw PCM? (Studio sends the whole WAV file.)
+- Does a request disconnect abort prefill? (Expectation 5.)
 
 - Reflection prompt timeout: 30 s. After Deny: re-prompt after another 10 idle minutes.
 - Orb colour for reflecting: monochrome with distinct motion (default) or a tint.

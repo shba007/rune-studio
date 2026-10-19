@@ -58,7 +58,14 @@ export function installTauriMock() {
         case 'get_control_label':
           return null
         case 'check_backend':
-          return { reachable: true, authOk: true, missingModels: [], latencyMs: 12, error: null }
+          return {
+            reachable: true,
+            authOk: true,
+            missingModels: [],
+            modelCapabilities: [],
+            latencyMs: 12,
+            error: null,
+          }
         case 'has_api_key':
           return true
         case 'debug_capture':

@@ -84,7 +84,7 @@ flowchart LR
 ```
 
 1. **Observe.** The primary monitor is captured, downscaled to at most 1280 px on the long edge and encoded as JPEG (quality 80). In parallel, the controls of the front window that can take the keyboard are listed through UI Automation as ids `e1`, `e2`, ... (at most 60, 1.5 s budget).
-2. **Decide.** One `POST /v1/chat/completions` carries the system prompt, the task, the plan, the last 12 steps as text, the control list and the screenshot. `tool_choice` is `required`, `temperature` is 0, and thinking is switched with `chat_template_kwargs.enable_thinking`.
+2. **Decide.** One `POST /v1/chat/completions` carries the system prompt, the task, the plan, the last 12 steps as text, the control list and the screenshot. `tool_choice` is `required`, `temperature` is 0, and thinking is switched with `thinking: {"type": "disabled" | "enabled"}` (`chat_template_kwargs.enable_thinking` is sent too).
 3. **Gate.** The action's risk is the higher of what the model said and what the local rules find. High risk pauses for your Yes.
 4. **Act.** The cursor glides to the target and the action runs; Stop is checked between characters, wheel notches and cursor steps.
 5. **Settle.** A fixed pause (0.5 s, or 1.8 s after launching an app) before the next look.
@@ -141,14 +141,16 @@ Settings are saved to `settings.json` in the app config folder (identifier `dev.
 
 Any OpenAI-compatible server works if it supports:
 
-| Need                                | How                                                                                                        |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Multimodal content                  | `text`, `image_url` (data-URI JPEG) and `audio_url` (data-URI WAV, 16 kHz mono) parts                      |
-| Tool calls                          | `tools` + `tool_choice: "required"`                                                                        |
-| Thinking on/off                     | `chat_template_kwargs: {"enable_thinking": bool}`; thinking returned in `reasoning` or `reasoning_content` |
-| Streaming (only with Show thinking) | SSE with reasoning and tool-call deltas                                                                    |
-| Health / models                     | `GET /health` (no auth), `GET /v1/models`, `Authorization: Bearer <key>`                                   |
-| Optional fast checks                | `POST /v1/decisions` at the Decision URL                                                                   |
+| Need                                | How                                                                                                                                                                   |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Multimodal content                  | `text`, `image_url` (data-URI JPEG) and `input_audio` (`{data: <base64 WAV>, format: "wav"}`; rune-infer takes wav or mp3, up to 50 MB) parts                         |
+| Tool calls                          | `tools` + `tool_choice: "required"`                                                                                                                                   |
+| Thinking on/off                     | `thinking: {"type": "disabled" \| "enabled"}` (also sends `chat_template_kwargs: {"enable_thinking": bool}`); thinking returned in `reasoning` or `reasoning_content` |
+| Streaming (only with Show thinking) | SSE with reasoning and tool-call deltas                                                                                                                               |
+| Health / models                     | `GET /health` (no auth), `GET /v1/models`, `Authorization: Bearer <key>`                                                                                              |
+| Optional fast checks                | `POST /v1/decisions` at the Decision URL                                                                                                                              |
+
+Audio (voice) needs a rune-infer build that includes commit `9a34e50`, which adds the `input_audio` part; it was unreleased at the time of writing, and without it the audio is silently ignored.
 
 Output is capped at 512 tokens per turn (3000 with Show thinking) and a request times out after 300 s. The settings page probes `/health` and `/v1/models` (4 s timeout) and reports whether the configured model is served.
 

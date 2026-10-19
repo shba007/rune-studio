@@ -66,10 +66,11 @@ impl Question {
 #[derive(Debug, Default)]
 pub struct Answers(HashMap<String, Value>);
 
-/// The two answer shapes seen for `/v1/decisions`: what the server source returns
-/// (`{ "decision": .., "probability" | "confidence": .. }`) and what the API spec / Postman
-/// collection documents (`{ "type": "noul" | "choice" | "score", "value": .., "confidence": .. }`).
-/// Which one a given server sends is settled by `scripts/wire-audit.mjs`; both are read.
+/// The two answer shapes of `/v1/decisions`: the one the running server returns (`Source`,
+/// `{ "decision": .., "probability" | "confidence": .. }`, confirmed by the rune-infer maintainer on
+/// 2026-10-19) and the one the old API spec / Postman collection documents (`Spec`,
+/// `{ "type": "noul" | "choice" | "score", "value": .., "confidence": .. }`). The spec shape is
+/// legacy; it is still read because that is harmless.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Shape {
     Source,
@@ -91,7 +92,26 @@ impl Answers {
                 log::info!("decision model answers in the {shape:?} shape");
             }
         }
-        Self(answers)
+        let answers = Self(answers);
+        // Data for setting thresholds later: what the model says, and how sure it is.
+        let mut names: Vec<&String> = answers.0.keys().collect();
+        names.sort();
+        for name in names {
+            let answer = &answers.0[name];
+            let shape = match shape_of(answer) {
+                Shape::Source => "source",
+                Shape::Spec => "spec",
+            };
+            let value = if answer["decision"].is_null() { &answer["value"] } else { &answer["decision"] };
+            let number = |number: Option<f64>| number.map_or_else(|| "-".to_string(), |number| format!("{number:.4}"));
+            log::info!(
+                "decision answer {name}: shape={shape} decision={value} confidence={} probability={} p(picked)={}",
+                number(answer["confidence"].as_f64()),
+                number(answer["probability"].as_f64()),
+                number(answers.picked_probability(name)),
+            );
+        }
+        answers
     }
 
     /// True only when the model said yes and was at least `min_probability` sure. Anything else,
@@ -106,6 +126,13 @@ impl Answers {
                 yes && answer["confidence"].as_f64().is_some_and(|p| p >= min_probability)
             }
         }
+    }
+
+    /// The probability the model gave to the option it picked for a `choice` question
+    /// (`probabilities[decision]`), which is not what `confidence` reports. For recording only.
+    pub fn picked_probability(&self, name: &str) -> Option<f64> {
+        let answer = self.0.get(name)?;
+        answer["probabilities"][answer["decision"].as_str()?].as_f64()
     }
 
     /// The option picked for a `choice` question and how confident the model is.
@@ -271,5 +298,19 @@ mod tests {
             assert!(!answers.confident_yes("q", 0.0), "{odd}");
             assert_eq!(answers.choice("q"), None, "{odd}");
         }
+    }
+
+    #[test]
+    fn the_pasted_server_answer_reads_as_documented() {
+        let answers = Answers::from_response(&json!({ "answers": {
+            "routing": { "decision": "blue_green", "confidence": 0.1374, "probabilities": { "immediate_switch": 0.2555, "canary_rollout": 0.3196, "blue_green": 0.4249 } },
+            "requires_approval": { "decision": true, "probability": 0.6816 }
+        } }));
+        assert_eq!(answers.choice("routing"), Some(("blue_green".to_string(), 0.1374)));
+        assert_eq!(answers.picked_probability("routing"), Some(0.4249), "confidence is not the picked probability");
+        assert_eq!(answers.picked_probability("requires_approval"), None, "a yes/no answer has no picked option");
+        assert_eq!(answers.picked_probability("missing"), None);
+        assert!(answers.confident_yes("requires_approval", 0.68));
+        assert!(!answers.confident_yes("requires_approval", 0.69));
     }
 }

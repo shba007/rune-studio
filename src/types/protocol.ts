@@ -35,6 +35,7 @@ export interface BackendStatus {
   reachable: boolean
   authOk: boolean
   missingModels: string[]
+  modelCapabilities: string[]
   latencyMs: number | null
   error: string | null
 }
