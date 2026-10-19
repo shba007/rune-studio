@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.0.9
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.0.8...v0.0.9)
+
+### 🚀 Enhancements
+
+- **eval:** The suite format, its hard limits and the checkers ([32097cd](https://github.com/shba007/rune-studio/commit/32097cd))
+- **eval:** The 15-task suite, its fixture pages and instructions ([f4661de](https://github.com/shba007/rune-studio/commit/f4661de))
+- **eval:** The eval mode that runs the suite through the built-in agent ([11bec84](https://github.com/shba007/rune-studio/commit/11bec84))
+- **eval:** The runner script and the report with the success and speed gate ([2e092cd](https://github.com/shba007/rune-studio/commit/2e092cd))
+
+### 📖 Documentation
+
+- Remove the handoffs for completed milestones ([2e3cea5](https://github.com/shba007/rune-studio/commit/2e3cea5))
+- Describe the evaluation harness and how to commit a baseline ([bb23b0a](https://github.com/shba007/rune-studio/commit/bb23b0a))
+- Add the evaluation harness report ([6152429](https://github.com/shba007/rune-studio/commit/6152429))
+
+### ❤️ Contributors
+
+- Claude <noreply@anthropic.com>
+
 ## v0.0.8
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.0.7...v0.0.8)
