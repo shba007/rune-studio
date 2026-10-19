@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.0.10
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.0.9...v0.0.10)
+
+### 🚀 Enhancements
+
+- **trace:** Store the independent check of a run (schema version 2) ([4109a45](https://github.com/shba007/rune-studio/commit/4109a45))
+- **verify:** The independent check as a forced verdict tool call ([e3fef4c](https://github.com/shba007/rune-studio/commit/e3fef4c))
+- **verify:** Run the check after a task, or before it finishes ([595b982](https://github.com/shba007/rune-studio/commit/595b982))
+- **eval:** Measure the verifier against the machine's checkers ([cce0401](https://github.com/shba007/rune-studio/commit/cce0401))
+
+### 📖 Documentation
+
+- Remove the handoff for the completed R2 milestone ([65508b4](https://github.com/shba007/rune-studio/commit/65508b4))
+- Handoff for R4, visual analysis ([cafe338](https://github.com/shba007/rune-studio/commit/cafe338))
+- R4 handoff works directly on develop ([6451972](https://github.com/shba007/rune-studio/commit/6451972))
+- Describe the verifier and how to measure it ([d3e67ad](https://github.com/shba007/rune-studio/commit/d3e67ad))
+- Add the verifier report ([e7d0efc](https://github.com/shba007/rune-studio/commit/e7d0efc))
+- Correct the commit hashes in the verifier report ([0bb71f5](https://github.com/shba007/rune-studio/commit/0bb71f5))
+
+### ❤️ Contributors
+
+- Claude <noreply@anthropic.com>
+
 ## v0.0.9
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.0.8...v0.0.9)
