@@ -63,12 +63,19 @@ pub fn start_planned(app: &AppHandle, task: String, plan: Option<Vec<String>>) {
     let scope = app.state::<AppState>().begin_run();
     log::info!("run {} started", scope.id);
     events::set_agent_state(app, AgentState::Planning);
+    // Everything captured for this task goes in one session folder. If it cannot be made, saving
+    // fails closed anyway, so the run is left to report that.
+    let session = crate::archive::begin_session(&task, "built-in").unwrap_or_else(|err| {
+        log::error!("could not open the session folder: {err}");
+        String::new()
+    });
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         // The run is its own task, so a panic inside it cannot skip `finish`: the state would stay
         // at Planning/Acting, the pill would stay click-through and the voice session would hang.
         let work_app = app.clone();
         let outcome = supervised(async move { run(&work_app, &task, plan, scope.token).await }).await;
+        end_session(&session, &outcome);
         finish(&app, outcome);
     });
 }
@@ -90,6 +97,21 @@ async fn settle(run: tokio::task::JoinHandle<Outcome>) -> Outcome {
         }
         Err(_) => Outcome::Stopped,
     }
+}
+
+/// Closes the task's session folder with how the run ended. Only that session: if Stop already
+/// closed it, or a newer task has opened its own, nothing happens.
+fn end_session(session: &str, outcome: &Outcome) {
+    if session.is_empty() {
+        return;
+    }
+    let (label, summary) = match outcome {
+        Outcome::Finished { summary, success: true } => ("succeeded", summary.as_str()),
+        Outcome::Finished { summary, success: false } => ("reported_failure", summary.as_str()),
+        Outcome::Stopped => ("stopped", ""),
+        Outcome::Failed(message) => ("failed", message.as_str()),
+    };
+    crate::archive::end_session(Some(session), label, summary);
 }
 
 fn finish(app: &AppHandle, outcome: Outcome) {

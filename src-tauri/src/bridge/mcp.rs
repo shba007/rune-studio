@@ -295,6 +295,10 @@ fn begin(app: &AppHandle, arguments: &Value) -> Reply {
     }
     // A fresh cancellation scope for this lease; it also cancels whatever the last run left behind.
     state.begin_run();
+    // This agent's turn at the wheel is one session folder (closed by rune_done, Stop or the idle limit).
+    if let Err(err) = crate::archive::begin_session(&task, &agent) {
+        log::error!("could not open the session folder: {err}");
+    }
     let _ = app.emit(events::EXTERNAL_AGENT, ExternalAgent { agent: Some(agent.clone()) });
     events::set_agent_state(app, AgentState::Observing);
     log::info!("agent bridge: {agent} took control for \"{task}\"");
@@ -548,6 +552,7 @@ fn done(app: &AppHandle, arguments: &Value) -> Reply {
         events::emit_plan(app, &plan, plan.len(), true);
     }
     state.lease.locked().end();
+    crate::archive::end_session(None, if success { "succeeded" } else { "reported_failure" }, &summary);
     let _ = app.emit(events::EXTERNAL_AGENT, ExternalAgent { agent: None });
     let _ = app.emit(events::TASK_DONE, TaskDone { summary, success });
     events::set_agent_state(app, if success { AgentState::Done } else { AgentState::Failed });
