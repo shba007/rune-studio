@@ -37,6 +37,8 @@ pub struct Frame {
     pub width: u32,
     pub height: u32,
     pub jpeg: Vec<u8>,
+    /// Where the archive stored this exact image (empty in unit tests).
+    pub path: std::path::PathBuf,
 #[cfg_attr(not(debug_assertions), allow(dead_code))]
     pub elapsed_ms: u64,
     image: RgbImage,
@@ -178,13 +180,14 @@ pub fn capture_region(id: Option<u32>, region: Option<[f64; 4]>, max_edge: u32, 
     }
     let Prepared { width, height, jpeg, image } = prepare(rgba, max_edge, quality)?;
     // Exactly what the agent will see, stored first; no caller can skip this.
-    crate::archive::save(crate::archive::Kind::Screenshots, if region.is_some() { "region" } else { "screen" }, "jpg", &jpeg)
+    let path = crate::archive::save(crate::archive::Kind::Screenshots, if region.is_some() { "region" } else { "screen" }, "jpg", &jpeg)
         .map_err(|err| ObserveError::Archive(err.to_string()))?;
     Ok(Frame {
         monitor,
         width,
         height,
         jpeg,
+        path,
         elapsed_ms: started.elapsed().as_millis() as u64,
         image,
     })
