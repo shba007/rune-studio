@@ -4,6 +4,7 @@
 //! (blocks DNS rebinding) and no browser `Origin` (blocks web pages). The Settings switch must
 //! be on. Nothing here decides what the agent may do; that is the lease, the safety gate and Stop.
 
+use crate::sync::LockExt;
 use std::time::Duration;
 
 use axum::{
@@ -56,7 +57,7 @@ pub fn start(app: &AppHandle) {
 async fn watch_for_idle(app: AppHandle) {
     loop {
         tokio::time::sleep(Duration::from_secs(10)).await;
-        let expired = app.state::<AppState>().lease.lock().expect("lease lock poisoned").expire_if_idle(std::time::Instant::now());
+        let expired = app.state::<AppState>().lease.locked().expire_if_idle(std::time::Instant::now());
         if expired {
             log::info!("agent bridge: the agent was silent too long, control released");
             let _ = app.emit(events::EXTERNAL_AGENT, ExternalAgent { agent: None });
@@ -79,7 +80,7 @@ fn switch_is_on(app: &AppHandle) -> bool {
     let was_on = WAS_ON.swap(on, Ordering::SeqCst);
     let enabled_again = settings.external_agent_since > LAST_SINCE.swap(settings.external_agent_since, Ordering::SeqCst);
     if on && (!was_on || enabled_again) {
-        app.state::<AppState>().lease.lock().expect("lease lock poisoned").rearm();
+        app.state::<AppState>().lease.locked().rearm();
     }
     on
 }

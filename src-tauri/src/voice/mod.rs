@@ -15,6 +15,7 @@ pub mod direct;
 pub mod intent;
 pub mod vad;
 
+use crate::sync::LockExt;
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
@@ -40,10 +41,6 @@ fn heard(app: &AppHandle, text: &str, note: impl Into<String>) {
     let _ = app.emit(VOICE_HEARD, Heard { text: text.to_string(), note: note.into() });
 }
 
-fn running(state: AgentState) -> bool {
-    matches!(state, AgentState::Planning | AgentState::AwaitingConfirm | AgentState::Acting | AgentState::Observing)
-}
-
 /// After a task ends (or is stopped) with the microphone still open, go back to listening once
 /// the result has had a moment on screen, so the user can simply say the next thing.
 pub fn resume_listening_soon(app: &AppHandle) {
@@ -51,7 +48,7 @@ pub fn resume_listening_soon(app: &AppHandle) {
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs(4)).await;
         let state = app.state::<AppState>();
-        let open = state.mic.lock().expect("mic lock poisoned").is_some();
+        let open = state.mic.locked().is_some();
         if open && matches!(events::agent_state(&app), AgentState::Done | AgentState::Failed | AgentState::Stopped) {
             events::set_agent_state(&app, AgentState::Listening);
         }
@@ -62,7 +59,7 @@ pub fn resume_listening_soon(app: &AppHandle) {
 pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
     let state = app.state::<AppState>();
     let (base_url, model) = {
-        let settings = state.settings.lock().expect("settings lock poisoned");
+        let settings = state.settings.locked();
         (settings.base_url.clone(), settings.model.clone())
     };
     let api_key = settings::api_key();
@@ -100,7 +97,7 @@ fn apply(app: &AppHandle, intent: Intent, goals: Option<Vec<String>>, text: &str
     let now = events::agent_state(app);
     match intent {
         Intent::Stop => {
-            if running(now) {
+            if now.is_running() {
                 heard(app, text, "Stopped");
                 crate::commands::stop(app.clone());
             }
@@ -128,7 +125,7 @@ fn apply(app: &AppHandle, intent: Intent, goals: Option<Vec<String>>, text: &str
         Intent::Say(said) => {
             if now == AgentState::AwaitingConfirm {
                 heard(app, &said, "Say yes or no");
-            } else if running(now) {
+            } else if now.is_running() {
                 if crate::commands::push_steer(app, &said) {
                     heard(app, &said, "Passed to the agent");
                 }

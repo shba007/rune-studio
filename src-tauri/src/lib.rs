@@ -15,14 +15,16 @@ mod observe;
 mod overlay;
 mod safety;
 mod settings;
+mod sync;
 mod voice;
 mod window;
 
 #[cfg(test)]
 mod probe_m15;
-#[cfg(test)]
+#[cfg(all(test, windows))]
 mod system_tests;
 
+use crate::sync::LockExt;
 use std::sync::Mutex;
 
 use tauri::{
@@ -50,6 +52,9 @@ pub fn run() {
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
+        // First, as the plugin requires: a second launch hands over to this process and exits,
+        // so the pill opens here instead of a second app fighting over the hotkeys and the door.
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| window::summon(app)));
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     }
 
@@ -61,7 +66,7 @@ pub fn run() {
                     if event.state() != ShortcutState::Pressed {
                         return;
                     }
-                    let hotkeys = app.state::<AppState>().hotkeys.lock().expect("hotkeys lock poisoned").clone();
+                    let hotkeys = app.state::<AppState>().hotkeys.locked().clone();
                     if shortcut == &hotkeys.toggle {
                         window::summon(app);
                     } else if shortcut == &hotkeys.stop {
@@ -91,10 +96,12 @@ pub fn run() {
                 settings: Mutex::new(loaded),
                 hotkeys: Mutex::new(hotkeys.clone()),
                 mic: Mutex::new(None),
-                cancel: exec::CancelToken::default(),
+                run: Mutex::new(exec::RunScope::new()),
                 agent_state: Mutex::new(AgentState::Idle),
                 lease: Mutex::new(bridge::lease::LeaseBook::default()),
                 confirm: Mutex::new(None),
+                #[cfg(feature = "agent-bridge")]
+                act_turn: Default::default(),
                 http: reqwest::Client::new(),
             });
 

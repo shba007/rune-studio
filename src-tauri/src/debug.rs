@@ -29,8 +29,8 @@ where
     T: Send + 'static,
     F: FnOnce(&mut Input, &CancelToken) -> Result<T, ExecError> + Send + 'static,
 {
-    let cancel = app.state::<AppState>().cancel.clone();
-    cancel.reset();
+    // Its own scope per command: Stop reaches it, and the next command cannot revive it.
+    let cancel = app.state::<AppState>().begin_run().token;
 
     tauri::async_runtime::spawn_blocking(move || {
         cancel.sleep(Duration::from_millis(delay_ms.unwrap_or(0)))?;

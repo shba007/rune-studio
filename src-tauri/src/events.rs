@@ -1,9 +1,10 @@
+use crate::sync::LockExt;
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::{bridge::lease::LeaseBook, safety::gate::Pending, exec::CancelToken, hotkeys::Hotkeys, overlay, settings::Settings, voice::capture::Capture, window};
+use crate::{bridge::lease::LeaseBook, safety::gate::Pending, exec::{self, RunScope}, hotkeys::Hotkeys, overlay, settings::Settings, voice::capture::Capture, window};
 
 pub const STATE_CHANGED: &str = "state_changed";
 pub const SUMMON: &str = "summon";
@@ -18,9 +19,19 @@ pub enum AgentState {
     AwaitingConfirm,
     Acting,
     Observing,
+    /// After a task: looking back at what happened (nothing produces it yet). Not a running state.
+    Reflecting,
     Done,
     Failed,
     Stopped,
+}
+
+impl AgentState {
+    /// Whether a task is under way: a new one is refused and Stop has something to stop.
+    /// `Reflecting` is not running: the task is over and the agent is only looking back.
+    pub fn is_running(self) -> bool {
+        matches!(self, Self::Planning | Self::AwaitingConfirm | Self::Acting | Self::Observing)
+    }
 }
 
 pub struct AppState {
@@ -28,8 +39,8 @@ pub struct AppState {
     pub hotkeys: Mutex<Hotkeys>,
     /// Present while the microphone is open.
     pub mic: Mutex<Option<Capture>>,
-    /// Set by every Stop; checked by the executor between steps.
-    pub cancel: CancelToken,
+    /// The current run's cancellation scope. Stop cancels it; the next run replaces it (`begin_run`).
+    pub run: Mutex<RunScope>,
     pub agent_state: Mutex<AgentState>,
     /// Who may drive the PC from outside (see `bridge::lease`).
     pub lease: Mutex<LeaseBook>,
@@ -37,7 +48,29 @@ pub struct AppState {
     pub confirm: Mutex<Option<Pending>>,
     /// Things the user said while the agent was working; read before its next step.
     pub steer: Mutex<Vec<String>>,
+    /// Held for a whole outside-agent action (gate, announce, execute, settle), so two parallel
+    /// calls take turns instead of driving the mouse and the confirm slot at once.
+    #[cfg(feature = "agent-bridge")]
+    pub act_turn: tokio::sync::Mutex<()>,
     pub http: reqwest::Client,
+}
+
+impl AppState {
+    /// Cancels the previous run's scope and returns a fresh one for the run that is starting.
+    pub fn begin_run(&self) -> RunScope {
+        exec::begin_run(&self.run)
+    }
+
+    /// Cancels the current run, whatever the agent state (even Idle: typing from debug commands relies on it).
+    pub fn stop_current(&self) {
+        exec::stop_current(&self.run);
+    }
+
+    /// The scope Stop would cancel right now.
+    #[cfg(feature = "agent-bridge")]
+    pub fn current_scope(&self) -> RunScope {
+        exec::current_scope(&self.run)
+    }
 }
 
 #[derive(Clone, Serialize)]
@@ -60,14 +93,14 @@ pub fn preview_agent_state(app: &AppHandle, state: AgentState) {
 
 fn apply_state(app: &AppHandle, state: AgentState, allow_click_through: bool) {
     let app_state = app.state::<AppState>();
-    *app_state.agent_state.lock().expect("agent state lock poisoned") = state;
+    *app_state.agent_state.locked() = state;
     window::set_click_through(app, allow_click_through && state == AgentState::Acting);
     overlay::sync(app, state);
     let _ = app.emit(STATE_CHANGED, StateChanged { state });
 }
 
 pub fn agent_state(app: &AppHandle) -> AgentState {
-    *app.state::<AppState>().agent_state.lock().expect("agent state lock poisoned")
+    *app.state::<AppState>().agent_state.locked()
 }
 
 pub const STEP_STARTED: &str = "step_started";
@@ -165,4 +198,22 @@ pub struct StepFinished {
 pub struct TaskDone {
     pub summary: String,
     pub success: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_the_four_working_states_count_as_running() {
+        use AgentState::*;
+        let table = [
+            (Idle, false), (Listening, false), (Planning, true), (AwaitingConfirm, true), (Acting, true),
+            (Observing, true), (Reflecting, false), (Done, false), (Failed, false), (Stopped, false),
+        ];
+        for (state, running) in table {
+            assert_eq!(state.is_running(), running, "{state:?}");
+        }
+        assert_eq!(serde_json::to_string(&Reflecting).unwrap(), "\"reflecting\"");
+    }
 }

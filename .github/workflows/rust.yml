@@ -1,0 +1,59 @@
+name: Rust
+
+on:
+  pull_request:
+  push:
+    branches: [develop, main]
+
+concurrency:
+  group: rust-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test (${{ matrix.platform }})
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [windows-latest, ubuntu-latest]
+    defaults:
+      run:
+        working-directory: src-tauri
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install OS Dependencies (Ubuntu only)
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
+            libpipewire-0.3-dev libspa-0.2-dev libclang-dev libgbm-dev libegl1-mesa-dev libxcb1-dev libxcb-randr0-dev libxcb-shm0-dev libxdo-dev libasound2-dev
+
+      - name: 🛠️ Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Unit tests
+        run: cargo test --lib
+
+      - name: Unit tests (agent bridge)
+        run: cargo test --lib --features agent-bridge
+
+      # Both are advisory for now: the baseline has clippy warnings and unformatted files
+      # (see docs/handoff/R0-report.md). Make them blocking once those are cleaned up.
+      - name: Clippy
+        continue-on-error: true
+        run: cargo clippy --all-targets --features agent-bridge
+
+      - name: Format check
+        continue-on-error: true
+        run: cargo fmt --check

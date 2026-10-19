@@ -46,3 +46,83 @@ pub fn current() -> Foreground {
 pub fn current() -> Foreground {
     Foreground::default()
 }
+
+/// What the model and outside agents are told when clicks and typing cannot reach the front window.
+pub const ELEVATED_WARNING: &str = "The front window runs as administrator: clicks and typing are ignored. Use ask_user or finish with done and success=false.";
+
+/// Whether the process behind `process` runs with an elevated token. `None` when it cannot be read.
+#[cfg(windows)]
+fn token_is_elevated(process: windows::Win32::Foundation::HANDLE) -> Option<bool> {
+    use windows::Win32::{
+        Foundation::{CloseHandle, HANDLE},
+        Security::{GetTokenInformation, TOKEN_ELEVATION, TOKEN_QUERY, TokenElevation},
+        System::Threading::OpenProcessToken,
+    };
+
+    // SAFETY: plain Win32 calls; the output buffer is a TOKEN_ELEVATION and its size is passed,
+    // and the token handle is closed again on every path.
+    unsafe {
+        let mut token = HANDLE::default();
+        if let Err(err) = OpenProcessToken(process, TOKEN_QUERY, &mut token) {
+            // Reading the token of a process that runs at a higher level can be refused outright.
+            log::debug!("could not open the process token: {err}");
+            return None;
+        }
+        let mut elevation = TOKEN_ELEVATION::default();
+        let mut returned = 0_u32;
+        let read = GetTokenInformation(token, TokenElevation, Some(&mut elevation as *mut TOKEN_ELEVATION as *mut core::ffi::c_void), std::mem::size_of::<TOKEN_ELEVATION>() as u32, &mut returned);
+        let _ = CloseHandle(token);
+        read.ok().map(|()| elevation.TokenIsElevated != 0)
+    }
+}
+
+/// Whether the front window's program runs as administrator. `None` when that cannot be read (and
+/// everywhere but Windows).
+#[cfg(windows)]
+pub fn is_elevated() -> Option<bool> {
+    use windows::Win32::{
+        Foundation::CloseHandle,
+        System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION},
+        UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId},
+    };
+
+    // SAFETY: plain Win32 calls; the process handle is closed again.
+    unsafe {
+        let window = GetForegroundWindow();
+        if window.is_invalid() {
+            return None;
+        }
+        let mut process_id = 0_u32;
+        GetWindowThreadProcessId(window, Some(&mut process_id));
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, process_id).ok()?;
+        let elevated = token_is_elevated(handle);
+        let _ = CloseHandle(handle);
+        elevated
+    }
+}
+
+#[cfg(not(windows))]
+pub fn is_elevated() -> Option<bool> {
+    None
+}
+
+/// Whether Rune Studio itself runs as administrator, worked out once.
+fn app_is_elevated() -> bool {
+    static ELEVATED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ELEVATED.get_or_init(|| {
+        #[cfg(windows)]
+        {
+            // SAFETY: GetCurrentProcess returns a pseudo handle that needs no closing.
+            token_is_elevated(unsafe { windows::Win32::System::Threading::GetCurrentProcess() }).unwrap_or(false)
+        }
+        #[cfg(not(windows))]
+        {
+            false
+        }
+    })
+}
+
+/// The front window runs as administrator and we do not, so Windows drops our clicks and typing.
+pub fn blocked_by_elevation() -> bool {
+    is_elevated() == Some(true) && !app_is_elevated()
+}

@@ -1,3 +1,4 @@
+use crate::sync::LockExt;
 use tauri::{AppHandle, Manager, State};
 
 use crate::{
@@ -15,7 +16,7 @@ use crate::{
 pub fn get_settings(app: AppHandle, state: State<'_, AppState>) -> Settings {
     // The command line (`rune-studio-cli enable`) can change the outside-agent switch behind our back.
     let on_disk = settings::load(&app).external_agent;
-    let mut settings = state.settings.lock().expect("settings lock poisoned");
+    let mut settings = state.settings.locked();
     settings.external_agent = on_disk;
     settings.clone()
 }
@@ -27,12 +28,12 @@ pub fn save_settings(app: AppHandle, state: State<'_, AppState>, settings: Setti
 
     let next = Hotkeys::from_settings(&settings);
     // Turning the switch back on is how the user re-arms an agent that Stop locked out.
-    let was_on = state.settings.lock().expect("settings lock poisoned").external_agent;
+    let was_on = state.settings.locked().external_agent;
     if settings.external_agent && !was_on {
-        state.lease.lock().expect("lease lock poisoned").rearm();
+        state.lease.locked().rearm();
     }
-    *state.settings.lock().expect("settings lock poisoned") = settings;
-    let previous = std::mem::replace(&mut *state.hotkeys.lock().expect("hotkeys lock poisoned"), next.clone());
+    *state.settings.locked() = settings;
+    let previous = std::mem::replace(&mut *state.hotkeys.locked(), next.clone());
     if previous != next {
         hotkeys::apply(&app, Some(&previous), &next).map_err(AppError::Invalid)?;
     }
@@ -51,7 +52,7 @@ pub fn set_api_key(key: String) -> AppResult<()> {
 
 #[tauri::command]
 pub async fn check_backend(state: State<'_, AppState>) -> AppResult<BackendStatus> {
-    let settings = state.settings.lock().expect("settings lock poisoned").clone();
+    let settings = state.settings.locked().clone();
     Ok(backend::check(&state.http, &settings, settings::api_key().as_deref()).await)
 }
 
@@ -89,11 +90,11 @@ pub fn pill_rect(app: AppHandle) -> Option<PillRect> {
 #[tauri::command]
 pub fn stop(app: AppHandle) {
     // Always cancel, even from Idle: Stop must interrupt typing the instant it is pressed.
-    app.state::<AppState>().cancel.cancel();
+    app.state::<AppState>().stop_current();
     // An outside agent loses control and may not simply start again.
     let had_agent = {
         let state = app.state::<AppState>();
-        let mut lease = state.lease.lock().expect("lease lock poisoned");
+        let mut lease = state.lease.locked();
         let had = lease.is_held();
         lease.revoke();
         had
@@ -122,22 +123,19 @@ pub fn begin_task(app: &AppHandle, text: &str, keep_mic: bool) -> AppResult<()> 
 pub fn begin_task_planned(app: &AppHandle, text: &str, keep_mic: bool, plan: Option<Vec<String>>) -> AppResult<()> {
     let state = app.state::<AppState>();
     let task = text.trim();
-    state.steer.lock().expect("steer lock poisoned").clear();
+    state.steer.locked().clear();
     if task.is_empty() {
         return Err(AppError::Invalid("Type or say what you want done".into()));
     }
-    if matches!(
-        events::agent_state(&app),
-        AgentState::Planning | AgentState::AwaitingConfirm | AgentState::Acting | AgentState::Observing
-    ) {
+    if events::agent_state(&app).is_running() {
         return Err(AppError::Invalid("A task is already running".into()));
     }
-    if state.lease.lock().expect("lease lock poisoned").is_held() {
+    if state.lease.locked().is_held() {
         return Err(AppError::Invalid("An outside agent is in control".into()));
     }
     // Starting a task ends listening: the microphone must not stay open behind it.
     if !keep_mic {
-        drop(state.mic.lock().expect("mic lock poisoned").take());
+        drop(state.mic.locked().take());
     }
     agent::start_planned(app, task.to_string(), plan);
     Ok(())
@@ -150,16 +148,13 @@ pub fn push_steer(app: &AppHandle, text: &str) -> bool {
     if text.is_empty() {
         return false;
     }
-    app.state::<AppState>().steer.lock().expect("steer lock poisoned").push(text.chars().take(300).collect());
+    app.state::<AppState>().steer.locked().push(text.chars().take(300).collect());
     true
 }
 
 #[tauri::command]
 pub fn steer(app: AppHandle, text: String) -> AppResult<()> {
-    if !matches!(
-        events::agent_state(&app),
-        AgentState::Planning | AgentState::Acting | AgentState::Observing | AgentState::AwaitingConfirm
-    ) {
+    if !events::agent_state(&app).is_running() {
         return Err(AppError::Invalid("There is no running task to give instructions to".into()));
     }
     if push_steer(&app, &text) { Ok(()) } else { Err(AppError::Invalid("Say what the agent should do differently".into())) }
@@ -168,7 +163,7 @@ pub fn steer(app: AppHandle, text: String) -> AppResult<()> {
 /// Closes the microphone (and leaves the listening state).
 pub fn close_microphone(app: &AppHandle) {
     let state = app.state::<AppState>();
-    let was_open = state.mic.lock().expect("mic lock poisoned").take().is_some();
+    let was_open = state.mic.locked().take().is_some();
     if was_open && events::agent_state(app) == AgentState::Listening {
         events::set_agent_state(app, AgentState::Idle);
     }
@@ -178,17 +173,14 @@ pub fn close_microphone(app: &AppHandle) {
 /// segmentation and transcription arrive with M5.
 #[tauri::command]
 pub async fn toggle_listening(app: AppHandle, state: State<'_, AppState>) -> AppResult<()> {
-    if state.mic.lock().expect("mic lock poisoned").take().is_some() {
+    if state.mic.locked().take().is_some() {
         if events::agent_state(&app) == AgentState::Listening {
             events::set_agent_state(&app, AgentState::Idle);
         }
         return Ok(());
     }
 
-    if matches!(
-        events::agent_state(&app),
-        AgentState::Planning | AgentState::AwaitingConfirm | AgentState::Acting | AgentState::Observing
-    ) {
+    if events::agent_state(&app).is_running() {
         return Err(AppError::Invalid("Stop the current task before listening".into()));
     }
 
@@ -197,7 +189,7 @@ pub async fn toggle_listening(app: AppHandle, state: State<'_, AppState>) -> App
         .await
         .map_err(|err| AppError::Invalid(err.to_string()))?
         .map_err(AppError::Invalid)?;
-    *state.mic.lock().expect("mic lock poisoned") = Some(capture);
+    *state.mic.locked() = Some(capture);
     events::set_agent_state(&app, AgentState::Listening);
     Ok(())
 }
@@ -222,7 +214,7 @@ pub fn debug_set_state(app: AppHandle, state: AgentState) {
 /// Name of the outside agent currently in control, for the overlay's label.
 #[tauri::command]
 pub fn get_control_label(state: State<'_, AppState>) -> Option<String> {
-    state.lease.lock().expect("lease lock poisoned").agent().map(str::to_string)
+    state.lease.locked().agent().map(str::to_string)
 }
 
 #[derive(serde::Serialize)]

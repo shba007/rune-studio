@@ -1,6 +1,6 @@
 //! The agent loop: plan, then look at the screen, ask the model for one action, do it, repeat.
 //!
-//! One run is one task. Stop (hotkey, tray or button) cancels the shared token; every wait in
+//! One run is one task. Stop (hotkey, tray or button) cancels the run's own token; every wait in
 //! here, including the model request, watches it, so Stop is felt within milliseconds.
 
 pub mod body;
@@ -9,6 +9,7 @@ pub mod protocol;
 pub mod quick;
 pub mod stuck;
 
+use crate::sync::LockExt;
 use std::{
     future::Future,
     time::{Duration, Instant},
@@ -27,7 +28,10 @@ use crate::{
 use prompt::Entry;
 use protocol::{Action, Decision};
 
-use crate::safety::gate::{self, Verdict};
+use crate::safety::{
+    foreground,
+    gate::{self, Verdict},
+};
 
 /// Give up after this many unusable model answers in a row.
 const MAX_INVALID_IN_A_ROW: u32 = 3;
@@ -54,14 +58,38 @@ pub fn start(app: &AppHandle, task: String) {
 /// Like `start`, with the goals already worked out (a spoken task heard by an audio model comes
 /// with its plan, so the separate planning call is skipped).
 pub fn start_planned(app: &AppHandle, task: String, plan: Option<Vec<String>>) {
-    // Synchronously, so a second start_task sees a running agent and is refused.
-    app.state::<AppState>().cancel.reset();
+    // Synchronously, so a second start_task sees a running agent and is refused. The new scope
+    // also cancels the previous run's, so nothing from an earlier task can carry on.
+    let scope = app.state::<AppState>().begin_run();
+    log::info!("run {} started", scope.id);
     events::set_agent_state(app, AgentState::Planning);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        let outcome = run(&app, &task, plan).await;
+        // The run is its own task, so a panic inside it cannot skip `finish`: the state would stay
+        // at Planning/Acting, the pill would stay click-through and the voice session would hang.
+        let work_app = app.clone();
+        let outcome = supervised(async move { run(&work_app, &task, plan, scope.token).await }).await;
         finish(&app, outcome);
     });
+}
+
+/// Runs `work` as a separate task and turns a panic or an abort into an `Outcome`, so the caller
+/// always gets one back and can end the task cleanly.
+async fn supervised(work: impl Future<Output = Outcome> + Send + 'static) -> Outcome {
+    settle(tokio::spawn(work)).await
+}
+
+async fn settle(run: tokio::task::JoinHandle<Outcome>) -> Outcome {
+    match run.await {
+        Ok(outcome) => outcome,
+        Err(err) if err.is_panic() => {
+            let payload = err.into_panic();
+            let message = payload.downcast_ref::<&str>().map(|text| text.to_string()).or_else(|| payload.downcast_ref::<String>().cloned()).unwrap_or_else(|| "(no message)".into());
+            log::error!("the agent run panicked: {message}");
+            Outcome::Failed("Something went wrong inside Rune: the task was stopped".into())
+        }
+        Err(_) => Outcome::Stopped,
+    }
 }
 
 fn finish(app: &AppHandle, outcome: Outcome) {
@@ -139,7 +167,7 @@ async fn make_plan(
     };
     let mut send_thinking = thinking_sender(app);
     let started = Instant::now();
-    let Some(result) = unless_stopped(cancel, client.call(&request, &mut send_thinking)).await
+    let Some(result) = unless_stopped(cancel, client.call_retrying(&request, &mut send_thinking)).await
     else {
         return Err(Outcome::Stopped);
     };
@@ -157,13 +185,11 @@ async fn make_plan(
     Ok(goals)
 }
 
-async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>) -> Outcome {
+async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, cancel: CancelToken) -> Outcome {
     let state = app.state::<AppState>();
-    let cancel = state.cancel.clone();
     let settings = state
         .settings
-        .lock()
-        .expect("settings lock poisoned")
+        .locked()
         .clone();
     let api_key = settings::api_key();
     let tools = protocol::tools();
@@ -204,6 +230,7 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>) -> O
     let mut declines = 0;
 
     let mut watch = stuck::Watch::default();
+    let mut elevated_watch = stuck::ElevatedWatch::default();
     // Whether an action ran since the last look, for noticing a screen that does not change.
     let mut acted = false;
     // Ids from an earlier task must never be clicked in this one.
@@ -224,7 +251,7 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>) -> O
         }
 
         // Anything the user said since the last step goes into the history as an instruction.
-        for note in state.steer.lock().expect("steer lock poisoned").drain(..) {
+        for note in state.steer.locked().drain(..) {
             history.push(Entry { action: format!("the user said: \"{note}\""), outcome: "follow this from now on".into() });
         }
 
@@ -277,8 +304,13 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>) -> O
         if unchanged >= stuck::GIVE_UP_AFTER {
             return Outcome::Failed("Stopped: the screen stopped changing, so the actions are not working".into());
         }
-        // What to tell the big model: that it is stuck, and anything in the way of the page.
-        let warning = [stuck::warning(unchanged), notes.and_then(|notes| notes.hint).map(String::from)].into_iter().flatten().collect::<Vec<_>>().join(" ");
+        // A window that runs as administrator ignores our clicks and typing: say so, and give up if it stays in front.
+        let elevated = foreground::blocked_by_elevation();
+        if elevated_watch.look(elevated) >= stuck::ELEVATED_GIVE_UP_AFTER {
+            return Outcome::Failed("I can't control this window because it runs as administrator.".into());
+        }
+        // What to tell the big model: that it is stuck, anything in the way of the page, and the administrator window.
+        let warning = [stuck::warning(unchanged), notes.and_then(|notes| notes.hint).map(String::from), elevated.then(|| foreground::ELEVATED_WARNING.to_string())].into_iter().flatten().collect::<Vec<_>>().join(" ");
         let warning = (!warning.is_empty()).then_some(warning);
 
         // Already finished? Once the last goal has had its steps, the decision model can tell from
@@ -310,7 +342,7 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>) -> O
         };
         let mut send_thinking = thinking_sender(app);
         let started = Instant::now();
-        let Some(reply) = unless_stopped(&cancel, client.call(&request, &mut send_thinking)).await
+        let Some(reply) = unless_stopped(&cancel, client.call_retrying(&request, &mut send_thinking)).await
         else {
             return Outcome::Stopped;
         };
@@ -462,6 +494,33 @@ mod tests {
         });
         let outcome = unless_stopped(&cancel, tokio::time::sleep(Duration::from_secs(30))).await;
         assert!(outcome.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_panic_in_a_run_becomes_a_failed_outcome() {
+        let outcome = supervised(async {
+            if true {
+                panic!("boom");
+            }
+            Outcome::Stopped
+        })
+        .await;
+        assert_eq!(outcome, Outcome::Failed("Something went wrong inside Rune: the task was stopped".into()));
+    }
+
+    #[tokio::test]
+    async fn a_run_that_returns_passes_its_outcome_through() {
+        let finished = Outcome::Finished { summary: "ok".into(), success: true };
+        assert_eq!(supervised(async { Outcome::Finished { summary: "ok".into(), success: true } }).await, finished);
+        assert_eq!(supervised(async { Outcome::Stopped }).await, Outcome::Stopped);
+        assert_eq!(supervised(async { Outcome::Failed("no".into()) }).await, Outcome::Failed("no".into()));
+    }
+
+    #[tokio::test]
+    async fn an_aborted_run_counts_as_stopped() {
+        let run = tokio::spawn(std::future::pending::<Outcome>());
+        run.abort();
+        assert_eq!(settle(run).await, Outcome::Stopped);
     }
 
     #[tokio::test]

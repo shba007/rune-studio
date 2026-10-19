@@ -14,6 +14,9 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
 const MAX_OUTPUT_TOKENS: u32 = 512;
 /// Thinking uses tokens before the tool call, so it needs room or the call would be cut off.
 const MAX_OUTPUT_TOKENS_THINKING: u32 = 3000;
+/// `call_retrying` tries this many times in all, waiting `RETRY_WAITS` (plus up to 20% jitter) between tries.
+const MAX_ATTEMPTS: u32 = 3;
+const RETRY_WAITS: [Duration; 2] = [Duration::from_millis(500), Duration::from_millis(1500)];
 
 #[derive(Debug, thiserror::Error)]
 pub enum ModelError {
@@ -61,11 +64,49 @@ pub struct Request<'a> {
     pub think: bool,
 }
 
+/// Whether trying the same request again can help: the server was not reachable or was briefly
+/// overloaded. A reply we could not understand, a model that chose no tool, and every other
+/// error status would come back the same.
+pub fn is_retryable(error: &ModelError) -> bool {
+    match error {
+        ModelError::Request(_) => true,
+        ModelError::Status { status, .. } => matches!(status, 429 | 502 | 503 | 504),
+        ModelError::Reply(_) | ModelError::NoToolCall(_) => false,
+    }
+}
+
+/// How long to wait after failed attempt number `attempt` (1-based): 500 ms, then 1500 ms, each
+/// plus a random 0 to 20%.
+pub fn backoff(attempt: u32) -> Duration {
+    let base = RETRY_WAITS[(attempt.max(1) as usize - 1).min(RETRY_WAITS.len() - 1)];
+    // No random-number crate for this: the clock's nanoseconds are random enough to spread retries.
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |since| since.subsec_nanos());
+    base + base.mul_f64(f64::from(nanos % 1001) / 1000.0 * 0.2)
+}
+
 fn snippet(text: &str) -> String {
     text.chars().take(300).collect()
 }
 
 impl ChatClient<'_> {
+    /// `call`, tried again when the failure is transient (see `is_retryable`), at most
+    /// `MAX_ATTEMPTS` times. The waits are plain sleeps inside this future, so a caller that races
+    /// it against Stop (`unless_stopped`) abandons them by dropping it.
+    pub async fn call_retrying(&self, request: &Request<'_>, on_thinking: &mut (dyn FnMut(&str) + Send)) -> Result<Reply, ModelError> {
+        let mut attempt = 1;
+        loop {
+            match self.call(request, on_thinking).await {
+                Err(error) if attempt < MAX_ATTEMPTS && is_retryable(&error) => {
+                    let wait = backoff(attempt);
+                    log::warn!("model call failed (attempt {attempt} of {MAX_ATTEMPTS}): {error}; trying again in {} ms", wait.as_millis());
+                    tokio::time::sleep(wait).await;
+                    attempt += 1;
+                }
+                other => return other,
+            }
+        }
+    }
+
     /// Asks for a tool call. `on_thinking` receives the thinking so far (all of it, each time) as
     /// it streams in; it is never called when `think` is off.
     pub async fn call(&self, request: &Request<'_>, on_thinking: &mut (dyn FnMut(&str) + Send)) -> Result<Reply, ModelError> {
@@ -311,5 +352,93 @@ mod tests {
         stream.feed(&bytes[..split]);
         stream.feed(&bytes[split..]);
         assert_eq!(stream.thinking, "héllo 你好");
+    }
+
+    #[test]
+    fn only_transient_failures_are_retried() {
+        assert!(is_retryable(&ModelError::Request("refused".into())));
+        for status in [429, 502, 503, 504] {
+            assert!(is_retryable(&ModelError::Status { status, body: String::new() }), "{status}");
+        }
+        for status in [400, 401, 404, 500] {
+            assert!(!is_retryable(&ModelError::Status { status, body: String::new() }), "{status}");
+        }
+        assert!(!is_retryable(&ModelError::Reply("bad json".into())));
+        assert!(!is_retryable(&ModelError::NoToolCall("I would click".into())));
+    }
+
+    #[test]
+    fn the_wait_grows_and_the_jitter_stays_within_20_percent() {
+        for _ in 0..200 {
+            let first = backoff(1);
+            assert!(first >= Duration::from_millis(500) && first <= Duration::from_millis(600), "{first:?}");
+            let second = backoff(2);
+            assert!(second >= Duration::from_millis(1500) && second <= Duration::from_millis(1800), "{second:?}");
+        }
+        assert!(backoff(9) <= Duration::from_millis(1800), "later attempts reuse the last wait");
+    }
+
+    /// A one-connection-at-a-time HTTP server on a free port. Each connection gets the next canned
+    /// answer as `(status line, body)`; the request is read in full first so the client does not
+    /// see a reset. Returns its base URL and how many requests it has served.
+    fn serve(answers: Vec<(&'static str, String)>) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        use std::{io::{Read, Write}, net::TcpListener, sync::{Arc, atomic::{AtomicUsize, Ordering}}};
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let served = Arc::new(AtomicUsize::new(0));
+        let counter = served.clone();
+        std::thread::spawn(move || {
+            for (status, body) in answers {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut received = Vec::new();
+                let mut chunk = [0_u8; 4096];
+                let (header_end, length) = loop {
+                    let read = stream.read(&mut chunk).unwrap();
+                    received.extend_from_slice(&chunk[..read]);
+                    if let Some(end) = received.windows(4).position(|window| window == b"\r\n\r\n") {
+                        let head = String::from_utf8_lossy(&received[..end]).to_lowercase();
+                        let length = head.lines().find_map(|line| line.strip_prefix("content-length:")).and_then(|value| value.trim().parse::<usize>().ok()).unwrap_or(0);
+                        break (end + 4, length);
+                    }
+                    assert!(read > 0, "the client hung up before sending its request");
+                };
+                while received.len() < header_end + length {
+                    let read = stream.read(&mut chunk).unwrap();
+                    assert!(read > 0);
+                    received.extend_from_slice(&chunk[..read]);
+                }
+                counter.fetch_add(1, Ordering::SeqCst);
+                let response = format!("HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+        });
+        (url, served)
+    }
+
+    fn a_click_request(tools: &Value) -> Request<'_> {
+        Request { system: "s", user_text: "u", screenshot: None, audio: None, tools, think: false }
+    }
+
+    #[tokio::test]
+    async fn a_503_is_retried_and_the_second_answer_is_used() {
+        let ok = json!({ "choices": [{ "message": { "tool_calls": [{ "function": { "name": "click", "arguments": "{\"x\": 1}" } }] } }] });
+        let (url, served) = serve(vec![("503 Service Unavailable", "busy".into()), ("200 OK", ok.to_string())]);
+        let http = reqwest::Client::builder().no_proxy().build().unwrap();
+        let client = ChatClient { http: &http, base_url: &url, api_key: None, model: "m" };
+        let tools = json!([]);
+        let reply = client.call_retrying(&a_click_request(&tools), &mut |_| {}).await.expect("the second attempt succeeds");
+        assert_eq!(reply.call.name, "click");
+        assert_eq!(served.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn a_400_is_not_retried() {
+        let (url, served) = serve(vec![("400 Bad Request", "no".into())]);
+        let http = reqwest::Client::builder().no_proxy().build().unwrap();
+        let client = ChatClient { http: &http, base_url: &url, api_key: None, model: "m" };
+        let tools = json!([]);
+        let error = client.call_retrying(&a_click_request(&tools), &mut |_| {}).await.err().expect("a 400 is final");
+        assert!(matches!(error, ModelError::Status { status: 400, .. }));
+        assert_eq!(served.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 }
