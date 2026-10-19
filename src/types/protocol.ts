@@ -13,6 +13,8 @@ export type AgentState =
   | 'stopped'
 
 export interface Settings {
+  /** Delete session folders older than this many days at startup; 0 keeps everything. No UI yet. */
+  archiveKeepDays: number
   baseUrl: string
   model: string
   maxSteps: number

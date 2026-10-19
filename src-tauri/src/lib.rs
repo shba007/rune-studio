@@ -16,6 +16,7 @@ mod overlay;
 mod safety;
 mod settings;
 mod sync;
+mod trace;
 mod voice;
 mod window;
 
@@ -88,9 +89,28 @@ pub fn run() {
 
             // Before anything can look or listen: see `archive` for why this has no off switch.
             let _ = archive::init(app.handle());
+            // The flight recorder. Unlike the archive it never fails a task: without a database it records nothing.
+            let trace = match app.path().app_data_dir() {
+                Ok(dir) => trace::Recorder::start(&trace::db_path(&dir)),
+                Err(err) => {
+                    log::error!("no app data folder, runs will not be recorded: {err}");
+                    trace::Recorder::noop()
+                }
+            };
 
             let loaded = settings::load(app.handle());
             let hotkeys = Hotkeys::from_settings(&loaded);
+            // Retention is opt-in: with the default of 0 days nothing is ever deleted.
+            let keep_days = loaded.archive_keep_days;
+            let retention_trace = trace.clone();
+            if keep_days > 0 {
+                std::thread::spawn(move || {
+                    let removed = archive::purge_expired(keep_days);
+                    if !removed.is_empty() {
+                        retention_trace.purge_sessions(removed);
+                    }
+                });
+            }
             app.manage(AppState {
                 steer: Default::default(),
                 settings: Mutex::new(loaded),
@@ -102,6 +122,7 @@ pub fn run() {
                 confirm: Mutex::new(None),
                 #[cfg(feature = "agent-bridge")]
                 act_turn: Default::default(),
+                trace,
                 http: reqwest::Client::new(),
             });
 

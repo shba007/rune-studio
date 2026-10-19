@@ -109,9 +109,26 @@ fn new_id() -> String {
     format!("q{}", NEXT.fetch_add(1, Ordering::Relaxed))
 }
 
+/// What the gate decided and how it got there, for the flight recorder.
+#[derive(Debug)]
+pub struct CheckResult {
+    pub verdict: Verdict,
+    /// The risk after our rules, the agent's own word and the quick second opinion.
+    pub risk_final: Risk,
+    pub reasons: Vec<String>,
+    /// `allowed`, `approved`, `declined`, `no answer in time`, `stopped`, or `none` for a harmless action.
+    pub decision: &'static str,
+}
+
 /// Weighs an action and, if it needs a yes, asks for one. `source` is who chose the action.
 /// `stated` is the risk the agent itself declared, if any.
+#[allow(dead_code)] // both drivers use `check_detailed` now; this is the same decision without the details
 pub async fn check(app: &AppHandle, cancel: &CancelToken, source: &str, action: &Action, reason: &str, stated: Option<Risk>) -> Verdict {
+    check_detailed(app, cancel, source, action, reason, stated).await.verdict
+}
+
+/// `check`, with the risk and reasons it worked out and a label for what was decided.
+pub async fn check_detailed(app: &AppHandle, cancel: &CancelToken, source: &str, action: &Action, reason: &str, stated: Option<Risk>) -> CheckResult {
     let (ask_every_action, assessment) = {
         let state = app.state::<AppState>();
         let ask = state.settings.locked().ask_every_action;
@@ -130,7 +147,7 @@ pub async fn check(app: &AppHandle, cancel: &CancelToken, source: &str, action: 
         let window = format!("{} ({})", window.title, window.process);
         let opinion = tokio::select! {
             opinion = crate::agent::quick::risk_opinion(app, &text, reason, &window) => opinion,
-            () = until_stopped(cancel) => return Verdict::Stopped,
+            () = until_stopped(cancel) => return CheckResult { verdict: Verdict::Stopped, risk_final: risk, reasons, decision: "stopped" },
         };
         if let Some(opinion) = opinion {
             risk = risk.max(opinion);
@@ -141,16 +158,18 @@ pub async fn check(app: &AppHandle, cancel: &CancelToken, source: &str, action: 
 
     let verdict = if ask { ask_user(app, cancel, source, &text, reason, risk, &reasons, "approval").await } else { Verdict::Allow };
 
+    let decision = match (&verdict, ask) {
+        (Verdict::Allow, false) => "allowed",
+        (Verdict::Allow, true) => "approved",
+        (Verdict::Denied(why), _) => why,
+        (Verdict::Stopped, _) => "stopped",
+    };
     if !rules::is_harmless(action) {
-        let decision = match (&verdict, ask) {
-            (Verdict::Allow, false) => "allowed",
-            (Verdict::Allow, true) => "approved",
-            (Verdict::Denied(why), _) => why,
-            (Verdict::Stopped, _) => "stopped",
-        };
         audit::record(app, json!({ "source": source, "action": text, "reason": reason, "risk": risk, "why": reasons, "decision": decision }));
     }
-    verdict
+    // A harmless action is never weighed in the log; the recorder says so with `none`.
+    let decision = if rules::is_harmless(action) && decision == "allowed" { "none" } else { decision };
+    CheckResult { verdict, risk_final: risk, reasons, decision }
 }
 
 /// Resolves when the user presses Stop.

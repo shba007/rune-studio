@@ -36,6 +36,9 @@ pub struct Settings {
     /// Where the decision model is served (it is a rune-infer endpoint, not part of the omni
     /// model's server). Empty means unavailable.
     pub decision_url: String,
+    /// Delete session folders (screenshots, recordings) older than this many days, and their rows in
+    /// the trace database, at startup. 0 keeps everything.
+    pub archive_keep_days: u32,
 }
 
 impl Default for Settings {
@@ -53,6 +56,7 @@ impl Default for Settings {
             fast_checks: false,
             decision_model: "d1-3b-q8-0".into(),
             decision_url: String::new(),
+            archive_keep_days: 0,
         }
     }
 }

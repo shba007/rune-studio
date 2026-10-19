@@ -19,7 +19,8 @@ use crate::{
 };
 
 use super::lease::{IDLE_LIMIT, LeaseError};
-use crate::agent::quick;
+use crate::agent::{StepRow, millis, quick};
+use crate::trace::{self, RunInfo};
 use crate::safety::{
     foreground,
     gate::{self, Verdict},
@@ -294,11 +295,26 @@ fn begin(app: &AppHandle, arguments: &Value) -> Reply {
         return err.into();
     }
     // A fresh cancellation scope for this lease; it also cancels whatever the last run left behind.
-    state.begin_run();
+    let scope = state.begin_run();
     // This agent's turn at the wheel is one session folder (closed by rune_done, Stop or the idle limit).
-    if let Err(err) = crate::archive::begin_session(&task, &agent) {
+    let session = crate::archive::begin_session(&task, &agent).unwrap_or_else(|err| {
         log::error!("could not open the session folder: {err}");
-    }
+        String::new()
+    });
+    // The same id in the flight recorder; fire and forget, nothing here waits for it.
+    let run_id = if session.is_empty() { format!("norun-{}-{}", scope.id, crate::archive::now()) } else { session.clone() };
+    state.trace.begin_run(RunInfo {
+        id: run_id,
+        scope_id: i64::try_from(scope.id).ok(),
+        task: task.clone(),
+        source: agent.clone(),
+        started_utc: trace::now_utc(),
+        plan_json: None,
+        model: Some(state.settings.locked().model.clone()),
+        app_version: Some(env!("CARGO_PKG_VERSION").into()),
+        settings_json: Some(trace::settings_snapshot(&state.settings.locked())),
+        session_dir: crate::archive::session_dir(&session).map(|dir| dir.display().to_string()),
+    });
     let _ = app.emit(events::EXTERNAL_AGENT, ExternalAgent { agent: Some(agent.clone()) });
     events::set_agent_state(app, AgentState::Observing);
     log::info!("agent bridge: {agent} took control for \"{task}\"");
@@ -393,35 +409,58 @@ async fn act_turn(app: &AppHandle, tool: &'static str, arguments: &Value) -> Rep
         Ok(step) => step,
         Err(reply) => return reply,
     };
+    let state = app.state::<AppState>();
+    // This call's row for the flight recorder. It is sent when this function returns, however it
+    // returns; a call that ends with no result recorded was cut short by Stop.
+    let mut row = match state.trace.open_run_id() {
+        Some(run_id) => StepRow::new(&state.trace, &run_id, step),
+        None => StepRow::new(&trace::Recorder::noop(), "", step),
+    };
+    row.rec.tool = Some(tool.to_string());
+    row.rec.args_json = Some(arguments.to_string());
     let decision = match protocol::parse(tool, arguments) {
         Ok(decision) => decision,
         Err(problem) => {
+            row.fail(&problem);
             let code = if problem.contains("outside the 0 to 1000") { "out_of_range" } else { "bad_arguments" };
             return Reply::error(code, problem);
         }
     };
+    row.rec.reason = Some(decision.reason.clone());
+    row.rec.goal = decision.goal.map(i64::from);
+    row.rec.risk_stated = decision.risk.map(|risk| risk.label().to_string());
     advance_goal(app, decision.goal);
     if let protocol::Action::PressKeys { keys } = &decision.action {
         if let Some(bad) = keys.iter().find(|key| parse_key(key).is_err()) {
+            row.fail(&format!("\"{bad}\" is not a key name"));
             return Reply::error("unknown_key", format!("\"{bad}\" is not a key name. Use: {KEY_NAMES}"));
         }
     }
 
-    let state = app.state::<AppState>();
     let cancel = state.current_scope().token;
     // Risky actions wait for the user's yes, exactly as the built-in agent's do.
     let source = state.lease.locked().agent().unwrap_or("External agent").to_string();
-    match gate::check(app, &cancel, &source, &decision.action, &decision.reason, decision.risk).await {
+    let gating = Instant::now();
+    let checked = gate::check_detailed(app, &cancel, &source, &decision.action, &decision.reason, decision.risk).await;
+    row.rec.gate_ms = millis(gating);
+    row.rec.risk_final = Some(checked.risk_final.label().to_string());
+    row.rec.risk_reasons_json = serde_json::to_string(&checked.reasons).ok();
+    row.rec.gate = Some(checked.decision.to_string());
+    match checked.verdict {
         Verdict::Allow => {}
         Verdict::Stopped => return LeaseError::StoppedByUser.into(),
         Verdict::Denied(why) => {
+            row.rec.result = Some("skipped".into());
             events::set_agent_state(app, AgentState::Observing);
             return Reply::error("declined_by_user", format!("the user did not allow it ({why}). Do not try another way to do the same thing; ask the user what they want instead."));
         }
     }
     let monitor = match screenshot::monitor(None) {
         Ok(monitor) => monitor,
-        Err(err) => return Reply::error("screen_unavailable", err),
+        Err(err) => {
+            row.fail(&err.to_string());
+            return Reply::error("screen_unavailable", err);
+        }
     };
 
     let action = decision.action;
@@ -431,12 +470,20 @@ async fn act_turn(app: &AppHandle, tool: &'static str, arguments: &Value) -> Rep
     let worker_cancel = cancel.clone();
     let worker_action = action.clone();
     let worker_app = app.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        body::execute_reporting(&worker_app, &worker_action, &monitor, &worker_cancel)?;
-        worker_cancel.sleep(settle)
+    let (result, act_ms, settle_ms) = tauri::async_runtime::spawn_blocking(move || {
+        let acting = Instant::now();
+        let done = body::execute_reporting(&worker_app, &worker_action, &monitor, &worker_cancel);
+        let act_ms = millis(acting);
+        if let Err(err) = done {
+            return (Err(err), act_ms, None);
+        }
+        let settling = Instant::now();
+        (worker_cancel.sleep(settle), act_ms, millis(settling))
     })
     .await
-    .unwrap_or_else(|err| Err(ExecError::Input(err.to_string())));
+    .unwrap_or_else(|err| (Err(ExecError::Input(err.to_string())), None, None));
+    row.rec.act_ms = act_ms;
+    row.rec.settle_ms = settle_ms;
 
     if matches!(result, Err(ExecError::Cancelled)) || cancel.is_cancelled() {
         // Stop already moved the state to Stopped and revoked the lease. Leave both alone.
@@ -445,6 +492,7 @@ async fn act_turn(app: &AppHandle, tool: &'static str, arguments: &Value) -> Rep
     body::finish_step(app, step, &result);
     events::set_agent_state(app, AgentState::Observing);
     if let Err(err) = result {
+        row.fail(&err.to_string());
         return Reply::error("action_failed", format!("could not {described}: {err}. Look at the screen and try something different."));
     }
 
@@ -454,8 +502,14 @@ async fn act_turn(app: &AppHandle, tool: &'static str, arguments: &Value) -> Rep
     loop {
         let frame = match capture(None).await {
             Ok(frame) => frame,
-            Err(reply) => return reply,
+            Err(reply) => {
+                // The action itself worked; only the screenshot for the reply is missing.
+                row.rec.result = Some("ok".into());
+                return reply;
+            }
         };
+        row.rec.result = Some("ok".into());
+        row.rec.observation_path = Some(frame.path.display().to_string()).filter(|path| !path.is_empty());
         let notes = quick::read_screen(app, &frame.data_uri()).await.unwrap_or_default();
         if notes.loading && attempt < quick::MAX_LOAD_WAITS && !cancel.is_cancelled() {
             attempt += 1;
@@ -482,6 +536,10 @@ fn set_goals(app: &AppHandle, goals: Vec<String>) {
     if let Some(lease) = state.lease.locked().current_mut() {
         lease.plan = goals.clone();
         lease.current_goal = 0;
+    }
+    if let (Some(run_id), Ok(listing)) = (state.trace.open_run_id(), serde_json::to_string(&goals)) {
+        state.trace.set_plan(&run_id, &listing);
+        state.trace.event(&run_id, "plan", &listing);
     }
     events::emit_plan(app, &goals, 0, false);
 }
@@ -552,7 +610,9 @@ fn done(app: &AppHandle, arguments: &Value) -> Reply {
         events::emit_plan(app, &plan, plan.len(), true);
     }
     state.lease.locked().end();
-    crate::archive::end_session(None, if success { "succeeded" } else { "reported_failure" }, &summary);
+    let label = if success { "succeeded" } else { "reported_failure" };
+    crate::archive::end_session(None, label, &summary);
+    state.trace.end_open_run(label, &summary);
     let _ = app.emit(events::EXTERNAL_AGENT, ExternalAgent { agent: None });
     let _ = app.emit(events::TASK_DONE, TaskDone { summary, success });
     events::set_agent_state(app, if success { AgentState::Done } else { AgentState::Failed });

@@ -22,6 +22,15 @@ pub enum Risk {
 }
 
 impl Risk {
+    /// The word the record and the model protocol use for it.
+    pub fn label(self) -> &'static str {
+        match self {
+            Risk::Low => "low",
+            Risk::Medium => "medium",
+            Risk::High => "high",
+        }
+    }
+
     /// Reads what an agent wrote in its `risk` argument. Anything unrecognised counts as unstated.
     pub fn parse(text: &str) -> Option<Risk> {
         match text.trim().to_ascii_lowercase().as_str() {

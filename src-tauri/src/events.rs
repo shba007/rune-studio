@@ -52,6 +52,8 @@ pub struct AppState {
     /// calls take turns instead of driving the mouse and the confirm slot at once.
     #[cfg(feature = "agent-bridge")]
     pub act_turn: tokio::sync::Mutex<()>,
+    /// The flight recorder (see `trace`); it records nothing if its database could not be opened.
+    pub trace: crate::trace::Recorder,
     pub http: reqwest::Client,
 }
 
