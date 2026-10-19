@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.0.3
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.0.2...v0.0.3)
+
+### 🏡 Chore
+
+- Comment out mobile build steps in deploy workflow ([6ca8684](https://github.com/shba007/rune-studio/commit/6ca8684))
+
+### 🤖 CI
+
+- **deploy:** Install pipewire and other native deps for the Linux desktop build ([3ad334b](https://github.com/shba007/rune-studio/commit/3ad334b))
+- **deploy:** Install native deps for the Linux desktop build ([62e4a36](https://github.com/shba007/rune-studio/commit/62e4a36))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+- Claude <noreply@anthropic.com>
+
 ## v0.0.2
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.0.1...v0.0.2)
