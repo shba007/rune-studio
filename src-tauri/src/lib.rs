@@ -20,7 +20,7 @@ mod window;
 
 #[cfg(test)]
 mod probe_m15;
-#[cfg(test)]
+#[cfg(all(test, windows))]
 mod system_tests;
 
 use std::sync::Mutex;
