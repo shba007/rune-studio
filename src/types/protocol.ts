@@ -27,6 +27,7 @@ export interface Settings {
   askEveryAction: boolean
   /** Use the fast decision model for quick checks (skip planning, spot a finished task, risk). */
   fastChecks: boolean
+  directVoice: boolean
   decisionModel: string
 }
 

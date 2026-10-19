@@ -48,12 +48,18 @@ enum Outcome {
 
 /// Starts a task on a background task and returns at once.
 pub fn start(app: &AppHandle, task: String) {
+    start_planned(app, task, None);
+}
+
+/// Like `start`, with the goals already worked out (a spoken task heard by an audio model comes
+/// with its plan, so the separate planning call is skipped).
+pub fn start_planned(app: &AppHandle, task: String, plan: Option<Vec<String>>) {
     // Synchronously, so a second start_task sees a running agent and is refused.
     app.state::<AppState>().cancel.reset();
     events::set_agent_state(app, AgentState::Planning);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        let outcome = run(&app, &task).await;
+        let outcome = run(&app, &task, plan).await;
         finish(&app, outcome);
     });
 }
@@ -127,6 +133,7 @@ async fn make_plan(
         system: prompt::PLAN_SYSTEM,
         user_text: &prompt::plan_user_message(task),
         screenshot: None,
+        audio: None,
         tools: &tools,
         think,
     };
@@ -150,7 +157,7 @@ async fn make_plan(
     Ok(goals)
 }
 
-async fn run(app: &AppHandle, task: &str) -> Outcome {
+async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>) -> Outcome {
     let state = app.state::<AppState>();
     let cancel = state.cancel.clone();
     let settings = state
@@ -170,7 +177,7 @@ async fn run(app: &AppHandle, task: &str) -> Outcome {
 
     // A simple task needs no plan, and the decision model can say so in a fraction of the time the
     // planning call takes. (With "Show thinking" on the user wants to watch the model work, so it runs.)
-    let simple = if think {
+    let simple = if think || preset_plan.is_some() {
         false
     } else {
         match unless_stopped(&cancel, quick::is_simple_task(app, task)).await {
@@ -178,7 +185,9 @@ async fn run(app: &AppHandle, task: &str) -> Outcome {
             None => return Outcome::Stopped,
         }
     };
-    let plan = if simple {
+    let plan = if let Some(plan) = preset_plan {
+        plan
+    } else if simple {
         log::info!("simple task, planning skipped");
         vec![task.trim().chars().take(80).collect::<String>()]
     } else {
@@ -286,6 +295,7 @@ async fn run(app: &AppHandle, task: &str) -> Outcome {
             system: prompt::SYSTEM,
             user_text: &text,
             screenshot: Some(&screenshot),
+            audio: None,
             tools: &tools,
             think,
         };
@@ -474,6 +484,7 @@ mod live {
             system: prompt::PLAN_SYSTEM,
             user_text: &prompt::plan_user_message("Open Notepad and write hello"),
             screenshot: None,
+            audio: None,
             tools: &tools,
             think: true,
         };

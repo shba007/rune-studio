@@ -53,6 +53,8 @@ pub struct Request<'a> {
     pub user_text: &'a str,
     /// The screen as a data URI. The planning call has none.
     pub screenshot: Option<&'a str>,
+    /// What the user just said, as base64 WAV, for a model that takes audio directly.
+    pub audio: Option<&'a str>,
     pub tools: &'a Value,
     /// Let the model think, and stream that thinking to `on_thinking`.
     pub think: bool,
@@ -66,13 +68,19 @@ impl ChatClient<'_> {
     /// Asks for a tool call. `on_thinking` receives the thinking so far (all of it, each time) as
     /// it streams in; it is never called when `think` is off.
     pub async fn call(&self, request: &Request<'_>, on_thinking: &mut (dyn FnMut(&str) + Send)) -> Result<Reply, ModelError> {
-        let content = match request.screenshot {
-            // Image first, text last, like the probe: the screenshot is the expensive part.
-            Some(screenshot) => json!([
-                { "type": "image_url", "image_url": { "url": screenshot } },
-                { "type": "text", "text": request.user_text },
-            ]),
-            None => json!(request.user_text),
+        let content = if request.screenshot.is_none() && request.audio.is_none() {
+            json!(request.user_text)
+        } else {
+            // Audio and image first, text last, like the probe: the screenshot is the expensive part.
+            let mut parts = Vec::new();
+            if let Some(audio) = request.audio {
+                parts.push(json!({ "type": "input_audio", "input_audio": { "data": audio, "format": "wav" } }));
+            }
+            if let Some(screenshot) = request.screenshot {
+                parts.push(json!({ "type": "image_url", "image_url": { "url": screenshot } }));
+            }
+            parts.push(json!({ "type": "text", "text": request.user_text }));
+            json!(parts)
         };
         let mut body = json!({
             "model": self.model,

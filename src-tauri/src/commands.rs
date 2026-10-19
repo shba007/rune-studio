@@ -115,6 +115,11 @@ pub fn start_task(app: AppHandle, text: String) -> AppResult<()> {
 /// Starts a task. `keep_mic` leaves the microphone open (a task started by voice stays
 /// listening, so the user can say stop, answer a question or steer); typing a task closes it.
 pub fn begin_task(app: &AppHandle, text: &str, keep_mic: bool) -> AppResult<()> {
+    begin_task_planned(app, text, keep_mic, None)
+}
+
+/// `begin_task` with the plan already made (see `agent::start_planned`).
+pub fn begin_task_planned(app: &AppHandle, text: &str, keep_mic: bool, plan: Option<Vec<String>>) -> AppResult<()> {
     let state = app.state::<AppState>();
     let task = text.trim();
     state.steer.lock().expect("steer lock poisoned").clear();
@@ -134,7 +139,7 @@ pub fn begin_task(app: &AppHandle, text: &str, keep_mic: bool) -> AppResult<()> 
     if !keep_mic {
         drop(state.mic.lock().expect("mic lock poisoned").take());
     }
-    agent::start(app, task.to_string());
+    agent::start_planned(app, task.to_string(), plan);
     Ok(())
 }
 

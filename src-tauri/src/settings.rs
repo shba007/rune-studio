@@ -32,6 +32,9 @@ pub struct Settings {
     /// task, a second opinion on risk). Everything still works without it, only slower.
     pub fast_checks: bool,
     pub decision_model: String,
+    /// Send what the user says straight to the model (it must take audio, like a Qwen Omni build)
+    /// instead of transcribing it first. Falls back to transcription if the model refuses audio.
+    pub direct_voice: bool,
 }
 
 impl Default for Settings {
@@ -49,6 +52,7 @@ impl Default for Settings {
             ask_every_action: false,
             fast_checks: true,
             decision_model: "d1-3b-q8-0".into(),
+            direct_voice: false,
         }
     }
 }

@@ -1,7 +1,8 @@
 //! Talking to the agent: the microphone, cutting speech into utterances, turning them into text,
 //! and acting on what was said.
 //!
-//! While listening, every utterance is transcribed by rune-infer (locally) and then:
+//! While listening, every utterance is transcribed by rune-infer (locally) and then (with the
+//! "Direct voice" setting on and an audio-capable model, `direct` hears it with no transcript):
 //! - **Stop** (the word, on its own) stops the agent at once, like the Stop button.
 //! - **Yes / No** answer the question on screen. A spoken **no** always works. A spoken **yes**
 //!   works for the agent's own questions, but not for an action that needs approval: a TV or a
@@ -10,15 +11,18 @@
 //!   agent reads before its next step) when it is working.
 
 pub mod capture;
+pub mod direct;
 pub mod intent;
 pub mod stt;
 pub mod vad;
 
+use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{
     events::{self, AgentState, AppState},
+    model::client::ChatClient,
     safety::gate::{self, VoiceAnswer},
     settings,
 };
@@ -58,11 +62,26 @@ pub fn resume_listening_soon(app: &AppHandle) {
 /// One utterance, start to finish: transcribe, interpret, act.
 pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
     let state = app.state::<AppState>();
-    let (base_url, model) = {
+    let (base_url, model, vision_model, direct_voice) = {
         let settings = state.settings.lock().expect("settings lock poisoned");
-        (settings.base_url.clone(), settings.asr_model.clone())
+        (settings.base_url.clone(), settings.asr_model.clone(), settings.vision_model.clone(), settings.direct_voice)
     };
     let api_key = settings::api_key();
+    if direct_voice {
+        // No transcript: the audio model hears it and says what it was. If it cannot (the model
+        // does not take audio, or the server is down) fall through to transcription below.
+        let client = ChatClient { http: &state.http, base_url: &base_url, api_key: api_key.as_deref(), model: &vision_model };
+        let audio = BASE64.encode(stt::wav(&utterance));
+        match direct::listen(&client, &audio, events::agent_state(app)).await {
+            Ok(Some(listened)) => {
+                log::info!("heard directly: {:?}", listened.intent);
+                apply(app, listened.intent, listened.goals, "");
+                return;
+            }
+            Ok(None) => return,
+            Err(err) => log::warn!("direct speech failed, transcribing instead: {err}"),
+        }
+    }
     let text = match stt::transcribe(&state.http, &base_url, api_key.as_deref(), &model, &utterance).await {
         Ok(Some(text)) => text,
         Ok(None) => return,
@@ -78,8 +97,15 @@ pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
 
 /// Does what the words ask for. Separate from `handle` so it can be tested without audio.
 pub fn act(app: &AppHandle, text: &str) {
+    apply(app, intent::interpret(text), None, text);
+}
+
+/// Does what an intent asks for. `text` is what was heard when there is a transcript; without
+/// one (direct speech) the model's own wording of a task is shown instead. `goals` are the plan an
+/// audio model already made for a new task.
+fn apply(app: &AppHandle, intent: Intent, goals: Option<Vec<String>>, text: &str) {
     let now = events::agent_state(app);
-    match intent::interpret(text) {
+    match intent {
         Intent::Stop => {
             if running(now) {
                 heard(app, text, "Stopped");
@@ -114,7 +140,7 @@ pub fn act(app: &AppHandle, text: &str) {
                     heard(app, &said, "Passed to the agent");
                 }
             } else {
-                match crate::commands::begin_task(app, &said, true) {
+                match crate::commands::begin_task_planned(app, &said, true, goals) {
                     Ok(()) => heard(app, &said, "Starting"),
                     Err(err) => heard(app, &said, err.to_string()),
                 }
