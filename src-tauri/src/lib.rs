@@ -16,6 +16,7 @@ mod overlay;
 mod safety;
 mod settings;
 mod sync;
+mod trace;
 mod voice;
 mod window;
 

@@ -74,10 +74,18 @@ pub fn start_planned(app: &AppHandle, task: String, plan: Option<Vec<String>>) {
         // The run is its own task, so a panic inside it cannot skip `finish`: the state would stay
         // at Planning/Acting, the pill would stay click-through and the voice session would hang.
         let work_app = app.clone();
+        let leftovers = scope.token.clone();
         let outcome = supervised(async move { run(&work_app, &task, plan, scope.token).await }).await;
+        stop_leftovers(&leftovers, &outcome);
         end_session(&session, &outcome);
         finish(&app, outcome);
     });
+}
+
+/// Once a run is over, however it ended, tells anything it left behind (an input action already
+/// in flight after a panic) to stop. Tokens are per run, so this cannot affect the next one.
+fn stop_leftovers(token: &CancelToken, _outcome: &Outcome) {
+    token.cancel();
 }
 
 /// Runs `work` as a separate task and turns a panic or an abort into an `Outcome`, so the caller
@@ -536,6 +544,19 @@ mod tests {
         assert_eq!(supervised(async { Outcome::Finished { summary: "ok".into(), success: true } }).await, finished);
         assert_eq!(supervised(async { Outcome::Stopped }).await, Outcome::Stopped);
         assert_eq!(supervised(async { Outcome::Failed("no".into()) }).await, Outcome::Failed("no".into()));
+    }
+
+    #[test]
+    fn a_finished_run_cancels_what_it_left_behind() {
+        for outcome in [Outcome::Failed("boom".into()), Outcome::Stopped, Outcome::Finished { summary: "ok".into(), success: true }] {
+            let token = CancelToken::default();
+            let in_flight = token.clone();
+            stop_leftovers(&token, &outcome);
+            assert!(in_flight.is_cancelled(), "{outcome:?}");
+        }
+        let next_run = CancelToken::default();
+        stop_leftovers(&CancelToken::default(), &Outcome::Stopped);
+        assert!(!next_run.is_cancelled(), "another run's token is not touched");
     }
 
     #[tokio::test]
