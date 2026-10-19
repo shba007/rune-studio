@@ -101,6 +101,8 @@ pub fn stop(app: AppHandle) {
     if had_agent {
         let _ = tauri::Emitter::emit(&app, events::EXTERNAL_AGENT, events::ExternalAgent { agent: None });
     }
+    // Whatever task was running is over: close its session folder (a no-op when none is open).
+    crate::archive::end_session(None, "stopped", "");
     if events::agent_state(&app) != AgentState::Idle {
         events::set_agent_state(&app, AgentState::Stopped);
         crate::voice::resume_listening_soon(&app);

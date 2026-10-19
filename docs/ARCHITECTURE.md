@@ -170,7 +170,18 @@ src-tauri/src/
 
 ### The record (`archive.rs`)
 
-Everything the agent sees or hears is stored in the user's Documents folder (`Documents/Rune Studio/`, the OS equivalent elsewhere) in `screenshots/`, `voice/` and `recordings/`, split by UTC date, with names `<hhmmss>-<counter>-<label>.<ext>` that are never overwritten. There is no setting, tool or command to turn it off or move it, no size limit and no cleanup. It **fails closed**: `observe::screenshot::capture_region` (the one place every screenshot goes through) saves the exact JPEG with `fsync` before returning it and errors if that fails; `voice::handle` stores the WAV before sending it to the model and drops the utterance if that fails; if the folder cannot be created at startup the agent cannot see or hear. Screen recording does not exist yet; a future recorder must write through `archive::path_for(Kind::Recordings, ..)`. The safety gate rates any action taken while File Explorer shows a "Rune Studio" folder as high risk (by window title only). Files are ordinary files: the user or another program can delete them.
+Everything the agent sees or hears is stored in the user's Documents folder (`Documents/Rune Studio/`, the OS equivalent elsewhere), **one folder per session**. A session is one task run: `agent::start_planned` opens it (`archive::begin_session(task, "built-in")`) and the run's end closes it with the outcome; for an outside agent, `rune_begin` opens it and `rune_done`, Stop or the 300 s idle limit closes it. Layout:
+
+```
+Rune Studio/sessions/<UTC date>/<hhmmss>-<n>-<task-slug>/
+    session.json         id, task (200 chars), source ("built-in" or the agent's name), started_utc, ended_utc, outcome, summary, file counts
+    screenshots/<hhmmss>-<counter>-screen.jpg   (zoomed captures: -region.jpg)
+    voice/<hhmmss>-<counter>-utterance.wav
+    recordings/...
+Rune Studio/screenshots/<date>/, voice/<date>/, recordings/<date>/   files saved while no session is open
+```
+
+`outcome` is `succeeded`, `reported_failure` (the agent called done with success false), `failed`, `stopped`, `lease_expired` or `replaced` (a new session opened while one was still open). Only one session is open at a time. A late-finishing run closes only its own session (the id is checked), so it cannot close the next task's folder. The recording of the words that started a spoken task is saved before the session exists, so `voice::apply` moves it into the new session's `voice/` (`archive::adopt`); speech heard while a task runs (steering, stop, yes, no) is saved straight into that session. Speech that is only noise or a command with no task stays in the daily `voice/<date>/` folder. Names are `<hhmmss>-<counter>-<label>.<ext>` and are never overwritten; the counters restart at 0 each launch (the time prefix and the session counter keep names unique). The manifest is written with a plain `fs::write` and a failure is only logged. A screenshot that is saved after Stop closed its session (an in-flight capture) goes to the daily folder. There is no setting, tool or command to turn it off or move it, no size limit and no cleanup. It **fails closed**: `observe::screenshot::capture_region` (the one place every screenshot goes through) saves the exact JPEG with `fsync` before returning it and errors if that fails; `voice::handle` stores the WAV before sending it to the model and drops the utterance if that fails; if the folder cannot be created at startup the agent cannot see or hear. Screen recording does not exist yet; a future recorder must write through `archive::path_for(Kind::Recordings, ..)`. The safety gate rates any action taken while File Explorer shows a window whose title contains "Rune Studio" as high risk (by window title only; Explorer titles a window with the current folder's name, so a window inside `sessions/...` or a date folder is **not** matched, which was already true of the date folders). Files are ordinary files: the user or another program can delete them.
 
 Other persisted data: `settings.json` (app config folder), `audit.log` (app data folder; JSON lines), the API key (`rune-infer-api-key`) and bridge token (`agent-bridge-token`) in the OS credential store under the app identifier.
 
@@ -377,7 +388,7 @@ These are properties of the current code, not plans:
 3. **No retry or backoff** on the omni model: one transport or 5xx error fails the task.
 4. **Bridge:** simultaneous `tools/call`s are not serialised (they can interleave input); no rate limit, request timeout or graceful shutdown; the token is read from the credential store, and `settings.json` is re-read, on every request.
 5. **Voice:** utterances queue unbounded behind each model call, so a spoken "stop" waits behind a slow one (the hotkey and tray Stop do not).
-6. **The record** has no retention limit and is written with `fsync` on the observation path.
+6. **The record** has no retention limit and is written with `fsync` on the observation path. Existing files from before the session layout (v0.0.7 and earlier) stay in the old by-type, by-day folders; nothing migrates them.
 7. **Safety rules** judge coordinate clicks by window title and the agent's own words only; they are advisory.
 8. **Settings** are written without an atomic rename and a corrupted file silently falls back to defaults; `base_url` and `max_steps` are not validated.
 9. **No release logging:** the log plugin is registered only in debug builds. No metrics or tracing.

@@ -165,7 +165,7 @@ Nothing risky runs without your Yes, whoever chose the action (the built-in mode
 
 ## Privacy and the record
 
-Everything the agent sees or hears is stored under `Documents/Rune Studio/` (`screenshots/`, `voice/`, `recordings/`, split by UTC date, never overwritten). There is **no setting to turn it off or move it**, no size limit and no automatic cleanup. It fails closed: if a screenshot or recording cannot be stored, the agent gets no screenshot and the utterance is not acted on. Screens can contain sensitive content, so treat this folder as sensitive and clear it yourself. The audio and screenshots are sent only to the configured model server.
+Everything the agent sees or hears is stored under `Documents/Rune Studio/`, **one folder per session** (one task run, built-in or by an outside agent): `sessions/<UTC date>/<hhmmss>-<n>-<task-slug>/` holds `session.json` (task, source, start and end time, outcome, summary, file counts) and `screenshots/`, `voice/`, `recordings/`. Files saved while no session is open (debug captures, speech that is not a command) go in `screenshots/<date>/`, `voice/<date>/`. Nothing is overwritten. There is **no setting to turn it off or move it**, no size limit and no automatic cleanup. It fails closed: if a screenshot or recording cannot be stored, the agent gets no screenshot and the utterance is not acted on. Screens can contain sensitive content, so treat this folder as sensitive and clear it yourself. The audio and screenshots are sent only to the configured model server.
 
 ---
 

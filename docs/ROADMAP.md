@@ -27,7 +27,7 @@ Decisions:
 
 **Studio** (code at the time of writing):
 - One async run per task; step = capture + UIA, chat call, gate, action, settle (`agent/mod.rs`). Recorded live run: 9 steps in 88 s (~10 s/step); **no timing exists for the current default `gemma-4-12b-it`**.
-- Archive saves screenshots/audio with no run id; `history` is memory-only; `done{success}` is unverified self-report.
+- Archive: screenshots/audio are saved per session folder (one task run) with a `session.json` manifest (done in the app, see `docs/ARCHITECTURE.md`), but there is still no run id shared with a database, no per-step record, and `history` is memory-only; `done{success}` is unverified self-report.
 - One shared cancel flag; "task running" tested in 5 places; `Reflecting` state does not exist.
 - The orb ring is driven by `plan_updated`; the overlay is click-through; the confirm card is clickable and its timeout means **No**.
 - Studio has an MCP **server** (bridge) but **no MCP client**. No SQLite crate, no dialog plugin, no single-instance plugin in `Cargo.toml`. CI runs no Rust tests.
@@ -73,7 +73,7 @@ Exit: tests green in CI; stop/new-task race test; forced panic leaves the app us
 
 ### R1 Flight recorder — M / high
 - SQLite (`rusqlite` bundled; builds on all CI targets **NOT CERTAIN**): `runs`, `steps`, `verdicts`, `notes`, `reflections`, `analyses`, **`tool_calls`** (kit calls, below). Files stay on disk; rows keep paths.
-- Per-step: prompt, reply, tokens, latency, observation path, element-list hash, gate verdict, result, per-phase timings. Archive retention + `fsync` off the observation path.
+- Per-step: prompt, reply, tokens, latency, observation path, element-list hash, gate verdict, result, per-phase timings. Archive retention + `fsync` off the observation path. (The per-session folder and `session.json` already exist; the run id in the database should be the session's `id`.)
 Exit: every run (built-in or MCP) yields complete rows; browsable from UI/CLI.
 
 ### K1 Kit integration — M-H / medium
