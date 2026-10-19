@@ -184,3 +184,39 @@ export interface TaskVerifiedPayload {
   result: 'verified' | 'contradicted' | 'unsure'
   evidence: string
 }
+
+export const ANALYSIS_UPDATED = 'analysis_updated'
+
+export type AnalysisStatus = 'idle' | 'capturing' | 'asking' | 'done' | 'error' | 'cancelled'
+export type FindingKind = 'text' | 'control' | 'image' | 'region' | 'issue' | 'other'
+
+/** `[x0, y0, x1, y1]`, each 0 to 1000 across the whole screenshot. */
+export type Box = [number, number, number, number]
+
+/** One thing the model points at on the screenshot (analysis/report.rs `Finding`). */
+export interface Finding {
+  n: number
+  label: string
+  kind: FindingKind
+  /** Null when the model could not locate it: the finding is listed but not drawn. */
+  box: Box | null
+  description: string
+  evidence: string
+}
+
+/** The screen analysis as the window shows it (analysis/state.rs `Snapshot`). */
+export interface AnalysisSnapshot {
+  status: AnalysisStatus
+  id: string
+  question: string
+  answer: string
+  findings: Finding[]
+  model: string
+  latencyMs: number
+  error: string | null
+  createdUtc: string
+  /** The screenshot as a data URI; null before the first capture. */
+  image: string | null
+  width: number
+  height: number
+}

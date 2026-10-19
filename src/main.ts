@@ -2,6 +2,7 @@ import { createApp } from 'vue'
 
 import 'unfonts.css'
 
+import AnalysisView from './components/AnalysisView.vue'
 import App from './App.vue'
 import ControlOverlay from './components/ControlOverlay.vue'
 import './style.css'
@@ -13,8 +14,12 @@ if (import.meta.env.DEV && !('__TAURI_INTERNALS__' in window)) {
 }
 
 // The same bundle serves the pill and the full-screen control overlay.
-const overlay = new URLSearchParams(location.search).get('view') === 'overlay'
+const view = new URLSearchParams(location.search).get('view')
 // The full-screen overlay never shows the Vue devtools button (see style.css).
-if (overlay) document.documentElement.classList.add('overlay-view')
+if (view === 'overlay') document.documentElement.classList.add('overlay-view')
+// The analysis window is an ordinary opaque window, unlike the transparent pill (see style.css).
+if (view === 'analysis') document.documentElement.classList.add('analysis-view')
 
-createApp(overlay ? ControlOverlay : App).mount('#app')
+createApp(view === 'overlay' ? ControlOverlay : view === 'analysis' ? AnalysisView : App).mount(
+  '#app',
+)

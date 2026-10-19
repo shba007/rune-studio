@@ -212,6 +212,8 @@ export function useAgent() {
   }
 
   const stop = () => call('stop')
+  /** Looks at the screen and shows the answer in the analysis window (a refusal shows as a notice). */
+  const analyzeScreen = () => call('analyze_screen', { question: null })
   const toggleListening = () => call('toggle_listening')
   /** Answer the waiting question. A stale answer is refused by the Rust side. */
   async function answer(approved: boolean) {
@@ -341,6 +343,7 @@ export function useAgent() {
     saveApiKey,
     startTask,
     stop,
+    analyzeScreen,
     toggleListening,
     confirm,
     debugSetState,

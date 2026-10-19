@@ -126,3 +126,35 @@ input {
 .overlay-view #__vue-devtools-container__ {
   display: none !important;
 }
+
+/* The analysis window is a normal opaque window: it follows the system theme, scrolls and lets
+   the user select text (the pill and the overlay are transparent, fixed and unselectable). */
+.analysis-view,
+.analysis-view body,
+.analysis-view #app {
+  background: #f1f1ef;
+  color: #111;
+  overflow: auto;
+  user-select: text;
+}
+
+@media (prefers-color-scheme: dark) {
+  .analysis-view,
+  .analysis-view body,
+  .analysis-view #app {
+    background: #141414;
+    color: #f4f4f5;
+  }
+
+  .analysis-view {
+    --scrollbar-thumb: rgb(255 255 255 / 0.16);
+    --scrollbar-thumb-hover: rgb(255 255 255 / 0.32);
+  }
+}
+
+@media (prefers-color-scheme: light) {
+  .analysis-view {
+    --scrollbar-thumb: rgb(0 0 0 / 0.22);
+    --scrollbar-thumb-hover: rgb(0 0 0 / 0.4);
+  }
+}

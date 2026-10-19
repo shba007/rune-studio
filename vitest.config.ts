@@ -7,7 +7,8 @@ export default mergeConfig(
   defineConfig({
     test: {
       environment: 'jsdom',
-      exclude: [...configDefaults.exclude, 'e2e/**'],
+      // scripts/ holds the Node test-runner suites (`bun run test:eval`, `test:m15`); vitest cannot load them.
+      exclude: [...configDefaults.exclude, 'e2e/**', 'scripts/**'],
       root: fileURLToPath(new URL('./', import.meta.url)),
     },
   }),

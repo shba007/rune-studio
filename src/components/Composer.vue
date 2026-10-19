@@ -72,6 +72,17 @@ async function submit() {
         <AppIcon name="tune" />
       </button>
 
+      <button
+        type="button"
+        class="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full border border-black/15 text-[#111] transition hover:bg-black/6 disabled:cursor-default disabled:opacity-40 dark:border-white/15 dark:text-zinc-200 dark:hover:bg-white/8"
+        aria-label="Analyse the screen"
+        title="Analyse the screen"
+        :disabled="agent.isRunning.value"
+        @click="agent.analyzeScreen()"
+      >
+        <AppIcon name="scan" />
+      </button>
+
       <textarea
         ref="field"
         v-model="command"

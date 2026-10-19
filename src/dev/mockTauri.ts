@@ -29,6 +29,82 @@ function placeholderThumbnail(): string {
   return canvas.toDataURL('image/jpeg', 0.7)
 }
 
+/** A made-up settings window standing in for a screenshot, for `?view=analysis` in a browser. */
+function placeholderScreen(): string {
+  const canvas = document.createElement('canvas')
+  canvas.width = 1280
+  canvas.height = 720
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return ''
+  ctx.fillStyle = '#e8e8e6'
+  ctx.fillRect(0, 0, 1280, 720)
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(160, 80, 960, 560)
+  ctx.fillStyle = '#2b2b2b'
+  ctx.fillRect(160, 80, 960, 48)
+  ctx.fillStyle = '#d9d9d6'
+  ctx.fillRect(200, 180, 520, 40)
+  ctx.fillRect(200, 250, 520, 40)
+  ctx.fillStyle = '#d71921'
+  ctx.fillRect(900, 560, 180, 48)
+  ctx.fillStyle = '#4a4a4a'
+  ctx.fillRect(700, 560, 180, 48)
+  ctx.fillStyle = '#9a9a96'
+  ctx.fillRect(200, 340, 920, 120)
+  return canvas.toDataURL('image/jpeg', 0.8)
+}
+
+function analysisFixture() {
+  return {
+    status: 'done',
+    id: '120000-1-analysis',
+    question: 'What is on this screen, and what could the user do next?',
+    answer:
+      'A settings dialog with two text fields, a notes area and two buttons. The user can fill in the fields and confirm with the red Delete button or cancel.',
+    findings: [
+      {
+        n: 1,
+        label: 'Title bar',
+        kind: 'region',
+        box: [125, 111, 875, 178],
+        description: 'The dialog is called Settings.',
+        evidence: 'dark bar across the top of the window',
+      },
+      {
+        n: 2,
+        label: 'Name field',
+        kind: 'control',
+        box: [156, 250, 563, 306],
+        description: 'A text field for a name.',
+        evidence: 'light grey input with an empty value',
+      },
+      {
+        n: 3,
+        label: 'Delete',
+        kind: 'issue',
+        box: [703, 778, 844, 845],
+        description: 'A red button that probably deletes the entry.',
+        evidence: 'red fill, bottom right of the dialog',
+      },
+      {
+        n: 4,
+        label: 'Footer note',
+        kind: 'text',
+        box: null,
+        description: 'Small print that could not be placed.',
+        evidence: 'mentioned at the bottom, too small to locate',
+      },
+    ],
+    model: 'gemma-4-12b-it',
+    latencyMs: 4200,
+    error: null,
+    createdUtc: new Date().toISOString(),
+    image: placeholderScreen(),
+    width: 1280,
+    height: 720,
+  }
+}
+
 export function installTauriMock() {
   mockIPC(
     (command) => {
@@ -68,6 +144,8 @@ export function installTauriMock() {
             latencyMs: 12,
             error: null,
           }
+        case 'analysis_state':
+          return analysisFixture()
         case 'has_api_key':
           return true
         case 'debug_capture':
