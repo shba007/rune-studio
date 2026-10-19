@@ -104,7 +104,7 @@ pub fn edit_file(path: &Path, edit: impl FnOnce(&str) -> Result<Option<String>, 
 mod tests {
     use super::*;
 
-    const EXE: &str = r"C:\Rune Studio\rune-studio.exe";
+    const EXE: &str = r"C:\Rune Studio\rune-studio-cli.exe";
 
     fn parsed(text: &str) -> Value {
         serde_json::from_str(text).unwrap()
@@ -132,8 +132,8 @@ mod tests {
     fn running_it_twice_changes_nothing_and_replaces_an_old_path() {
         let once = add_server("", EXE).unwrap();
         assert_eq!(add_server(&once, EXE).unwrap(), once);
-        let moved = parsed(&add_server(&once, r"D:\New\rune-studio.exe").unwrap());
-        assert_eq!(moved["mcpServers"]["rune-studio"]["command"], r"D:\New\rune-studio.exe");
+        let moved = parsed(&add_server(&once, r"D:\New\rune-studio-cli.exe").unwrap());
+        assert_eq!(moved["mcpServers"]["rune-studio"]["command"], r"D:\New\rune-studio-cli.exe");
         assert_eq!(moved["mcpServers"].as_object().unwrap().len(), 1);
     }
 
@@ -166,7 +166,7 @@ mod tests {
         // A real change keeps the old content as .bak.
         assert!(edit_file(&path, |text| add_server(text, r"E:\other.exe").map(Some)).unwrap());
         let backup = fs::read_to_string(dir.join("nested").join("mcp_config.json.bak")).unwrap();
-        assert!(backup.contains(r"C:\\Rune Studio\\rune-studio.exe"));
+        assert!(backup.contains(r"C:\\Rune Studio\\rune-studio-cli.exe"));
         // Broken JSON is refused and left alone.
         fs::write(&path, "oops").unwrap();
         assert!(edit_file(&path, |text| add_server(text, EXE).map(Some)).is_err());

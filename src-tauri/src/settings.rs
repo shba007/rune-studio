@@ -21,7 +21,7 @@ pub struct Settings {
     pub stop_hotkey: String,
     /// Whether an outside agent may connect (only has an effect in `agent-bridge` builds).
     pub external_agent: bool,
-    /// When `rune-studio enable` last ran (Unix seconds). A newer value re-arms an agent that Stop
+    /// When `rune-studio-cli enable` last ran (Unix seconds). A newer value re-arms an agent that Stop
     /// locked out: running the command again is the user saying "yes, let it back in".
     pub external_agent_since: u64,
     /// Let the model think and show that thinking (slower: thinking is off by default).
