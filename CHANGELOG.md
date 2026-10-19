@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.0.4
+
+### 🚀 Enhancements
+
+- One omni model, direct voice, cursor to centre, and a fail-closed record folder ([d11d739](https://github.com/shba007/rune-studio/commit/d11d739))
+
+### 🏡 Chore
+
+- Apply code fixes [skip ci] ([143be95](https://github.com/shba007/rune-studio/commit/143be95))
+
+### ❤️ Contributors
+
+- Shba007 ([@shba007](https://github.com/shba007))
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+
 ## v0.0.3
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.0.2...v0.0.3)
