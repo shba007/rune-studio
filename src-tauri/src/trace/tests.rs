@@ -294,3 +294,24 @@ fn sqlite_opens_and_stores_a_row() {
     let name: String = db.query_row("SELECT name FROM t WHERE id = 1", [], |row| row.get(0)).unwrap();
     assert_eq!(name, "hello");
 }
+
+#[test]
+fn the_text_hash_is_fnv_1a_and_tells_texts_apart() {
+    assert_eq!(text_hash(""), "cbf29ce484222325");
+    assert_eq!(text_hash("a"), "af63dc4c8601ec8c");
+    assert_ne!(text_hash("e1 button OK"), text_hash("e1 button Cancel"));
+    assert_eq!(text_hash("e1 button OK"), text_hash("e1 button OK"));
+}
+
+#[test]
+fn the_settings_snapshot_has_only_the_four_settings() {
+    let mut settings = crate::settings::Settings::default();
+    settings.max_steps = 12;
+    settings.ask_every_action = true;
+    let snapshot: serde_json::Value = serde_json::from_str(&settings_snapshot(&settings)).unwrap();
+    let mut keys: Vec<&str> = snapshot.as_object().unwrap().keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    assert_eq!(keys, ["ask_every_action", "fast_checks", "max_steps", "show_thinking"]);
+    assert_eq!(snapshot["max_steps"], 12);
+    assert_eq!(snapshot["ask_every_action"], true);
+}

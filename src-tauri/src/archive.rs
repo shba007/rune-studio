@@ -278,6 +278,11 @@ pub fn end_session(id: Option<&str>, outcome: &str, summary: &str) {
     }
 }
 
+/// The folder of the open session with this id, if it is the one open.
+pub fn session_dir(id: &str) -> Option<PathBuf> {
+    current().as_ref().filter(|session| session.id == id).map(|session| session.dir.clone())
+}
+
 /// Moves a voice file saved just before a task started (the words that started it) into the open
 /// session's `voice/` folder. Returns the new path. If no session is open or the move fails, the
 /// file stays where it is.

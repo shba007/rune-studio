@@ -159,6 +159,28 @@ pub fn parse_iso(text: &str) -> Option<u64> {
     u64::try_from(days * 86_400 + hour * 3_600 + minute * 60 + second).ok()
 }
 
+/// A short, stable fingerprint of a text (FNV-1a, 64 bits, in hex) for noticing that two control
+/// lists are the same without storing either. Not for security.
+pub fn text_hash(text: &str) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in text.bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0100_0000_01b3);
+    }
+    format!("{hash:016x}")
+}
+
+/// The few settings a run's row snapshots. Never the API key, the base URL or the hotkeys.
+pub fn settings_snapshot(settings: &crate::settings::Settings) -> String {
+    serde_json::json!({
+        "max_steps": settings.max_steps,
+        "show_thinking": settings.show_thinking,
+        "ask_every_action": settings.ask_every_action,
+        "fast_checks": settings.fast_checks,
+    })
+    .to_string()
+}
+
 /// Where the trace database lives, given the app's data folder.
 pub fn db_path(data_dir: &Path) -> std::path::PathBuf {
     data_dir.join("trace.sqlite3")
@@ -285,7 +307,7 @@ impl Recorder {
 
     /// Waits until everything queued so far is written (tests only).
     #[cfg(test)]
-    fn flush(&self) {
+    pub(crate) fn flush(&self) {
         let (done, wait) = std::sync::mpsc::channel();
         self.tx.as_ref().expect("a started recorder").send(Msg::Flush(done)).expect("the writer is alive");
         wait.recv_timeout(Duration::from_secs(10)).expect("the writer answers");
