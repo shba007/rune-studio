@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.0.2
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.0.1...v0.0.2)
+
+### 🚀 Enhancements
+
+- **build:** Rename binaries to rune-studio (app) and rune-studio-cli, publish the CLI ([88331ab](https://github.com/shba007/rune-studio/commit/88331ab))
+- **build:** Rename binaries and publish rune-studio-cli in the release ([b65db6e](https://github.com/shba007/rune-studio/commit/b65db6e))
+
+### 🩹 Fixes
+
+- Update GITHUB_TOKEN secret reference in release workflow ([1fa6978](https://github.com/shba007/rune-studio/commit/1fa6978))
+
+### 🏡 Chore
+
+- Update dependencies in package.json, Cargo.toml, and Cargo.lock ([4df72f6](https://github.com/shba007/rune-studio/commit/4df72f6))
+
+### 🤖 CI
+
+- **deploy:** Disable build-web job and init android project before signing ([740fc13](https://github.com/shba007/rune-studio/commit/740fc13))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+- Claude <noreply@anthropic.com>
+
 ## v0.0.1
 
 ### 🚀 Enhancements
