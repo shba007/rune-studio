@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.0.7
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.0.6...v0.0.7)
+
+### 🤖 CI
+
+- **deploy:** Stop adding the CLI to the bundles by hand, Tauri already bundles every binary ([#13](https://github.com/shba007/rune-studio/pull/13))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+
 ## v0.0.6
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.0.5...v0.0.6)
