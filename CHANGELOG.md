@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.0.6
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.0.5...v0.0.6)
+
+### 🚀 Enhancements
+
+- **installer:** Add the CLI folder to the user's PATH ([15468e6](https://github.com/shba007/rune-studio/commit/15468e6))
+- Ship the CLI with the app on every OS, put it on PATH, fix settings scrolling ([3be4704](https://github.com/shba007/rune-studio/commit/3be4704))
+
+### 🩹 Fixes
+
+- **settings:** Scroll inside the settings page; feat: CLI on PATH and in the bundles on macOS and Linux ([f92cc56](https://github.com/shba007/rune-studio/commit/f92cc56))
+
+### 🤖 CI
+
+- **deploy:** Rename artifact steps and ship the CLI inside the Windows installer ([4a78750](https://github.com/shba007/rune-studio/commit/4a78750))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+- Claude <noreply@anthropic.com>
+
 ## v0.0.5
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.0.4...v0.0.5)
