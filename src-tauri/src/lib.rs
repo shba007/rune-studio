@@ -34,7 +34,7 @@ use tauri_plugin_global_shortcut::ShortcutState;
 use events::{AgentState, AppState};
 use hotkeys::Hotkeys;
 
-/// Entry point of the `rune-studio` command (see `bridge::cli`). Returns the exit code.
+/// Entry point of the `rune-studio-cli` command (see `bridge::cli`). Returns the exit code.
 #[cfg(feature = "agent-bridge")]
 pub fn cli_main() -> i32 {
     bridge::cli::run()

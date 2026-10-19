@@ -19,7 +19,7 @@ export interface Settings {
   toggleHotkey: string
   stopHotkey: string
   externalAgent: boolean
-  /** Unix seconds of the last `rune-studio enable`. The UI passes it back unchanged. */
+  /** Unix seconds of the last `rune-studio-cli enable`. The UI passes it back unchanged. */
   externalAgentSince: number
   /** Let the model think, and show that thinking. Slower, so off by default. */
   showThinking: boolean

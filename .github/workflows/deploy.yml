@@ -160,8 +160,10 @@ jobs:
           - platform: 'ubuntu-latest'
             args: ''
 
+          # The rune-studio-cli command only exists in agent-bridge builds, and it talks to the app
+          # over that bridge, so the Windows app is built with the feature too.
           - platform: 'windows-latest'
-            args: ''
+            args: '--features agent-bridge'
 
     runs-on: ${{ matrix.platform }}
 
@@ -209,6 +211,19 @@ jobs:
           releaseName: 'v__VERSION__'
           releaseDraft: false
           prerelease: false
+
+      - name: ⚙️ Build CLI (Windows only)
+        if: matrix.platform == 'windows-latest'
+        run: cargo build --release --manifest-path src-tauri/Cargo.toml --bin rune-studio-cli --features agent-bridge
+
+      - name: ⚙️ Upload CLI Artifact (Windows only)
+        if: matrix.platform == 'windows-latest'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp src-tauri/target/release/rune-studio-cli.exe "rune-studio-cli_${VERSION}_x64.exe"
+          gh release upload "$VERSION" "rune-studio-cli_${VERSION}_x64.exe" --clobber --repo "$REPO"
 
   # deploy-desktop:
   #   needs: build-desktop

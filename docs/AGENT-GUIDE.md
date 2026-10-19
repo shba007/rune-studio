@@ -18,7 +18,7 @@ Tell the user, in plain words, what to do. You never need to run these yourself.
 | You see                 | Tell the user                                                                                                                                                                                    |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | No `rune_` tools at all | "Please run `rune-studio connect claude` (or `rune-studio connect antigravity`) in a terminal, then restart me." (For another agent: `rune-studio connect --print` shows the settings to paste.) |
-| `not_enabled`           | "Please run `rune-studio enable` (or switch on Allow outside agent in Rune Studio's Settings)."                                                                                                  |
+| `not_enabled`           | "Please run `rune-studio-cli enable` (or switch on Allow outside agent in Rune Studio's Settings)."                                                                                                  |
 | `unauthorized`          | "Please run `rune-studio connect <your agent>` again (claude or antigravity)."                                                                                                                   |
 | `screen_unavailable`    | "The screen can't be read right now. Is the PC locked?"                                                                                                                                          |
 

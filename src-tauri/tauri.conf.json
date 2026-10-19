@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Rune Studio",
-  "mainBinaryName": "rune-studio-app",
+  "mainBinaryName": "rune-studio",
   "version": "../package.json",
   "identifier": "dev.shirsendu-bairagi.rune-studio",
   "build": {

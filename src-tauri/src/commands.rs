@@ -13,7 +13,7 @@ use crate::{
 
 #[tauri::command]
 pub fn get_settings(app: AppHandle, state: State<'_, AppState>) -> Settings {
-    // The command line (`rune-studio enable`) can change the outside-agent switch behind our back.
+    // The command line (`rune-studio-cli enable`) can change the outside-agent switch behind our back.
     let on_disk = settings::load(&app).external_agent;
     let mut settings = state.settings.lock().expect("settings lock poisoned");
     settings.external_agent = on_disk;
@@ -237,9 +237,9 @@ pub fn bridge_info() -> BridgeInfo {
     #[cfg(feature = "agent-bridge")]
     {
         let url = crate::bridge::server::url();
-        // The `rune-studio` command sits next to this windowed app.
+        // The `rune-studio-cli` command sits next to this windowed app.
         let exe = std::env::current_exe()
-            .map(|path| path.with_file_name("rune-studio.exe").display().to_string())
+            .map(|path| path.with_file_name("rune-studio-cli.exe").display().to_string())
             .unwrap_or_else(|_| "rune-studio".into());
         let command = format!("claude mcp add --scope user rune-studio -- \"{exe}\" mcp");
         BridgeInfo { available: true, url, command }
