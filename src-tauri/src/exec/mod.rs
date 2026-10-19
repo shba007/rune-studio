@@ -5,6 +5,7 @@ pub mod caret;
 pub mod input;
 pub mod uia;
 
+use crate::sync::LockExt;
 use std::{
     sync::{
         Arc, Mutex,
@@ -73,7 +74,7 @@ impl Default for RunScope {
 
 /// Cancels the scope in `slot` (the run that is ending or being replaced), installs a fresh one and returns it.
 pub fn begin_run(slot: &Mutex<RunScope>) -> RunScope {
-    let mut current = slot.lock().expect("run scope lock poisoned");
+    let mut current = slot.locked();
     current.token.cancel();
     let next = RunScope::new();
     *current = next.clone();
@@ -82,13 +83,13 @@ pub fn begin_run(slot: &Mutex<RunScope>) -> RunScope {
 
 /// Cancels the scope in `slot` and nothing else. Works from any state, so Stop interrupts typing at once.
 pub fn stop_current(slot: &Mutex<RunScope>) {
-    slot.lock().expect("run scope lock poisoned").token.cancel();
+    slot.locked().token.cancel();
 }
 
 /// The scope a call to Stop would cancel right now.
 #[cfg(any(test, feature = "agent-bridge"))]
 pub fn current_scope(slot: &Mutex<RunScope>) -> RunScope {
-    slot.lock().expect("run scope lock poisoned").clone()
+    slot.locked().clone()
 }
 
 /// Waits for `lock`, but gives up with `Cancelled` as soon as `cancel` is set (also if it already

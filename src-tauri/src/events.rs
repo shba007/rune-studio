@@ -1,3 +1,4 @@
+use crate::sync::LockExt;
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
@@ -92,14 +93,14 @@ pub fn preview_agent_state(app: &AppHandle, state: AgentState) {
 
 fn apply_state(app: &AppHandle, state: AgentState, allow_click_through: bool) {
     let app_state = app.state::<AppState>();
-    *app_state.agent_state.lock().expect("agent state lock poisoned") = state;
+    *app_state.agent_state.locked() = state;
     window::set_click_through(app, allow_click_through && state == AgentState::Acting);
     overlay::sync(app, state);
     let _ = app.emit(STATE_CHANGED, StateChanged { state });
 }
 
 pub fn agent_state(app: &AppHandle) -> AgentState {
-    *app.state::<AppState>().agent_state.lock().expect("agent state lock poisoned")
+    *app.state::<AppState>().agent_state.locked()
 }
 
 pub const STEP_STARTED: &str = "step_started";

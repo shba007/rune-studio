@@ -7,6 +7,7 @@
 //! `click_element e7` instead of guessing where to click. Ids belong to the latest listing:
 //! the next listing replaces them, so an old id never points at something new.
 
+use crate::sync::LockExt;
 use std::sync::Mutex;
 
 /// Most controls listed per window; a busy browser page has hundreds.
@@ -45,13 +46,13 @@ static LATEST: Mutex<Vec<Element>> = Mutex::new(Vec::new());
 
 /// Remembers a listing as the one ids refer to.
 pub fn remember(elements: Vec<Element>) {
-    *LATEST.lock().expect("element list lock poisoned") = elements;
+    *LATEST.locked() = elements;
 }
 
 /// The control an id from the latest listing stands for.
 pub fn lookup(id: &str) -> Option<Element> {
     let id = id.trim();
-    LATEST.lock().expect("element list lock poisoned").iter().find(|element| element.id.eq_ignore_ascii_case(id)).cloned()
+    LATEST.locked().iter().find(|element| element.id.eq_ignore_ascii_case(id)).cloned()
 }
 
 /// The same control in a fresh listing: same role and name, and when several match the one
@@ -79,7 +80,7 @@ pub fn resolve(id: &str) -> Result<Element, String> {
 
 /// Forgets the listing, so a new task never clicks an id from an old one.
 pub fn forget() {
-    LATEST.lock().expect("element list lock poisoned").clear();
+    LATEST.locked().clear();
 }
 
 /// The listing as text for the model, or nothing if there are no controls.

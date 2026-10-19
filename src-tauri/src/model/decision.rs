@@ -15,6 +15,7 @@
 //! - It is optional. When it is off, missing, slow or failing, `ask` returns `None` and the
 //!   caller does exactly what it did before; after a failure it is left alone for a minute.
 
+use crate::sync::LockExt;
 use std::{
     collections::HashMap,
     sync::Mutex,
@@ -105,7 +106,7 @@ fn note_failure() {
 pub async fn ask(app: &AppHandle, text: &str, images: &[String], questions: &[Question]) -> Option<Answers> {
     let state = app.state::<AppState>();
     let (enabled, base_url, model) = {
-        let settings = state.settings.lock().expect("settings lock poisoned");
+        let settings = state.settings.locked();
         (settings.fast_checks, settings.decision_url.clone(), settings.decision_model.clone())
     };
     if !enabled || base_url.trim().is_empty() || model.trim().is_empty() || cooling_down() {

@@ -4,6 +4,7 @@
 //! arguments, and `agent::body` to announce, perform and settle the action. So an outside agent's
 //! click looks and behaves exactly like the model's, and Stop reaches it the same way.
 
+use crate::sync::LockExt;
 use std::time::Instant;
 
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
@@ -277,13 +278,13 @@ async fn capture(region: Option<[f64; 4]>) -> Result<Frame, Reply> {
 
 fn begin(app: &AppHandle, arguments: &Value) -> Reply {
     let state = app.state::<AppState>();
-    if events::agent_state(app).is_running() && !state.lease.lock().expect("lease lock poisoned").is_held()
+    if events::agent_state(app).is_running() && !state.lease.locked().is_held()
     {
         return LeaseError::Busy.into();
     }
     let agent = Some(clip(arguments["agent"].as_str().unwrap_or(""), 40)).filter(|name| !name.is_empty()).unwrap_or_else(|| "External agent".into());
     let task = clip(arguments["task"].as_str().unwrap_or(""), 200);
-    if let Err(err) = state.lease.lock().expect("lease lock poisoned").begin(&agent, &task, Instant::now()) {
+    if let Err(err) = state.lease.locked().begin(&agent, &task, Instant::now()) {
         return err.into();
     }
     // A fresh cancellation scope for this lease; it also cancels whatever the last run left behind.
@@ -306,7 +307,7 @@ fn begin(app: &AppHandle, arguments: &Value) -> Reply {
 /// Marks a call by the lease holder, or says why it may not go on.
 fn touch(app: &AppHandle) -> Result<u32, Reply> {
     let state = app.state::<AppState>();
-    let mut book = state.lease.lock().expect("lease lock poisoned");
+    let mut book = state.lease.locked();
     let lease = book.touch(Instant::now()).map_err(Reply::from)?;
     lease.step += 1;
     Ok(lease.step)
@@ -396,7 +397,7 @@ async fn act_turn(app: &AppHandle, tool: &'static str, arguments: &Value) -> Rep
     let state = app.state::<AppState>();
     let cancel = state.current_scope().token;
     // Risky actions wait for the user's yes, exactly as the built-in agent's do.
-    let source = state.lease.lock().expect("lease lock poisoned").agent().unwrap_or("External agent").to_string();
+    let source = state.lease.locked().agent().unwrap_or("External agent").to_string();
     match gate::check(app, &cancel, &source, &decision.action, &decision.reason, decision.risk).await {
         Verdict::Allow => {}
         Verdict::Stopped => return LeaseError::StoppedByUser.into(),
@@ -462,7 +463,7 @@ async fn act_turn(app: &AppHandle, tool: &'static str, arguments: &Value) -> Rep
 /// Saves the agent's goals and shows them to the user as the progress tracker.
 fn set_goals(app: &AppHandle, goals: Vec<String>) {
     let state = app.state::<AppState>();
-    if let Some(lease) = state.lease.lock().expect("lease lock poisoned").current_mut() {
+    if let Some(lease) = state.lease.locked().current_mut() {
         lease.plan = goals.clone();
         lease.current_goal = 0;
     }
@@ -488,7 +489,7 @@ fn advance_goal(app: &AppHandle, goal: Option<u32>) {
     let Some(goal) = goal else { return };
     let state = app.state::<AppState>();
     let update = {
-        let mut book = state.lease.lock().expect("lease lock poisoned");
+        let mut book = state.lease.locked();
         book.current_mut().and_then(|lease| {
             if lease.plan.is_empty() {
                 return None;
@@ -507,7 +508,7 @@ fn advance_goal(app: &AppHandle, goal: Option<u32>) {
 
 fn status(app: &AppHandle) -> Reply {
     let state = app.state::<AppState>();
-    let book = state.lease.lock().expect("lease lock poisoned");
+    let book = state.lease.locked();
     let text = match book.current() {
         Some(lease) => format!(
             "You are in control as {}, working on: {}. Actions so far: {}. The screen state is {:?}. Control ends after {} seconds with no call.",
@@ -530,11 +531,11 @@ fn done(app: &AppHandle, arguments: &Value) -> Reply {
     let state = app.state::<AppState>();
     let summary = clip(arguments["summary"].as_str().unwrap_or(""), 400);
     let success = arguments["success"].as_bool().unwrap_or(true);
-    let finished_plan = state.lease.lock().expect("lease lock poisoned").current().map(|lease| lease.plan.clone()).filter(|plan| !plan.is_empty());
+    let finished_plan = state.lease.locked().current().map(|lease| lease.plan.clone()).filter(|plan| !plan.is_empty());
     if let Some(plan) = finished_plan {
         events::emit_plan(app, &plan, plan.len(), true);
     }
-    state.lease.lock().expect("lease lock poisoned").end();
+    state.lease.locked().end();
     let _ = app.emit(events::EXTERNAL_AGENT, ExternalAgent { agent: None });
     let _ = app.emit(events::TASK_DONE, TaskDone { summary, success });
     events::set_agent_state(app, if success { AgentState::Done } else { AgentState::Failed });

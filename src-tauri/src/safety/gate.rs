@@ -1,6 +1,7 @@
 //! Asking the user. An action that needs a yes waits here until the user answers, presses Stop,
 //! or the question times out; the answer comes back through the `confirm` command.
 
+use crate::sync::LockExt;
 use std::time::Duration;
 
 use serde::Serialize;
@@ -75,7 +76,7 @@ pub enum VoiceAnswer {
 /// action, so that takes a click on the card.
 pub fn answer_by_voice(app: &AppHandle, approved: bool) -> VoiceAnswer {
     let state = app.state::<AppState>();
-    let mut slot = state.confirm.lock().expect("confirm lock poisoned");
+    let mut slot = state.confirm.locked();
     let Some(pending) = slot.take() else { return VoiceAnswer::NothingWaiting };
     if approved && pending.kind == "approval" {
         *slot = Some(pending);
@@ -89,7 +90,7 @@ pub fn answer_by_voice(app: &AppHandle, approved: bool) -> VoiceAnswer {
 /// id is stale), so an old button press cannot approve a newer action.
 pub fn answer(app: &AppHandle, id: &str, approved: bool) -> bool {
     let state = app.state::<AppState>();
-    let mut slot = state.confirm.lock().expect("confirm lock poisoned");
+    let mut slot = state.confirm.locked();
     match slot.take() {
         Some(pending) if pending.id == id => {
             let _ = pending.sender.send(approved);
@@ -113,7 +114,7 @@ fn new_id() -> String {
 pub async fn check(app: &AppHandle, cancel: &CancelToken, source: &str, action: &Action, reason: &str, stated: Option<Risk>) -> Verdict {
     let (ask_every_action, assessment) = {
         let state = app.state::<AppState>();
-        let ask = state.settings.lock().expect("settings lock poisoned").ask_every_action;
+        let ask = state.settings.locked().ask_every_action;
         (ask, rules::assess(action, reason, &foreground::current()))
     };
     let Assessment { risk: found, mut reasons } = assessment;
@@ -169,7 +170,7 @@ pub async fn ask_question(app: &AppHandle, cancel: &CancelToken, source: &str, q
 async fn ask_user(app: &AppHandle, cancel: &CancelToken, source: &str, text: &str, reason: &str, risk: Risk, reasons: &[String], kind: &'static str) -> Verdict {
     let id = new_id();
     let (sender, receiver) = oneshot::channel();
-    *app.state::<AppState>().confirm.lock().expect("confirm lock poisoned") = Some(Pending { id: id.clone(), kind, sender });
+    *app.state::<AppState>().confirm.locked() = Some(Pending { id: id.clone(), kind, sender });
 
     let _ = app.emit(
         CONFIRM_REQUEST,
@@ -200,7 +201,7 @@ async fn ask_user(app: &AppHandle, cancel: &CancelToken, source: &str, text: &st
     };
 
     // Whatever happened, nothing may stay waiting.
-    app.state::<AppState>().confirm.lock().expect("confirm lock poisoned").take();
+    app.state::<AppState>().confirm.locked().take();
     let _ = app.emit(CONFIRM_RESOLVED, ConfirmResolved { id, approved: outcome == Verdict::Allow });
     outcome
 }

@@ -15,6 +15,7 @@ pub mod direct;
 pub mod intent;
 pub mod vad;
 
+use crate::sync::LockExt;
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
@@ -47,7 +48,7 @@ pub fn resume_listening_soon(app: &AppHandle) {
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs(4)).await;
         let state = app.state::<AppState>();
-        let open = state.mic.lock().expect("mic lock poisoned").is_some();
+        let open = state.mic.locked().is_some();
         if open && matches!(events::agent_state(&app), AgentState::Done | AgentState::Failed | AgentState::Stopped) {
             events::set_agent_state(&app, AgentState::Listening);
         }
@@ -58,7 +59,7 @@ pub fn resume_listening_soon(app: &AppHandle) {
 pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
     let state = app.state::<AppState>();
     let (base_url, model) = {
-        let settings = state.settings.lock().expect("settings lock poisoned");
+        let settings = state.settings.locked();
         (settings.base_url.clone(), settings.model.clone())
     };
     let api_key = settings::api_key();

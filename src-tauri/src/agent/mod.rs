@@ -9,6 +9,7 @@ pub mod protocol;
 pub mod quick;
 pub mod stuck;
 
+use crate::sync::LockExt;
 use std::{
     future::Future,
     time::{Duration, Instant},
@@ -185,8 +186,7 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, canc
     let state = app.state::<AppState>();
     let settings = state
         .settings
-        .lock()
-        .expect("settings lock poisoned")
+        .locked()
         .clone();
     let api_key = settings::api_key();
     let tools = protocol::tools();
@@ -247,7 +247,7 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, canc
         }
 
         // Anything the user said since the last step goes into the history as an instruction.
-        for note in state.steer.lock().expect("steer lock poisoned").drain(..) {
+        for note in state.steer.locked().drain(..) {
             history.push(Entry { action: format!("the user said: \"{note}\""), outcome: "follow this from now on".into() });
         }
 

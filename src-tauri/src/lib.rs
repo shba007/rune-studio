@@ -15,6 +15,7 @@ mod observe;
 mod overlay;
 mod safety;
 mod settings;
+mod sync;
 mod voice;
 mod window;
 
@@ -23,6 +24,7 @@ mod probe_m15;
 #[cfg(all(test, windows))]
 mod system_tests;
 
+use crate::sync::LockExt;
 use std::sync::Mutex;
 
 use tauri::{
@@ -61,7 +63,7 @@ pub fn run() {
                     if event.state() != ShortcutState::Pressed {
                         return;
                     }
-                    let hotkeys = app.state::<AppState>().hotkeys.lock().expect("hotkeys lock poisoned").clone();
+                    let hotkeys = app.state::<AppState>().hotkeys.locked().clone();
                     if shortcut == &hotkeys.toggle {
                         window::summon(app);
                     } else if shortcut == &hotkeys.stop {
