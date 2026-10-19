@@ -106,9 +106,9 @@ pub async fn ask(app: &AppHandle, text: &str, images: &[String], questions: &[Qu
     let state = app.state::<AppState>();
     let (enabled, base_url, model) = {
         let settings = state.settings.lock().expect("settings lock poisoned");
-        (settings.fast_checks, settings.base_url.clone(), settings.decision_model.clone())
+        (settings.fast_checks, settings.decision_url.clone(), settings.decision_model.clone())
     };
-    if !enabled || model.trim().is_empty() || cooling_down() {
+    if !enabled || base_url.trim().is_empty() || model.trim().is_empty() || cooling_down() {
         return None;
     }
 

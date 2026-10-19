@@ -27,7 +27,7 @@ pub struct Capture {
 
 impl Capture {
     /// Opens the default microphone, emits `audio_level` (0..1) events and hands every spoken
-    /// utterance to the voice pipeline (transcribe, interpret, act).
+    /// utterance to the voice pipeline (hear, interpret, act).
     pub fn start(app: AppHandle) -> Result<Self, String> {
         let (utterances, mut heard) = unbounded_channel::<Vec<i16>>();
         let pipeline = app.clone();

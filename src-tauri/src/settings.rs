@@ -14,8 +14,9 @@ const KEYRING_USER: &str = "rune-infer-api-key";
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
     pub base_url: String,
-    pub vision_model: String,
-    pub asr_model: String,
+    /// The one omni model behind every call: it sees the screen, hears the user, plans and acts.
+    /// (Older settings files had separate vision, speech and voice models; those keys are ignored.)
+    pub model: String,
     pub max_steps: u32,
     pub toggle_hotkey: String,
     pub stop_hotkey: String,
@@ -28,24 +29,20 @@ pub struct Settings {
     pub show_thinking: bool,
     /// Ask before every action, not only the risky ones.
     pub ask_every_action: bool,
-    /// Use the fast decision model for quick checks (skip planning on simple tasks, spot a finished
+    /// Optional helper, off by default: the decision model takes quick checks (skip planning on simple tasks, spot a finished
     /// task, a second opinion on risk). Everything still works without it, only slower.
     pub fast_checks: bool,
     pub decision_model: String,
-    /// Send what the user says straight to an audio model instead of transcribing it first.
-    /// Falls back to transcription if that model does not answer.
-    pub direct_voice: bool,
-    /// The audio-capable chat model that hears the user (Qwen Omni). Only used for hearing: the
-    /// agent still acts with `vision_model`.
-    pub voice_model: String,
+    /// Where the decision model is served (it is a rune-infer endpoint, not part of the omni
+    /// model's server). Empty means unavailable.
+    pub decision_url: String,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
             base_url: "http://127.0.0.1:8080".into(),
-            vision_model: "ternary-bonsai-2-27b-pq2-0".into(),
-            asr_model: "parakeet-tdt-0.6b-v3".into(),
+            model: "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-FP8".into(),
             max_steps: 30,
             toggle_hotkey: hotkeys::DEFAULT_TOGGLE.into(),
             stop_hotkey: hotkeys::DEFAULT_STOP.into(),
@@ -53,10 +50,9 @@ impl Default for Settings {
             external_agent_since: 0,
             show_thinking: false,
             ask_every_action: false,
-            fast_checks: true,
+            fast_checks: false,
             decision_model: "d1-3b-q8-0".into(),
-            direct_voice: true,
-            voice_model: "qwen3.8-omni-flash".into(),
+            decision_url: String::new(),
         }
     }
 }

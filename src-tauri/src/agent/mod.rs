@@ -172,7 +172,7 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>) -> O
         http: &state.http,
         base_url: &settings.base_url,
         api_key: api_key.as_deref(),
-        model: &settings.vision_model,
+        model: &settings.model,
     };
 
     // A simple task needs no plan, and the decision model can say so in a fraction of the time the

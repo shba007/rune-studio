@@ -13,8 +13,7 @@ export type AgentState =
 
 export interface Settings {
   baseUrl: string
-  visionModel: string
-  asrModel: string
+  model: string
   maxSteps: number
   toggleHotkey: string
   stopHotkey: string
@@ -27,9 +26,8 @@ export interface Settings {
   askEveryAction: boolean
   /** Use the fast decision model for quick checks (skip planning, spot a finished task, risk). */
   fastChecks: boolean
-  directVoice: boolean
-  voiceModel: string
   decisionModel: string
+  decisionUrl: string
 }
 
 export interface BackendStatus {

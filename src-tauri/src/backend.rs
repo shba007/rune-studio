@@ -85,7 +85,7 @@ pub async fn check(client: &reqwest::Client, settings: &Settings, api_key: Optio
 
     match response.json::<ModelList>().await {
         Ok(list) => {
-            let missing_models = [&settings.vision_model, &settings.asr_model]
+            let missing_models = [&settings.model]
                 .into_iter()
                 .filter(|wanted| !list.data.iter().any(|model| &model.id == *wanted))
                 .cloned()

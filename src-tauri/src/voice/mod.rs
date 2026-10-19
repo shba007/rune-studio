@@ -1,8 +1,8 @@
-//! Talking to the agent: the microphone, cutting speech into utterances, turning them into text,
-//! and acting on what was said.
+//! Talking to the agent: the microphone, cutting speech into utterances, hearing them with the omni
+//! model, and acting on what was said.
 //!
-//! While listening, every utterance is transcribed by rune-infer (locally) and then (with the
-//! "Direct voice" setting on and an audio-capable model, `direct` hears it with no transcript):
+//! While listening, every utterance goes to the omni model (`direct` hears it, with no
+//! transcript in between), and then:
 //! - **Stop** (the word, on its own) stops the agent at once, like the Stop button.
 //! - **Yes / No** answer the question on screen. A spoken **no** always works. A spoken **yes**
 //!   works for the agent's own questions, but not for an action that needs approval: a TV or a
@@ -13,7 +13,6 @@
 pub mod capture;
 pub mod direct;
 pub mod intent;
-pub mod stt;
 pub mod vad;
 
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
@@ -59,40 +58,27 @@ pub fn resume_listening_soon(app: &AppHandle) {
     });
 }
 
-/// One utterance, start to finish: transcribe, interpret, act.
+/// One utterance, start to finish: the omni model hears it, then the app acts on what it was.
 pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
     let state = app.state::<AppState>();
-    let (base_url, model, voice_model, direct_voice) = {
+    let (base_url, model) = {
         let settings = state.settings.lock().expect("settings lock poisoned");
-        (settings.base_url.clone(), settings.asr_model.clone(), settings.voice_model.clone(), settings.direct_voice)
+        (settings.base_url.clone(), settings.model.clone())
     };
     let api_key = settings::api_key();
-    if direct_voice {
-        // No transcript: the audio model hears it and says what it was. If it cannot (the model
-        // does not take audio, or the server is down) fall through to transcription below.
-        let client = ChatClient { http: &state.http, base_url: &base_url, api_key: api_key.as_deref(), model: &voice_model };
-        let audio = BASE64.encode(stt::wav(&utterance));
-        match direct::listen(&client, &audio, events::agent_state(app)).await {
-            Ok(Some(listened)) => {
-                log::info!("heard directly: {:?}", listened.intent);
-                apply(app, listened.intent, listened.goals, "");
-                return;
-            }
-            Ok(None) => return,
-            Err(err) => log::warn!("direct speech failed, transcribing instead: {err}"),
+    let client = ChatClient { http: &state.http, base_url: &base_url, api_key: api_key.as_deref(), model: &model };
+    let audio = BASE64.encode(direct::wav(&utterance));
+    match direct::listen(&client, &audio, events::agent_state(app)).await {
+        Ok(Some(listened)) => {
+            log::info!("heard: {:?}", listened.intent);
+            apply(app, listened.intent, listened.goals, "");
+        }
+        Ok(None) => {}
+        Err(err) => {
+            log::warn!("hearing failed: {err}");
+            heard(app, "", "Could not understand that: the model is not answering");
         }
     }
-    let text = match stt::transcribe(&state.http, &base_url, api_key.as_deref(), &model, &utterance).await {
-        Ok(Some(text)) => text,
-        Ok(None) => return,
-        Err(err) => {
-            log::warn!("speech to text failed: {err}");
-            heard(app, "", "Could not understand that: the speech model is not answering");
-            return;
-        }
-    };
-    log::info!("heard: {text}");
-    act(app, &text);
 }
 
 /// Does what the words ask for. Separate from `handle` so it can be tested without audio.
@@ -100,8 +86,8 @@ pub fn act(app: &AppHandle, text: &str) {
     apply(app, intent::interpret(text), None, text);
 }
 
-/// Does what an intent asks for. `text` is what was heard when there is a transcript; without
-/// one (direct speech) the model's own wording of a task is shown instead. `goals` are the plan an
+/// Does what an intent asks for. `text` is what was typed or heard, if there is a transcript; for
+/// speech the model's own wording of a task is shown instead. `goals` are the plan an
 /// audio model already made for a new task.
 fn apply(app: &AppHandle, intent: Intent, goals: Option<Vec<String>>, text: &str) {
     let now = events::agent_state(app);
