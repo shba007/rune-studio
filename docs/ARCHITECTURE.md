@@ -2,19 +2,21 @@
 
 A small Windows desktop app. You give it a voice or text command, and it controls the PC to carry it out: it looks at the screen, picks one action, performs it, checks the result, and repeats until the task is done.
 
-All AI inference goes to **rune-infer**, a local OpenAI-compatible server (Postman collection: `code-infer/postman`). The app never talks to a cloud model directly.
+All AI inference goes to **rune-infer**, a local OpenAI-compatible server. The app never talks to a cloud model directly.
+
+> **Source of truth.** This document describes what the code in `src-tauri/` and `src/` does today. Where a line says "not built" or "known gap", the code does not do it. Measurements in the appendix were taken at the time stated and have not been re-run against the current code.
 
 ## 1. Product decisions
 
-| Decision   | Choice                                                                               | Notes                                                          |
-| ---------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
-| OS         | Windows 11 only                                                                      | macOS/Linux later behind the native-layer traits               |
-| Brain      | One omni model, `gemma-4-12b-it` (see + hear + tools)| Our own function-calling protocol, no vendor computer-use tool |
-| Voice      | Hands-free: click the mic once to start a listening session, click again to stop     | VAD cuts utterances; no push-to-talk                           |
-| Autonomy   | Runs freely, confirms risky actions                                                  | Confirm by button or voice "yes"/"no"                          |
-| Stack      | Tauri 2 (Rust core) + Vue 3 + Tailwind                                               | Rust owns capture, input, UIA, audio, the agent loop           |
-| UI         | Minimal floating pill (Spotlight-like) that expands to a log                         |                                                                |
-| Out of MVP | Memory, skills/macros, task-history DB, spoken replies (TTS), wake word, macOS/Linux |                                                                |
+| Decision   | Choice                                                                                | Notes                                                                                  |
+| ---------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| OS         | Windows 11 only                                                                       | macOS/Linux bundles are built by CI, but the Windows-only layers are stubs (see 6)     |
+| Brain      | One omni model, default `gemma-4-12b-it` (sees, hears, calls tools)                   | Our own function-calling protocol, no vendor computer-use tool                         |
+| Voice      | Hands-free: click the mic once to start a listening session, click again to stop      | Energy-based VAD cuts utterances; no push-to-talk, no wake word                        |
+| Autonomy   | Runs freely, confirms risky actions                                                   | Confirm by button; a spoken "no" always works, a spoken "yes" only for the agent's own questions |
+| Stack      | Tauri 2 (Rust core) + Vue 3 + Tailwind 4                                              | Rust owns capture, input, UIA, audio, the agent loop                                   |
+| UI         | Minimal floating pill (Spotlight-like) that expands to a card                         |                                                                                        |
+| Not built  | Memory, skills/macros, task-history DB, spoken replies (TTS), wake word, screen recording, elevated-window detection, macOS/Linux support | |
 
 ## 2. The core loop
 
@@ -27,225 +29,256 @@ The model only **proposes** actions. Nothing reaches the OS except through the s
 ## 3. Components
 
 ```
-UI shell (pill) <-events/commands-> Agent core (state machine, history, budget)
-                                      |-- Input layer   (hotkey/mic -> VAD -> STT -> text)
-                                      |-- Model client  (rune-infer: chat, STT, grounding)
+UI shell (pill + overlay) <-events/commands-> Agent core (agent::run: plan, history, steer, stuck, budget)
+                                      |-- Input layer   (hotkey / mic -> VAD -> omni model -> intent)
+                                      |-- Model client  (rune-infer chat; optional /v1/decisions)
                                       |-- Observer      (screenshot + UIA element list)
-                                      |-- Safety gate   (risk -> allow / confirm / block)
-                                      '-- Executor      (SendInput: mouse, keyboard, scroll)
+                                      |-- Safety gate   (rules -> allow / confirm)
+                                      '-- Executor      (enigo SendInput: mouse, keyboard, wheel)
 ```
 
-1. **UI shell:** pill, live transcript, status, action log, confirm prompt. A pure view over events.
-2. **Input layer:** global hotkeys, mic capture (16 kHz mono), Silero VAD utterance segmentation, STT. Typed input skips straight to the core.
-3. **Agent core:** builds the prompt, calls the model, handles the result, enforces step and time budgets, detects stuck loops, supports steering and cancel.
-4. **Model client:** the only code that knows rune-infer's wire format.
-5. **Observer:** captures and downscales the screen, and reads a compact UIA element list.
-6. **Executor:** performs actions in physical pixels. Owns coordinate mapping.
-7. **Safety gate:** decides allow / confirm / block, and owns the kill switch.
+1. **UI shell:** pill, live status, plan arcs, action log, confirm card, and one full-screen click-through overlay per monitor. A view over events.
+2. **Input layer:** global hotkeys, mic capture, energy VAD, hearing by the omni model. Typed input skips straight to the core.
+3. **Agent core:** builds the prompt, calls the model, handles the result, enforces the step budget, detects stuck loops, supports steering and Stop.
+4. **Model client** (`model/client.rs`): the only code that knows rune-infer's chat wire format. `model/decision.rs` is the client for the optional decision endpoint.
+5. **Observer:** captures and downscales the primary monitor, and reads a compact UIA element list of the front window.
+6. **Executor:** performs actions in physical pixels. `model/coords.rs` owns coordinate mapping.
+7. **Safety gate:** decides allow / confirm, writes the audit log, and answers the Stop token.
 
 ## 4. Model server integration
 
-**One omni model, one endpoint.** Everything (hearing the user, planning, choosing actions) is a call to `POST /v1/chat/completions` with the single `model` setting (default `gemma-4-12b-it`). There is no separate speech-to-text, vision or voice model. The optional decision model (`fast_checks`, default off) is the only other endpoint, `POST /v1/decisions` at `decision_url`, and the omni model stays the orchestrator.
+**One omni model, one chat endpoint.** Everything (hearing the user, planning, choosing actions) is a call to `POST {base_url}/v1/chat/completions` with the single `model` setting. There is no separate speech-to-text, vision or voice model. The optional decision model (`fast_checks`, default **off**) is the only other endpoint, `POST {decision_url}/v1/decisions`.
 
-What the server must support:
+Request shape (`model/client.rs`):
 
-| Need | How |
-| ---- | --- |
-| Multimodal content in one request | `text`, `image_url` (data-URI JPEG) and `audio_url` (data-URI WAV, 16 kHz mono, up to 20 s) parts |
-| Tool calls with those inputs | `tools` + `tool_choice: "required"` |
-| Thinking on/off per request | `chat_template_kwargs: {"enable_thinking": bool}`; with a reasoning parser the thinking comes back in `reasoning` (or `reasoning_content`), never in `content` |
-| Streaming | SSE with reasoning and tool-call deltas (used by Show thinking) |
-| Health / models | `GET /health` (no auth), `GET /v1/models`, `Authorization: Bearer <key>` |
+- `messages`: a system message and one user message whose content is text, or parts in the order `audio_url`, `image_url`, `text`.
+- `tools` and `tool_choice: "required"`; `temperature: 0`.
+- `max_tokens`: 512, or 3000 when thinking is on. Request timeout 300 s (whole request).
+- `chat_template_kwargs: {"enable_thinking": <show_thinking>}`. With thinking on, `stream: true` and the SSE deltas (`reasoning` or `reasoning_content`, tool-call fragments by index) are assembled; thinking is forwarded to the UI at most every 150 ms.
+- `Authorization: Bearer <key>` when a key exists.
 
-Serving: any OpenAI-compatible server that meets the table works (for example vLLM with audio support installed). The tool-call parser, reasoning parser and audio flags are specific to the model, so take them from the model's own serving recipe. `enable_thinking` only has an effect if the model's chat template reads it; otherwise thinking stays off and "Show thinking" shows nothing.
+Errors are `ModelError::{Request, Status, Reply, NoToolCall}`. A reply with no tool call or unparsable arguments counts as an invalid answer (3 in a row fail the run); a transport or HTTP error fails the run at once (no retry).
 
-Facts that came from the previous Qwen/rune-infer setup and still need re-checking on this model: the **0-1000 normalized click coordinates** (`model/coords.rs`; re-run the M1.5 grounding probe before trusting them), the 131k context and the screenshot token cost.
+Health: `backend::check` calls `GET /health` (no auth), then `GET /v1/models` (authenticated), each with a 4 s timeout, and reports reachable / key rejected / configured model missing / latency.
+
+What the server must support: multimodal content parts (`text`, `image_url` as data-URI JPEG, `audio_url` as data-URI WAV 16 kHz mono), tool calls with those inputs, the `enable_thinking` template flag, SSE with reasoning and tool-call deltas, `/health`, `/v1/models`, and bearer auth. `enable_thinking` only has an effect if the model's chat template reads it. The 0-1000 click-coordinate convention, the context size and the screenshot token cost were measured on earlier models (see the appendix) and should be re-checked for the current default.
 
 ## 5. Action protocol
 
 ### What the model sees each turn
 
-1. System prompt: role, rules, coordinate convention, risk rules. Screen text is treated as data, never instructions.
-2. The task, plus any later steering messages.
-3. History: a short text log of past actions and results. Only the last 2-3 screenshots stay as images.
-4. Current observation: a fresh screenshot (about 1280 px long edge, JPEG) and a compact UIA element list for the focused window (`e1 Button "Save" [412,880]`). Elements are in the same 0-1000 space as clicks.
+1. System prompt (`agent/prompt.rs`): role, rules, coordinate convention, risk rules. Screen text is treated as data, never instructions.
+2. The task and the plan, with each goal marked done / now / later.
+3. History: the last 12 steps as text (`click (500, 400) -> done`), with a note of how many earlier steps were omitted and how many of those failed. Messages from the user while the task runs are inserted as `the user said: "..."`.
+4. The controls of the front window as lines such as `e7 button "Save"` (edit fields also show `= "current value"`), at most 60.
+5. A warning when the run seems stuck, and a one-line hint when the optional decision model sees a cookie banner, pop-up, login, CAPTCHA or error page.
+6. **One** fresh screenshot (long edge at most 1280 px, JPEG quality 80). Older screenshots are not sent.
+7. `Step N of at most M.`
 
 ### Tools (one per action; `tool_choice: "required"`)
 
-| Tool         | Arguments                                                     |
-| ------------ | ------------------------------------------------------------- |
-| `click`      | `target` = `{element: "e14"}` or `{x, y}`; `button`; `double` |
-| `type_text`  | `text`; optional `target` to focus first                      |
-| `press_keys` | `keys`, e.g. `["ctrl","s"]`                                   |
-| `scroll`     | `target`/`x,y`; `direction`; `amount`                         |
-| `drag`       | `from`, `to`                                                  |
-| `open_app`   | `name`                                                        |
-| `wait`       | `ms` (capped)                                                 |
-| `ask_user`   | `question` (pauses the task)                                  |
-| `done`       | `summary`; `success`                                          |
+| Tool            | Arguments                                                                    | Notes                                                                                    |
+| --------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `click`         | `x`, `y` (0-1000), `button` (`left`/`right`/`middle`), `double`              |                                                                                          |
+| `click_element` | `id` (from the latest list), `button`, `double`                              | Looks the control up again right before clicking (`uia::resolve`: same role and name, nearest to where it was) and fails clearly if it is gone |
+| `type_text`     | `text`                                                                       | One character at a time, 15 ms apart (`RUNE_TYPE_DELAY_MS` overrides)                    |
+| `press_keys`    | `keys`, e.g. `["ctrl","s"]`                                                  | All but the last are held, the last is tapped, then all are released even on Stop        |
+| `scroll`        | `direction`, `amount` (1-10, default 3), optional `x`, `y`                   | Never asks for confirmation                                                              |
+| `drag`          | `x1`, `y1`, `x2`, `y2`                                                       | The button is released even if Stop interrupts                                           |
+| `open_app`      | `name`                                                                       | `ShellExecuteW` with the name as one argument (no shell, so nothing can chain a command) |
+| `wait`          | `ms` (capped at 5000)                                                        |                                                                                          |
+| `ask_user`      | `question`                                                                   | Built-in model only. Pauses for a yes/no on the confirm card                             |
+| `done`          | `summary`, `success`                                                         |                                                                                          |
+| `set_plan`      | `goals` (1-6)                                                                | Only in the opening planning call                                                        |
 
-Every action also carries `reason` (one sentence, shown in the log) and `risk` (`low|medium|high`).
+Every action also carries `reason` (one sentence, shown in the log), `goal` (1-based plan index; goals only move forward) and `risk` (`low|medium|high`). A `goal` of 0 or less is ignored.
 
-### Rules of the loop
+### Rules of the loop (`agent/mod.rs`)
 
-- **One action per turn.** Observe again after every action. Batching is a later optimization.
-- **Settle before observing:** short delay or pixel-diff check, so screenshots are not mid-animation.
-- **Click resolution:** `element` id -> UIA rectangle center; otherwise `{x,y}` 0-1000 -> pixels via the Observer's scale and monitor origin.
-- **Stuck detection:** unchanged screen after N actions, or repeated identical action -> inject "no effect", then `ask_user`.
-- **Budget:** max steps per task (default 30) and a hard timeout.
-- **Safety:** final risk = `max(model_risk, rule_risk)`. Rules look at window title/process, typed text, key combos (`alt+f4`, `delete`), and target keywords (Send, Delete, Pay, Install). `high` pauses for confirmation.
+- **One action per turn.** Observe again after every action.
+- **Opening:** a planning call (`set_plan`) with no screenshot. It is skipped when the task came from voice with a plan, or when the decision model is confident the task is simple (and Show thinking is off). A failed plan falls back to one goal (the task text).
+- **Settle before observing:** a fixed pause after each action (0.5 s; 1.8 s after `open_app`; none after `wait`). With the decision model on, a "still loading" check can add up to four 0.9 s waits before the big model is asked.
+- **Click resolution:** `click_element` -> the control's current rectangle centre; `click` -> `0-1000` to physical pixels with the monitor's scale and origin. The cursor glides (ease-in-out, 120 ms + 0.25 ms/px, at most 450 ms) and Stop interrupts it.
+- **Stuck detection** (`agent/stuck.rs`): every look is reduced to a 32 x 18 grey picture and compared with the previous one. After 2 actions that left the screen unchanged the model is warned; after 5 the run ends. Looks with no action in between do not count.
+- **Budget:** `max_steps` (default 30, set in `settings.json`, no UI control). There is no wall-clock limit other than the 300 s per model request.
+- **Invalid answers:** 3 in a row end the run. **Declines:** 3 "No" answers end the run.
+- **Finish:** `done` ends the run; with the decision model on, once every goal has had a successful step it may end the run without a chat call if it is at least 97% sure the screen shows the task finished.
+- **Safety:** see section 7.
 
 ## 6. Native (Rust) layer
 
 ```
 src-tauri/src/
-  lib.rs           Tauri setup, tray, global hotkeys, command registration
-  settings.rs      settings file + keyring secret
-  hotkeys.rs       summon/stop hotkey parsing and (re)registration
-  backend.rs       rune-infer HTTP client, health/model check
-  events.rs        typed events + commands shared with the UI
-  window.rs        pill window: placement, ambient/open/settings sizing, click-through, capture exclusion
-  agent/           loop, prompt, protocol (done, M2); history pruning, stuck detection (M4)
-  model/           coords (done, M1); client (done, M2)
-  observe/         screenshot (done, M1); uia                 (uia: M4)
-  exec/            input + CancelToken (done, M1); apps (done, M2)
-  debug.rs         dev-only commands for the eyes and hands   (debug builds only)
-  system_tests.rs  #[ignore]d end-to-end tests against a real window
-  safety/          gate, rules                                (M3)
-  voice/           capture (mic + level, done), vad, session  (VAD and session: M5)
+  main.rs, lib.rs     Tauri setup, tray (Show/hide, Settings, Stop, Quit), global hotkeys, command registration
+  settings.rs         settings.json + keyring API key
+  hotkeys.rs          summon/stop hotkey parsing and (re)registration
+  backend.rs          /health + /v1/models check
+  events.rs           AppState, AgentState, typed event payloads
+  commands.rs         Tauri commands
+  window.rs           pill window: modes, bottom-right anchoring, click-through, capture exclusion
+  overlay.rs          one transparent click-through overlay window per monitor
+  cursor.rs           replaces the system pointer with a dot orb while the agent is in control (Windows)
+  archive.rs          the record of screenshots and voice
+  agent/              mod (loop), prompt, protocol (tools + parsing), body (announce + execute), quick (decision-model checks), stuck
+  model/              client (chat + SSE), coords (0-1000 <-> pixels), decision (/v1/decisions)
+  observe/            screenshot (xcap capture, downscale, JPEG, signature)
+  exec/               input (enigo), uia (UI Automation), apps (ShellExecute), caret, CancelToken
+  safety/             gate (ask + verdict), rules (pure), foreground (window title/program), audit (audit.log)
+  voice/              capture (cpal), vad (energy segmenter, resampler), direct (hearing by the omni model), intent
+  bridge/             lease (always compiled); server, mcp, token, cli, agents, skill, path_link (feature agent-bridge)
+  bin/rune-studio-cli.rs   console CLI (feature agent-bridge)
+  debug.rs            dev-only commands (debug builds)
+  system_tests.rs, probe_m15.rs   #[ignore]d tests against a real desktop / server
 ```
 
-| Job           | Crate                          | Notes (verified against docs, 2026-10)                                                          |
-| ------------- | ------------------------------ | ----------------------------------------------------------------------------------------------- |
-| Screenshot    | `xcap` 0.9                     | `Monitor::all`, `capture_image`, per-monitor `x/y/width/height/scale_factor`                    |
-| Input         | `enigo` 0.6                    | Absolute `move_mouse`; **physical pixels** on Windows; wrap behind our own trait                |
-| UI Automation | `uiautomation` 0.25            | Use the **cache request API** plus depth/element caps; uncached walks are slow                  |
-| Mic           | `cpal` 0.18                    |                                                                                                 |
-| VAD           | `voice_activity_detector` 0.2  | Silero wrapper; API unverified, read docs.rs when implementing. Fallback: Silero ONNX via `ort` |
-| HTTP          | `reqwest` 0.13                 |                                                                                                 |
-| Secrets       | `keyring`                      | rune-infer API key lives in Windows Credential Manager                                          |
-| Hotkeys       | `tauri-plugin-global-shortcut` | Pin the stable 2.x line matching Tauri 2.x                                                      |
+| Job           | Crate                          | Notes                                                                                 |
+| ------------- | ------------------------------ | ------------------------------------------------------------------------------------- |
+| Screenshot    | `xcap` 0.9                     | `Monitor::all`, `capture_image`; geometry and `scale_factor` per monitor              |
+| Input         | `enigo` 0.6                    | Absolute `move_mouse`, physical pixels                                                |
+| UI Automation | `windows` 0.62 (Win32 COM)     | Direct `IUIAutomation` use; no wrapper crate                                          |
+| Mic           | `cpal` 0.18                    | One thread owns the stream (cpal streams are not `Send`)                              |
+| VAD           | own, `voice/vad.rs`            | Energy-based; no Silero/ONNX                                                          |
+| HTTP          | `reqwest` 0.13 (rustls)        | One shared client in `AppState`                                                       |
+| Secrets       | `keyring` 4                    | API key and bridge token                                                              |
+| Hotkeys       | `tauri-plugin-global-shortcut` |                                                                                       |
+| Updates       | `tauri-plugin-updater`         | Not on mobile                                                                         |
+| MCP server    | `axum` 0.8 (feature `agent-bridge`) | HTTP/1 only                                                                      |
+| Async         | `tokio` (rt, time, net, sync)  | Run through `tauri::async_runtime`                                                    |
 
-Design points:
+### Concurrency and cancellation, as built
 
-- **Threading:** UIA is COM and needs a dedicated STA thread. One native worker thread owns UIA, capture and input; the async agent loop talks to it over channels.
-- **Coordinates live in one place** (`coords.rs`). Executor and gate receive pixels; the UI receives 0-1000 plus pixels for overlays.
-- **Self-click protection:** the pill is excluded from capture (content protection / `WDA_EXCLUDEFROMCAPTURE`) and is click-through while the agent acts.
-- **State machine:** `Idle -> Listening -> Planning -> AwaitingConfirm -> Acting -> Observing -> Done | Failed | Stopped`. A voice utterance starts a task in `Idle` and becomes a steering message otherwise; "stop" cancels at once.
-- **Elevated windows** cannot receive injected input (UIPI). Detect and tell the user; do not run as admin.
-- **DPI:** the whole pipeline stays in physical pixels; the process is per-monitor DPI aware.
+- **One agent run = one async task**, started by `agent::start_planned` on `tauri::async_runtime`. Screen capture, UI Automation and every desktop action run on the blocking pool (`spawn_blocking`). A new `Input` (enigo) is created for each action. UI Automation uses `CoInitializeEx(COINIT_MULTITHREADED)` on whichever pool thread runs it.
+- **Stop** sets one shared `AtomicBool` (`exec::CancelToken` in `AppState`). Async waits watch it with a 25 ms poll (`agent::unless_stopped`, the confirm wait); synchronous executor code checks it between characters, wheel notches and cursor steps and sleeps in 10 ms slices. The in-flight model request is aborted by dropping its future (which closes the connection). Starting a new task, or an outside agent's `rune_begin`, **resets the same flag**; there is no per-run token.
+- **Not cancellable once started:** the screenshot + UIA observation (`tokio::join!` of two blocking calls), `ShellExecuteW`, and a blocking action that has already returned `Ok` before the settle pause.
+- **Locks:** `AppState` holds `std::sync::Mutex` fields (settings, hotkeys, mic, agent state, lease, confirm slot, steer queue). Guards are not held across `.await`. Lock errors are `expect`ed, so a poisoned lock panics the caller.
+- **Voice** is a cpal thread -> unbounded channel -> a single async consumer that handles utterances one at a time (each awaits a model call).
+- **Settings** are read from memory by the loop; the bridge re-reads `settings.json` on every request so the CLI switch takes effect at once.
 
-### Frontend conventions
+### Design points
 
-Prefer maintained packages from the unjs / unplugin / VueUse / Vue ecosystem over hand-rolled code, when a real need exists.
+- **Coordinates live in one place** (`model/coords.rs`). The executor and the gate receive pixels; the UI receives 0-1000 plus pixels for overlays.
+- **Self-click protection:** the pill and the overlay windows are excluded from capture (`set_content_protected`), and the pill is click-through while the agent acts.
+- **State machine:** `Idle -> Listening -> Planning -> AwaitingConfirm -> Acting -> Observing -> Done | Failed | Stopped`. `events::set_agent_state` is the single place the state changes; it also toggles click-through (only in `Acting`) and shows/hides the overlay. A voice utterance starts a task in `Idle` and becomes a steering message otherwise; "stop" cancels at once. Several places repeat the "is a task running" test (`Planning | AwaitingConfirm | Acting | Observing`).
+- **Elevated windows** cannot receive injected input (UIPI). Nothing detects this yet; the UIA list is simply empty for them.
+- **DPI:** the whole pipeline stays in physical pixels; capture and mapping are per-monitor. Only the primary monitor is captured and driven.
 
-| Need                                           | Use                                                                     | Notes                                                                                                                                                                                                                                                                                                                                                                                                                |
-| ---------------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Fonts                                          | `unplugin-fonts` (Vite) with its Fontsource provider                    | Oxanium comes from `@fontsource-variable/oxanium`, so it is bundled and never fetched at runtime. `main.ts` imports the virtual `unfonts.css`.                                                                                                                                                                                                                                                                       |
-| Icons (ready-made)                             | `unplugin-icons` (Vite) + `@iconify-json/ph`                            | **Phosphor Fill** is the only ready-made icon set, **filled everywhere**. State is carried by the container and colour (a dark circle, red while listening), never by swapping outline for filled. Only the icons used are bundled.                                                                                                                                                                                  |
-| Icons (custom)                                 | `unplugin-icons` custom collection                                      | Hand-made SVGs live only in `src/assets/icons/` (one file per icon, 24x24, filled, `currentColor`) and load as `~icons/custom/<file-name>`. Never inline `<svg>` in a component or composable. See `src/assets/icons/README.md`.                                                                                                                                                                                     |
-| Icon registry                                  | `src/icons/index.ts` + `<AppIcon>`                                      | The **only** file that names an icon set. It maps meanings (`mic`, `send`, `tune`, `back`, `refresh`, `ok`, `open`, `key`, `eye`, `link`, `shortcut`, `stop`, `trash`) to icons; components render `<AppIcon name="mic" size="lg" />`. Switching family or style is a one-file change. A lint rule (`no-restricted-imports` on `~icons/**`, off only inside `src/icons/`) fails the build on any direct icon import. |
-| Animation loop, reduced motion, tab visibility | VueUse `useRafFn`, `usePreferredReducedMotion`, `useDocumentVisibility` | `GlyphOrb.vue`                                                                                                                                                                                                                                                                                                                                                                                                       |
-| Timers, keys, focus                            | VueUse `useTimeoutFn`, `onKeyStroke`, `useFocus`                        | `useAgent.ts`, `AgentPill.vue`, `Composer.vue`                                                                                                                                                                                                                                                                                                                                                                       |
-| Styling                                        | Tailwind v4 with the five-role type hierarchy                           | see Typography                                                                                                                                                                                                                                                                                                                                                                                                       |
-| Icon sizes                                     | `icon-sm` / `icon-md` utilities in `src/style.css`                      | Two roles: **sm** 12 px (trailing arrows, remove links; the one 4 px-grid size) and **md** 16 px (the default: icon-only buttons and beside a label). Never put a raw `size-*` on an icon. Filled glyphs carry more weight than outline ones, so keep them small; check new ones at real size.                                                                                                                       |
-| Spacing grid                                   | Tailwind spacing, `layout.ts`, `window.rs`                              | **Everything snaps to an 8 px grid** (Tailwind units 2, 4, 6, 8, ...: `p-2`, `gap-2`, `size-10`). Where 8 cannot work, 4 px is allowed (type line heights of 20 px, radii of 20 and 28 px, 12 px icons). Never use half units (`gap-1.5`, `px-2.5`). Pages are 272 px wide, the orb 64 px, the window 344 wide and 184 (open) or 592 (settings) tall. The control overlay's dots sit on an 8 px pitch.               |
-| Scrollbars                                     | global rules in `src/style.css`                                         | One slim (8 px, inset thumb), rounded, quiet scrollbar for every scroll area. Thumb colours are the `--scrollbar-thumb` and `--scrollbar-thumb-hover` variables; a light surface overrides them locally (the composer field does). Never style a scrollbar per component or leave the native one.                                                                                                                    |
-| Browser preview                                | `@tauri-apps/api/mocks` (`mockIPC`)                                     | `src/dev/mockTauri.ts` answers the startup commands so the UI renders in a plain browser for design review. Dev only: it is not in the production bundle.                                                                                                                                                                                                                                                            |
+### Platform support
 
-unjs packages (`defu`, `consola`, `pathe`, `ofetch`, ...) are used only when a concrete need appears; none is needed yet, since all I/O lives in Rust.
+`#[cfg(windows)]` gates: `exec/apps.rs` (non-Windows `open` returns an error), `exec/uia.rs` (non-Windows `snapshot` is empty), `exec/caret.rs`, `exec/input.rs::cursor_position` (returns `None`), `safety/foreground.rs` (non-Windows returns an empty window, so the window-dependent rules do nothing) and `cursor.rs`. The release workflow still builds macOS and Linux bundles with `--features agent-bridge`; they are not a supported target.
 
-## 7. UI: the pill
+### The record (`archive.rs`)
 
-Design language: Nothing-phone inspired. Monochrome, a circular dot-matrix glyph, one red accent (needs attention, recording, Stop), **Oxanium as the only typeface in the project** (open licence, bundled locally via `@fontsource-variable/oxanium`; Tailwind's `font-sans` and `font-mono` both resolve to it, so no other font can appear; no Nothing fonts or logos). Text follows a fixed five-role hierarchy (see Typography below). Frameless, transparent, always-on-top, skip-taskbar window, **anchored to the bottom-right of the primary monitor's work area** (16 px margin, above the taskbar) and draggable (position remembered from M6). Vue devtools are on in development only (`vite-plugin-vue-devtools` in the Vite config; it does nothing in a production build, and its button is hidden on the full-screen overlay).
+Everything the agent sees or hears is stored in the user's Documents folder (`Documents/Rune Studio/`, the OS equivalent elsewhere) in `screenshots/`, `voice/` and `recordings/`, split by UTC date, with names `<hhmmss>-<counter>-<label>.<ext>` that are never overwritten. There is no setting, tool or command to turn it off or move it, no size limit and no cleanup. It **fails closed**: `observe::screenshot::capture_region` (the one place every screenshot goes through) saves the exact JPEG with `fsync` before returning it and errors if that fails; `voice::handle` stores the WAV before sending it to the model and drops the utterance if that fails; if the folder cannot be created at startup the agent cannot see or hear. Screen recording does not exist yet; a future recorder must write through `archive::path_for(Kind::Recordings, ..)`. The safety gate rates any action taken while File Explorer shows a "Rune Studio" folder as high risk (by window title only). Files are ordinary files: the user or another program can delete them.
 
-**Logo.** The mark is the orb itself: a 9x9 dot-matrix disc on a dark circle with a lit ring, a bright scanning head and a bright centre, in the monochrome palette. `scripts/make-logo.mjs` draws it (`public/logo.svg`, full colour; `src/assets/icons/rune-mark.svg`, single colour for the UI), and `bun run tauri icon public/logo.svg` makes the whole icon set (exe, tray, installer, taskbar), then the unused mobile icon folders are deleted. The same SVG is the favicon and the README logo; the single-colour mark is registered as the `logo` icon and shows at the foot of Settings. Change the logo by editing the script and re-running those two commands.
+Other persisted data: `settings.json` (app config folder), `audit.log` (app data folder; JSON lines), the API key (`rune-infer-api-key`) and bridge token (`agent-bridge-token`) in the OS credential store under the app identifier.
 
-A single **bot glyph** (an 11x11 dot orb on a white disc: **64 px in total**, a 56 px disc inside a 4 px dark rim) is the whole app at rest. When opened, the **composer card** grows to its right while the orb stays at the left, bottom-aligned with the card.
+## 7. Safety gate
 
-```
-AMBIENT    (orb)                                  64 px, the resting form, bottom-right corner
+Nothing risky runs without the user's yes, whoever chose the action. Every action except `wait`, `done`, `scroll` and `ask_user` goes through `safety::gate::check` before it runs; the same code path serves the built-in loop and the bridge.
 
-OPEN                  +----------------------------+
-            (orb)     | +------------------------+ |
-                      | | Type or say a command  | |   white field, 3 lines, Enter sends
-                      | | [tune]       [mic] [↑] | |   settings left; mic + send together, same look
-                      | +------------------------+ |
-                      | [tune]  Type or say…  [mic] |   one 64 px row, the height of the orb; grows with the text
-                      +----------------------------+
+- **Risk** is the higher of what the agent said (`risk` on every action tool) and what `safety/rules.rs` finds (pure, with unit tests). The rules look at the action, the agent's stated reason (whole words: delete, remove, erase, wipe, uninstall, format, destroy, overwrite, purchase, buy, pay, checkout, send, submit, post, publish, install, reset, shutdown, restart, password, credit), and the foreground window's title and program (`safety/foreground.rs`). They catch: Alt+F4, Ctrl+Alt+Delete, Shift+Delete, Delete in File Explorer (medium elsewhere), Enter/Space/Y inside a dialog about something irreversible, typing into a shell (medium) and dangerous commands there (high), typing into a window titled like a sign-in page, launching regedit/diskpart/msiexec/format/bcdedit/gpedit/secpol/wmic (high) or cmd/PowerShell/terminals/Task Manager (medium), launching a program file from a path, a `click_element` on a control whose name contains one of the words above, and anything while Explorer shows the record folder.
+- Coordinate `click` and `drag` are assessed only by the foreground window's title (medium in a dialog about something irreversible) and by the agent's reason and stated risk. The rules lean towards asking; they are a net for honest mistakes, **not** a wall against a determined attacker or a prompt-injected page.
+- **Optional second opinion:** when the decision model is on and nothing has said high yet, a text-only question (action, reason, window) may raise the risk to high at 0.80 confidence. It sees no screenshot. It can only raise.
+- **High** pauses for a question. Medium and low run. Settings > Safety > **Ask before every action** asks about everything (except the harmless actions).
+- **The question** (`confirm_request` event) opens the card and shows `ConfirmCard.vue`: who wants to do what, why, up to three plain reasons, and No (focused first, so a stray Enter declines) and Yes. There is one confirm slot (`AppState.confirm`). **No answer in 120 s counts as No**, and Stop answers No and stops. Answers carry the question's id, so a stale click cannot approve a newer action. The pill window is shown if hidden.
+- **Voice:** a spoken no always works; a spoken yes answers only `question`-kind prompts (the agent's own `ask_user`), never an `approval` ("Click Yes to allow this one").
+- **A No** tells the model "the user did not allow it; do not try another way, finish with done or pick a different goal"; three Nos end the task. An outside agent gets `declined_by_user`.
+- **Audit log:** each weighed action is appended to `audit.log` as one JSON line: `at` (Unix seconds), `source`, `action`, `reason`, `risk`, `why`, `decision` (`allowed`, `approved`, `declined`, `no answer in time`, `stopped`). Failing to write is logged and ignored. Nothing reads it.
 
-SETTINGS              +----------------------------+
-                      | ←  Settings            ⟳   |   back, title + live backend status, recheck
-                      |    • Backend OK · 12 ms    |
-            (orb)     | CONNECTION                 |
-                      | (link) Base URL            |   grouped cards, one icon row per setting
-                      | (key)  API key             |
-                      | MODELS     (eye) Vision ...|
-                      | SHORTCUTS  (kbd) Open ...  |
-                      | [ ✓  Save and check ]      |
-                      +----------------------------+
+## 8. UI: the pill
 
-ATTENTION  the card opens and the agent asks in the speech bubble / task panel (confirm buttons arrive with M3; voice yes/no from M5)
-```
+Design language: Nothing-phone inspired. Monochrome, a circular dot-matrix glyph, one red accent (needs attention, recording, Stop), **Oxanium as the only typeface** (bundled locally via `@fontsource-variable/oxanium` and `unplugin-fonts`; Tailwind's `font-sans` and `font-mono` both resolve to it). Frameless, transparent, always-on-top, skip-taskbar window **anchored to the bottom-right of the primary monitor's work area** (16 px margin) and draggable. The position is not remembered between runs. Vue devtools are on in development only.
 
-**Compact composer and the health badge.** The composer is a single 64 px row, the same height as the orb: a settings button, the text field and one action button on the right that is always the most useful next thing (stop while a task runs, send once there is text, otherwise the microphone, red while listening). Longer text wraps and the card grows upward to six lines, then scrolls; the window follows through `fit_height` (a `ResizeObserver` on the page content; verified live: 64 px empty, 136 px with four lines, back to 64 px when cleared). There is no status row any more: notices (a refused task, a microphone problem) replace the field's placeholder for a few seconds, and what the agent says lives in the speech bubble and the task panel. The model server's health is three tiny dots at the bottom of the orb's face, like one more line of its dot matrix (`HealthDots.vue`): all three lit when fine, two when it needs attention (key rejected, model missing), one in red when it is down, and a travelling light while it is being checked; the details are the orb's tooltip. Red stays reserved for trouble, so a healthy server is calm and monochrome. The composer follows the system colour scheme: a pale field in the dark card by default, and a fully dark field with a light action button in dark mode.
+**Logo.** The mark is the orb itself: a 9x9 dot-matrix disc on a dark circle. `scripts/make-logo.mjs` draws `public/logo.svg` and `src/assets/icons/rune-mark.svg`; `bun run tauri icon public/logo.svg` makes the icon set. The same SVG is the favicon and the README logo.
 
-Modes: **ambient** (orb only), **open** (orb + composer) and **settings**. The card opens on the summon hotkey and when the agent needs the user (`ask_user`, high-risk confirm). It stays open until dismissed (`Esc`, the summon hotkey again, or clicking the orb while idle). Clicking the orb while the agent runs is Stop. Every page beside the orb (composer, settings, future task views) is exactly **272 px** wide (`PAGE_WIDTH` in `src/config/layout.ts`). The composer is one connected frame: the white field and the status bar in one frame, so nothing floats. There are no suggestion rows: they were removed for a cleaner look. Mic and send are twin 32 px dark circles on the right (the mic turns red while listening; while a task runs the send button turns into a red, icon-only Stop button, so there is no separate Stop control); settings is a ghost button on the left. The backend chip became a dot in the status bar (green, amber or red; hover for the details and model name).
+A single **bot glyph** (an 11x11 dot orb on a white disc, **64 px** in total) is the whole app at rest. When opened, the card grows to its right while the orb stays at the left, bottom-aligned.
 
-**Voice reaction.** The mic button toggles hands-free listening: Rust opens the default input device (cpal, on its own thread), computes an RMS level about 30 times a second, maps -55..-10 dBFS to 0..1 and emits `audio_level`. The orb's listening bloom follows that level (fast attack, slow decay); at silence only the centre breathes, so a dead mic looks different from a live one. If nothing is heard for 4 s the status bar says so. Level capture was pulled forward from M5; segmentation (VAD) and transcription remain M5.
+Modes (`PillMode`, mirrored by `window.rs::Mode`): **ambient** (orb only, 64x64), **open** (orb + composer, 344 wide, starts 64 tall and fits its content), **task** (orb + task panel + composer, starts 344x336 and fits its content) and **settings** (344x592). Every page beside the orb is exactly **272 px** wide (`PAGE_WIDTH` in `src/config/layout.ts`; width = 64 orb + 8 gap + 272).
 
-**Typography.** Five roles, defined once as design tokens in `src/style.css`. The default Tailwind size scale is removed (`--text-*: initial`), so a raw size such as `text-sm` or `text-[13px]` produces nothing; always use a role class.
+**Window mechanics.** The window resizes in discrete steps, keeping its bottom-right corner fixed (it grows up and to the left), clamped to the work area. The order is the same for every pair of modes: when the target needs a bigger window the window grows first and the page animates in afterwards; when it needs a smaller one the page animates out first and the window shrinks last (after `COLLAPSE_MS` = 340 ms). Pages switch with an out-in cross-fade. The composer reports its height through `fit_height` (a `ResizeObserver`).
+
+**Composer.** A single 64 px row, the height of the orb: a settings button, the text field and one action button that is always the most useful next thing (stop while a task runs, send once there is text, otherwise the microphone, red while listening). Notices (a refused task, a microphone problem) replace the placeholder for a few seconds. The model server's health is three tiny dots at the bottom of the orb (`HealthDots.vue`): all lit when fine, fewer when something needs attention, one in red when down, a travelling light while checking.
+
+**Voice reaction.** The mic button toggles hands-free listening: Rust opens the default input device (cpal, on its own thread), computes an RMS level about 30 times a second, maps -55..-10 dBFS to 0..1 and emits `audio_level`. The orb's listening bloom follows that level.
+
+**Progress and speech bubble.** `plan_updated` drives the orb's outer ring: one dotted arc per goal (`ProgressRing.vue`), lit when done, pulsing for the current one, with a lit arc circling while the plan is written. While a task runs the open card shows `TaskPanel.vue` (goals, the current action with its device icon, the model's thinking or last words, scrollable). With the card closed, the same words appear in a compact speech bubble at the orb's head, drawn by the full-screen overlay (so the 64 px window never grows).
+
+**Control overlay** (`ControlOverlay.vue`, `overlay.rs`): one transparent, click-through, capture-excluded window per monitor, shown while the agent has control (Planning, Observing, Acting, AwaitingConfirm; it lingers 6.5 s after a task ends). It draws a dot-matrix frame along the screen edges, one white caption per step (device icon + `CLICK`, `TYPE hello`, `KEYS CTRL + S`, ...), a ripple of dots at the exact point clicked (two pulses for a double click), a caret mark where text was typed, and, for a screenshot, a wave of dots on a 16 px grid crossing the captured area. The action's icon is the _device_ it uses (`src/config/actions.ts`; a new tool needs one line there). The mouse pointer itself is swapped for a dot orb while the agent is in control (`cursor.rs`), and restored afterwards and on exit.
+
+**Typography.** Five roles defined once as tokens in `src/style.css`; the default Tailwind size scale is removed (`--text-*: initial`), so always use a role class.
 
 | Role    | Class          | Size / line | Weight | Tracking | Used for                                  |
 | ------- | -------------- | ----------- | ------ | -------- | ----------------------------------------- |
 | Title   | `text-title`   | 18 / 24     | 600    | 0.02em   | Panel headings                            |
 | Body    | `text-body`    | 14 / 20     | 400    | none     | Composer input, form fields, reading text |
-| Status  | `text-status`  | 12 / 16     | 500    | 0.03em   | The live state line in the status bar     |
+| Status  | `text-status`  | 12 / 16     | 500    | 0.03em   | The live state line                       |
 | Label   | `text-label`   | 11 / 16     | 500    | 0.04em   | Buttons, field labels, badges             |
 | Caption | `text-caption` | 10 / 14     | 600    | 0.10em   | Section headings; pair with `uppercase`   |
 
-Glyph states (distinct by motion and shape, never colour alone; static frames under `prefers-reduced-motion`):
+Glyph states (`GlyphOrb.vue`: idle, listening, thinking, acting, attention, done, failed; distinct by motion and shape, never colour alone; static frames under `prefers-reduced-motion`):
 
 | State                | Dot-matrix behaviour                                         |
 | -------------------- | ------------------------------------------------------------ |
 | Idle / stopped       | Dim ring, slow breath                                        |
 | Listening            | Bloom that follows the live microphone level (`audio_level`) |
 | Thinking / observing | Comet orbiting the ring                                      |
-| Acting               | One bright "cursor" dot roaming, click ripple                |
+| Acting               | One bright "cursor" dot roaming                              |
 | Needs attention      | Red `!`, blinking (the only red)                             |
 | Done                 | Check mark draws in dot by dot, then fades to idle           |
 | Failed               | Red `x`                                                      |
 
-A small dot on the disc's corner shows backend problems (amber/red) and is absent when everything is fine.
+**Hotkeys.** `Alt+Q` opens the card (and shows the window if hidden); pressing it again collapses to the orb. `Ctrl+Alt+Esc` is the global **Stop**. Both are settings (`toggleHotkey`, `stopHotkey`), validated (must parse and differ) and re-registered on save; an unparsable stored value falls back to the default. **Click-through while acting:** in the `Acting` state the window ignores the mouse, so Stop is the hotkey, the voice word "stop", or the tray menu's **Stop**. The dev-only state switcher uses a preview path that never enables click-through.
 
-**Window mechanics.** The window resizes in discrete steps (ambient 64x64, settings 344x592; the open and task pages start at 344x64 and 344x336 and then **fit their content**, so the window is exactly as tall as the composer plus, in task mode, the progress panel; width = 64 orb + 8 gap + 272 page) **keeping its bottom-right corner fixed**, so it grows up and to the left from wherever it sits, clamped to the work area. Because a transparent window still catches mouse clicks and clips what does not fit, the order is the same for every pair of modes (ambient < open < settings): when the target needs a bigger window, the window grows first and the page animates in afterwards; when it needs a smaller one, the page animates out first and the window shrinks last (after `COLLAPSE_MS`, longer than the page cross-fade). Pages switch with an out-in cross-fade, so only one is ever on screen and the fixed page width means nothing reflows. Verified natively: the window grows within about 40 ms of the click and shrinks about 370 ms after going back. Windows clamps a window's configured size to a minimum width, so the exact size is set explicitly at startup.
+**Updates** (`composables/useUpdater.ts`). `App.vue` starts it: 5 s after launch one quiet check is made against `plugins.updater.endpoints` (GitHub `latest.json`, verified with `plugins.updater.pubkey`). If a newer version exists the card opens with an **Update** / **Later** prompt (never over a running task or a question). Update downloads and installs with `downloadAndInstall`; the orb's rim shows download progress; then `relaunch()`. On Windows `installMode` is `quiet`. Settings > Updates shows the version, a manual check and an **Update to X** button. An update never starts while a task runs.
 
-**Later (M7, optional).** Hover or click on the glyph opens a small ticker list in the label and status roles: one line per step (`click · Save`, risk, result) plus the last-screenshot thumbnail.
+### Frontend conventions
 
-- **Hotkeys:** `Alt+Q` opens the card (and shows the window if hidden); pressing it again collapses to the orb. `Ctrl+Alt+Esc` is the global **Stop**. Both are settings (`toggleHotkey`, `stopHotkey`) and re-register on save. `Ctrl+Alt+Space` was rejected (taken by the Claude desktop app); `Alt+Tab` cannot be registered (reserved by Windows); `Ctrl+Space` would break editor autocomplete and IME toggles.
-- **Click-through while acting:** during a real agent run the window ignores the mouse in the Acting state, so it can never block a click meant for another app. Stop is then the hotkey, the voice word "stop", or the tray menu's **Stop** (which works even while the window is click-through and does not depend on the hotkey being free). The dev-only state switcher in Settings > Developer uses a preview path that never enables click-through, so forcing "acting" by hand cannot lock the window. Opening that section scrolls its buttons into view.
+Prefer maintained packages from the unjs / unplugin / VueUse / Vue ecosystem over hand-rolled code when a real need exists.
+
+| Need                                           | Use                                                                     | Notes                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ---------------------------------------------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Fonts                                          | `unplugin-fonts` (Vite) with its Fontsource provider                    | Oxanium from `@fontsource-variable/oxanium`, bundled and never fetched at runtime. `main.ts` imports the virtual `unfonts.css`.                                                                                                                                                                                                                                                                                      |
+| Icons (ready-made)                             | `unplugin-icons` (Vite) + `@iconify-json/ph`                            | **Phosphor Fill** is the only ready-made icon set, filled everywhere. State is carried by the container and colour, never by swapping outline for filled.                                                                                                                                                                                                                                                             |
+| Icons (custom)                                 | `unplugin-icons` custom collection                                      | Hand-made SVGs live only in `src/assets/icons/` (24x24, filled, `currentColor`) and load as `~icons/custom/<file-name>`. Never inline `<svg>` in a component. See `src/assets/icons/README.md`.                                                                                                                                                                                                                       |
+| Icon registry                                  | `src/icons/index.ts` + `<AppIcon>`                                      | The **only** file that names an icon set; it maps meanings to icons. A lint rule (`no-restricted-imports` on `~icons/**`, off only inside `src/icons/`) fails the build on any direct icon import.                                                                                                                                                                                                                     |
+| Animation loop, reduced motion, tab visibility | VueUse `useRafFn`, `usePreferredReducedMotion`, `useDocumentVisibility` | `GlyphOrb.vue`                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Timers, keys, focus                            | VueUse `useTimeoutFn`, `onKeyStroke`, `useFocus`                        | `useAgent.ts`, `AgentPill.vue`, `Composer.vue`                                                                                                                                                                                                                                                                                                                                                                        |
+| Styling                                        | Tailwind v4 with the five-role type hierarchy                           | see Typography                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Icon sizes                                     | `icon-sm` / `icon-md` utilities in `src/style.css`                      | **sm** 12 px, **md** 16 px (the default). Never put a raw `size-*` on an icon.                                                                                                                                                                                                                                                                                                                                        |
+| Spacing grid                                   | Tailwind spacing, `layout.ts`, `window.rs`                              | Everything snaps to an 8 px grid (4 px allowed where 8 cannot work). No half units. Pages are 272 px wide, the orb 64 px, the window 344 wide.                                                                                                                                                                                                                                                                         |
+| Scrollbars                                     | global rules in `src/style.css`                                         | One slim, rounded scrollbar for every scroll area; colours are the `--scrollbar-thumb` variables.                                                                                                                                                                                                                                                                                                                    |
+| Browser preview                                | `@tauri-apps/api/mocks` (`mockIPC`)                                     | `src/dev/mockTauri.ts` answers the startup commands so the UI renders in a plain browser. Dev only.                                                                                                                                                                                                                                                                                                                   |
 
 ### Rust <-> Vue contract
 
-Commands (UI -> Rust): `start_task(text)`, `steer(text)`, `toggle_listening()`, `stop()`, `confirm(id, approved)`, `set_mode("ambient"|"open"|"settings")`, `get_settings()`, `save_settings(...)`, `set_api_key(key)`, `check_backend()`.
+Commands (UI -> Rust, `commands.rs`): `get_settings`, `save_settings(settings)`, `has_api_key`, `set_api_key(key)`, `check_backend`, `set_mode(mode)`, `fit_height(height)`, `pill_rect`, `stop`, `start_task(text)`, `steer(text)`, `toggle_listening`, `confirm(id, approved)`, `bridge_info`, `get_control_label`. Debug builds add `debug_set_state`, `debug_monitors`, `debug_capture`, `debug_click`, `debug_type`, `debug_keys`.
 
-Events (Rust -> UI): `state_changed(state)`, `summon`, `open_settings`, `audio_level(0..1)`, `transcript(text, final)`, `step_started{id, tool, reason, risk, target}`, `step_finished{id, ok, error?}`, `screenshot{id, thumb}`, `confirm_request{id, text, risk}`, `task_done{summary, success}`, `error{message}`.
+Events (Rust -> UI, payloads in `events.rs` and `src/types/protocol.ts`):
 
-### M2 notes: the first loop
+| Event               | Payload                                                                                     |
+| ------------------- | ------------------------------------------------------------------------------------------- |
+| `state_changed`     | `{ state }`                                                                                 |
+| `summon`, `open_settings` | none                                                                                  |
+| `audio_level`       | `0..1`                                                                                      |
+| `voice_heard`       | `{ text, note }`                                                                            |
+| `plan_updated`      | `{ goals, current, finished }`                                                              |
+| `thinking`          | `{ text, done }` (all thinking so far; only with Show thinking)                             |
+| `step_started`      | `{ step, tool, reason, text, detail, point, double, button, duration_ms }`                  |
+| `step_finished`     | `{ step, ok, error }`                                                                       |
+| `task_done`         | `{ summary, success }`                                                                      |
+| `confirm_request`   | `{ id, source, text, reason, risk, reasons, timeout_secs, kind }` (`kind`: `approval` or `question`) |
+| `confirm_resolved`  | `{ id, approved }`                                                                          |
+| `external_agent`    | `{ agent }` (`null` when nobody is in control)                                              |
+| `observe_started`   | `{ region, continuous }` (`continuous` is always `false`)                                   |
+| `typed`             | `{ point }`                                                                                 |
 
-Built: `agent/{mod,protocol,prompt}.rs`, `model/client.rs`, `exec/apps.rs` and the `start_task` command. Each turn the loop captures the primary monitor (1280 px JPEG), sends **one image plus a text history** (the last 12 steps as `click (500, 400) -> done`; older screenshots are not kept, so prefill stays small) and requires exactly one tool call (`tool_choice: "required"`, `reasoning_effort: "none"`, `temperature 0`). Tools in M2: `click`, `type_text`, `press_keys`, `open_app`, `wait`, `done`. `open_app` uses `ShellExecuteW` with the name as a single argument (no shell, so nothing can chain a second command). The default vision model is now `ternary-bonsai-2-27b-pq2-0` (the M1.5 result); settings saved earlier keep their old value.
+`ControlOverlay.vue` also listens for `observe_stopped`, which the Rust side never emits (reserved for a future recorder).
 
-Behaviour: Stop aborts even an in-flight model request (the request future is dropped). An unusable answer (no tool call, bad arguments, a click outside 0 to 1000) is reported back to the model as a failed step, and the run fails after 3 in a row. The step limit (default 30) fails the run. The status line shows the model's one-sentence reason for the current step, then the final summary. The control overlay shows while acting or observing, and shows each action visually without clutter: one white caption under the control pill (icon + `CLICK`, `TYPE hello`, `KEYS CTRL + S`, `OPEN notepad`, `WAIT 1.0 s`), replaced by the next step, and for clicks a ripple of dots spreading from the exact point that was clicked (two pulses for a double click). Both live only in the capture-excluded overlay, so the model never sees them. **Plan, progress and the speech bubble.** Every task opens with a short, text-only planning call (`set_plan`, two to six goals; a failed plan falls back to one goal, the task itself). Each action then carries `goal` (1-based), and goals only move forward; `done` finishes the plan. The `plan_updated` event drives the **orb's outer ring**: one dotted arc per goal, lit when done, pulsing for the current one, dim for the rest, and a lit arc circling the ring while the plan is still being written (`ProgressRing.vue`). When the card is open during a task it grows to the `task` mode (344x568) with the **task panel** above the composer (`TaskPanel.vue`): goals with done, current and pending marks, the current action with its device icon, and the full text of what the agent is thinking or just said, scrollable. With the card closed the same words appear in a **compact speech bubble at the orb's head**, drawn by the full-screen overlay (so the 64 px window never grows): the last 120 characters of thinking, or the first 120 of the response, three lines at most, stepping aside as soon as the card is expanded. The overlay window now also shows while the model plans, and lingers 6.5 s after a task ends so the final summary stays readable. Thinking is off by default (it made clicks much slower); Settings > Models > **Show thinking** turns it on, which streams the reply (`stream: true`, `reasoning_content` deltas, `thinking` events) instead of using `reasoning_effort: "none"`. Measured: a plan with thinking took about 15 s and 1,000 characters of thinking, against 1 to 3 s without. External agents get `rune_plan` and the `goal` argument, so their progress shows the same way. The overlay is **one pill**: who is in control, the current action, and the stop hint with a red stop icon like the composer's. The action's icon is the _device_ it uses, from `src/config/actions.ts` (a new tool needs one line there): mouse for anything with the cursor, keyboard for typing and key presses, a monitor for looking at the screen, a video camera for screen recording, a microphone for listening, headphones for recording or playing sound (video, mic and headphones are ready for when those tools exist). A screenshot is announced by an `observe_started` event (the model loop sends it every step, the bridge's `rune_observe` sends it with the zoom region) and traces exactly the captured area: two runners of dots start at the top-left corner, run round the outline, meet, hold and fade (no scanning, no wash). After text is typed, a `typed` event carries where it went (`exec/caret.rs`: the Win32 caret if the app reports one, else the UI Automation caret, else the mouse) and the overlay marks that spot like a click, with a ring around a three-dot caret bar. The real cursor no longer jumps: `Input::glide_to` moves it to a click target with an ease-in-out curve (120 ms plus 0.25 ms per pixel, capped at 450 ms, Stop-aware, ending exactly on the target; verified live by sampling the cursor, which showed slow start, fast middle, soft landing). `step_started.duration_ms` carries the glide time so the click ripple lands when the cursor arrives, and for `type_text` the typing time, so the caption types the text out letter by letter with a blinking caret, showing only the newest 24 characters of long text. `step_started` carries `detail`, `point` (physical pixels), `double` and `button` for this.
+## 9. Voice
 
-**Live result (2026-10-18):** "Open Notepad and write hello" ran end to end in about 1 minute and 3 steps (open_app, type_text, done) with `ternary-bonsai-2-27b-pq2-0`; Notepad contained exactly "hello" and the status line ended on the model's summary. Stop during a run was covered by unit tests and the M1 system tests but not re-run live.
+**The path.** The mic button opens the default microphone. Audio goes through a resampler to 16 kHz mono, then `vad::Segmenter`: plain energy-based speech detection, no model. It tracks the room's noise level, calls a 20 ms frame speech when it is 12 dB above that (and above -50 dBFS), starts an utterance after 60 ms of speech with 200 ms of audio from before it, ends it after 700 ms of silence, drops anything with under 200 ms of speech, and cuts a monologue at 20 s. The thresholds are constants at the top of `voice/vad.rs`.
 
-Not in M2 by design: risk gating and confirmation (M3), element ids and stuck detection (M4), steering and voice (M5). Until M3 the agent clicks and types whatever the model decides, so only run it on tasks you would run yourself.
-
-### M5: voice
-
-Built: `voice/{capture,vad,stt,intent,mod}.rs`, `commands::{begin_task, push_steer, close_microphone}`, `safety::gate::answer_by_voice`.
-
-**The path.** The mic button opens the default microphone. Its audio goes through a resampler to 16 kHz mono, then `vad::Segmenter`: plain energy-based speech detection, no model. It tracks the room's noise level, calls a 20 ms frame speech when it is 12 dB above that (and above -50 dBFS), starts an utterance after 60 ms of speech with 200 ms of audio from before (so the first syllable is kept), ends it after 700 ms of silence, drops anything shorter than 200 ms of speech (clicks, coughs) and cuts a monologue at 20 s. Each utterance goes to the omni model as a 16 kHz WAV (see "Hearing" below), which says what it was; the audio goes only to the configured model server.
+**Hearing (no speech-to-text model).** Each utterance is saved to the record, then sent to the omni model as an `audio_url` part with one forced `heard` tool call (`voice/direct.rs`). The model says whether it was `stop`, `stop_listening`, `yes`, `no`, `task` or `noise`; for a task it returns the request in one sentence plus two to six goals, so the planning call is skipped (`agent::start_planned`). If the call fails, the UI says the model is not answering; there is no fallback transcriber. `voice/intent.rs` interprets text against fixed word lists (the same table as below) through `voice::act`, but nothing in the app calls `voice::act` today; the live audio path uses the model's `kind`.
 
 **What the words do.**
 
@@ -257,140 +290,115 @@ Built: `voice/{capture,vad,stt,intent,mod}.rs`, `commands::{begin_task, push_ste
 | "yes", "go ahead", "do it"                           | nothing          | nothing                                                                 | answers yes **only for the agent's own questions**; an action that needs approval says "Click Yes to allow this one" |
 | anything else                                        | starts that task | steers: the agent reads it before its next step as "the user said: ..." | asks you to say yes or no                                                                                            |
 
-A longer sentence that only contains a control word ("stop the music in Spotify") is a request, not a command. A spoken yes never approves a risky action, because a TV or a colleague must not be able to allow something; a spoken no and stop always work. The mic stays open when a task is started by voice (typing a task closes it), and goes back to the listening state a few seconds after the task ends or is stopped. Every spoken command shows as a notice ("Starting: ...", "Passed to the agent: ...", "Answered no: ...") so a misheard task is visible at once, and the safety gate applies to voice tasks exactly as to typed ones.
+A longer sentence that only contains a control word ("stop the music in Spotify") is a request, not a command. The mic stays open when a task is started by voice (typing a task closes it) and goes back to listening 4 s after the task ends or is stopped. Every spoken command shows as a notice. The safety gate applies to voice tasks exactly as to typed ones.
 
-**Verified.** Unit tests cover the segmenter (one utterance between silences, a short pause does not split, a click and steady noise are not speech, speech over noise gets through, a long monologue is cut, resampling 48 kHz stereo and 44.1 kHz), the WAV header, transcript cleaning and the interpretation table. Live: Windows speech synthesis of "Open Notepad and write hello" went to rune-infer and came back as "Open notepad and write hello." (8 s on the first call, which loads the model). End to end with the real app, the mic and a spoken sentence played through the speakers: the mic opened, the utterance was detected, transcribed, started a task ("Starting: ..."), a second utterance was passed to the running agent, and the agent asked its own yes/no question on the confirm card ("Asks you"). The speaker-to-mic path garbled the words ("path of my money"), so this proves the chain, not recognition quality; try it with your own voice. Not verified live: the spoken stop, yes and no, and resuming to listening after a task. A bug found on the way and fixed: the confirm card's countdown always started at 0:00.
+**Limits.** Any speech near the open mic becomes a task (no wake word, no speaker check). Detection is energy-based, so loud steady noise can start false utterances and a very quiet speaker can be missed. Utterances are handled one at a time, each waiting for its model call. There is no spoken reply.
 
-**Hearing (no speech-to-text model).** Each utterance goes to the omni model as an `audio_url` part with one forced `heard` tool call (`voice/direct.rs`). The model says whether it was stop, stop listening, yes, no, a task or noise; for a task it returns the request in one sentence plus the goals, so the separate planning call is skipped (`agent::start_planned`). The agent loop, the safety gate and the rule that a spoken yes never approves a risky action are unchanged, and the model's sentence is what the UI shows. There is no fallback transcriber: if the call fails, the UI says the model is not answering. Not yet tried against the real model.
+## 10. Precision control
 
-**The CLI ships with the app.** The release workflow builds the app with `--features agent-bridge`, and Tauri bundles every binary the package builds, so each installer carries `rune-studio-cli` next to the app by itself (Windows installer and macOS bundle: beside the app; deb/rpm: `/usr/bin`). Adding it again as a bundle file or resource fails with a duplicate-file error. The release also gets the CLI as its own asset for every platform. On Windows the NSIS hooks in `src-tauri/windows/hooks.nsh` add the install folder to the per-user PATH on install and remove it on uninstall (per-user install, no admin rights; the MSI does not get the PATH entry); a new terminal is needed to see the change. Because a macOS app bundle or AppImage has no install step, `bridge/path_link.rs` links the CLI into `~/.local/bin` the first time the app runs on macOS and Linux (never over a file that is not its own link; not for AppImage, whose mount point changes), so `~/.local/bin` must be on the PATH there. The app and CLI are not yet verified to build with the `agent-bridge` feature on macOS and Linux.
+- **Element ids** (`exec/uia.rs`). Each step the loop lists the controls of the front window that can take the keyboard (visible, focusable, at least 6 px per side, with a name or a value) through UI Automation, with ids `e1`, `e2`, ... (at most 60, in reading order, 1.5 s budget checked between elements; empty for our own windows or an unreadable window). Ids belong to the latest list: the next list replaces them and a new task forgets them, so an old id can never point at something new. Pages that do not expose controls (many web pages and games) fall back to clicking a point.
+- **ask_user.** The model can ask a yes/no question (the card shows "Asks you"; no answer in two minutes counts as no, Stop answers no). Not offered to outside agents.
+- **Stuck detection** and **history window**: see section 5.
 
-**Updates (`composables/useUpdater.ts`).** `App.vue` starts it: the running version is read and, 5 s after launch, one quiet check is made against `plugins.updater.endpoints` (GitHub `latest.json`, verified with `plugins.updater.pubkey`). If a newer version exists the card opens by itself with an **Update** / **Later** prompt (never over a running task or a question). Update downloads and installs with `downloadAndInstall`, and the orb's rim switches from the goal arcs to a solid thin ring: it fills with the download percentage, sweeps while installing, and fills for the restart; then `relaunch()` restarts the app. On Windows the plugin quits the app when the installer starts, and `windows.installMode` is `quiet` so there is no installer window; the restart there is the installer's job and has not been confirmed. Settings > Updates shows the version, a manual **Check for updates** and an **Update to X** button. An update never starts while a task runs.
+## 11. Fast checks: the decision model
 
-**The record (`archive.rs`).** Everything the agent sees or hears is stored in the user's Documents folder (`Documents/Rune Studio/` on Windows, the OS's equivalent elsewhere) in `screenshots/`, `voice/` and `recordings/`, each split by UTC date with unique, never-overwritten names. It has no setting, tool or command to turn it off or move it, and it fails closed: `observe::screenshot::capture_region`, the single place every screenshot (built-in loop, outside agents, debug) goes through, saves the exact JPEG before returning it and returns an error if that fails, and `voice::handle` stores the WAV before sending it to the model and drops the utterance if that fails. If the folder cannot be created at startup the agent simply cannot see or hear. Screen recording does not exist yet; a future recorder must write through `archive::path_for(Kind::Recordings, ..)`. The safety gate rates any action taken while File Explorer shows a "Rune Studio" folder as high risk, so the agent cannot quietly clear its own record. Limits: these are ordinary files, so the user (or another program) can still delete them outside the app, and the Explorer rule goes by the window title only.
+rune-infer can serve a decision model (`d1-3b-q8-0` by default, `POST /v1/decisions`): it reads a text and optional screenshots and answers a fixed list of yes/no and pick-one questions in one forward pass, with no tokens generated. `model/decision.rs` is the client and `agent/quick.rs` holds the questions. Settings > Models > **Fast checks** turns it on (default **off**; it also needs a **Decision URL**, empty by default) and **Decision** names the model.
 
-**Limits.** Any speech near the open mic becomes a task (there is no wake word and no speaker check), so keep the mic closed when others are talking; the safety gate is the backstop. Detection is energy-based, so loud steady noise or music can start false utterances and a very quiet speaker can be missed (thresholds are constants at the top of `voice/vad.rs`). Transcription takes about a second per utterance on a warm server, and the first one after a model load took 8 s. There is no spoken reply (no text to speech yet).
+| Check          | Question                                                                                                        | What it saves or adds                                                                                                         | Acts on                                                                             |
+| -------------- | --------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Simple task    | "Can this be done as one short step?"                                                                           | Skips the planning call                                                                                                       | yes at 0.90 or more                                                                 |
+| Finished       | "Does the screen show the whole task is done?"                                                                  | Ends the run without a chat call; asked only when the last goal is current, every goal has a successful step and the last step succeeded | yes at 0.97 or more                                                                 |
+| Risk           | low, medium or high (text only, no screenshot)                                                                  | A second opinion in the safety gate, for model and bridge actions alike                                                       | high at 0.80 or more                                                                |
+| Screen reading | "Is the page still loading?" and "is something in the way?" (cookie banner, pop-up, login, CAPTCHA, error page) | Waits up to four 0.9 s looks for a loading page; adds a one-line hint to the next prompt. A CAPTCHA or login is never worked around | loading at 0.90 or more, a blocker at 0.80 or more. Not asked on the first look. Also on the bridge: action replies wait for the page and carry the hint |
 
-### M4: precision control
+Rules the code follows: it only picks from what it is offered, so it never replaces the model that chooses actions; every check acts only on a **confident** answer and only in the direction where a mistake is cheap ("no" and "unsure" both mean "do it the usual way"); the risk check can only raise the risk; it has no memory between calls; it is optional. Timeouts are 4 s for text and 8 s with a screenshot, and after a failure the decision model is left alone for 60 s (a process-wide cooldown). Stop works while it is being asked. These checks run serially on the loop's critical path, so each adds its latency to a step when it is on.
 
-Built: `exec/uia.rs`, `agent/stuck.rs`, new tools in `agent/protocol.rs`, `exec/input.rs` and `agent/body.rs`, new bridge tools in `bridge/mcp.rs`.
+An observation from 2026-10-19 against one server build: text questions answered correctly in about 70 ms, but screenshots did not influence the answers (the server appeared not to feed images to the model), so the screen-reading and finished checks effectively always answered "no". Re-test with an image whose answer is obviously yes before relying on them.
 
-- **Element ids.** Each step the loop lists the controls of the front window that can take the keyboard (buttons, links, tabs, fields, menu items) through UI Automation, with ids `e1`, `e2`, ... (at most 60, in reading order, dropping controls with no name; 1.5 s budget; the list is empty for our own windows). The list goes to the model under the screenshot as lines like `e7 button "Save"` (text fields also show what they hold), and `click_element` clicks the middle of that control, with the same cursor glide and ripple as a click. Ids belong to the latest list: the next list replaces them and a new task forgets them, so an old id can never point at something new, and a missing id is an `action_failed` the model can read. This is the precision path M1.5 asked for (small targets were the weak spot at 57 to 79%). Pages that do not expose their controls (many web pages and games) fall back to clicking a point. For safety, a control called "Delete", "Send", "Pay" and so on counts as high risk, the same words as for the agent's own reason.
-- **Scroll and drag.** `scroll` turns the wheel over a point (default the middle), up, down, left or right, one to ten notches (default 3), with Stop checked between notches; it never asks. `drag` presses at one point, glides to another and lets go; the button is released even if Stop interrupts, so it cannot stay held down. A drag is assessed like a click.
-- **ask_user.** The model can ask the user a yes/no question (the confirm card shows it as "Asks you" with Yes and No; no answer in two minutes counts as no, and Stop answers no). It is for decisions, not for things visible on screen. It is only offered to the built-in model; outside agents have their own chat with the user.
-- **Stuck detection.** Every look is reduced to a 32 by 18 grey picture and compared with the one before (a blinking caret or a clock is too small to show). After two actions that left the screen as it was, the model is told its actions are not working and to try something else; after five the run ends. Looks with no action in between (a refused answer, a declined action) do not count.
-- **History.** The model still sees only the last 12 steps, now with a note of how many earlier ones did not work, so a run that struggled early is not forgotten.
-- **Bridge.** `rune_elements`, `rune_click_element`, `rune_scroll` and `rune_drag`, documented in the agent guide. `ask_user` is not offered.
+## 12. External agent bridge (feature `agent-bridge`)
 
-Verified live (Windows 11 Notepad, through the bridge): the list showed 20 controls (document, tab, menus, toolbar buttons) in about a tenth of a second; `click_element` on the document focused it and `type_text` wrote "m4 ok"; `drag` across the line selected exactly "m4 ok"; `scroll` ran without error. Not verified live: `ask_user` and stuck detection (they need the model; covered by unit tests only), and scroll's effect on a long page. Known limits: only the front window is listed, and not at all when it is elevated; a control without a name is skipped; the list adds tokens to every step (60 lines at most).
+An outside agent can use Rune Studio's eyes and hands directly, skipping the local model. Everything an agent needs sits behind `observe::screenshot` and `agent::body`; the bridge takes the place of the model between them. The overlay, step captions, click ripple, Stop, the state machine and the safety gate are unchanged. The agent-facing contract is `docs/AGENT-GUIDE.md`.
 
-**Live result (2026-10-19): "open brave browser go to hugging face search qwen latest model go to model page".** The built-in model (ternary-bonsai-2-27b) finished in 88 s and 9 steps, ending on a Hugging Face Qwen model page (Qwen/Qwen3.8-27B). It planned four goals (Open Brave, Go to Hugging Face, Search Qwen latest model, Open model page), used `click_element` for the address bar, the search box and result links, typed "huggingface.co" and "qwen", and nothing asked for a yes (all low risk). About 10 s per step, almost all of it the vision model. Problems seen: two steps went to a wrong link and a Google result before the Hugging Face tab was reached, and the last click named one result (Qwen-Image-2.1) but landed on another because the search suggestions had reordered while the model thought. So a click by id now looks the control up again right before clicking (same role and name, nearest to where it was) and fails clearly if it has gone (`uia::resolve`). The decision model could not help yet: it ignores screenshots (see Fast checks), so only the text checks ran.
+**Switch.** A Cargo feature, off by default (`bun run tauri:dev -- --features agent-bridge`). Without it the build has no server and no way in. All release builds enable it. Even in a bridge build the user must turn on Settings > External agent (or run `rune-studio-cli enable`).
 
-### Fast checks: the decision model
+**Transport.** An MCP server over plain HTTP JSON-RPC at `http://127.0.0.1:47600/mcp` (`POST` only; `initialize`, `ping`, `tools/list`, `tools/call`, `resources/list|read`, `prompts/list|get`). Rejected: stdio for the app itself (it is a long-running GUI) and exposing Tauri commands. For stdio-only clients, `rune-studio-cli mcp` forwards stdin/stdout to the local door and starts the app if needed (waits up to 30 s).
 
-rune-infer has a decision model (`d1-3b-q8-0` here (the name of the model the server lists), `POST /v1/decisions`): it reads a text and optional screenshots and answers a fixed list of yes/no, pick-one and score questions in one forward pass, with no tokens generated, so an answer is far faster than a chat completion. `model/decision.rs` is the client and `agent/quick.rs` holds the questions. Settings > Models > **Fast checks** turns it on (default on) and **Decision** names the model.
-
-**Where it is used.**
-
-| Check          | Question                                                                                                        | What it saves or adds                                                                                                                                                                                                     | Acts on                                                                                                                         |
-| -------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| Simple task    | "Can this be done as one short step?"                                                                           | Skips the planning call (a full chat completion)                                                                                                                                                                          | yes at 0.90 or more                                                                                                             |
-| Finished       | "Does the screen show the whole task is done?"                                                                  | Ends the run without a chat call that only says `done`; asked only once the last goal has had its steps                                                                                                                   | yes at 0.97 or more                                                                                                             |
-| Risk           | low, medium or high                                                                                             | A second opinion in the safety gate, for model and bridge actions alike                                                                                                                                                   | high at 0.80 or more                                                                                                            |
-| Screen reading | "Is the page still loading?" and "is something in the way?" (cookie banner, pop-up, login, CAPTCHA, error page) | Waits up to four short looks for a loading page instead of asking the big model about a half-drawn one; adds a one-line hint to the next prompt. A CAPTCHA or login is never worked around: the hint says to ask the user | loading yes at 0.90 or more, a blocker at 0.80 or more. Also on the bridge: action replies wait for the page and carry the hint |
-
-**Its limits, and how the app respects them.**
-
-- It only picks from what it is offered. It cannot write text, coordinates or tool arguments, so it never replaces the vision model that chooses actions; it only skips or adds a check around it.
-- It is small, and fine print on a screenshot is beyond it. So every check acts only on a _confident_ answer, and only in the direction where a mistake is cheap: a wrong "simple" costs a one-arc ring, a wrong "risky" costs one click, and "finished" needs the highest bar and several successful steps first. "No" and "unsure" both mean "do it the usual way". The risk check can only raise the risk (to high), never lower it, and the rules in `safety/rules.rs` still apply first.
-- It has no memory between calls, so the question carries the task and the steps taken.
-- It is optional. If it is off, not loaded, slow (4 s for text, 8 s with a screenshot) or failing, the call returns nothing and the run does what it did before; after a failure it is left alone for a minute. Stop works while it is being asked.
-- **Checked against the server (2026-10-19).** Text questions answer correctly and fast (about 70 ms): "open Notepad and write hello" is simple (yes, 0.95), a long multi-site task is not, Shift+Delete on a documents folder is high risk. `probability` on a yes/no answer is the probability of **yes** (a "no" shows 0.05), and `confidence` on a choice is the picked option; both look coarse (0.95, 0.9, 0.05), so the thresholds are only a floor, not a calibrated score. **Screenshots are not being used yet**: a full-screen image added only 6 prompt tokens, the response id did not change when the question did, and a question whose answer was plainly yes came back no. So the screen-reading and finished checks currently always answer "no, nothing in the way", which is the safe direction (they do nothing) but also means no gain until the backend feeds images to the model. Re-test them with an image whose answer is obviously yes before trusting them.
-
-Not used on purpose: choosing the next action, clicking (needs coordinates), anything that must be right the first time. Possible later: spotting a login, CAPTCHA or permission prompt on screen and asking the user, and stuck detection.
-
-### Live HUD (H1 built, recognition card planned)
-
-**Built (H1).** The orb's outer ring is a dial of 60 ticks: ticks light as goals are finished, a longer tick marks each goal boundary, and a small arrow rides the leading edge (it circles while the plan is still being written, and turns red if the task fails; `ProgressRing.vue`). When the agent takes a screenshot, a wave of dots on a 16 px grid crosses the captured area from its top-left corner to its bottom-right, once; the effect already has a `continuous` mode for recording (`observe_started.continuous` and an `observe_stopped` event), which only needs a recording tool to drive it. At the centre of focus (the point just clicked, the caret just typed at, or the middle of what was captured) the overlay draws a hexagonal HUD, with chevrons at its sides and stubs above and below, at ten per cent opacity so it marks the spot without covering what is there.
-
-**Planned (M7): the recognition card.** To the left of the reticle, a detail card in the style of a game scan card: the thing's name as a title, its kind as two small icons, a confidence figure where a game would show a distance, and a one-line description, with the text it can read. The card is drawn from what the _backend_ recognises in the area of focus, so it needs an inference API. The client keeps all state (which thing is selected, history, ids); the backend only answers a question about an image.
-
-**What rune-infer needs to provide (inference only, no state).** One stateless endpoint, `POST /v1/images/recognize`:
-
-```json
-// request
-{ "model": "…", "image": "data:image/jpeg;base64,…",
-  "region": [x0, y0, x1, y1],              // optional crop, 0 to 1000 across the image (same convention as grounding)
-  "point": { "x": 500, "y": 400 },         // optional: "what is here?"
-  "kinds": ["object", "person", "text", "ui_element"],
-  "max_results": 5, "language": "en", "reasoning_effort": "none" }
-
-// response
-{ "model": "…",
-  "results": [ { "label": "Security camera", "kind": "object", "confidence": 0.93,
-                 "box": [x0, y0, x1, y1],     // 0 to 1000, same convention
-                 "description": "A ceiling-mounted camera, powered on.",
-                 "text": "…",                 // anything legible inside the box, may be empty
-                 "attributes": { "state": "on" } } ],
-  "usage": { "prompt_tokens": 0, "completion_tokens": 0 } }
-```
-
-Rules we need: (1) **stateless** (no sessions, no tracking, no ids that mean anything beyond one response; the client remembers things between calls); (2) the **same 0 to 1000 coordinates** as the chat tool calls and `/v1/images/grounding`; (3) deterministic at temperature 0 and honouring `reasoning_effort: "none"`; (4) fast on a crop (about a second for a 512 px region; a full 1080p prefill is too slow today, see the M1.5 findings), and the model should not need the whole screen to read a crop; (5) the image is not stored or logged. **People:** it should say that a person is there and describe what is visible (pose, count, clothing), and it must **not identify who they are**: no face recognition, no names. Until the endpoint exists the card can be prototyped on `/v1/chat/completions` with an image and a JSON-schema `response_format`, which needs checking against the current server (structured output, and a crop-sized prefill that is fast enough).
-
-### M3: the safety gate
-
-Nothing risky runs without the user's yes, whoever chose the action: the built-in model or an outside agent. Every non-trivial action (not `wait` or `done`) goes through `safety::gate::check` before it runs.
-
-- **Risk** is the higher of what the agent said (every action tool takes `risk: low | medium | high`, and the system prompt tells the model what high means) and what our own rules find (`safety/rules.rs`, pure and unit-tested with 11 cases). The rules look at the action, the agent's stated reason, and the window that has the keyboard (`safety/foreground.rs`: title and program). They catch: Alt+F4, Ctrl+Alt+Delete, Shift+Delete and Delete in File Explorer; Enter, Space or Y inside a dialog about something irreversible; typing dangerous commands into a shell, or typing into a sign-in page; launching regedit, diskpart, cmd or a program file from a path; and reasons that say delete, remove, send, pay, install, format and similar (whole words only). They lean towards asking, and they are a net for honest mistakes, not a wall against a determined attacker.
-- **High** pauses for a question. Medium and low run. Settings > Safety > **Ask before every action** asks about everything.
-- **The question** (`confirm_request` event) opens the card by itself and shows `ConfirmCard.vue`: who wants to do what, why in the agent's words, up to three plain reasons, and No (focused first, so a stray Enter declines) and Yes, allow. The pill window is clickable while it waits. **No answer in two minutes counts as No**, and Stop answers No and stops. A stale button press cannot approve a newer action (answers carry the question's id).
-- **A No** tells the model "the user did not allow it; do not try another way, finish with done or pick a different goal", and three Nos end the task. An outside agent gets `declined_by_user` with the same advice.
-- **Audit log:** every weighed action is appended to `audit.log` in the app data folder (time, who, action, reason, risk, why, decision: allowed, approved, declined, no answer in time, stopped).
-- **Verified live** with Ask before every action on and an outside agent: open Notepad asked, was approved and ran; typing was declined and did not run (`declined_by_user`); Alt+F4 was rated high with its reason, declined, and the audit log recorded all three. Voice yes/no and no confirmation timeout setting come later (M5).
-
-### External agent bridge (feature `agent-bridge`, built in M2.5)
-
-**Question:** can an outside agent use Rune Studio's eyes and hands directly, skipping the local model? **Yes.** Everything an agent needs already sits behind two internal calls: `screenshot::capture` (eyes) and `agent::execute` (hands, with `visual()` for the on-screen caption and ripple). Today the loop in `agent/mod.rs` calls the model between them; the bridge lets an external caller take that place. Nothing else changes: the overlay, step captions, click ripple, Stop (hotkey, tray, button), the state machine and the default (model-driven) mode all stay as they are. The full agent-facing contract is in `docs/AGENT_GUIDE.md`.
-
-**Switch.** A Cargo feature, off by default: `bun run tauri dev -- --features agent-bridge`. Normal builds contain no server and no way in. Even in a bridge build the user must turn on Settings > External agent, which shows a random token (stored in the credential manager).
-
-**Transport.** An MCP server over Streamable HTTP at `http://127.0.0.1:47600/mcp`, because MCP is what agents such as Claude Code already speak (`claude mcp add --transport http ...`). A plain JSON mirror of the same handlers can be added later for non-MCP callers. Rejected: stdio (the app is a long-running GUI, so a spawned child would need a second channel back to it) and exposing Tauri commands (not reachable from outside).
-
-**Tools** mirror the internal `Action` enum one to one, so there is a single execution path: `rune_begin`, `rune_observe` (optional zoom `region`), `rune_click`, `rune_type_text`, `rune_press_keys`, `rune_open_app`, `rune_wait`, `rune_status`, `rune_done`, `rune_guide`. Every action returns a settled screenshot and a plain-words text line, so the agent needs no separate observe. Same 0 to 1000 coordinates, same 1280 px JPEG, same `reason` shown in the pill and caption. `scroll`, `drag` and UI Automation element ids arrive with M4 and join the bridge for free.
+**Tools** mirror the internal `Action` enum so there is one execution path: `rune_guide`, `rune_begin`, `rune_plan`, `rune_observe` (optional zoom `region`), `rune_elements`, `rune_click`, `rune_click_element`, `rune_scroll`, `rune_drag`, `rune_type_text`, `rune_press_keys`, `rune_open_app`, `rune_wait`, `rune_status`, `rune_done`. Every action returns a settled screenshot and a plain-words line. Same 0-1000 coordinates, same 1280 px JPEG, same `reason` in the pill and caption. `ask_user` is not offered.
 
 **Control and safety.**
 
-- _Who may drive:_ one lease at a time, held by either the internal agent or one external agent (`start_task` and `rune_begin` refuse each other with `busy`). The lease ends on `rune_done`, on Stop, or after 5 minutes without a call.
-- _The user wins:_ Stop cancels the shared token, revokes the lease, and every later call returns `stopped_by_user` until the user re-arms. Click-through and the capture-excluded overlay behave exactly as in model mode; the control pill reads the external agent's name.
-- _The door:_ 127.0.0.1 only, bearer token on every request, requests with a browser `Origin` header are refused (blocks web pages and DNS rebinding), small request size limit, calls rate-limited, every action written to an audit log.
-- _Gating:_ the M3 safety gate applies to external actions too (risky actions pause for the user's yes; `declined_by_user` comes back). The M3 gate now applies to every outside agent action.
-- _What the agent cannot do:_ nothing beyond what the app's own agent can: no shell, no file access, no settings changes. Prompt-injection guidance for the agent is in the guide, and the app never feeds screen text to anything as instructions.
+- _Who may drive:_ one lease at a time (`bridge/lease.rs`, always compiled, pure and tested with an injected clock). `start_task` and `rune_begin` refuse each other with `busy`. The lease ends on `rune_done`, on Stop, or after 300 s without a call (a watcher checks every 10 s).
+- _The user wins:_ Stop cancels the shared token and **revokes** the lease; every later call returns `stopped_by_user` until the user re-arms by turning the switch off and on, or running `rune-studio-cli enable` again.
+- _The door_ (`bridge/server.rs`): 127.0.0.1 only; a bearer token on every request (`bridge/token.rs`: 32 random bytes, hex, kept in the credential store, constant-time comparison); `Host` must be `127.0.0.1`, `localhost` or `[::1]` on port 47600; any `Origin` header is refused; 256 KB body limit; the Settings switch is re-read from `settings.json` on every request.
+- _Gating:_ the safety gate applies to every outside action (`declined_by_user` comes back on a No).
+- _Not built:_ rate limiting, per-request timeouts, concurrency control between simultaneous tool calls, and graceful shutdown of the server. A failure to bind the port is logged and the app continues without the bridge.
 
-**As built.** `agent/body.rs` holds what both drivers share (`announce`, `execute`, `settle_time`, `finish_step`), and `screenshot::capture_region` adds the zoom crop. `bridge/lease.rs` (always compiled, pure and tested) decides who may drive: one lease, revoked by Stop until the user turns the switch off and on, expiring after 300 s of silence. `bridge/server.rs` (axum, feature only) is the door: 127.0.0.1:47600, `Host` and `Origin` checks, bearer token (`bridge/token.rs`: 32 random bytes in the credential manager, constant-time compare), 256 KB body limit, switch checked on every call. `bridge/mcp.rs` is a small hand-written JSON-RPC handler (initialize, ping, tools/list, tools/call) whose action tools call `agent::protocol::parse` and `agent::body`, so validation and behaviour are identical to the built-in loop. Unit tests assert that the guide mentions every tool and every error code. Settings > External agent shows the switch and a copy button for the connect command; the control pill shows the agent's name. Not built: rate limiting and a full audit log (one log line per begin exists); both are needed before any public release.
+**The `rune-studio-cli` command.** In bridge builds the program is two executables in one folder: `rune-studio` (the windowed Tauri app, `mainBinaryName`) and `rune-studio-cli` (a console program, `src/bin/rune-studio-cli.rs`, logic in `bridge/cli.rs`). They are separate because Windows starts a windowed program without a console. Commands: no arguments (open the app), `mcp`, `connect claude`, `connect antigravity`, `connect --print`, `skill [--remove]`, `disconnect <agent>`, `enable`, `disable`, `status`, `guide`, `help`. The switch lives in `settings.json` (`%APPDATA%\<identifier>\settings.json`) and `enable` also records `externalAgentSince`, which re-arms an agent that Stop locked out. `connect claude` enables the switch, runs `claude mcp add --scope user rune-studio -- <path> mcp` and installs the skill to `~/.claude/skills/rune-studio`. `connect antigravity` (`bridge/agents.rs`) merges the server into `~/.gemini/config/mcp_config.json` (keeping a `.bak`, refusing invalid JSON) and installs the skill under `~/.gemini/config/skills/rune-studio`. The built-in help text still prints some commands as `rune-studio ...`; the real executable is `rune-studio-cli`.
 
-**The `rune-studio-cli` command (no developer tools on the user's PC).** In agent builds the program is two executables in one folder: `rune-studio.exe` (the windowed Tauri app, `mainBinaryName` in tauri.conf.json) and `rune-studio-cli.exe` (a console program, `src/bin/rune-studio-cli.rs`, built only with the feature). They are separate because Windows starts a windowed program without a console, so a terminal would not wait for it or show its output. The command is plain Rust in `bridge/cli.rs`: `rune-studio-cli` (open the app), `mcp` (an stdio-to-local-door bridge that starts the app if needed and reads the token straight from the credential manager, so no secret touches a file), `connect claude` (runs `claude mcp add --scope user rune-studio -- <path> mcp`, and enables the switch), `connect --print`, `enable`, `disable`, `status`, `guide`. The switch lives in settings.json and the door re-reads it on every request, so `enable` and `disable` act on a running app at once. **Packaging the guide for agents.** `docs/AGENT_GUIDE.md` stays the single source. `bridge/skill.rs` splits it by its numbered sections into a Claude Code skill (a short `SKILL.md` with name and trigger description, plus `tools.md`, `recipes.md`, `errors.md` read on demand) and `connect claude` installs it to `~/.claude/skills/rune-studio` next to the MCP registration; `skill` and `disconnect claude` refresh and remove it. A test fails if a guide section is placed in no file or two, or if a section-number reference sneaks back in. For clients without skills the MCP server also serves the guide as the `rune://guide` resource and a `rune_start` prompt. `connect antigravity` (`bridge/agents.rs`) merges the server into Antigravity's global `~/.gemini/config/mcp_config.json` without disturbing other servers or settings (a `.bak` of the old file, refusing files that are not valid JSON) and installs the skill to `~/.gemini/config/skills/rune-studio`; `disconnect` undoes both. An unknown agent name now lists the supported ones instead of a vague prompt. Later: a Claude Code plugin bundling the MCP config and skill, and more `connect` targets (Cursor, VS Code, Codex), which are each a settings path plus this same merge. User-facing steps are in `docs/SETUP.md`; the agent-facing contract in `docs/AGENT_GUIDE.md` deliberately says nothing about building or internals. Developers build with `bun run tauri build --no-bundle --features agent-bridge`.
+**Packaging the guide.** `docs/AGENT-GUIDE.md` is the single source (`include_str!` in `bridge/skill.rs`). The skill splits it by numbered section into `SKILL.md` (sections 1, 2, 3, 9) and `tools.md` (4-8), `recipes.md` (11, 12), `errors.md` (10, 13). Tests fail if a section lands in no file or two, if the guide does not mention every tool and error code, or if the tool list and handlers disagree. For clients without skills the server also serves the guide as the `rune://guide` resource and a `rune_start` prompt. **Keep the numbered `## N. Title` headings and the backticked tool and error names when editing the guide.**
 
-## 8. Milestones
+**Distribution.** Tauri bundles every binary the package builds, so each installer carries `rune-studio-cli` next to the app (Windows installer and macOS bundle: beside the app; deb/rpm: `/usr/bin`); adding it again as a bundle resource fails with a duplicate-file error. The release also gets the CLI as its own asset per platform. On Windows the NSIS hooks (`src-tauri/windows/hooks.nsh`) add the install folder to the per-user PATH on install and remove it on uninstall (per-user install, no admin; the MSI gets no PATH entry). Because a macOS bundle or AppImage has no install step, `bridge/path_link.rs` links the CLI into `~/.local/bin` the first time the app runs on macOS and Linux (never over a file that is not its own link; not for AppImage).
 
-| #             | Milestone                                                                                                                                                                                                                                                          | Demo                                                                | Done when                                                                                         |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| M0            | Shell and plumbing: pill window, hotkeys, settings + keyring, rune-infer health/model check, typed event skeleton                                                                                                                                                  | Alt+Q shows the pill with "backend OK"                              | Works on the dev monitor setup; backend status is real                                            |
-| M1 (done)     | Eyes and hands, no AI: screenshot, downscale, `coords`, SendInput, global Stop                                                                                                                                                                                     | Debug command clicks a normalized point and types in Notepad        | Clicks land within a few pixels at 100/125/150% DPI and on a second monitor                       |
-| M1.5 (done)   | Grounding probe: ~30 saved screenshots -> `qwen3.8-27b` "click X"                                                                                                                                                                                                  | Hit rate and latency numbers                                        | We know if raw coordinates suffice or UIA/grounding must come earlier                             |
-| M2            | Vertical slice: model client, `click`/`type_text`/`press_keys`/`open_app`/`done`, loop, step limit, text input                                                                                                                                                     | "Open Notepad and write hello"                                      | End-to-end works; Stop interrupts at any moment                                                   |
-| M2.5 (built)  | External agent bridge behind the `agent-bridge` feature: MCP over local HTTP, same eyes and hands, lease, token                                                                                                                                                    | An outside agent opens Notepad and writes hello through Rune Studio | Model mode unchanged; Stop revokes the lease; works with Claude Code as the client                |
-| M3 (done)     | Safety gate and confirmation (buttons)                                                                                                                                                                                                                             | "Delete this file" pauses for a yes                                 | High-risk actions cannot run without a yes                                                        |
-| H1 (done)     | Live HUD, part 1: the orb ring as a tick dial with a leading arrow, the capture effect as a dot wave, a faint hexagonal reticle at the centre of focus                                                                                                             | Run any task and watch the ring, the wave and the reticle           | Nothing new needed from the backend                                                               |
-| M4 (done)     | Precision control: element ids, scroll, drag, ask_user, stuck detection, history note                                                                                                                                                                              | Copy text between apps                                              | Built; ask_user and stuck detection not yet run with the real model                               |
-| M5 (done)     | Voice: energy-based speech detection, transcription by rune-infer, voice start, steer, stop and yes/no                                                                                                                                                             | Click the mic once, talk through a task                             | Built; stop and yes/no by voice not yet heard live                                                |
-| M6            | Ship it: installer with the `rune-studio-cli` command on PATH, single instance, remembered position, eval suite (~15 tasks: success rate, steps, latency, tokens), elevated-window detection, rate limits, `connect` for Cursor, VS Code and Codex, Claude Code plugin | Report card, and the installer on a clean machine                   | Success rate measured; installs and connects on a clean PC                                        |
-| M7 (optional) | Live HUD, part 2: the recognition card at the HUD (see below), the recording effect (the capture wave runs while recording), the hover list of recent steps with thumbnails                                                                                        | A card names the thing the agent is looking at                      | Needs the recognition API from rune-infer and a screen-recording tool; none of it blocks M4 to M6 |
+## 13. Build, test and release
 
-### M1 results: eyes and hands
+- **Rust tests:** `cd src-tauri && cargo test --lib` (add `--features agent-bridge` for bridge, CLI and skill tests). `#[ignore]`d tests need a Windows desktop (`system_tests.rs`, via `pwsh scripts/m1-system-test.ps1`, which moves the real mouse) or a live rune-infer (`agent::live`, `probe_m15.rs`, via `pwsh scripts/m15/run-probe.ps1`). The dev profile optimises the `image` crate (`opt-level = 3`) and this crate lightly (`opt-level = 1`) because unoptimised image code made dev-build capture about 1 s.
+- **Frontend:** `bun run lint`, `bun run format`, `bun run test:unit` (Vitest, currently `useUpdater.test.ts`), `bun run build`.
+- **CI** (`.github/workflows/`): `integrate.yml` (push to `develop`) builds the frontend, runs lint (failures ignored), formats, auto-commits, bumps the version with changelogen and opens a release PR; it runs **no tests and no Rust checks** (the test step is commented out). `release.yml` (push to `main` with a `ci(release):` message) creates the release notes. `deploy.yml` (release published) builds the desktop app on Windows, Ubuntu and macOS (both architectures) with `--features agent-bridge`, signs updater artifacts and uploads the CLI. The web-container and Android jobs are commented out; `Dockerfile` and `nginx.conf` are unused leftovers.
+- **Supply chain note:** `Cargo.toml` pins `zip` to a git tag through `[patch.crates-io]`.
 
-What exists: `model/coords.rs` (the only place that converts model space to pixels), `observe/screenshot.rs` (capture, downscale to 1280 px, JPEG), `exec/input.rs` (absolute mouse, cancellable typing, key combos) with a `CancelToken` that Stop sets, and dev-only commands plus a "Eyes and hands" panel in Settings > Developer.
+## 14. Status
 
-**Verified on a real desktop** (1920x1080, 100% DPI, one monitor):
+| #             | Milestone                                                                                      | State                                                                                                                       |
+| ------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| M0            | Shell and plumbing: pill window, hotkeys, settings + keyring, backend check, event skeleton     | Built                                                                                                                       |
+| M1            | Eyes and hands, no AI: screenshot, downscale, `coords`, SendInput, global Stop                  | Built; verified on a 1080p/100% desktop (appendix)                                                                          |
+| M1.5          | Grounding probe against synthetic scenes                                                        | Done; results in the appendix (older models)                                                                                |
+| M2            | Vertical slice: model client, loop, step limit, text input, plan, thinking                      | Built                                                                                                                       |
+| M2.5          | External agent bridge, MCP over local HTTP, lease, token, CLI, `connect` for Claude Code and Antigravity | Built                                                                                                              |
+| M3            | Safety gate and confirmation                                                                    | Built                                                                                                                       |
+| M4            | Element ids, scroll, drag, ask_user, stuck detection, history note                              | Built; ask_user and stuck detection covered by unit tests only                                                              |
+| M5            | Voice: VAD, hearing by the omni model, voice start/steer/stop/yes/no                            | Built; spoken stop, yes and no and resuming to listening not verified live                                                  |
+| H1            | Live HUD part 1: goal arcs on the orb ring, capture wave, click ripple, caption, typed-caret mark | Built. (No hexagonal reticle exists in the code.)                                                                         |
+| M6            | Ship it                                                                                         | Partly: installer with CLI on PATH, auto-update. **Not built:** single-instance, remembered window position, eval suite, elevated-window detection, rate limits, `connect` for Cursor/VS Code/Codex, Claude Code plugin |
+| M7 (optional) | Recognition card, screen-recording effect, hover list of recent steps                           | Not built. Needs a recognition API from rune-infer and a recording tool                                                     |
+
+## 15. Known gaps (as of this document)
+
+These are properties of the current code, not plans:
+
+1. **One shared cancel flag** with no per-run identity: starting a task resets it, so a stale run still inside a non-cancellable section could continue (section 6).
+2. **The observation join and `ShellExecuteW` are not cancellable**; a hung UI Automation call delays Stop's effect and holds a blocking-pool thread. A panic inside `agent::run` is not caught, so the state and click-through are not restored.
+3. **No retry or backoff** on the omni model: one transport or 5xx error fails the task.
+4. **Bridge:** simultaneous `tools/call`s are not serialised (they can interleave input); no rate limit, request timeout or graceful shutdown; the token is read from the credential store, and `settings.json` is re-read, on every request.
+5. **Voice:** utterances queue unbounded behind each model call, so a spoken "stop" waits behind a slow one (the hotkey and tray Stop do not).
+6. **The record** has no retention limit and is written with `fsync` on the observation path.
+7. **Safety rules** judge coordinate clicks by window title and the agent's own words only; they are advisory.
+8. **Settings** are written without an atomic rename and a corrupted file silently falls back to defaults; `base_url` and `max_steps` are not validated.
+9. **No release logging:** the log plugin is registered only in debug builds. No metrics or tracing.
+10. **CI** does not run Rust tests, clippy or fmt.
+11. **Only the primary monitor** is captured and driven.
+
+## 16. Risks
+
+1. **Local-model click accuracy** is the biggest unknown for any new default model. The M1.5 probe (`scripts/m15`) measures it; UI Automation ids are the precision path.
+2. **Latency per step:** each turn ships a screenshot to a large model; the decision-model checks add serial round trips when on. Levers: smaller screenshots, element-only turns.
+3. **Prompt injection from on-screen text:** the system prompt treats it as data, and the gate checks actions, not intent (gap 7).
+4. **DPI / multi-monitor bugs:** isolated by the no-AI M1 tests; 125% / 150% scaling and a second monitor are covered only by unit tests on the mapping.
+5. **Elevated windows:** not detected.
+
+## 17. Backend follow-ups (non-blocking)
+
+- Streaming STT exposed through the API, for lower voice latency.
+- Make the decision endpoint honour screenshots (section 11).
+- A stateless recognition endpoint for the optional M7 card: `POST /v1/images/recognize` taking `image`, optional `region` (0-1000) and `point`, returning labelled results with boxes in the same 0-1000 space; stateless, deterministic at temperature 0, not storing or logging the image, and describing people without identifying them.
+
+---
+
+## Appendix: measurements (historical)
+
+These were taken on the dates and model builds stated, mostly with earlier models (`qwen3.8-27b`, `ternary-bonsai-2-27b-pq2-0`, `ornith-1.5-9b`). They have not been re-run against the current default model or code.
+
+### M1: eyes and hands (1920x1080, 100% DPI, one monitor)
 
 | Check                               | Result                                                                                             |
 | ----------------------------------- | -------------------------------------------------------------------------------------------------- |
@@ -400,44 +408,15 @@ What exists: `model/coords.rs` (the only place that converts model space to pixe
 | Stop                                | interrupts typing within about 250 ms (50 of 960 characters typed)                                 |
 | Capture mapping                     | a model-space point lands on the right pixel of the target window, after downscaling               |
 | Capture latency                     | about 70 ms in a release build, about 300 ms in a dev build (1080p to 1280x720 JPEG, about 105 KB) |
-| Through the real UI                 | Capture, Click, Type and the Stop hotkey all work end to end from Settings > Developer             |
 | DPI awareness                       | the app process is per-monitor aware                                                               |
 
-**Not verified natively, and how it is covered instead:** 125% and 150% scaling and a second monitor need hardware this PC does not have. They are covered by unit tests on the mapping (physical sizes at 125/150%, a monitor left of and above the primary one with negative origins, every pixel round-tripping, clamping) plus the per-monitor awareness check. Run the native checks on a scaled or multi-monitor machine before relying on them.
+Not verified natively: 125% / 150% scaling and a second monitor (covered by unit tests on the mapping, including negative origins). Findings: unoptimised image code made dev capture about 1 s (hence the dev profile); WebView2 exposes its controls through UI Automation; a button that re-renders itself makes UIA `Invoke` throw even though it fired.
 
-How to run: `cargo test --lib` for the unit tests; `pwsh scripts/m1-system-test.ps1` for the end-to-end tests (it moves the real mouse and types for a few seconds against its own target window, and the typing tests refuse to run unless that window has focus).
+Live runs (earlier model builds): "Open Notepad and write hello" ran end to end in about 1 minute and 3 steps (2026-10-18); "open brave browser go to hugging face search qwen latest model go to model page" finished in 88 s and 9 steps, about 10 s per step, almost all of it the vision model (2026-10-19). Neither run exercised the safety gate (all actions low risk). The second run showed a click by id landing on a reordered result, which is why `click_element` re-resolves the control right before clicking.
 
-Findings worth keeping: unoptimised image code made dev-build capture about 1 s, so the dev profile optimises this crate lightly (about 350 ms); WebView2 exposes its controls through UI Automation, so the real app can be driven and inspected without pixel coordinates; and a button that re-renders itself makes UIA `Invoke` throw even though it fired, so judge by the effect.
+### M1.5: grounding probe (final)
 
-### M1.5 grounding probe: interim findings
-
-**Tooling (built).** `scripts/m15/make-scenes.mjs` renders 10 synthetic GUI scenes (settings, editor, dialog, web page, file manager, each light and dark) at 1920x1080 with headless Chrome and reads every target's exact position from the DOM, so ground truth is exact and no live desktop is needed. `pwsh scripts/m15/run-probe.ps1` runs the Rust probe (`probe_m15.rs`, which encodes screenshots through the same `observe::screenshot::prepare` the app uses) against rune-infer and `report.mjs` summarises hit rate, near-miss rate and latency. Modes are `model:convention[@edge]` with conventions `norm` (0-1000), `brief` (norm plus "do not explain"), `px` and `ground` (the `/v1/images/grounding` endpoint).
-
-**What is trustworthy so far.** The full 4-variant run was cut short when the user stopped rune-infer, so its hit-rate table is not a result (most requests failed to connect). Only 14 answers in it are valid, plus two 6-target pilots:
-
-| Finding                                                               | Evidence                                                                                                                        | Confidence                                              |
-| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| `qwen3.8-27b` clicks accurately with 0-1000 coordinates               | 10 of 11 valid clicks inside the element                                                                                        | low (n=11)                                              |
-| `ornith-1.5-9b` is much weaker                                        | 3 of 6                                                                                                                          | very low (n=6)                                          |
-| Pixel coordinates are worse than 0-1000 for the 27B                   | 1 of 3 against 5 of 5                                                                                                           | very low                                                |
-| `/v1/images/grounding` returned `[500, 500]` every time               | 3 of 3, up to 1000 px off                                                                                                       | clear: looks like a fallback default, not a measurement |
-| 27B is far too slow for the loop                                      | server log: image prefill 47 tok/s (median 23.7 s for about 940 tokens), generation 9.7 tok/s; about 35 s per click, up to 50 s | solid (server-measured)                                 |
-| 9B is fast                                                            | prefill 1183 tok/s (0.8 s), generation 42 tok/s; about 4 s per click                                                            | solid                                                   |
-| `ternary-bonsai-2-27b-pq2-0` generates much faster than `qwen3.8-27b` | 46.8 vs 9.7 tok/s in the log                                                                                                    | untested for accuracy                                   |
-
-A 1280x720 screenshot is about 880 image tokens (about 940 with the prompt), fewer than the 2.7k I had budgeted.
-
-**Backend asks that came out of this:**
-
-1. Find out why `qwen3.8-27b` prefill is about 25x slower than the 9B (47 vs 1183 tok/s). It is served as IQ3_S with a q4 KV cache and all layers on a 16 GB GPU (15.9 GB used), so memory pressure or contention is the likely cause.
-2. Let a request turn thinking off (forward `chat_template_kwargs` such as `enable_thinking`, or add a reasoning budget): the model spends about 100 tokens reasoning before each click.
-3. `/v1/images/grounding` returns `[500, 500]` (the image centre); check its parsing and fallback.
-4. Prompt-cache reuse between questions about the same screenshot is not working (log: "non-consecutive token position", similarity 0.42), so the image is re-processed every time.
-5. `usage.prompt_tokens` does not count image tokens.
-
-### M1.5 results (final)
-
-120 + 80 requests over 10 synthetic scenes, 40 targets, normalized 0..1000 coordinates through a `click` tool, `temperature 0`. "Hit" = inside the element; "near" = within 12 px. Thinking off means `reasoning_effort: "none"`.
+120 + 80 requests over 10 synthetic scenes (generated by `scripts/m15/make-scenes.mjs` with headless Chrome, ground truth from the DOM), 40 targets, normalized 0..1000 coordinates through a `click` tool, `temperature 0`. "Hit" = inside the element; "near" = within 12 px. "Thinking off" was `reasoning_effort: "none"` at the time (the app now uses `chat_template_kwargs.enable_thinking`).
 
 | Model / setting                                | Hit     | Hit or near | Median latency | Small targets (<24 px) |
 | ---------------------------------------------- | ------- | ----------- | -------------- | ---------------------- |
@@ -447,19 +426,4 @@ A 1280x720 screenshot is about 880 image tokens (about 940 with the prompt), few
 | `ornith-1.5-9b`, thinking off                  | 58%     | 85%         | 1.8 s          | 71%                    |
 | `qwen3.8-27b`, thinking off, 768 px screenshot | 63%     | 90%         | 5.1 s          | 29%                    |
 
-**Findings.** (1) Raw model coordinates are good enough for medium and large targets: the best 27B hits 100% of them. Small icon buttons are the weak spot for every model (57 to 79%). (2) `ternary-bonsai-2-27b-pq2-0` is the best single choice: most accurate and about twice as fast as qwen 27B. (3) Thinking off helps latency a lot on the 9B but latency on the 27B is dominated by image prefill, not reasoning. (4) Downscaling to 768 px costs a lot of accuracy, especially on small targets, so keep 1280 px. (5) Latency is noisy because the GPU is shared; numbers are medians.
-
-**Decision.** Use model coordinates as the default grounding (ternary-bonsai first, qwen as fallback), with thinking off. Keep **UI Automation (M4) as the precision path for small targets**: pull element-id clicking forward as an upgrade rather than a prerequisite. Add a verify step (screenshot after each click) in M2 so a miss is caught within one step. Backend asks (prefill speed, prompt-cache reuse, grounding endpoint, usage tokens) stay open.
-
-## 9. Risks
-
-1. **Local-model click accuracy** is the biggest unknown. M1.5 measures it before the loop is built; UIA and `/v1/images/grounding` are the fallbacks.
-2. **Latency per step:** each turn ships about 2.7k image tokens to a 27B model. Levers: smaller screenshots, element-only turns, fewer images in history.
-3. **Prompt injection from on-screen text:** the system prompt treats it as data, and the safety gate checks actions, not intent.
-4. **DPI / multi-monitor bugs:** isolated by the no-AI M1 test.
-5. **Elevated windows:** detect and report in M7.
-
-## 10. Backend follow-ups (non-blocking)
-
-- Streaming STT (`audio8-asr-infinite`) exposed through the API, for lower voice latency.
-- `qwen3.8-27b` latency numbers for a ~1280 px screenshot, to set the step budget.
+Findings: raw model coordinates are good enough for medium and large targets; small icon buttons are the weak spot for every model (hence UI Automation ids); downscaling to 768 px costs a lot of accuracy, so the screenshot stays at 1280 px; latency on the 27B models is dominated by image prefill; a 1280x720 screenshot is about 880 image tokens; `/v1/images/grounding` returned `[500, 500]` every time and is not used. Tooling: `pwsh scripts/m15/run-probe.ps1` runs `probe_m15.rs` (which encodes through the same `observe::screenshot::prepare` the app uses) and `scripts/m15/report.mjs` summarises hit rate, near-miss rate and latency; modes are `model:convention[@edge]` with conventions `norm`, `brief`, `px` and `ground`.
