@@ -52,6 +52,9 @@ pub fn run() {
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
+        // First, as the plugin requires: a second launch hands over to this process and exits,
+        // so the pill opens here instead of a second app fighting over the hotkeys and the door.
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| window::summon(app)));
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     }
 
