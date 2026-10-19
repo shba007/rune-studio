@@ -41,6 +41,22 @@ pub struct Settings {
     pub archive_keep_days: u32,
 }
 
+/// What happens with the independent check of a finished task (`agent::verify`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VerifyMode {
+    /// Nothing runs.
+    Off,
+    /// Before the agent finishes a task it claims succeeded, the check runs; a contradiction gives
+    /// the agent one more chance. Adds a model call to the task's time.
+    Blocking,
+    /// The user sees "Done" at once and the check runs afterwards. It never changes the outcome.
+    /// Also what any value this build does not know reads as.
+    #[default]
+    #[serde(other)]
+    Background,
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {

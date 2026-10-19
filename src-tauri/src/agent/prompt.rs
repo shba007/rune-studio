@@ -40,6 +40,21 @@ pub struct Entry {
     pub outcome: String,
 }
 
+/// The history as the model is shown it: a note if older steps were left out, then the last
+/// `HISTORY_WINDOW` steps, one per line, `n. action -> outcome`. Empty when nothing happened yet.
+pub fn history_lines(history: &[Entry]) -> Vec<String> {
+    let mut lines = Vec::new();
+    let skipped = history.len().saturating_sub(HISTORY_WINDOW);
+    if skipped > 0 {
+        let failed = history[..skipped].iter().filter(|entry| entry.outcome != "done").count();
+        lines.push(format!("(... {skipped} earlier steps omitted, {failed} of them did not work)"));
+    }
+    for (index, entry) in history.iter().enumerate().skip(skipped) {
+        lines.push(format!("{}. {} -> {}", index + 1, entry.action, entry.outcome));
+    }
+    lines
+}
+
 /// The text part of a turn: the task, the plan, what has happened so far, and the step budget.
 /// `current` is the 0-based goal being worked on.
 /// `elements` is the listing of the front window's controls (may be empty) and `warning` a note
@@ -62,13 +77,9 @@ pub fn user_message(task: &str, plan: &[String], current: usize, history: &[Entr
         text.push_str("No actions yet.\n");
     } else {
         text.push_str("Actions so far:\n");
-        let skipped = history.len().saturating_sub(HISTORY_WINDOW);
-        if skipped > 0 {
-            let failed = history[..skipped].iter().filter(|entry| entry.outcome != "done").count();
-            text.push_str(&format!("(... {skipped} earlier steps omitted, {failed} of them did not work)\n"));
-        }
-        for (index, entry) in history.iter().enumerate().skip(skipped) {
-            text.push_str(&format!("{}. {} -> {}\n", index + 1, entry.action, entry.outcome));
+        for line in history_lines(history) {
+            text.push_str(&line);
+            text.push('\n');
         }
     }
     if !elements.trim().is_empty() {

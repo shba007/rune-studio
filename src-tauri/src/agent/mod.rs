@@ -8,6 +8,7 @@ pub mod prompt;
 pub mod protocol;
 pub mod quick;
 pub mod stuck;
+pub mod verify;
 
 use crate::sync::LockExt;
 use std::{
