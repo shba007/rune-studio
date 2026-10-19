@@ -138,7 +138,7 @@ pub async fn verify(client: &ChatClient<'_>, input: VerifyInput<'_>) -> Result<V
 async fn verify_within(client: &ChatClient<'_>, input: VerifyInput<'_>, limit: Duration) -> Result<Verdict, String> {
     let tools = json!([tool()]);
     let text = user_message(input.task, input.goals, input.history, input.claim_summary);
-    let request = Request { system: SYSTEM, user_text: &text, screenshot: Some(input.screenshot), audio: None, tools: &tools, think: false };
+    let request = Request { system: SYSTEM, user_text: &text, screenshot: Some(input.screenshot), audio: None, tools: &tools, think: false, max_tokens: None };
     let mut ignore_thinking = |_: &str| {};
     match tokio::time::timeout(limit, client.call(&request, &mut ignore_thinking)).await {
         Err(_) => Err(format!("the check took longer than {} seconds", limit.as_secs())),

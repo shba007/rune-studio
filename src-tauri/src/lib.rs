@@ -1,4 +1,5 @@
 mod agent;
+mod analysis;
 mod archive;
 mod backend;
 mod bridge;

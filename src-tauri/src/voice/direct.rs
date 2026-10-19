@@ -110,6 +110,7 @@ pub async fn listen(client: &ChatClient<'_>, wav_base64: &str, state: AgentState
         audio: Some(wav_base64),
         tools: &tools,
         think: false,
+        max_tokens: None,
     };
     let reply = client.call(&request, &mut |_: &str| {}).await?;
     Ok(if reply.call.name == "heard" { parse(&reply.call.arguments) } else { None })

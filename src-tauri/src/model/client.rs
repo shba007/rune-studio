@@ -64,6 +64,9 @@ pub struct Request<'a> {
     pub tools: &'a Value,
     /// Let the model think, and stream that thinking to `on_thinking`.
     pub think: bool,
+    /// Longest answer to ask for. `None` keeps the default (512, or 3000 when thinking), which is
+    /// what every call but the screen analysis uses.
+    pub max_tokens: Option<u32>,
 }
 
 /// Whether trying the same request again can help: the server was not reachable or was briefly
@@ -91,7 +94,7 @@ fn snippet(text: &str) -> String {
 }
 
 /// The JSON body of one chat completion request.
-fn chat_body(model: &str, request: &Request<'_>) -> Value {
+pub(crate) fn chat_body(model: &str, request: &Request<'_>) -> Value {
     let content = if request.screenshot.is_none() && request.audio.is_none() {
         json!(request.user_text)
     } else {
@@ -109,7 +112,7 @@ fn chat_body(model: &str, request: &Request<'_>) -> Value {
     let mut body = json!({
         "model": model,
         "temperature": 0,
-        "max_tokens": if request.think { MAX_OUTPUT_TOKENS_THINKING } else { MAX_OUTPUT_TOKENS },
+        "max_tokens": request.max_tokens.unwrap_or(if request.think { MAX_OUTPUT_TOKENS_THINKING } else { MAX_OUTPUT_TOKENS }),
         "messages": [
             { "role": "system", "content": request.system },
             { "role": "user", "content": content },
@@ -424,7 +427,7 @@ mod tests {
     }
 
     fn a_click_request(tools: &Value) -> Request<'_> {
-        Request { system: "s", user_text: "u", screenshot: None, audio: None, tools, think: false }
+        Request { system: "s", user_text: "u", screenshot: None, audio: None, tools, think: false, max_tokens: None }
     }
 
     #[tokio::test]
@@ -453,7 +456,7 @@ mod tests {
     #[test]
     fn the_audio_part_is_input_audio_with_the_whole_wav_and_comes_first() {
         let tools = json!([]);
-        let request = Request { system: "sys", user_text: "what now", screenshot: Some("data:image/jpeg;base64,AA"), audio: Some("UklGRg=="), tools: &tools, think: false };
+        let request = Request { system: "sys", user_text: "what now", screenshot: Some("data:image/jpeg;base64,AA"), audio: Some("UklGRg=="), tools: &tools, think: false, max_tokens: None };
         let body = chat_body("m", &request);
         let parts = body["messages"][1]["content"].as_array().expect("parts");
         assert_eq!(parts.len(), 3);
@@ -466,7 +469,7 @@ mod tests {
     #[test]
     fn the_thinking_switch_is_sent_both_ways() {
         let tools = json!([]);
-        let mut request = Request { system: "s", user_text: "u", screenshot: None, audio: None, tools: &tools, think: false };
+        let mut request = Request { system: "s", user_text: "u", screenshot: None, audio: None, tools: &tools, think: false, max_tokens: None };
         let off = chat_body("m", &request);
         assert_eq!(off["thinking"], json!({ "type": "disabled" }));
         assert_eq!(off["chat_template_kwargs"], json!({ "enable_thinking": false }));
@@ -485,7 +488,7 @@ mod tests {
     #[test]
     fn a_text_only_request_keeps_its_shape() {
         let tools = json!([{ "type": "function", "function": { "name": "click" } }]);
-        let request = Request { system: "sys", user_text: "plan this", screenshot: None, audio: None, tools: &tools, think: false };
+        let request = Request { system: "sys", user_text: "plan this", screenshot: None, audio: None, tools: &tools, think: false, max_tokens: None };
         let body = chat_body("the-model", &request);
         assert_eq!(body["model"], "the-model");
         assert_eq!(body["messages"][0], json!({ "role": "system", "content": "sys" }));

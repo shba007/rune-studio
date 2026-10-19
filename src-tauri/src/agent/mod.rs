@@ -424,6 +424,7 @@ async fn make_plan(
         audio: None,
         tools: &tools,
         think,
+        max_tokens: None,
     };
     let mut send_thinking = thinking_sender(app);
     let started = Instant::now();
@@ -655,6 +656,7 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, canc
             audio: None,
             tools: &tools,
             think,
+            max_tokens: None,
         };
         let mut send_thinking = thinking_sender(app);
         let started = Instant::now();
@@ -1058,6 +1060,7 @@ mod live {
             audio: None,
             tools: &tools,
             think: true,
+            max_tokens: None,
         };
         let mut updates = 0;
         let mut longest = 0;
