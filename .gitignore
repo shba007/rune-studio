@@ -46,6 +46,3 @@ __screenshots__/
 
 temp
 .vitest/
-
-# The CLI staged for the installer by CI
-src-tauri/binaries/
