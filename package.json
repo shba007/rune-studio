@@ -17,6 +17,7 @@
     "lint": "vp lint . --fix",
     "format": "vp fmt src/",
     "test:unit": "vp test",
+    "test:eval": "node --test \"scripts/eval/test/*.test.mjs\"",
     "build": "vp build",
     "preview": "vp preview",
     "clean": "(cd src-tauri && cargo clean)",
