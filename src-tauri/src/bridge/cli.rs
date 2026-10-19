@@ -539,7 +539,7 @@ fn one_line(text: &str, max: usize) -> String {
 
 /// The run list: one line per run, columns padded to their widest cell.
 fn runs_table(rows: &[RunSummary]) -> String {
-    let header = ["ID", "STARTED", "SOURCE", "OUTCOME", "STEPS", "DURATION", "TASK"].map(String::from);
+    let header = ["ID", "STARTED", "SOURCE", "OUTCOME", "VERDICT", "STEPS", "DURATION", "TASK"].map(String::from);
     let mut lines = vec![header];
     for row in rows {
         lines.push([
@@ -547,15 +547,16 @@ fn runs_table(rows: &[RunSummary]) -> String {
             shown_time(row.started_utc.as_deref()),
             row.source.clone().unwrap_or_else(|| "-".into()),
             row.outcome.clone().unwrap_or_else(|| "(open)".into()),
+            row.verdict.clone().unwrap_or_else(|| "-".into()),
             row.steps.to_string(),
             shown_duration(row.started_utc.as_deref(), row.ended_utc.as_deref()),
             one_line(row.task.as_deref().unwrap_or(""), 50),
         ]);
     }
-    let widths: Vec<usize> = (0..7).map(|column| lines.iter().map(|line| line[column].chars().count()).max().unwrap_or(0)).collect();
+    let widths: Vec<usize> = (0..8).map(|column| lines.iter().map(|line| line[column].chars().count()).max().unwrap_or(0)).collect();
     let mut out = String::new();
     for line in &lines {
-        let cells: Vec<String> = line.iter().enumerate().map(|(column, cell)| if column == 6 { cell.clone() } else { format!("{cell:<width$}", width = widths[column]) }).collect();
+        let cells: Vec<String> = line.iter().enumerate().map(|(column, cell)| if column == 7 { cell.clone() } else { format!("{cell:<width$}", width = widths[column]) }).collect();
         out.push_str(cells.join("  ").trim_end());
         out.push('\n');
     }
@@ -600,6 +601,18 @@ fn run_report(detail: &RunDetail) -> String {
         out.push_str(&format!(" - {}", one_line(summary, 200)));
     }
     out.push('\n');
+    if let Some(verdict) = &detail.verdict {
+        out.push_str(&format!("  Verdict:   {}", verdict.result));
+        if let Some(evidence) = verdict.evidence.as_deref().filter(|evidence| !evidence.is_empty()) {
+            out.push_str(&format!(" - {}", one_line(evidence, 200)));
+        }
+        if let Some(error) = verdict.error.as_deref().filter(|error| !error.is_empty()) {
+            out.push_str(&format!(" ({})", one_line(error, 100)));
+        }
+        let latency = verdict.latency_ms.map(|ms| format!(", {:.1}s", ms as f64 / 1000.0)).unwrap_or_default();
+        let challenged = if verdict.challenged { ", the agent was asked to keep going" } else { "" };
+        out.push_str(&format!("   [{}{latency}{challenged}]\n", verdict.mode));
+    }
     if let Some(folder) = &info.session_dir {
         out.push_str(&format!("  Folder:    {folder}\n"));
     }
@@ -678,19 +691,21 @@ mod tests {
     }
 
     fn summary(id: &str, started: &str, ended: Option<&str>, outcome: Option<&str>, steps: i64, task: &str) -> RunSummary {
-        RunSummary { id: id.into(), started_utc: Some(started.into()), ended_utc: ended.map(String::from), source: Some("built-in".into()), outcome: outcome.map(String::from), task: Some(task.into()), steps }
+        RunSummary { id: id.into(), started_utc: Some(started.into()), ended_utc: ended.map(String::from), source: Some("built-in".into()), outcome: outcome.map(String::from), task: Some(task.into()), steps, verdict: None }
     }
 
     #[test]
     fn the_run_table_is_laid_out_exactly() {
+        let mut checked = summary("120000-1-open-notepad", "2026-10-19T12:00:00Z", Some("2026-10-19T12:03:07Z"), Some("succeeded"), 4, "open notepad");
+        checked.verdict = Some("contradicted".into());
         let rows = [
-            summary("120000-1-open-notepad", "2026-10-19T12:00:00Z", Some("2026-10-19T12:03:07Z"), Some("succeeded"), 4, "open notepad"),
+            checked,
             summary("130000-2-x", "2026-10-19T13:00:00Z", None, None, 0, "a very long task description that goes on and on past the limit of fifty characters"),
         ];
         let expected = "\
-ID                     STARTED              SOURCE    OUTCOME    STEPS  DURATION  TASK
-120000-1-open-notepad  2026-10-19 12:00:00  built-in  succeeded  4      3m 07s    open notepad
-130000-2-x             2026-10-19 13:00:00  built-in  (open)     0      -         a very long task description that goes on and on …
+ID                     STARTED              SOURCE    OUTCOME    VERDICT       STEPS  DURATION  TASK
+120000-1-open-notepad  2026-10-19 12:00:00  built-in  succeeded  contradicted  4      3m 07s    open notepad
+130000-2-x             2026-10-19 13:00:00  built-in  (open)     -             0      -         a very long task description that goes on and on …
 ";
         assert_eq!(runs_table(&rows), expected);
     }
@@ -743,6 +758,7 @@ ID                     STARTED              SOURCE    OUTCOME    STEPS  DURATION
                 summary: Some("Done".into()),
             },
             steps: vec![step],
+            verdict: None,
             events: vec![EventRow { id: 1, at_utc: Some("2026-10-19T12:00:01Z".into()), kind: Some("plan".into()), data_json: Some(r#"["open","type"]"#.into()) }],
         };
         let expected = "\
@@ -762,5 +778,38 @@ Events (1)
   2026-10-19 12:00:01  plan             [\"open\",\"type\"]
 ";
         assert_eq!(run_report(&detail), expected);
+    }
+
+    #[test]
+    fn a_stored_verdict_is_shown_in_the_run_report_and_its_absence_is_not() {
+        use crate::trace::{RunInfo, VerdictRecord, store::RunRow};
+        let mut detail = RunDetail {
+            run: RunRow {
+                info: RunInfo { id: "r1".into(), task: "t".into(), source: "built-in".into(), started_utc: "2026-10-19T12:00:00Z".into(), ..RunInfo::default() },
+                ended_utc: Some("2026-10-19T12:00:09Z".into()),
+                outcome: Some("succeeded".into()),
+                summary: None,
+            },
+            steps: vec![],
+            events: vec![],
+            verdict: None,
+        };
+        assert!(!run_report(&detail).contains("Verdict:"));
+        detail.verdict = Some(VerdictRecord {
+            run_id: "r1".into(),
+            mode: "blocking".into(),
+            result: "contradicted".into(),
+            evidence: Some("the Notepad window\nis empty".into()),
+            latency_ms: Some(12_500),
+            claimed_success: true,
+            challenged: true,
+            ..VerdictRecord::default()
+        });
+        let report = run_report(&detail);
+        let line = report.lines().find(|line| line.contains("Verdict:")).expect("a verdict line");
+        assert_eq!(line, "  Verdict:   contradicted - the Notepad window is empty   [blocking, 12.5s, the agent was asked to keep going]");
+        detail.verdict = Some(VerdictRecord { run_id: "r1".into(), mode: "background".into(), result: "error".into(), error: Some("timed out".into()), ..VerdictRecord::default() });
+        let report = run_report(&detail);
+        assert!(report.contains("  Verdict:   error (timed out)   [background]\n"), "{report}");
     }
 }

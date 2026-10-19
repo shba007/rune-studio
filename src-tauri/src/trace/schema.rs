@@ -3,7 +3,7 @@
 use rusqlite::Connection;
 
 /// The version this code writes. `PRAGMA user_version` holds the version of a database file.
-pub const VERSION: i64 = 1;
+pub const VERSION: i64 = 2;
 
 /// Version 1.
 pub const CREATE_V1: &str = "
@@ -65,6 +65,22 @@ CREATE INDEX events_run ON events(run_id);
 CREATE INDEX runs_started ON runs(started_utc);
 ";
 
+/// Version 2: the independent check of a finished task (see `agent::verify`). One row per run.
+pub const CREATE_V2: &str = "
+CREATE TABLE verdicts (
+    run_id TEXT PRIMARY KEY REFERENCES runs(id),
+    mode TEXT,
+    result TEXT,
+    evidence TEXT,
+    error TEXT,
+    model TEXT,
+    latency_ms INTEGER,
+    claimed_success INTEGER,
+    challenged INTEGER,
+    created_utc TEXT
+);
+";
+
 /// How opening a database went.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Opened {
@@ -82,9 +98,11 @@ pub fn open(db: &Connection) -> rusqlite::Result<Opened> {
     }
     db.busy_timeout(std::time::Duration::from_millis(5000))?;
     db.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;")?;
+    // One transaction per step, so a crash cannot leave half a schema behind.
     if found < 1 {
-        // One transaction, so a crash cannot leave half a schema behind.
-        db.execute_batch(&format!("BEGIN; {CREATE_V1} PRAGMA user_version = 1; COMMIT;"))?;
+        db.execute_batch(&format!("BEGIN; {CREATE_V1} {CREATE_V2} PRAGMA user_version = 2; COMMIT;"))?;
+    } else if found < 2 {
+        db.execute_batch(&format!("BEGIN; {CREATE_V2} PRAGMA user_version = 2; COMMIT;"))?;
     }
     Ok(Opened::Ready)
 }

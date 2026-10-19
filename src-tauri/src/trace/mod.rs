@@ -87,6 +87,29 @@ pub struct StepRecord {
     pub settle_ms: Option<i64>,
 }
 
+/// The independent check of a finished run (`agent::verify`). One per run.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct VerdictRecord {
+    pub run_id: String,
+    /// `background` or `blocking`.
+    pub mode: String,
+    /// `verified`, `contradicted`, `unsure`, `error` or `skipped`.
+    pub result: String,
+    /// One short sentence naming what the checker saw on the screen (cut to 400 characters).
+    pub evidence: Option<String>,
+    pub error: Option<String>,
+    pub model: Option<String>,
+    pub latency_ms: Option<i64>,
+    /// Whether the agent claimed the task succeeded.
+    pub claimed_success: bool,
+    /// Blocking mode asked the agent to keep going because the check contradicted it.
+    pub challenged: bool,
+    pub created_utc: String,
+}
+
+/// Longest evidence text kept.
+pub const EVIDENCE_CAP: usize = 400;
+
 /// The names of `steps` columns other than the key, in the order `StepRecord::values` lists them.
 pub const STEP_COLUMNS: [&str; 23] = [
     "started_utc", "goal", "tool", "args_json", "reason", "risk_stated", "risk_final", "risk_reasons_json", "gate", "result", "error", "observation_path", "elements_hash",
@@ -202,6 +225,7 @@ pub enum Msg {
     EndRun { run_id: String, ended_utc: String, outcome: String, summary: String },
     /// Delete the runs whose session folder is one of these (retention), with their steps and events.
     PurgeSessions(Vec<String>),
+    Verdict(Box<VerdictRecord>),
     /// Answered once everything queued before it has been written.
     #[cfg(test)]
     Flush(std::sync::mpsc::Sender<()>),
@@ -326,6 +350,16 @@ impl Recorder {
         }
         drop(open);
         self.send(Msg::EndRun { run_id: run_id.to_string(), ended_utc: now_utc(), outcome: outcome.to_string(), summary: cap(summary, TEXT_CAP) });
+    }
+
+    /// Stores the check of a finished run (the newest one for a run replaces an older one).
+    pub fn verdict(&self, record: VerdictRecord) {
+        let record = VerdictRecord {
+            evidence: record.evidence.map(|text| cap(&text, EVIDENCE_CAP)),
+            error: record.error.map(|text| cap(&text, TEXT_CAP)),
+            ..record
+        };
+        self.send(Msg::Verdict(Box::new(record)));
     }
 
     pub fn purge_sessions(&self, session_dirs: Vec<String>) {

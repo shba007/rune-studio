@@ -46,12 +46,12 @@ fn tables_of(path: &std::path::Path) -> Vec<String> {
 }
 
 #[test]
-fn a_new_database_is_created_at_version_1() {
+fn a_new_database_is_created_at_the_current_version() {
     let dir = TempDir::new();
     let recorder = Recorder::start(&dir.db());
     recorder.flush();
-    assert_eq!(version_of(&dir.db()), 1);
-    assert_eq!(tables_of(&dir.db()), ["events", "runs", "steps"]);
+    assert_eq!(version_of(&dir.db()), 2);
+    assert_eq!(tables_of(&dir.db()), ["events", "runs", "steps", "verdicts"]);
 }
 
 #[test]
@@ -62,7 +62,7 @@ fn opening_twice_is_idempotent() {
     first.flush();
     let second = Recorder::start(&dir.db());
     second.flush();
-    assert_eq!(version_of(&dir.db()), 1);
+    assert_eq!(version_of(&dir.db()), 2);
     assert_eq!(list_runs(&dir.db(), 10).unwrap().len(), 1, "the second open keeps the data");
 }
 
@@ -332,4 +332,101 @@ fn the_open_run_is_tracked_so_stop_can_end_it() {
     recorder.flush();
     let outcome = |id: &str| get_run(&dir.db(), id).unwrap().unwrap().run.outcome;
     assert_eq!((outcome("a").as_deref(), outcome("b").as_deref()), (Some("stopped"), Some("succeeded")));
+}
+
+fn verdict(run_id: &str, mode: &str, result: &str) -> VerdictRecord {
+    VerdictRecord { run_id: run_id.into(), mode: mode.into(), result: result.into(), claimed_success: true, created_utc: "2026-10-19T12:01:00Z".into(), ..VerdictRecord::default() }
+}
+
+#[test]
+fn a_version_1_database_is_migrated_without_losing_a_run() {
+    let dir = TempDir::new();
+    {
+        // A database exactly as the first release of the recorder made it.
+        let db = Connection::open(dir.db()).unwrap();
+        db.execute_batch(&format!("{} PRAGMA user_version = 1;", schema::CREATE_V1)).unwrap();
+        db.execute("INSERT INTO runs (id, task, source, started_utc, outcome) VALUES ('old', 'open notepad', 'built-in', '2026-10-01T09:00:00Z', 'succeeded')", []).unwrap();
+        db.execute("INSERT INTO steps (run_id, step, tool, result) VALUES ('old', 1, 'click', 'ok')", []).unwrap();
+    }
+    // Read before the app has opened it: no verdicts table yet, and that is fine.
+    let before = get_run(&dir.db(), "old").unwrap().expect("the old run reads");
+    assert_eq!((before.steps.len(), before.verdict.clone()), (1, None));
+    assert_eq!(list_runs(&dir.db(), 5).unwrap()[0].verdict, None);
+
+    let recorder = Recorder::start(&dir.db());
+    recorder.flush();
+    assert_eq!(version_of(&dir.db()), 2);
+    assert!(tables_of(&dir.db()).contains(&"verdicts".to_string()));
+    let after = get_run(&dir.db(), "old").unwrap().expect("and still reads");
+    assert_eq!((after.run.info.task.as_str(), after.steps.len(), after.verdict), ("open notepad", 1, None), "a run without a verdict reads as before");
+    recorder.verdict(verdict("old", "background", "verified"));
+    recorder.flush();
+    assert_eq!(get_run(&dir.db(), "old").unwrap().unwrap().verdict.unwrap().result, "verified");
+}
+
+#[test]
+fn a_verdict_round_trips_and_shows_in_the_list() {
+    let dir = TempDir::new();
+    let recorder = Recorder::start(&dir.db());
+    recorder.begin_run(run("with", "2026-10-19T10:00:00Z"));
+    recorder.begin_run(run("without", "2026-10-19T11:00:00Z"));
+    recorder.verdict(VerdictRecord {
+        evidence: Some("The Notepad window shows hello rune.".into()),
+        error: None,
+        model: Some("gemma".into()),
+        latency_ms: Some(4_200),
+        challenged: true,
+        ..verdict("with", "blocking", "contradicted")
+    });
+    recorder.flush();
+    let detail = get_run(&dir.db(), "with").unwrap().unwrap();
+    let stored = detail.verdict.expect("the verdict is stored");
+    assert_eq!(
+        stored,
+        VerdictRecord {
+            run_id: "with".into(),
+            mode: "blocking".into(),
+            result: "contradicted".into(),
+            evidence: Some("The Notepad window shows hello rune.".into()),
+            error: None,
+            model: Some("gemma".into()),
+            latency_ms: Some(4_200),
+            claimed_success: true,
+            challenged: true,
+            created_utc: "2026-10-19T12:01:00Z".into(),
+        }
+    );
+    assert_eq!(get_run(&dir.db(), "without").unwrap().unwrap().verdict, None);
+    let listed = list_runs(&dir.db(), 5).unwrap();
+    assert_eq!(listed.iter().map(|row| (row.id.as_str(), row.verdict.as_deref())).collect::<Vec<_>>(), [("without", None), ("with", Some("contradicted"))]);
+}
+
+#[test]
+fn a_new_verdict_for_a_run_replaces_the_old_one_and_the_text_is_capped() {
+    let dir = TempDir::new();
+    let recorder = Recorder::start(&dir.db());
+    recorder.begin_run(run("r1", "2026-10-19T10:00:00Z"));
+    recorder.verdict(verdict("r1", "background", "unsure"));
+    recorder.verdict(VerdictRecord { evidence: Some("e".repeat(1_000)), error: Some("x".repeat(5_000)), ..verdict("r1", "background", "verified") });
+    recorder.flush();
+    let stored = get_run(&dir.db(), "r1").unwrap().unwrap().verdict.unwrap();
+    assert_eq!(stored.result, "verified", "one verdict per run, the last one wins");
+    assert_eq!(stored.evidence.unwrap().chars().count(), EVIDENCE_CAP);
+    assert_eq!(stored.error.unwrap().chars().count(), 2_000);
+}
+
+#[test]
+fn purging_a_session_removes_its_verdict_too() {
+    let dir = TempDir::new();
+    let recorder = Recorder::start(&dir.db());
+    let mut info = run("old", "2026-01-01T10:00:00Z");
+    info.session_dir = Some("/s/2026-01-01/a".into());
+    recorder.begin_run(info);
+    recorder.begin_run(run("keep", "2026-10-19T10:00:00Z"));
+    recorder.verdict(verdict("old", "background", "verified"));
+    recorder.verdict(verdict("keep", "background", "unsure"));
+    recorder.purge_sessions(vec!["/s/2026-01-01/a".into()]);
+    recorder.flush();
+    assert_eq!(get_run(&dir.db(), "old").unwrap(), None, "a verdict does not keep its run from being purged");
+    assert_eq!(get_run(&dir.db(), "keep").unwrap().unwrap().verdict.unwrap().result, "unsure");
 }

@@ -6,7 +6,7 @@ use std::path::Path;
 
 use rusqlite::{Connection, OpenFlags, Row, params, params_from_iter, types::Value};
 
-use super::{Msg, RunInfo, STEP_COLUMNS, StepRecord, schema};
+use super::{Msg, RunInfo, STEP_COLUMNS, StepRecord, VerdictRecord, schema};
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum StoreError {
@@ -87,8 +87,21 @@ fn apply(db: &Connection, message: &Msg) -> rusqlite::Result<()> {
             // Only the first end counts.
             db.execute("UPDATE runs SET ended_utc = ?2, outcome = ?3, summary = ?4 WHERE id = ?1 AND ended_utc IS NULL", params![run_id, ended_utc, outcome, summary])?;
         }
+        Msg::Verdict(record) => {
+            ensure_run(db, &record.run_id)?;
+            db.execute(
+                "INSERT INTO verdicts (run_id, mode, result, evidence, error, model, latency_ms, claimed_success, challenged, created_utc)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                 ON CONFLICT(run_id) DO UPDATE SET mode = excluded.mode, result = excluded.result, evidence = excluded.evidence, error = excluded.error,
+                    model = excluded.model, latency_ms = excluded.latency_ms, claimed_success = excluded.claimed_success,
+                    challenged = excluded.challenged, created_utc = excluded.created_utc",
+                params![record.run_id, record.mode, record.result, record.evidence, record.error, record.model, record.latency_ms, record.claimed_success, record.challenged, record.created_utc],
+            )?;
+        }
         Msg::PurgeSessions(dirs) => {
             for dir in dirs {
+                // Foreign keys are on: what hangs on a run goes first.
+                db.execute("DELETE FROM verdicts WHERE run_id IN (SELECT id FROM runs WHERE session_dir = ?1)", [dir])?;
                 db.execute("DELETE FROM events WHERE run_id IN (SELECT id FROM runs WHERE session_dir = ?1)", [dir])?;
                 db.execute("DELETE FROM steps WHERE run_id IN (SELECT id FROM runs WHERE session_dir = ?1)", [dir])?;
                 db.execute("DELETE FROM runs WHERE session_dir = ?1", [dir])?;
@@ -112,6 +125,8 @@ pub struct RunSummary {
     pub outcome: Option<String>,
     pub task: Option<String>,
     pub steps: i64,
+    /// The result of the independent check (`verified`, `contradicted`, ...), if there is one.
+    pub verdict: Option<String>,
 }
 
 /// A whole run row.
@@ -136,6 +151,8 @@ pub struct RunDetail {
     pub run: RunRow,
     pub steps: Vec<StepRecord>,
     pub events: Vec<EventRow>,
+    /// The independent check of this run, if one was stored.
+    pub verdict: Option<VerdictRecord>,
 }
 
 /// Opens the database read-only. A missing file and a newer schema are errors the caller can word.
@@ -157,13 +174,20 @@ pub fn list_runs(path: &Path, limit: usize) -> Result<Vec<RunSummary>, StoreErro
     list_runs_in(&open_read(path)?, limit)
 }
 
+/// Whether this file has the `verdicts` table: a version 1 database that the app has not opened yet does not.
+fn has_verdicts(db: &Connection) -> Result<bool, StoreError> {
+    let version: i64 = db.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    Ok(version >= 2)
+}
+
 pub fn list_runs_in(db: &Connection, limit: usize) -> Result<Vec<RunSummary>, StoreError> {
-    let mut statement = db.prepare(
-        "SELECT r.id, r.started_utc, r.ended_utc, r.source, r.outcome, r.task, (SELECT COUNT(*) FROM steps s WHERE s.run_id = r.id)
-         FROM runs r ORDER BY r.started_utc DESC, r.rowid DESC LIMIT ?1",
-    )?;
+    let verdict = if has_verdicts(db)? { "(SELECT v.result FROM verdicts v WHERE v.run_id = r.id)" } else { "NULL" };
+    let mut statement = db.prepare(&format!(
+        "SELECT r.id, r.started_utc, r.ended_utc, r.source, r.outcome, r.task, (SELECT COUNT(*) FROM steps s WHERE s.run_id = r.id), {verdict}
+         FROM runs r ORDER BY r.started_utc DESC, r.rowid DESC LIMIT ?1"
+    ))?;
     let rows = statement.query_map([i64::try_from(limit).unwrap_or(i64::MAX)], |row| {
-        Ok(RunSummary { id: row.get(0)?, started_utc: row.get(1)?, ended_utc: row.get(2)?, source: row.get(3)?, outcome: row.get(4)?, task: row.get(5)?, steps: row.get(6)? })
+        Ok(RunSummary { id: row.get(0)?, started_utc: row.get(1)?, ended_utc: row.get(2)?, source: row.get(3)?, outcome: row.get(4)?, task: row.get(5)?, steps: row.get(6)?, verdict: row.get(7)? })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
 }
@@ -208,7 +232,34 @@ pub fn get_run_in(db: &Connection, id: &str) -> Result<Option<RunDetail>, StoreE
         .prepare("SELECT id, at_utc, kind, data_json FROM events WHERE run_id = ?1 ORDER BY id")?
         .query_map([id], |row| Ok(EventRow { id: row.get(0)?, at_utc: row.get(1)?, kind: row.get(2)?, data_json: row.get(3)? }))?
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(Some(RunDetail { run, steps, events }))
+    let verdict = if has_verdicts(db)? {
+        let found = db.query_row(
+            "SELECT mode, result, evidence, error, model, latency_ms, claimed_success, challenged, created_utc FROM verdicts WHERE run_id = ?1",
+            [id],
+            |row| {
+                Ok(VerdictRecord {
+                    run_id: id.to_string(),
+                    mode: row.get::<_, Option<String>>(0)?.unwrap_or_default(),
+                    result: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                    evidence: row.get(2)?,
+                    error: row.get(3)?,
+                    model: row.get(4)?,
+                    latency_ms: row.get(5)?,
+                    claimed_success: row.get::<_, Option<bool>>(6)?.unwrap_or_default(),
+                    challenged: row.get::<_, Option<bool>>(7)?.unwrap_or_default(),
+                    created_utc: row.get::<_, Option<String>>(8)?.unwrap_or_default(),
+                })
+            },
+        );
+        match found {
+            Ok(record) => Some(record),
+            Err(rusqlite::Error::QueryReturnedNoRows) => None,
+            Err(err) => return Err(err.into()),
+        }
+    } else {
+        None
+    };
+    Ok(Some(RunDetail { run, steps, events, verdict }))
 }
 
 fn step_from_row(row: &Row<'_>) -> rusqlite::Result<StepRecord> {
