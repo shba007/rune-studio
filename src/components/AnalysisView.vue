@@ -19,12 +19,10 @@ const active = computed(() => hovered.value ?? pinned.value)
 
 function select(n: number) {
   pinned.value = pinned.value === n ? null : n
-  document
-    .getElementById(`finding-${n}`)
-    ?.scrollIntoView({
-      block: 'nearest',
-      behavior: reducedMotion.value === 'reduce' ? 'auto' : 'smooth',
-    })
+  document.getElementById(`finding-${n}`)?.scrollIntoView({
+    block: 'nearest',
+    behavior: reducedMotion.value === 'reduce' ? 'auto' : 'smooth',
+  })
 }
 
 useEventListener(window, 'keydown', (event: KeyboardEvent) => {
