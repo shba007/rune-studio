@@ -173,7 +173,11 @@ fn app_path() -> String {
 
 /// The windowed app, which sits next to this program.
 fn app_exe() -> Result<std::path::PathBuf, String> {
-    let exe = std::env::current_exe().map_err(|err| err.to_string())?.with_file_name("rune-studio.exe");
+    // Resolve links first: on macOS and Linux this program is often run through a link in PATH.
+    let own = std::env::current_exe().map_err(|err| err.to_string())?;
+    #[cfg(unix)]
+    let own = std::fs::canonicalize(own).map_err(|err| err.to_string())?;
+    let exe = own.with_file_name(super::exe_name("rune-studio"));
     if exe.exists() { Ok(exe) } else { Err(format!("cannot find {} next to this program", exe.display())) }
 }
 
@@ -381,6 +385,12 @@ fn ensure_app() -> Result<(), String> {
         const DETACHED_PROCESS: u32 = 0x0000_0008;
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
         launch.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+    }
+    // Its own process group, so the app outlives the terminal that started it.
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        launch.process_group(0);
     }
     launch.spawn().map_err(|err| format!("could not start Rune Studio: {err}"))?;
     let deadline = Instant::now() + START_TIMEOUT;

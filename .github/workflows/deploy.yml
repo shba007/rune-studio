@@ -151,19 +151,34 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # The rune-studio-cli command only exists in agent-bridge builds, and it talks to the app
+          # over that bridge, so every app is built with the feature. The config file adds the CLI to
+          # the bundle, next to the app, so installing the app installs the CLI (Windows installer
+          # and macOS bundle: next to the app; deb/rpm: /usr/bin). `target` is the Rust target of
+          # the CLI, `cli` its file name on this OS and `asset` its name on the release.
           - platform: 'macos-latest' # for Arm based macs (M1 and above).
-            args: '--target aarch64-apple-darwin'
+            args: '--target aarch64-apple-darwin --features agent-bridge --config src-tauri/tauri.bundle-cli.macos.conf.json'
+            target: 'aarch64-apple-darwin'
+            cli: 'rune-studio-cli'
+            asset: 'macos_aarch64'
 
           - platform: 'macos-latest' # for Intel based macs.
-            args: '--target x86_64-apple-darwin'
+            args: '--target x86_64-apple-darwin --features agent-bridge --config src-tauri/tauri.bundle-cli.macos.conf.json'
+            target: 'x86_64-apple-darwin'
+            cli: 'rune-studio-cli'
+            asset: 'macos_x64'
 
           - platform: 'ubuntu-latest'
-            args: ''
+            args: '--features agent-bridge --config src-tauri/tauri.bundle-cli.linux.conf.json'
+            target: ''
+            cli: 'rune-studio-cli'
+            asset: 'linux_x64'
 
-          # The rune-studio-cli command only exists in agent-bridge builds, and it talks to the app
-          # over that bridge, so the Windows app is built with the feature too.
           - platform: 'windows-latest'
-            args: '--features agent-bridge'
+            args: '--features agent-bridge --config src-tauri/tauri.bundle-cli.conf.json'
+            target: ''
+            cli: 'rune-studio-cli.exe'
+            asset: 'x64.exe'
 
     runs-on: ${{ matrix.platform }}
 
@@ -200,7 +215,25 @@ jobs:
       - name: 📦 Install Dependencies
         run: bun install --frozen-lockfile
 
-      - name: ⚙️ Build and Upload Artifact
+      # The installer carries the CLI, so the CLI is built first. Compiling it needs the built frontend
+      # (the app library embeds it), hence the extra frontend build.
+      - name: ⚙️ Build Frontend
+        run: bun run build
+
+      - name: ⚙️ Build CLI
+        shell: bash
+        run: |
+          if [ -n "${{ matrix.target }}" ]; then
+            cargo build --release --manifest-path src-tauri/Cargo.toml --bin rune-studio-cli --features agent-bridge --target "${{ matrix.target }}"
+            built="src-tauri/target/${{ matrix.target }}/release/${{ matrix.cli }}"
+          else
+            cargo build --release --manifest-path src-tauri/Cargo.toml --bin rune-studio-cli --features agent-bridge
+            built="src-tauri/target/release/${{ matrix.cli }}"
+          fi
+          mkdir -p src-tauri/binaries
+          cp "$built" "src-tauri/binaries/rune-studio-cli${{ matrix.platform == 'windows-latest' && '.exe' || '' }}"
+
+      - name: ⚙️ Build and Upload App Artifact
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -213,18 +246,14 @@ jobs:
           releaseDraft: false
           prerelease: false
 
-      - name: ⚙️ Build CLI (Windows only)
-        if: matrix.platform == 'windows-latest'
-        run: cargo build --release --manifest-path src-tauri/Cargo.toml --bin rune-studio-cli --features agent-bridge
-
-      - name: ⚙️ Upload CLI Artifact (Windows only)
-        if: matrix.platform == 'windows-latest'
+      - name: ⚙️ Build and Upload CLI Artifact
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cp src-tauri/target/release/rune-studio-cli.exe "rune-studio-cli_${VERSION}_x64.exe"
-          gh release upload "$VERSION" "rune-studio-cli_${VERSION}_x64.exe" --clobber --repo "$REPO"
+          file="rune-studio-cli_${VERSION}_${{ matrix.asset }}"
+          cp "src-tauri/binaries/${{ matrix.cli }}" "$file"
+          gh release upload "$VERSION" "$file" --clobber --repo "$REPO"
 
   # deploy-desktop:
   #   needs: build-desktop

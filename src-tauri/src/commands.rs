@@ -244,7 +244,7 @@ pub fn bridge_info() -> BridgeInfo {
         let url = crate::bridge::server::url();
         // The `rune-studio-cli` command sits next to this windowed app.
         let exe = std::env::current_exe()
-            .map(|path| path.with_file_name("rune-studio-cli.exe").display().to_string())
+            .map(|path| path.with_file_name(crate::bridge::exe_name("rune-studio-cli")).display().to_string())
             .unwrap_or_else(|_| "rune-studio".into());
         let command = format!("claude mcp add --scope user rune-studio -- \"{exe}\" mcp");
         BridgeInfo { available: true, url, command }
