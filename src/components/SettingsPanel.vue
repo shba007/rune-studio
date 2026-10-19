@@ -3,6 +3,7 @@ import { useClipboard } from '@vueuse/core'
 import { nextTick, ref, useTemplateRef, watch } from 'vue'
 
 import type { Agent } from '@/composables/useAgent'
+import { useUpdater } from '@/composables/useUpdater'
 import type { AgentState, Settings } from '@/types/protocol'
 
 import AppIcon from './AppIcon.vue'
@@ -14,6 +15,7 @@ import SettingsToggle from './SettingsToggle.vue'
 
 const props = defineProps<{ agent: Agent }>()
 const agent = props.agent
+const updater = useUpdater()
 
 const isDev = import.meta.env.DEV
 const DEBUG_STATES: AgentState[] = [
@@ -145,6 +147,59 @@ async function save() {
             }}</span>
             <span class="truncate text-label text-zinc-400">{{ agent.bridge.value.url }}</span>
           </span>
+        </button>
+      </SettingsGroup>
+
+      <SettingsGroup title="Updates">
+        <div class="flex items-center gap-2 px-2 py-1">
+          <span
+            class="grid size-8 shrink-0 place-items-center rounded-full bg-white/8 text-zinc-300"
+          >
+            <AppIcon name="logo" />
+          </span>
+          <span class="flex min-w-0 flex-1 flex-col">
+            <span class="text-label text-zinc-300">Version {{ updater.version.value || '...' }}</span>
+            <span class="truncate text-label text-zinc-500" :title="updater.error.value ?? ''">{{
+              updater.phase.value === 'checking'
+                ? 'Checking...'
+                : updater.phase.value === 'uptodate'
+                  ? 'Up to date'
+                  : updater.phase.value === 'available' && updater.latest.value
+                    ? `Version ${updater.latest.value.version} is available`
+                    : updater.phase.value === 'error'
+                      ? 'Could not check for updates'
+                      : updater.updating.value
+                        ? 'Updating...'
+                        : ''
+            }}</span>
+          </span>
+        </div>
+        <button
+          v-if="updater.phase.value === 'available' && updater.latest.value"
+          type="button"
+          class="flex w-full cursor-pointer items-center gap-2 px-2 py-1 text-left disabled:cursor-not-allowed disabled:opacity-50"
+          :disabled="agent.isRunning.value"
+          @click="updater.install(agent.isRunning.value)"
+        >
+          <span class="grid size-8 shrink-0 place-items-center rounded-full bg-white/8 text-zinc-300">
+            <AppIcon name="ok" />
+          </span>
+          <span class="text-label text-zinc-300"
+            >{{ agent.isRunning.value ? 'Finish the task first' : 'Update to' }}
+            {{ agent.isRunning.value ? '' : updater.latest.value.version }}</span
+          >
+        </button>
+        <button
+          v-else
+          type="button"
+          class="flex w-full cursor-pointer items-center gap-2 px-2 py-1 text-left disabled:cursor-not-allowed disabled:opacity-50"
+          :disabled="updater.phase.value === 'checking' || updater.updating.value"
+          @click="updater.check()"
+        >
+          <span class="grid size-8 shrink-0 place-items-center rounded-full bg-white/8 text-zinc-300">
+            <AppIcon name="refresh" />
+          </span>
+          <span class="text-label text-zinc-300">Check for updates</span>
         </button>
       </SettingsGroup>
 
