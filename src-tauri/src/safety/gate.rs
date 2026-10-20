@@ -198,6 +198,9 @@ pub async fn ask_question(app: &AppHandle, cancel: &CancelToken, source: &str, q
 #[allow(clippy::too_many_arguments)]
 async fn ask_user(app: &AppHandle, cancel: &CancelToken, source: &str, text: &str, reason: &str, risk: Risk, reasons: &[String], kind: &'static str) -> Verdict {
     let id = new_id();
+    // The window the action is meant for: answering in the pill makes the pill the front window, and
+    // an approved key press or typing would otherwise land in Rune instead of the target.
+    let target = foreground::remember();
     let (sender, receiver) = oneshot::channel();
     *app.state::<AppState>().confirm.locked() = Some(Pending {
         id: id.clone(),
@@ -237,6 +240,13 @@ async fn ask_user(app: &AppHandle, cancel: &CancelToken, source: &str, text: &st
 
     // Whatever happened, nothing may stay waiting.
     app.state::<AppState>().confirm.locked().take();
+    let outcome = match outcome {
+        Verdict::Allow if kind == "approval" => match foreground::give_back(target).await {
+            Ok(()) => Verdict::Allow,
+            Err(why) => Verdict::Denied(why),
+        },
+        other => other,
+    };
     let _ = app.emit(CONFIRM_RESOLVED, ConfirmResolved { id, approved: outcome == Verdict::Allow });
     outcome
 }
