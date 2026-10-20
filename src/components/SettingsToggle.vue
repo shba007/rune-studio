@@ -19,7 +19,7 @@ const model = defineModel<boolean>({ required: true })
     <span class="grid size-8 shrink-0 place-items-center rounded-full bg-white/8 text-zinc-300">
       <AppIcon :name="icon" />
     </span>
-    <span class="min-w-0 flex-1 truncate py-2 text-body text-zinc-100">{{ label }}</span>
+    <span class="min-w-0 flex-1 py-1.5 text-body leading-snug text-zinc-100">{{ label }}</span>
     <span
       class="flex h-6 w-10 shrink-0 items-center rounded-full p-1 transition-colors"
       :class="model ? 'bg-[#f1f1ef]' : 'bg-white/15'"

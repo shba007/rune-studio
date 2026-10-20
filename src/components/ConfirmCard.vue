@@ -30,13 +30,17 @@ onMounted(() => no.value?.focus())
 <template>
   <section
     v-if="question"
-    class="flex w-full flex-col gap-2 rounded-[28px] border border-[#d71921]/50 bg-[#141414] p-4 text-zinc-100"
+    class="flex w-full flex-col gap-2 rounded-[28px] border bg-[#141414] p-4 text-zinc-100"
+    :class="asking ? 'border-white/15' : 'border-[#d71921]/50'"
     role="alertdialog"
     :aria-label="asking ? 'Rune asks' : 'Needs your OK'"
   >
     <header class="flex h-6 items-center gap-2">
-      <span class="size-2 shrink-0 animate-pulse rounded-full bg-[#d71921]" />
-      <span class="text-caption text-[#d71921] uppercase">{{
+      <span
+        class="size-2 shrink-0 animate-pulse rounded-full"
+        :class="asking ? 'bg-[#f1f1ef]' : 'bg-[#d71921]'"
+      />
+      <span class="text-caption uppercase" :class="asking ? 'text-zinc-300' : 'text-[#d71921]'">{{
         asking ? 'Asks you' : 'Needs your OK'
       }}</span>
       <span class="ml-auto truncate text-caption text-zinc-500 uppercase">{{
@@ -76,13 +80,18 @@ onMounted(() => no.value?.focus())
       </button>
       <button
         type="button"
-        class="h-8 flex-1 cursor-pointer rounded-full bg-[#d71921] text-label text-white transition hover:bg-[#b9151c]"
+        class="h-8 flex-1 cursor-pointer rounded-full text-label transition"
+        :class="
+          asking
+            ? 'bg-[#f1f1ef] text-[#111] hover:bg-white'
+            : 'bg-[#d71921] text-white hover:bg-[#b9151c]'
+        "
         @click="agent.answer(true)"
       >
         {{ asking ? 'Yes' : 'Yes, allow' }}
       </button>
     </div>
-    <p class="text-center text-caption text-zinc-600 uppercase">
+    <p class="text-center text-caption text-zinc-500 uppercase">
       No answer in {{ clock }} counts as no
     </p>
   </section>

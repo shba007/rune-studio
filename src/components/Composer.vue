@@ -34,11 +34,14 @@ const action = computed(() => {
   } as const
 })
 
-/** Notices (a refused task, a mic problem) take over the placeholder for a few seconds. */
+/** The field says what the app is doing, so the card never looks idle while it is not. */
+const offline = computed(() => agent.health.value.tone === 'down')
 const placeholder = computed(() => {
-  if (agent.notice.value) return agent.notice.value
   if (needsConfirm.value) return 'Needs your OK'
-  return 'Type or say a command'
+  if (agent.isRunning.value) return 'Working. Stop to cancel'
+  if (isListening.value) return 'Listening…'
+  if (offline.value) return 'Model server offline'
+  return 'Type or say a task'
 })
 
 watch(agent.focusTick, async () => {
@@ -57,8 +60,19 @@ async function submit() {
   <!-- One row, the same height as the orb (64 px). It grows upward as the text gets longer. -->
   <div
     data-tauri-drag-region
-    class="flex w-full items-end rounded-[32px] bg-[#141414] p-2 shadow-[inset_0_0_0_1px_rgb(255_255_255/0.08)]"
+    class="flex w-full flex-col gap-1 rounded-[32px] bg-[#141414] p-2 shadow-[inset_0_0_0_1px_rgb(255_255_255/0.08)]"
   >
+    <!-- Notices (a refused task, a mic problem, a failed check) get a line of their own: they can be long. -->
+    <p
+      v-if="agent.notice.value"
+      class="m-0 px-3 pt-1 text-label text-[#ff6b72]"
+      role="status"
+      aria-live="polite"
+    >
+      {{ agent.notice.value }}
+    </p>
+    <!-- What the card is doing, for screen readers: Thinking, Acting, Done. -->
+    <p class="sr-only" role="status" aria-live="polite">{{ agent.statusText.value }}</p>
     <!-- Light by default (a pale field in the dark card); fully dark when the system is in dark mode. -->
     <div
       class="flex w-full items-end gap-1 rounded-[24px] bg-[#f1f1ef] p-2 text-[#111] dark:bg-[#1f1f1f] dark:text-zinc-100"
@@ -90,9 +104,9 @@ async function submit() {
         :placeholder="placeholder"
         class="max-h-[152px] min-h-8 min-w-0 flex-1 resize-none bg-transparent px-1 py-1 text-body leading-6 outline-none [--scrollbar-thumb-hover:rgb(0_0_0/0.4)] [--scrollbar-thumb:rgb(0_0_0/0.22)] dark:[--scrollbar-thumb-hover:rgb(255_255_255/0.32)] dark:[--scrollbar-thumb:rgb(255_255_255/0.16)]"
         :class="
-          agent.notice.value
+          offline && !isListening && !agent.isRunning.value
             ? 'placeholder:text-[#b3141b] dark:placeholder:text-[#ff6b72]'
-            : 'placeholder:text-[#8a8a86] dark:placeholder:text-zinc-500'
+            : 'placeholder:text-[#6b6b67] dark:placeholder:text-zinc-400'
         "
         @keydown.enter.exact.prevent="submit"
       />

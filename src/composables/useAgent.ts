@@ -37,6 +37,7 @@ import {
   type TaskVerifiedPayload,
   type ThinkingPayload,
 } from '@/types/protocol'
+import { friendly, noticeMillis } from '@/config/errors'
 
 const RUNNING: AgentState[] = ['planning', 'awaiting_confirm', 'acting', 'observing']
 
@@ -64,7 +65,6 @@ const MODE_RANK: Record<PillMode, number> = {
 
 /** Longer than the page and width transitions, so the window only shrinks once they have finished. */
 const COLLAPSE_MS = 340
-const NOTICE_MS = 4000
 /** How long the mic may stay silent before we suggest it is not getting any audio. */
 const SILENCE_MS = 4000
 const SOUND_THRESHOLD = 0.04
@@ -131,8 +131,7 @@ export function useAgent() {
   let modeToken = 0
   let heardSound = false
 
-  // `start` restarts a running timer, so a newer notice always gets its full time on screen.
-  const noticeTimer = useTimeoutFn(() => (notice.value = null), NOTICE_MS, { immediate: false })
+  let noticeHandle: ReturnType<typeof setTimeout> | undefined
   const silenceTimer = useTimeoutFn(
     () => {
       if (!heardSound) showNotice('No sound from the microphone. Check Windows microphone access')
@@ -141,9 +140,12 @@ export function useAgent() {
     { immediate: false },
   )
 
+  /** A newer notice always gets its full time on screen; a longer one stays longer. */
   function showNotice(message: string) {
-    notice.value = message
-    noticeTimer.start()
+    const text = friendly(message)
+    notice.value = text
+    clearTimeout(noticeHandle)
+    noticeHandle = setTimeout(() => (notice.value = null), noticeMillis(text))
   }
 
   async function call<T>(command: string, args?: Record<string, unknown>): Promise<T | undefined> {
@@ -163,6 +165,8 @@ export function useAgent() {
    * into a window that is too small. A newer call cancels the tail of an older one.
    */
   async function setMode(next: PillMode) {
+    // A question waits for its answer: the card stays up until it is answered (or times out).
+    if (next === 'ambient' && question.value) return
     const token = ++modeToken
     const grows = MODE_RANK[next] > MODE_RANK[mode.value]
     if (grows) {
@@ -330,8 +334,8 @@ export function useAgent() {
       await listen<PlanUpdatedPayload>(PLAN_UPDATED, (event) => (plan.value = event.payload)),
       await listen<ConfirmRequestPayload>(CONFIRM_REQUEST, (event) => {
         question.value = event.payload
-        // The question needs room: open the card by itself.
-        if (mode.value === 'ambient' || mode.value === 'open') void setMode('task')
+        // The question needs room: open the card by itself, also over the settings page.
+        if (mode.value !== 'task' && mode.value !== 'analysis') void setMode('task')
       }),
       await listen<{ id: string }>(CONFIRM_RESOLVED, (event) => {
         if (question.value?.id === event.payload.id) question.value = null

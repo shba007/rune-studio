@@ -14,7 +14,7 @@ const model = defineModel<string>({ required: true })
 </script>
 
 <template>
-  <label class="flex cursor-text items-center gap-2 px-2 py-1">
+  <label class="flex cursor-text items-center gap-2 rounded-2xl px-2 py-1 focus-within:bg-white/6">
     <span class="grid size-8 shrink-0 place-items-center rounded-full bg-white/8 text-zinc-300">
       <AppIcon :name="icon" />
     </span>

@@ -3,6 +3,7 @@ import { onKeyStroke } from '@vueuse/core'
 import { computed, ref, watch } from 'vue'
 
 import { escape, stageWord, toggleOpen } from '@/config/analysis'
+import { friendly } from '@/config/errors'
 import type { useAnalysis } from '@/composables/useAnalysis'
 
 import AnalysisAnswer from './AnalysisAnswer.vue'
@@ -146,7 +147,9 @@ onKeyStroke('Escape', (event) => {
         <span class="size-2 shrink-0 rounded-full bg-[#d71921]" />
         <span class="text-caption text-[#d71921] uppercase">Failed</span>
       </header>
-      <p class="m-0 text-body">{{ snapshot.error ?? 'The analysis failed' }}</p>
+      <p class="m-0 text-body">
+        {{ snapshot.error ? friendly(snapshot.error) : 'The analysis failed' }}
+      </p>
       <button
         type="button"
         class="h-8 cursor-pointer rounded-full border border-white/25 text-label text-zinc-200 uppercase transition hover:bg-white/10"

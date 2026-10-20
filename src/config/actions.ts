@@ -36,6 +36,7 @@ export const KIND_ICON: Record<ActionKind, IconName> = {
 
 export const TOOL_KIND: Record<string, ActionKind> = {
   click: 'mouse',
+  click_element: 'mouse',
   scroll: 'mouse',
   drag: 'mouse',
   type_text: 'keyboard',
@@ -48,10 +49,12 @@ export const TOOL_KIND: Record<string, ActionKind> = {
   play_audio: 'audio',
   open_app: 'launch',
   wait: 'wait',
+  ask_user: 'wait',
 }
 
 export const TOOL_LABEL: Record<string, string> = {
   click: 'Click',
+  click_element: 'Click',
   scroll: 'Scroll',
   drag: 'Drag',
   type_text: 'Type',
@@ -64,6 +67,7 @@ export const TOOL_LABEL: Record<string, string> = {
   play_audio: 'Play',
   open_app: 'Open',
   wait: 'Wait',
+  ask_user: 'Ask',
 }
 
 /** The device a tool uses, falling back to the mouse for tools that are not listed yet. */

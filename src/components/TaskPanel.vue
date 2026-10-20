@@ -50,7 +50,7 @@ function statusOf(index: number): 'done' | 'current' | 'pending' {
       <span v-if="goals.length" class="text-caption text-zinc-400 uppercase">
         {{ done }} / {{ goals.length }}
       </span>
-      <span v-if="agent.steps.value.length" class="text-caption text-zinc-600 uppercase">
+      <span v-if="agent.steps.value.length" class="text-caption text-zinc-500 uppercase">
         · {{ agent.steps.value.length }} {{ agent.steps.value.length === 1 ? 'step' : 'steps' }}
       </span>
       <button
@@ -92,7 +92,7 @@ function statusOf(index: number): 'done' | 'current' | 'pending' {
               ? 'text-zinc-100'
               : statusOf(index) === 'done'
                 ? 'text-zinc-500'
-                : 'text-zinc-600'
+                : 'text-zinc-400'
           "
           :title="goal"
         >

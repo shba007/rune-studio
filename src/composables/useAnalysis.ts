@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import { EMPTY_SNAPSHOT, readSnapshot } from '@/config/analysis'
+import { friendly } from '@/config/errors'
 import { ANALYSIS_UPDATED, type AnalysisSnapshot } from '@/types/protocol'
 
 /**
@@ -25,7 +26,7 @@ export function useAnalysis() {
     try {
       await invoke(command, args)
     } catch (err) {
-      notice.value = String(err)
+      notice.value = friendly(String(err))
     }
   }
 
@@ -46,7 +47,7 @@ export function useAnalysis() {
     try {
       snapshot.value = readSnapshot(await invoke('analysis_state'))
     } catch (err) {
-      notice.value = String(err)
+      notice.value = friendly(String(err))
     }
   })
   onBeforeUnmount(() => unlisten?.())

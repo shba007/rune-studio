@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useClipboard } from '@vueuse/core'
-import { nextTick, ref, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 
 import type { Agent } from '@/composables/useAgent'
 import { useUpdater } from '@/composables/useUpdater'
@@ -48,6 +48,18 @@ async function revealDeveloper() {
   developer.value.scrollIntoView({ block: 'end', behavior: 'smooth' })
 }
 
+/** Something was changed and not saved yet: the footer says so, and the button saves. */
+const dirty = computed(
+  () =>
+    apiKeyDraft.value.trim().length > 0 ||
+    (draft.value !== null &&
+      agent.settings.value !== null &&
+      JSON.stringify(draft.value) !== JSON.stringify(agent.settings.value)),
+)
+/** "Saved" for a moment after a save, so the click is answered. */
+const saved = ref(false)
+let savedHandle: ReturnType<typeof setTimeout> | undefined
+
 /** An empty key field means "leave the stored key alone"; removing it is its own action. */
 async function save() {
   if (apiKeyDraft.value.trim()) {
@@ -55,6 +67,18 @@ async function save() {
     apiKeyDraft.value = ''
   }
   if (draft.value) await agent.saveSettings(draft.value)
+  saved.value = true
+  clearTimeout(savedHandle)
+  savedHandle = setTimeout(() => (saved.value = false), 2000)
+}
+
+/** With changes the button saves them; without, it only checks the backend again. */
+const footerLabel = computed(() =>
+  dirty.value ? 'Save and check' : saved.value ? 'Saved' : 'Check the backend',
+)
+function footerAction() {
+  if (dirty.value) void save()
+  else void agent.refreshBackend()
 }
 </script>
 
@@ -274,14 +298,27 @@ async function save() {
       </details>
     </div>
 
-    <footer class="p-4 pt-0">
+    <footer class="border-t border-white/8 p-4 pt-3">
+      <p
+        v-if="dirty"
+        class="m-0 pb-2 text-center text-caption text-zinc-400 uppercase"
+        role="status"
+        aria-live="polite"
+      >
+        Unsaved changes
+      </p>
       <button
         type="button"
-        class="flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-full bg-[#f1f1ef] text-label text-[#111] transition hover:bg-white"
-        @click="save"
+        class="flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-full text-label transition"
+        :class="
+          dirty
+            ? 'bg-[#f1f1ef] text-[#111] hover:bg-white'
+            : 'border border-white/25 text-zinc-200 hover:bg-white/10'
+        "
+        @click="footerAction"
       >
         <AppIcon name="ok" />
-        Save and check
+        {{ footerLabel }}
       </button>
     </footer>
   </section>

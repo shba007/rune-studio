@@ -83,8 +83,14 @@ watch(contentHeight, (height) => {
   if (height >= 48) void agent.fitHeight(Math.ceil(height / 8) * 8)
 })
 
-// Esc dismisses the card from anywhere in the window, not only while a control has focus.
-onKeyStroke('Escape', () => void agent.dismiss())
+// Esc dismisses the card from anywhere in the window, not only while a control has focus. Not while a
+// question waits (it must be answered), and not in the analysis view, whose own Esc closes a row, then
+// the selection, then the analysis. From settings it goes back one step first.
+onKeyStroke('Escape', () => {
+  if (agent.question.value || agent.mode.value === 'analysis') return
+  if (agent.mode.value === 'settings') void agent.setMode(agent.home())
+  else void agent.dismiss()
+})
 
 /** Idle: the orb opens and closes the card. While the agent runs it is the Stop button. */
 function onOrb() {
