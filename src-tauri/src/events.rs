@@ -199,6 +199,7 @@ pub struct ExternalAgent {
 }
 
 #[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StepStarted {
     pub step: u32,
     pub tool: &'static str,
@@ -236,6 +237,15 @@ pub struct TaskDone {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn step_started_is_sent_with_the_camel_case_names_the_ui_reads() {
+        let started = super::StepStarted { step: 1, tool: "click", reason: String::new(), text: String::new(), detail: String::new(), point: None, double: false, button: "left", duration_ms: 250 };
+        let json = serde_json::to_value(started).unwrap();
+        assert_eq!(json["durationMs"], 250, "the overlay reads durationMs");
+        assert!(json.get("duration_ms").is_none());
+    }
+
+
     use super::*;
 
     #[test]

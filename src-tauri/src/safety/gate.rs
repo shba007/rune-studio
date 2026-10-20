@@ -33,6 +33,7 @@ pub struct Pending {
 }
 
 #[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ConfirmRequest {
     pub id: String,
     /// Who wants to do it: "Rune" or the outside agent's name.
@@ -249,4 +250,17 @@ async fn ask_user(app: &AppHandle, cancel: &CancelToken, source: &str, text: &st
     };
     let _ = app.emit(CONFIRM_RESOLVED, ConfirmResolved { id, approved: outcome == Verdict::Allow });
     outcome
+}
+
+#[cfg(test)]
+mod wire_tests {
+    use super::*;
+
+    #[test]
+    fn the_confirm_request_is_sent_with_the_camel_case_names_the_card_reads() {
+        let request = ConfirmRequest { id: "a".into(), source: "Rune".into(), text: "t".into(), reason: String::new(), risk: Risk::High, reasons: vec![], timeout_secs: 60, kind: "approval" };
+        let json = serde_json::to_value(request).unwrap();
+        assert_eq!(json["timeoutSecs"], 60, "the card's countdown reads timeoutSecs (it showed 0:00 when this was timeout_secs)");
+        assert!(json.get("timeout_secs").is_none());
+    }
 }
