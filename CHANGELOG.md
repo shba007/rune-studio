@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.0.13
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.0.12...v0.0.13)
+
+### 🚀 Enhancements
+
+- **bridge:** Name the outside agent in control, from its declaration or its registration ([b4dfc69](https://github.com/shba007/rune-studio/commit/b4dfc69))
+- **ui:** Show which agent is in control on the orb, its ring and the top bar ([ec546cc](https://github.com/shba007/rune-studio/commit/ec546cc))
+- **demo:** Let recorders see Rune while the model never does ([806bb54](https://github.com/shba007/rune-studio/commit/806bb54))
+- **trace:** Store reflection runs (schema v4) and list them in the CLI ([be537b9](https://github.com/shba007/rune-studio/commit/be537b9))
+- **reflect:** The idle reflection shell with a stub job ([717e6f2](https://github.com/shba007/rune-studio/commit/717e6f2))
+- **ui:** The idle review prompt, the reflecting orb and the review progress ring ([5c499b5](https://github.com/shba007/rune-studio/commit/5c499b5))
+
+### 📖 Documentation
+
+- Use cases with features, flow, limits, upgrade scope and measured runs ([70c7d00](https://github.com/shba007/rune-studio/commit/70c7d00))
+- One readable page per use case, replacing the single use-cases file ([a148e2d](https://github.com/shba007/rune-studio/commit/a148e2d))
+- Use-case pages stand alone, with a numbered How to use in each ([e968f37](https://github.com/shba007/rune-studio/commit/e968f37))
+- Drop the obvious first step from the use-case pages ([92f9c62](https://github.com/shba007/rune-studio/commit/92f9c62))
+- Add the agent identity report, document it, remove finished handoff files ([9aa1c40](https://github.com/shba007/rune-studio/commit/9aa1c40))
+- Handoff R6a, screen analysis as an overlay, and the R6 roadmap entry ([e1f2df8](https://github.com/shba007/rune-studio/commit/e1f2df8))
+
+### ❤️ Contributors
+
+- Claude <noreply@anthropic.com>
+
 ## v0.0.12
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.0.11...v0.0.12)
