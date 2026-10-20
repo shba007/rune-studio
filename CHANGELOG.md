@@ -1,5 +1,51 @@
 # Changelog
 
+## v0.0.12
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.0.11...v0.0.12)
+
+### 🩹 Fixes
+
+- No deadlock at task start, and a valid tools array for screen analysis ([9748ca1](https://github.com/shba007/rune-studio/commit/9748ca1))
+- One lock for the run row, a real tools array test, Windows-safe test paths ([0262641](https://github.com/shba007/rune-studio/commit/0262641))
+- **safety:** Give the keyboard back to the target after a confirm ([19b3ec5](https://github.com/shba007/rune-studio/commit/19b3ec5))
+- **agent:** Stop calling correct typing and scrolling stuck ([28e5ae9](https://github.com/shba007/rune-studio/commit/28e5ae9))
+- **exec:** Open_app keeps local page queries and never opens an extensionless file ([53c571e](https://github.com/shba007/rune-studio/commit/53c571e))
+- **fast-checks:** Use the picked probability and the served decision model name ([11ad99e](https://github.com/shba007/rune-studio/commit/11ad99e))
+- **voice:** Transcribe only, cap the reply, drop loops, show the words before acting ([4493d92](https://github.com/shba007/rune-studio/commit/4493d92))
+- **model:** Repair trailing junk in tool arguments and answer bad ones instead of failing ([1c46974](https://github.com/shba007/rune-studio/commit/1c46974))
+- **verify:** Tell the checker which window is in front, as a system fact ([2e51f1e](https://github.com/shba007/rune-studio/commit/2e51f1e))
+- **eval:** Do not trust a server token count of 1, estimate and mark it ([71f38b7](https://github.com/shba007/rune-studio/commit/71f38b7))
+- **cli:** Say when another program holds the bridge port, exit 1 for an unknown id ([c44d383](https://github.com/shba007/rune-studio/commit/c44d383))
+- **analysis:** Hide the unreliable boxes unless analysisBoxes is on, retry the failed question ([ac37a32](https://github.com/shba007/rune-studio/commit/ac37a32))
+- **ui:** CamelCase the confirm card and step started payloads ([830b351](https://github.com/shba007/rune-studio/commit/830b351))
+- One version for the app, package.json's ([22dc983](https://github.com/shba007/rune-studio/commit/22dc983))
+- Keep pixel_at_model for the Windows desktop tests that use it ([f579468](https://github.com/shba007/rune-studio/commit/f579468))
+- **analysis:** Capture before the window opens and keep tasks out while one runs ([a3c7786](https://github.com/shba007/rune-studio/commit/a3c7786))
+
+### 💅 Refactors
+
+- Remove dead voice and loop code and clear every clippy warning ([5bf9835](https://github.com/shba007/rune-studio/commit/5bf9835))
+
+### 📖 Documentation
+
+- Handoff F1, fixes from the field test ([d929919](https://github.com/shba007/rune-studio/commit/d929919))
+- Handoff R5, agent identity, demo mode and the idle reflection shell ([21d1e2a](https://github.com/shba007/rune-studio/commit/21d1e2a))
+- Add the field-test fix report, remove finished handoffs and generated files ([0531bec](https://github.com/shba007/rune-studio/commit/0531bec))
+
+### ✅ Tests
+
+- **model:** A cancelled model call really closes its connection ([24105c8](https://github.com/shba007/rune-studio/commit/24105c8))
+
+### 🎨 Styles
+
+- Cargo fmt ([f95d9a1](https://github.com/shba007/rune-studio/commit/f95d9a1))
+
+### ❤️ Contributors
+
+- Claude <noreply@anthropic.com>
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+
 ## v0.0.11
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.0.10...v0.0.11)
