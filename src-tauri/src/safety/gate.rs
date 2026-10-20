@@ -314,7 +314,14 @@ async fn ask_user(
             Ok(()) => Verdict::Allow,
             Err(why) => Verdict::Denied(why),
         },
-        other => other,
+        other => {
+            // A no, a timeout or an answered question left Rune in front too: the agent's next
+            // action is still for the program it was working in.
+            if !matches!(other, Verdict::Stopped) {
+                let _ = foreground::give_back(target).await;
+            }
+            other
+        }
     };
     let _ = app.emit(
         CONFIRM_RESOLVED,

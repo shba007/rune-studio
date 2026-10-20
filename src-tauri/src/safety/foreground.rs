@@ -98,22 +98,51 @@ pub fn plan_restore(
     }
 }
 
+/// The last window that was in front and was not Rune Studio's own (0 = none yet). Answering a
+/// card, or a click on the pill, makes Rune the front window; the next question must still know
+/// which program the action is for.
+#[cfg(windows)]
+static LAST_TARGET: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
+/// The window an action is meant for: the front window if it is not Rune's own, else the last
+/// one that was.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn pick_target(
+    front: Option<WindowId>,
+    front_is_own: bool,
+    last: Option<WindowId>,
+) -> Option<WindowId> {
+    match front {
+        Some(window) if !front_is_own => Some(window),
+        _ => last,
+    }
+}
+
 /// The window that has the keyboard now, if it is not Rune Studio's own (the pill, a card): that
-/// is the window an approved action is meant for.
+/// is the window an approved action is meant for. When Rune itself is in front (a card from an
+/// earlier question left it there), the last outside window is used instead.
 #[cfg(windows)]
 pub fn remember() -> Option<WindowId> {
+    use std::sync::atomic::Ordering;
     use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
 
     // SAFETY: plain Win32 calls with valid out pointers.
-    unsafe {
+    let (front, own) = unsafe {
         let window = GetForegroundWindow();
         if window.is_invalid() {
-            return None;
+            (None, false)
+        } else {
+            let mut process_id = 0_u32;
+            GetWindowThreadProcessId(window, Some(&mut process_id));
+            (Some(window.0 as WindowId), process_id == std::process::id())
         }
-        let mut process_id = 0_u32;
-        GetWindowThreadProcessId(window, Some(&mut process_id));
-        (process_id != std::process::id()).then_some(window.0 as WindowId)
+    };
+    let last = LAST_TARGET.load(Ordering::Relaxed);
+    let chosen = pick_target(front, own, (last != 0).then_some(last));
+    if let Some(window) = chosen.filter(|window| Some(*window) == front) {
+        LAST_TARGET.store(window, Ordering::Relaxed);
     }
+    chosen
 }
 
 #[cfg(not(windows))]
@@ -273,6 +302,26 @@ mod tests {
             plan_restore(Some(10), true, Some(99), true),
             Restore::Nothing,
             "Rune's own window is not a target"
+        );
+    }
+
+    #[test]
+    fn the_target_is_the_front_window_or_else_the_last_outside_one() {
+        assert_eq!(
+            pick_target(Some(5), false, Some(9)),
+            Some(5),
+            "an outside window in front is the target"
+        );
+        assert_eq!(
+            pick_target(Some(7), true, Some(9)),
+            Some(9),
+            "Rune in front: the last outside window"
+        );
+        assert_eq!(pick_target(None, false, Some(9)), Some(9));
+        assert_eq!(
+            pick_target(Some(7), true, None),
+            None,
+            "nothing known: nothing to give back"
         );
     }
 
