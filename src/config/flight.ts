@@ -566,3 +566,38 @@ export function reasoningOf(responseJson: string | null | undefined): string | n
     return null
   }
 }
+/** One part of the message sent to the model: a heading and its lines. */
+export interface PromptSection {
+  title: string
+  body: string
+  lines: number
+}
+
+/**
+ * The message sent to the model, split into its parts ("Task", "Plan", "Actions so far", ...) so it can
+ * be read as a few labelled blocks instead of one wall of text. A part is a blank-line separated block
+ * whose first line looks like `Heading:`; anything else is kept as its own untitled block.
+ */
+export function promptSections(text: string | null | undefined): PromptSection[] {
+  if (!text) return []
+  return text
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter((block) => block !== '')
+    .map((block) => {
+      const heading = /^([A-Z][^:\n]{0,70}):[ \t]*(.*)$/.exec(block.split('\n')[0] ?? '')
+      const rest = block.split('\n').slice(1).join('\n')
+      const body = heading ? [heading[2], rest].filter((part) => part !== '').join('\n') : block
+      return {
+        title: heading?.[1] ?? 'Note',
+        body,
+        lines: body.split('\n').length,
+      }
+    })
+}
+
+/** Where a risk word sits on the three-step meter: 0 low, 1 medium, 2 high, -1 unknown. */
+export function riskLevel(risk: string | null | undefined): number {
+  const index = ['low', 'medium', 'high'].indexOf((risk ?? '').toLowerCase())
+  return index
+}

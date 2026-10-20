@@ -286,7 +286,7 @@ pub fn open(app: &tauri::AppHandle, run: Option<&str>) -> tauri::Result<()> {
         None => "index.html?view=flight".to_string(),
     };
     let window = WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::App(url.into()))
-        .title("Rune Studio · Flight Player")
+        .title("Rune Preview")
         .inner_size(1180.0, 760.0)
         .min_inner_size(880.0, 560.0)
         .resizable(true)

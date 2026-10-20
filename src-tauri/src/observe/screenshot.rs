@@ -13,6 +13,9 @@ use crate::model::coords::{Monitor, fit_within};
 /// About 2.7k image tokens at 16:9 (see ARCHITECTURE.md).
 pub const MODEL_MAX_EDGE: u32 = 1280;
 pub const MODEL_JPEG_QUALITY: u8 = 80;
+/// The stored copy (what the Preview shows) is kept sharper than what the model needs: up to this edge.
+const ARCHIVE_MAX_EDGE: u32 = 2560;
+const ARCHIVE_JPEG_QUALITY: u8 = 90;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ObserveError {
@@ -258,13 +261,15 @@ pub fn capture_region(
         height,
         jpeg,
         image,
-    } = prepare(rgba, max_edge, quality)?;
-    // Exactly what the agent will see, stored first; no caller can skip this.
+    } = prepare(rgba.clone(), max_edge, quality)?;
+    // The record is stored first; no caller can skip this. It is the same picture as the agent's, kept
+    // at a higher resolution when the screen has one, so the Preview is sharp (the model gets the small one).
+    let sharp = prepare(rgba, max_edge.max(ARCHIVE_MAX_EDGE), ARCHIVE_JPEG_QUALITY)?;
     let path = crate::archive::save(
         crate::archive::Kind::Screenshots,
         if region.is_some() { "region" } else { "screen" },
         "jpg",
-        &jpeg,
+        &sharp.jpeg,
     )
     .map_err(|err| ObserveError::Archive(err.to_string()))?;
     Ok(Frame {

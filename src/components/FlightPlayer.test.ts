@@ -113,9 +113,9 @@ describe('FlightPlayer states', () => {
     expect(wrapper.find('[data-testid="outcome"]').text()).toBe('succeeded')
     expect(wrapper.find('[data-testid="verdict"]').text()).toBe('verified')
     const meta = wrapper.find('[data-testid="meta"]').text()
-    expect(meta).toContain('Steps 3')
-    expect(meta).toContain('Retries 2')
-    expect(meta).toContain('Duration 0:30')
+    expect(meta).toMatch(/Stepss*3/)
+    expect(meta).toMatch(/Retriess*2/)
+    expect(meta).toMatch(/Durations*0:30/)
   })
 
   it('shows LIVE for a run that has not ended', async () => {

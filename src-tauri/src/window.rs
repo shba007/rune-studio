@@ -2,7 +2,7 @@ use crate::sync::LockExt;
 use serde::Deserialize;
 use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, WebviewWindow};
 
-use crate::events::{OPEN_SETTINGS, SUMMON};
+use crate::events::{OPEN_ARTIFACTS, OPEN_SETTINGS, SUMMON};
 
 pub const MAIN: &str = "main";
 
@@ -22,6 +22,8 @@ pub enum Mode {
     /// The screen analysis cards, growing upward from the orb (fits its content like `Task`).
     Analysis,
     Settings,
+    /// The list of recorded sessions, as tall as Settings.
+    Artifacts,
 }
 
 impl Mode {
@@ -33,6 +35,7 @@ impl Mode {
             Mode::Task => (376.0, 336.0),
             Mode::Analysis => (376.0, 336.0),
             Mode::Settings => (376.0, 592.0),
+            Mode::Artifacts => (376.0, 592.0),
         }
     }
 }
@@ -197,6 +200,15 @@ pub fn open_settings(app: &AppHandle) {
         let _ = window.show();
         let _ = window.set_focus();
         let _ = app.emit(OPEN_SETTINGS, ());
+    }
+}
+
+/// Shows the pill on its Artifacts page (the recorded sessions).
+pub fn open_artifacts(app: &AppHandle) {
+    if let Some(window) = main_window(app) {
+        let _ = window.show();
+        let _ = window.set_focus();
+        let _ = app.emit(OPEN_ARTIFACTS, ());
     }
 }
 

@@ -3,8 +3,11 @@ import { useClipboard } from '@vueuse/core'
 import { computed, ref, watch } from 'vue'
 
 import AppIcon from '@/components/AppIcon.vue'
+import { KIND_ICON, TOOL_LABEL, kindOf } from '@/config/actions'
 import {
   TAB_LABEL,
+  promptSections,
+  riskLevel,
   argsText,
   clock,
   isOutsideAgent,
@@ -114,6 +117,29 @@ const riskReasons = computed(() => {
     return []
   }
 })
+const sections = computed(() =>
+  promptSections(props.step?.promptText ? mask(props.step.promptText) : ''),
+)
+const RISK = ['Low', 'Medium', 'High']
+/** The action's own inputs as rows; the reason, risk and goal have places of their own. */
+const inputRows = computed(() => {
+  if (!props.step?.argsJson) return []
+  try {
+    const args = JSON.parse(argsText(props.step, props.show)) as Record<string, unknown>
+    return Object.entries(args)
+      .filter(([key]) => !['reason', 'risk', 'goal'].includes(key))
+      .map(([key, value]) => ({
+        key: key.replaceAll('_', ' '),
+        value: typeof value === 'string' ? value : JSON.stringify(value),
+      }))
+  } catch {
+    return [{ key: 'input', value: argsText(props.step, props.show) }]
+  }
+})
+const toolLabel = computed(() => {
+  const tool = props.step?.tool ?? ''
+  return TOOL_LABEL[tool] ?? (tool || 'none').replaceAll('_', ' ')
+})
 const outside = computed(() => isOutsideAgent(props.header.source))
 const asked = computed(() =>
   props.events.filter((event) => event.kind === 'ask_user' || event.kind === 'invalid_answer'),
@@ -146,7 +172,7 @@ const rawText = computed(() => {
 
 <template>
   <aside
-    class="absolute inset-y-0 right-0 z-10 flex w-[380px] max-w-full flex-col border-l border-white/10 bg-[#141414] text-zinc-100 motion-safe:transition-transform motion-safe:duration-[220ms]"
+    class="absolute inset-y-0 right-0 z-10 flex w-[380px] max-w-full flex-col border-l border-white/10 bg-black text-zinc-100 motion-safe:transition-transform motion-safe:duration-[220ms]"
     :class="open ? 'translate-x-0' : 'translate-x-full'"
     :aria-hidden="!open"
     :inert="!open"
@@ -219,41 +245,86 @@ const rawText = computed(() => {
       </template>
 
       <template v-else-if="tab === 'step'">
-        <dl class="m-0 grid grid-cols-[88px_1fr] gap-x-3 gap-y-2">
-          <dt class="text-caption text-zinc-500 uppercase">Step</dt>
-          <dd class="m-0">{{ index + 1 }} of {{ header.steps }}</dd>
-          <dt class="text-caption text-zinc-500 uppercase">Action</dt>
-          <dd class="m-0">{{ (step.tool ?? 'none').replaceAll('_', ' ') }}</dd>
-          <dt class="flex items-center gap-1 text-caption text-zinc-500 uppercase">Arguments</dt>
-          <dd class="m-0 break-words" data-testid="args">
-            {{ argsText(step, show) || '—' }}
+        <div class="flex items-center gap-3">
+          <span
+            class="grid size-10 shrink-0 place-items-center rounded-full bg-white/8 text-zinc-100"
+          >
+            <AppIcon :name="KIND_ICON[kindOf(step.tool ?? '')]" />
+          </span>
+          <div class="flex min-w-0 flex-col">
+            <span class="text-title">{{ toolLabel }}</span>
+            <span class="text-caption text-zinc-500 uppercase"
+              >Step {{ index + 1 }} of {{ header.steps
+              }}<template v-if="step.goal !== null"> · Goal {{ step.goal }}</template></span
+            >
+          </div>
+          <span
+            class="ml-auto rounded-full border px-2 text-caption uppercase"
+            :class="
+              step.error ? 'border-[#d71921]/60 text-[#ff6b72]' : 'border-white/30 text-zinc-200'
+            "
+            >{{ step.error ? 'Error' : (step.result ?? '—') }}</span
+          >
+        </div>
+        <p v-if="step.error" class="m-0 mt-3 text-label text-[#ff6b72]">{{ mask(step.error) }}</p>
+
+        <div v-if="riskLevel(step.riskFinal ?? step.riskStated) >= 0" class="mt-4">
+          <div class="mb-1 flex items-center justify-between text-caption uppercase">
+            <span class="text-zinc-500">Risk</span>
+            <span class="text-zinc-300">{{
+              RISK[riskLevel(step.riskFinal ?? step.riskStated)]
+            }}</span>
+          </div>
+          <div class="flex gap-1" aria-hidden="true">
+            <span
+              v-for="n in 3"
+              :key="n"
+              class="h-1 flex-1 rounded-full"
+              :class="
+                n - 1 <= riskLevel(step.riskFinal ?? step.riskStated)
+                  ? n === 3
+                    ? 'bg-[#d71921]'
+                    : 'bg-zinc-200'
+                  : 'bg-white/10'
+              "
+            />
+          </div>
+        </div>
+
+        <figure v-if="mask(step.reason)" class="m-0 mt-4 border-l border-white/20 pl-3">
+          <figcaption class="mb-1 text-caption text-zinc-500 uppercase">Why</figcaption>
+          <p class="m-0 line-clamp-6 text-body leading-snug text-zinc-200">
+            {{ mask(step.reason) }}
+          </p>
+        </figure>
+
+        <div v-if="inputRows.length || step.tool === 'type_text'" class="mt-4">
+          <div class="mb-1 flex items-center justify-between">
+            <span class="text-caption text-zinc-500 uppercase">Input</span>
             <button
               v-if="step.tool === 'type_text'"
               type="button"
-              class="ml-1 h-5 cursor-pointer rounded-full border border-white/25 px-2 text-caption text-zinc-300 uppercase hover:bg-white/10"
+              class="h-5 cursor-pointer rounded-full border border-white/25 bg-transparent px-2 text-caption text-zinc-300 uppercase hover:bg-white/10"
               :aria-pressed="show"
               data-testid="show-typed"
               @click="emit('toggle-show')"
             >
               {{ show ? 'Hide' : 'Show' }}
             </button>
-          </dd>
-          <dt class="text-caption text-zinc-500 uppercase">Reason</dt>
-          <dd class="m-0">{{ mask(step.reason) || '—' }}</dd>
-          <dt class="text-caption text-zinc-500 uppercase">Result</dt>
-          <dd class="m-0" :class="step.error ? 'text-[#ff6b72]' : ''">
-            {{ step.result ?? '—' }}<template v-if="step.error"> · {{ mask(step.error) }}</template>
-          </dd>
-          <template v-if="step.goal !== null">
-            <dt class="text-caption text-zinc-500 uppercase">Goal</dt>
-            <dd class="m-0">Plan item {{ step.goal }}</dd>
-          </template>
-        </dl>
+          </div>
+          <dl class="m-0 flex flex-col gap-2 rounded-xl bg-white/5 px-3 py-2" data-testid="args">
+            <div v-for="row in inputRows" :key="row.key" class="flex flex-col">
+              <dt class="text-caption text-zinc-500 uppercase">{{ row.key }}</dt>
+              <dd class="m-0 text-label break-words text-zinc-100">{{ row.value }}</dd>
+            </div>
+            <p v-if="inputRows.length === 0" class="m-0 text-label text-zinc-500">No input</p>
+          </dl>
+        </div>
         <img
           v-if="screenshot"
           :src="screenshot"
           alt="What the model saw at this step"
-          class="mt-3 w-full rounded-lg border border-white/10"
+          class="mt-4 w-full rounded-xl border border-white/10"
           data-testid="shot"
         />
       </template>
@@ -280,31 +351,81 @@ const rawText = computed(() => {
       </template>
 
       <template v-else-if="tab === 'prompt'">
-        <h3 class="mb-1 text-caption text-zinc-500 uppercase">Message sent to the model</h3>
-        <pre
-          class="m-0 text-status break-words whitespace-pre-wrap text-zinc-300"
-          data-testid="prompt"
-          >{{ mask(step.promptText) }}</pre>
+        <p class="m-0 mb-2 text-caption text-zinc-500 uppercase">Sent to the model</p>
+        <div class="flex flex-col gap-1" data-testid="prompt">
+          <details
+            v-for="(part, at) in sections"
+            :key="at"
+            :open="at === 0"
+            class="group rounded-xl bg-white/5 px-3 py-2"
+          >
+            <summary
+              class="flex cursor-pointer list-none items-center gap-2 text-caption text-zinc-300 uppercase"
+            >
+              <span class="min-w-0 flex-1 truncate">{{ part.title }}</span>
+              <span class="text-zinc-500"
+                >{{ part.lines }} {{ part.lines === 1 ? 'line' : 'lines' }}</span
+              >
+              <AppIcon name="chevron" size="sm" class="transition group-open:rotate-180" />
+            </summary>
+            <pre
+              class="m-0 mt-2 max-h-48 overflow-y-auto text-status break-words whitespace-pre-wrap text-zinc-300"
+              >{{ part.body }}</pre>
+          </details>
+        </div>
       </template>
 
       <template v-else-if="tab === 'safety'">
-        <dl class="m-0 grid grid-cols-[110px_1fr] gap-x-3 gap-y-2">
-          <dt class="text-caption text-zinc-500 uppercase">Stated risk</dt>
-          <dd class="m-0">{{ step.riskStated ?? '—' }}</dd>
-          <dt class="text-caption text-zinc-500 uppercase">Final risk</dt>
-          <dd class="m-0">{{ step.riskFinal ?? '—' }}</dd>
-          <dt class="text-caption text-zinc-500 uppercase">Gate</dt>
-          <dd class="m-0">{{ step.gate ?? '—' }}</dd>
-          <template v-if="riskReasons.length">
-            <dt class="text-caption text-zinc-500 uppercase">Reasons</dt>
-            <dd class="m-0">{{ riskReasons.join('; ') }}</dd>
-          </template>
-        </dl>
+        <div class="grid grid-cols-2 gap-2">
+          <div
+            v-for="item in [
+              { label: 'Stated', value: step.riskStated },
+              { label: 'Final', value: step.riskFinal },
+            ]"
+            :key="item.label"
+            class="rounded-xl bg-white/5 p-3"
+          >
+            <span class="text-caption text-zinc-500 uppercase">{{ item.label }} risk</span>
+            <p class="m-0 text-title">
+              {{ riskLevel(item.value) >= 0 ? RISK[riskLevel(item.value)] : '—' }}
+            </p>
+            <div class="mt-2 flex gap-1" aria-hidden="true">
+              <span
+                v-for="n in 3"
+                :key="n"
+                class="h-1 flex-1 rounded-full"
+                :class="
+                  n - 1 <= riskLevel(item.value)
+                    ? n === 3
+                      ? 'bg-[#d71921]'
+                      : 'bg-zinc-200'
+                    : 'bg-white/10'
+                "
+              />
+            </div>
+          </div>
+        </div>
+        <p class="m-0 mt-3 flex items-center gap-2 text-caption text-zinc-500 uppercase">
+          Gate
+          <span class="rounded-full border border-white/25 px-2 text-zinc-200">{{
+            step.gate ?? '—'
+          }}</span>
+        </p>
+        <ul v-if="riskReasons.length" class="m-0 mt-3 flex list-none flex-col gap-1 p-0">
+          <li
+            v-for="reason in riskReasons"
+            :key="reason"
+            class="flex items-start gap-2 text-label text-zinc-300"
+          >
+            <span class="mt-1.5 size-1.5 shrink-0 rounded-full bg-zinc-400" />{{ reason }}
+          </li>
+        </ul>
         <template v-if="asked.length">
           <h3 class="mt-4 mb-1 text-caption text-zinc-500 uppercase">Questions and answers</h3>
-          <ul class="m-0 list-none space-y-1 p-0 text-status text-zinc-300">
-            <li v-for="event in asked" :key="event.id">
-              {{ event.kind }} · {{ mask(event.dataJson) }}
+          <ul class="m-0 flex list-none flex-col gap-1 p-0 text-status text-zinc-300">
+            <li v-for="event in asked" :key="event.id" class="rounded-xl bg-white/5 px-3 py-2">
+              <span class="text-caption text-zinc-500 uppercase">{{ event.kind }}</span>
+              <br />{{ mask(event.dataJson) }}
             </li>
           </ul>
         </template>

@@ -9,6 +9,7 @@ import type { AgentState, Settings } from '@/types/protocol'
 import AppIcon from './AppIcon.vue'
 import BackendBadge from './BackendBadge.vue'
 import DevInputLab from './DevInputLab.vue'
+import PageTabs from './PageTabs.vue'
 import SettingsGroup from './SettingsGroup.vue'
 import SettingsRow from './SettingsRow.vue'
 import SettingsToggle from './SettingsToggle.vue'
@@ -109,6 +110,7 @@ function footerAction() {
         <AppIcon name="refresh" />
       </button>
     </header>
+    <PageTabs :agent="agent" current="settings" />
 
     <div v-if="draft" class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pb-4">
       <SettingsGroup title="Connection">

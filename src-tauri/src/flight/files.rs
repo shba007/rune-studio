@@ -111,10 +111,11 @@ mod tests {
             Err(Refused::NotRelative)
         );
         assert_eq!(resolve(&session, "/etc/passwd"), Err(Refused::NotRelative));
-        assert_eq!(
+        // A drive path is not relative on Windows; elsewhere it is just a name that is not there.
+        assert!(matches!(
             resolve(&session, "C:\\Windows\\win.ini"),
-            Err(Refused::NotRelative).or(Err(Refused::Missing))
-        );
+            Err(Refused::NotRelative | Refused::Missing)
+        ));
         assert_eq!(
             resolve(&session, "screenshots/missing.jpg"),
             Err(Refused::Missing)

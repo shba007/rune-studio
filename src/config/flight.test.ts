@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vite-plus/test'
 
 import {
   actionLayer,
+  promptSections,
+  riskLevel,
   argsText,
   caption,
   clock,
@@ -347,5 +349,20 @@ describe('typed text across the whole record', () => {
     expect(reasoningOf('nope')).toBeNull()
     expect(pretty('{"a":1}')).toBe('{\n  "a": 1\n}')
     expect(pretty('plain')).toBe('plain')
+  })
+})
+describe('promptSections and riskLevel', () => {
+  it('splits the message into labelled blocks', () => {
+    const parts = promptSections('Task: open notepad\n\nPlan:\n1. Open\n2. Type\n\nStep 4 of 8')
+    expect(parts.map((part) => part.title)).toEqual(['Task', 'Plan', 'Note'])
+    expect(parts[0]).toMatchObject({ body: 'open notepad', lines: 1 })
+    expect(parts[1]).toMatchObject({ body: '1. Open\n2. Type', lines: 2 })
+    expect(promptSections(null)).toEqual([])
+  })
+
+  it('places a risk word on the meter', () => {
+    expect([riskLevel('low'), riskLevel('Medium'), riskLevel('high'), riskLevel(null)]).toEqual([
+      0, 1, 2, -1,
+    ])
   })
 })

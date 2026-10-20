@@ -28,7 +28,7 @@ import {
 } from '@/config/flight'
 
 /**
- * The Flight Player: a finished (or still running) session replayed from the record. The video (or,
+ * Rune Preview: a finished (or still running) session replayed from the record. The video (or,
  * without one, the screenshots) with a light layer of what Rune did, a timeline of the steps, one
  * caption line, and a details drawer. It only reads: nothing here changes the record.
  */
@@ -251,9 +251,14 @@ const dateText = computed(() => {
   return Number.isFinite(at) ? new Date(at).toLocaleString() : ''
 })
 const outcomeClass = computed(() =>
+  header.value?.outcome === 'failed' ? 'text-[#ff6b72]' : 'text-zinc-100',
+)
+const outcomeDot = computed(() =>
   header.value?.outcome === 'failed'
-    ? 'border-[#d71921]/60 text-[#ff6b72]'
-    : 'border-white/30 text-zinc-200',
+    ? 'bg-[#d71921]'
+    : header.value?.outcome === 'succeeded'
+      ? 'bg-[#f1f1ef]'
+      : 'border border-zinc-400',
 )
 const verdictLine = computed(() => {
   const verdict = header.value?.verdict
@@ -267,14 +272,11 @@ function runDate(text: string | null): string {
 </script>
 
 <template>
-  <main
-    class="flex h-screen flex-col overflow-hidden bg-[#141414] text-zinc-100"
-    data-testid="flight"
-  >
-    <TitleBar title="Rune Studio · Flight Player" />
+  <main class="flex h-screen flex-col overflow-hidden bg-black text-zinc-100" data-testid="flight">
+    <TitleBar title="Rune Preview" />
     <!-- The picker: no run chosen yet, or the record could not be read. -->
     <section v-if="!header" class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-6">
-      <h1 class="m-0 text-title uppercase">Flight Player</h1>
+      <h1 class="m-0 text-title uppercase">Preview</h1>
       <p v-if="flight.loading.value" class="m-0 text-zinc-400" data-testid="loading">Loading…</p>
       <p
         v-else-if="flight.problem.value"
@@ -310,51 +312,64 @@ function runDate(text: string | null): string {
 
     <template v-else>
       <header
-        class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-white/10 px-4 py-2"
+        class="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2 border-b border-white/10 px-5 py-3"
       >
         <button
           type="button"
-          class="grid size-6 cursor-pointer place-items-center rounded-full text-zinc-300 hover:bg-white/10"
+          class="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full border-0 bg-transparent text-zinc-300 hover:bg-white/10"
           aria-label="Back to the list of sessions"
           data-testid="back"
           @click="backToRuns"
         >
           <AppIcon name="back" />
         </button>
-        <h1 class="m-0 min-w-0 flex-1 truncate text-body" :title="header.task" data-testid="task">
-          {{ header.task }}
-        </h1>
-        <span
-          v-if="flight.live.value"
-          class="rounded-full border border-white/40 px-2 text-caption uppercase"
-          data-testid="live"
-          >Live</span
-        >
-        <span
-          v-else
-          class="rounded-full border px-2 text-caption uppercase"
-          :class="outcomeClass"
-          data-testid="outcome"
-          >{{ header.outcome ?? 'ended' }}</span
-        >
-        <span
-          v-if="verdictLine"
-          class="max-w-56 truncate rounded-full border border-white/20 px-2 text-caption text-zinc-300 uppercase"
-          :title="verdictLine"
-          data-testid="verdict"
-          >{{ header.verdict?.result }}</span
-        >
-        <p
-          class="m-0 flex flex-wrap gap-x-3 text-caption text-zinc-400 uppercase"
-          data-testid="meta"
-        >
-          <span>{{ outside ? header.source : 'Rune' }}</span>
-          <span>{{ dateText }}</span>
-          <span>Duration {{ duration ?? '—' }}</span>
-          <span>Steps {{ header.steps }}</span>
-          <span>Retries {{ header.retries }}</span>
-          <span v-if="header.model">{{ header.model }}</span>
-        </p>
+        <div class="flex min-w-0 flex-1 flex-col">
+          <h1 class="m-0 truncate text-title" :title="header.task" data-testid="task">
+            {{ header.task }}
+          </h1>
+          <p class="m-0 flex items-center gap-2 text-caption text-zinc-500 uppercase">
+            <span
+              v-if="flight.live.value"
+              class="flex items-center gap-1 text-zinc-100"
+              data-testid="live"
+              ><span class="size-1.5 animate-pulse rounded-full bg-[#d71921]" />Live</span
+            >
+            <span v-else class="flex items-center gap-1" :class="outcomeClass" data-testid="outcome"
+              ><span class="size-1.5 rounded-full" :class="outcomeDot" />{{
+                header.outcome ?? 'ended'
+              }}</span
+            >
+            <template v-if="verdictLine">
+              <span>·</span>
+              <span class="max-w-56 truncate" :title="verdictLine" data-testid="verdict">{{
+                header.verdict?.result
+              }}</span>
+            </template>
+            <span>· {{ dateText }}</span>
+          </p>
+        </div>
+        <dl class="m-0 flex flex-wrap gap-x-6 gap-y-1 text-caption uppercase" data-testid="meta">
+          <div v-if="outside" class="flex flex-col">
+            <dt class="text-zinc-500">Agent</dt>
+            <dd class="m-0 text-zinc-100">{{ header.source }}</dd>
+          </div>
+          <div class="flex flex-col">
+            <dt class="text-zinc-500">Duration</dt>
+            <dd class="m-0 text-zinc-100 tabular-nums">{{ duration ?? '—' }}</dd>
+          </div>
+          <div class="flex flex-col">
+            <dt class="text-zinc-500">Steps</dt>
+            <dd class="m-0 text-zinc-100 tabular-nums">{{ header.steps }}</dd>
+          </div>
+          <div class="flex flex-col">
+            <dt class="text-zinc-500">Retries</dt>
+            <dd class="m-0 text-zinc-100 tabular-nums">{{ header.retries }}</dd>
+          </div>
+          <div v-if="header.model" class="flex flex-col">
+            <dt class="text-zinc-500">Model</dt>
+            <dd class="m-0 text-zinc-100">{{ header.model }}</dd>
+          </div>
+        </dl>
       </header>
 
       <p v-if="steps.length === 0" class="m-0 p-6 text-zinc-400" data-testid="no-steps">

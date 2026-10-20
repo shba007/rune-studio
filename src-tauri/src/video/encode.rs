@@ -15,7 +15,7 @@ use std::path::Path;
 use super::schedule::{Shown, video_size};
 
 /// The video is at most this wide.
-pub const MAX_WIDTH: u32 = 1280;
+pub const MAX_WIDTH: u32 = 1920;
 
 #[derive(Debug)]
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -101,7 +101,7 @@ pub fn encode(
             let output = MFCreateMediaType()?;
             output.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Video)?;
             output.SetGUID(&MF_MT_SUBTYPE, &MFVideoFormat_H264)?;
-            output.SetUINT32(&MF_MT_AVG_BITRATE, 1_500_000)?;
+            output.SetUINT32(&MF_MT_AVG_BITRATE, 6_000_000)?;
             output.SetUINT32(&MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive.0 as u32)?;
             output.SetUINT64(&MF_MT_FRAME_SIZE, pack(width, height))?;
             output.SetUINT64(&MF_MT_FRAME_RATE, pack(2, 1))?;

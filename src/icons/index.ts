@@ -25,6 +25,7 @@ import IconSkipForward from '~icons/ph/skip-forward-fill'
 import IconSidebar from '~icons/ph/sidebar-simple-fill'
 import IconArrowsOut from '~icons/ph/arrows-out-simple-fill'
 import IconEyeSlash from '~icons/ph/eye-slash-fill'
+import IconHistory from '~icons/ph/clock-counter-clockwise-fill'
 import IconX from '~icons/ph/x-fill'
 import IconMinus from '~icons/ph/minus-fill'
 import IconArrowsIn from '~icons/ph/arrows-in-simple-fill'
@@ -50,6 +51,7 @@ export const icons = {
   back: IconArrowLeft,
   chevron: IconCaretDown,
   close: IconX,
+  history: IconHistory,
   minimize: IconMinus,
   maximize: IconArrowsOut,
   restore: IconArrowsIn,

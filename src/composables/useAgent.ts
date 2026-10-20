@@ -63,6 +63,7 @@ const MODE_RANK: Record<PillMode, number> = {
   task: 2,
   analysis: 2,
   settings: 3,
+  artifacts: 3,
 }
 
 /** Longer than the page and width transitions, so the window only shrinks once they have finished. */
@@ -196,7 +197,6 @@ export function useAgent() {
     if (next === 'open') focusTick.value += 1
   }
 
-  /** Open when collapsed; collapse when open or in settings. */
   /** Make the window as tall as the open card's content. Only the open and task pages do this. */
   async function fitHeight(height: number) {
     // Only pages that fit their content count: the settings page has a fixed height of its own.
@@ -398,6 +398,7 @@ export function useAgent() {
       }),
       await listen(SUMMON, () => void toggleOpen()),
       await listen(OPEN_SETTINGS, () => void setMode('settings')),
+      await listen('open_artifacts', () => void setMode('artifacts')),
     )
     await refreshSettings()
     await refreshBackend()

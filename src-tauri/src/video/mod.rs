@@ -124,8 +124,8 @@ fn has_video(dir: &Path) -> bool {
 
 /// Capture rate of the full-motion mode, in milliseconds between frames (2 per second).
 const MOTION_EVERY: Duration = Duration::from_millis(500);
-/// Frames of the motion mode are at most this wide and this good (the video is 1280 wide at most anyway).
-const MOTION_EDGE: u32 = 1280;
+/// Frames of the motion mode are at most this wide and this good (the video is 1920 wide at most).
+const MOTION_EDGE: u32 = 1920;
 const MOTION_QUALITY: u8 = 60;
 
 /// The motion frames saved in a session folder (`motion/<unix ms>.jpg`) as (path, milliseconds since

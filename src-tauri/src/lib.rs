@@ -170,7 +170,7 @@ pub fn run() {
             // Stop lives in the tray too: it works while the window is click-through and does
             // not depend on the Stop hotkey being free.
             let flight =
-                MenuItem::with_id(app, "flight", "Open Flight Player", true, None::<&str>)?;
+                MenuItem::with_id(app, "artifacts", "Open Artifacts", true, None::<&str>)?;
             let stop = MenuItem::with_id(app, "stop", "Stop", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &settings, &flight, &stop, &quit])?;
@@ -180,11 +180,7 @@ pub fn run() {
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "show" => window::toggle_visibility(app),
                     "settings" => window::open_settings(app),
-                    "flight" => {
-                        if let Err(err) = flight::open(app, None) {
-                            log::warn!("could not open the Flight Player: {err}");
-                        }
-                    }
+                    "artifacts" => window::open_artifacts(app),
                     "stop" => commands::stop(app.clone()),
                     "quit" => app.exit(0),
                     _ => {}

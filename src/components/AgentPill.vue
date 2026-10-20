@@ -18,6 +18,7 @@ import ReflectionCard from './ReflectionCard.vue'
 import ReviewCard from './ReviewCard.vue'
 import HealthDots from './HealthDots.vue'
 import ProgressRing from './ProgressRing.vue'
+import ArtifactsPanel from './ArtifactsPanel.vue'
 import SettingsPanel from './SettingsPanel.vue'
 import TaskPanel from './TaskPanel.vue'
 
@@ -73,6 +74,10 @@ watch(
 )
 
 const isAmbient = computed(() => agent.mode.value === 'ambient')
+/** Settings and Artifacts fill the window and scroll inside; the other pages are as tall as their content. */
+const isFullPage = computed(
+  () => agent.mode.value === 'settings' || agent.mode.value === 'artifacts',
+)
 
 // Dev only: lets a plain browser preview set the plan, thinking and steps by hand.
 if (import.meta.env.DEV) Object.assign(window, { __demoAgent: agent })
@@ -90,7 +95,8 @@ watch(contentHeight, (height) => {
 // the selection, then the analysis. From settings it goes back one step first.
 onKeyStroke('Escape', () => {
   if (agent.question.value || agent.mode.value === 'analysis') return
-  if (agent.mode.value === 'settings') void agent.setMode(agent.home())
+  if (agent.mode.value === 'settings' || agent.mode.value === 'artifacts')
+    void agent.setMode(agent.home())
   else void agent.dismiss()
 })
 
@@ -190,13 +196,14 @@ function onOrb() {
     >
       <div class="ml-2 flex h-full flex-col justify-end" :style="{ width: `${PAGE_WIDTH}px` }">
         <!-- Settings fills the window and scrolls inside; the other pages are as tall as their content. -->
-        <div
-          ref="content"
-          class="flex flex-col"
-          :class="agent.mode.value === 'settings' ? 'h-full min-h-0' : ''"
-        >
+        <div ref="content" class="flex flex-col" :class="isFullPage ? 'h-full min-h-0' : ''">
           <Transition name="page" mode="out-in">
             <SettingsPanel v-if="agent.mode.value === 'settings'" key="settings" :agent="agent" />
+            <ArtifactsPanel
+              v-else-if="agent.mode.value === 'artifacts'"
+              key="artifacts"
+              :agent="agent"
+            />
             <div v-else key="main" class="flex flex-col gap-2">
               <Transition name="page">
                 <TaskPanel v-if="agent.mode.value === 'task'" :agent="agent" />
