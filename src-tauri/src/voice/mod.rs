@@ -81,6 +81,7 @@ pub fn note_stop() {
 
 /// One utterance, start to finish: the omni model hears it, then the app acts on what it was.
 pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
+    crate::reflect::touch(app, crate::reflect::idle::Input::Voice);
     let state = app.state::<AppState>();
     let (base_url, model) = {
         let settings = state.settings.locked();

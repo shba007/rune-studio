@@ -144,6 +144,7 @@ pub fn begin_task_planned(
 ) -> AppResult<()> {
     let state = app.state::<AppState>();
     let task = text.trim();
+    crate::reflect::touch(app, crate::reflect::idle::Input::Task);
     state.steer.locked().clear();
     if task.is_empty() {
         return Err(AppError::Invalid("Type or say what you want done".into()));
@@ -344,4 +345,16 @@ pub fn external_agent(state: State<'_, AppState>) -> events::ExternalAgent {
         .locked()
         .as_ref()
         .map_or_else(events::ExternalAgent::none, events::ExternalAgent::of)
+}
+
+/// The user's answer to the idle reflection prompt: Start (true) or Deny (false).
+#[tauri::command]
+pub fn reflection_answer(app: AppHandle, start: bool) {
+    crate::reflect::answer(&app, start);
+}
+
+/// The pill was used (clicked, typed in, opened): the user is here, so the idle clock restarts.
+#[tauri::command]
+pub fn pill_activity(app: AppHandle) {
+    crate::reflect::touch(&app, crate::reflect::idle::Input::Pill);
 }

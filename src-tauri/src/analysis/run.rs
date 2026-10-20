@@ -65,6 +65,7 @@ fn set_status(app: &AppHandle, status: Status) {
 /// again. Returns when it has ended, whatever way (the window learns the result from events); the
 /// `Err` is only a refusal to start.
 pub async fn run(app: &AppHandle, question: &str, fresh: bool) -> AppResult<()> {
+    crate::reflect::touch(app, crate::reflect::idle::Input::Analysis);
     let state = app.state::<AppState>();
     let question = report::question_or_default(question);
     let cancel = {

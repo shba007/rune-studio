@@ -350,6 +350,7 @@ fn begin(app: &AppHandle, arguments: &Value) -> Reply {
         return LeaseError::Busy.into();
     }
     // The label: what the agent declared, or what its registration attested (see `bridge::identity`).
+    crate::reflect::touch(app, crate::reflect::idle::Input::Task);
     let who = identity::identify(
         arguments["agent"].as_str().unwrap_or(""),
         arguments[ATTESTED_KEY].as_str(),

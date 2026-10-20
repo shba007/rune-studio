@@ -64,6 +64,8 @@ pub struct AppState {
     pub analysis: Mutex<crate::analysis::state::AnalysisState>,
     /// Who is in control from outside right now (see `bridge::identity`), for a window that opens late.
     pub external: Mutex<Option<crate::bridge::identity::AgentIdentity>>,
+    /// The idle reflection shell (see `reflect`).
+    pub reflect: Mutex<crate::reflect::State>,
     pub agent_state: Mutex<AgentState>,
     /// Who may drive the PC from outside (see `bridge::lease`).
     pub lease: Mutex<LeaseBook>,
@@ -85,12 +87,15 @@ impl AppState {
     pub fn begin_run(&self) -> RunScope {
         // First: a check left over from the last task must not run next to the new one.
         self.verifier.locked().cancel();
+        // A task, an outside agent or a debug command pre-empts the idle reflection (within its next 10 ms check).
+        self.reflect.locked().cancel.cancel();
         exec::begin_run(&self.run)
     }
 
     /// Cancels the current run, whatever the agent state (even Idle: typing from debug commands relies on it).
     pub fn stop_current(&self) {
         crate::voice::note_stop();
+        self.reflect.locked().cancel.cancel();
         self.verifier.locked().cancel();
         self.analysis.locked().cancel.cancel();
         exec::stop_current(&self.run);
@@ -359,6 +364,7 @@ mod tests {
             verifier: Mutex::new(exec::CancelToken::default()),
             analysis: Default::default(),
             external: Default::default(),
+            reflect: Default::default(),
             agent_state: Mutex::new(AgentState::Idle),
             lease: Mutex::new(LeaseBook::default()),
             confirm: Mutex::new(None),

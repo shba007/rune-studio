@@ -19,6 +19,7 @@ mod hotkeys;
 mod model;
 mod observe;
 mod overlay;
+mod reflect;
 mod safety;
 mod settings;
 mod sync;
@@ -127,6 +128,7 @@ pub fn run() {
                 verifier: Mutex::new(exec::CancelToken::default()),
                 analysis: Default::default(),
                 external: Default::default(),
+                reflect: Default::default(),
                 agent_state: Mutex::new(AgentState::Idle),
                 lease: Mutex::new(bridge::lease::LeaseBook::default()),
                 confirm: Mutex::new(None),
@@ -140,6 +142,7 @@ pub fn run() {
                 let handle = app.handle().clone();
                 observe::mask::set_source(move || window::masked_rects(&handle));
             }
+            reflect::start_watcher(app.handle());
             if let Some(pill) = app.get_webview_window(window::MAIN) {
                 window::protect(&pill)?;
                 // Windows clamps the configured size to its minimum window width; an explicit
@@ -203,6 +206,8 @@ pub fn run() {
             commands::analysis_state,
             commands::cancel_analysis,
             commands::external_agent,
+            commands::reflection_answer,
+            commands::pill_activity,
             commands::bridge_info,
             commands::get_control_label,
             #[cfg(debug_assertions)]

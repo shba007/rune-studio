@@ -191,3 +191,15 @@ pub fn toggle_visibility(app: &AppHandle) {
         let _ = window.show();
     }
 }
+
+/// Shows the window without activating it, so the app the user is working in keeps the keyboard.
+pub fn show_without_focus(window: &tauri::WebviewWindow) {
+    #[cfg(windows)]
+    if let Ok(hwnd) = window.hwnd() {
+        use windows::Win32::UI::WindowsAndMessaging::{SW_SHOWNOACTIVATE, ShowWindow};
+        // SAFETY: the handle belongs to a live window of this process.
+        let _ = unsafe { ShowWindow(hwnd, SW_SHOWNOACTIVATE) };
+        return;
+    }
+    let _ = window.show();
+}

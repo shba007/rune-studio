@@ -49,6 +49,10 @@ pub struct Settings {
     /// Let screen recorders (OBS, Game Bar, the Snipping Tool) capture Rune's windows. The model still
     /// never sees them: they are painted over in its screenshots (`observe::mask`).
     pub demo_mode: bool,
+    /// Offer an idle review of recent tasks (see `reflect`). Off until the job does something real (R6).
+    pub reflection_enabled: bool,
+    /// Minutes with no activity before the prompt (1 to 120).
+    pub idle_minutes: u32,
 }
 
 /// What happens with the independent check of a finished task (`agent::verify`).
@@ -86,6 +90,8 @@ impl Default for Settings {
             verify_mode: VerifyMode::default(),
             analysis_boxes: false,
             demo_mode: false,
+            reflection_enabled: false,
+            idle_minutes: 10,
         }
     }
 }
@@ -170,6 +176,21 @@ pub fn set_api_key(key: &str) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reflection_is_off_by_default_with_ten_idle_minutes() {
+        let defaults = Settings::default();
+        assert!(!defaults.reflection_enabled);
+        assert_eq!(defaults.idle_minutes, 10);
+        let loaded: Settings =
+            serde_json::from_str(r#"{ "reflectionEnabled": true, "idleMinutes": 3 }"#).unwrap();
+        assert!(loaded.reflection_enabled);
+        assert_eq!(loaded.idle_minutes, 3);
+        assert_eq!(
+            serde_json::from_str::<Settings>("{}").unwrap().idle_minutes,
+            10
+        );
+    }
 
     #[test]
     fn demo_mode_is_off_by_default_and_a_file_without_it_loads() {
