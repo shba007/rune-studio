@@ -52,6 +52,60 @@ pub fn plan(name: &str) -> Vec<Target> {
     }
 }
 
+/// The value on a `reg query` line: `    ProgId    REG_SZ    BraveHTML` gives `BraveHTML`.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn reg_value(output: &str) -> Option<String> {
+    output.lines().find_map(|line| {
+        let (_, value) = line.split_once("REG_SZ")?;
+        let value = value.trim();
+        (!value.is_empty()).then(|| value.to_string())
+    })
+}
+
+/// The program in a registered open command: `"C:\Brave\brave.exe" --single-argument %1` gives
+/// `C:\Brave\brave.exe`.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn exe_of_command(command: &str) -> Option<String> {
+    let command = command.trim();
+    if let Some(rest) = command.strip_prefix('"') {
+        return rest
+            .split('"')
+            .next()
+            .filter(|exe| !exe.is_empty())
+            .map(str::to_string);
+    }
+    let end = command.to_lowercase().find(".exe").map(|at| at + 4)?;
+    Some(command[..end].to_string())
+}
+
+/// The default web browser's program, read from the registry with `reg query` (no extra crate).
+#[cfg(windows)]
+fn default_browser() -> Option<std::path::PathBuf> {
+    use std::os::windows::process::CommandExt;
+
+    let query = |key: &str, extra: &[&str]| -> Option<String> {
+        let output = std::process::Command::new("reg.exe")
+            .arg("query")
+            .arg(key)
+            .args(extra)
+            .creation_flags(0x0800_0000)
+            .output()
+            .ok()?;
+        output
+            .status
+            .success()
+            .then(|| reg_value(&String::from_utf8_lossy(&output.stdout)))
+            .flatten()
+    };
+    let progid = query(
+        r"HKCU\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice",
+        &["/v", "ProgId"],
+    )?;
+    let command = query(&format!(r"HKCR\{progid}\shell\open\command"), &["/ve"])?;
+    let exe = std::path::PathBuf::from(exe_of_command(&command)?);
+    exe.is_file().then_some(exe)
+}
+
 /// Opens an application, file, folder or web address the way Win+R would, but without a shell:
 /// the name is one argument to `ShellExecute` (or to the URL handler), so nothing in it can chain a
 /// second command.
@@ -71,6 +125,18 @@ pub fn open(name: &str) -> Result<(), ExecError> {
         match target {
             Target::FileUrl(url) => {
                 use std::os::windows::process::CommandExt;
+                // Even the URL handler turns `file:///page.html?run=3` into the path `page.html`. A page that
+                // needs its query (or fragment) is handed to the default browser's program instead, which
+                // keeps the address as it is. Without a browser or on failure, the handler is the fallback.
+                if url.contains(['?', '#'])
+                    && let Some(browser) = default_browser()
+                    && std::process::Command::new(browser)
+                        .arg(&url)
+                        .spawn()
+                        .is_ok()
+                {
+                    return Ok(());
+                }
                 // CREATE_NO_WINDOW: rundll32 has no window of its own. The address is one argument.
                 std::process::Command::new("rundll32.exe")
                     .arg("url.dll,FileProtocolHandler")
@@ -153,6 +219,28 @@ mod tests {
         assert_eq!(plan("Windows Settings"), shell("ms-settings:"));
         assert_eq!(plan("File Explorer"), shell("explorer"));
         assert_eq!(plan("task manager"), shell("taskmgr"));
+    }
+
+    #[test]
+    fn registry_output_and_open_commands_are_read() {
+        let progid = "\r\nHKEY_CURRENT_USER\\Software\\X\\UserChoice\r\n    ProgId    REG_SZ    BraveHTML\r\n";
+        assert_eq!(reg_value(progid).as_deref(), Some("BraveHTML"));
+        assert_eq!(reg_value("nothing useful"), None);
+        let command =
+            r#"    (Default)    REG_SZ    "C:\Program Files\Brave\brave.exe" --single-argument %1"#;
+        assert_eq!(
+            reg_value(command).as_deref(),
+            Some(r#""C:\Program Files\Brave\brave.exe" --single-argument %1"#)
+        );
+        assert_eq!(
+            exe_of_command(r#""C:\Program Files\Brave\brave.exe" --single-argument %1"#).as_deref(),
+            Some(r"C:\Program Files\Brave\brave.exe")
+        );
+        assert_eq!(
+            exe_of_command(r#"C:\Apps\ff.exe -osint -url "%1""#).as_deref(),
+            Some(r"C:\Apps\ff.exe")
+        );
+        assert_eq!(exe_of_command("   "), None);
     }
 
     #[test]
