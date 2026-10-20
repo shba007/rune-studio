@@ -82,12 +82,7 @@ pub fn start_planned(app: &AppHandle, task: String, plan: Option<Vec<String>>) {
     // Read once: a change to the setting in the middle of a task does not change how this one ends.
     let mode = state.settings.locked().verify_mode;
     let handoff: Shared = Shared::default();
-    // One lock for both reads: the guards of two `locked()` calls inside one statement would both live
-    // until its end, and the second one waits for the first forever.
-    let (model, settings_json) = {
-        let settings = state.settings.locked();
-        (settings.model.clone(), trace::settings_snapshot(&settings))
-    };
+    let (model, settings_json) = trace::model_and_snapshot(&state.settings);
     trace.begin_run(RunInfo {
         id: run_id.clone(),
         scope_id: i64::try_from(scope.id).ok(),

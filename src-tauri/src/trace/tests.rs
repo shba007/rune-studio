@@ -496,3 +496,19 @@ fn analyses_are_listed_newest_first_up_to_the_limit_and_findings_are_capped() {
     let capped = get_analysis(&dir.db(), "new").unwrap().unwrap();
     assert_eq!(capped.findings_json.chars().count(), FINDINGS_CAP);
 }
+
+#[test]
+fn the_model_and_the_snapshot_are_read_under_one_lock_without_waiting_on_themselves() {
+    let settings = std::sync::Arc::new(Mutex::new(crate::settings::Settings::default()));
+    let reader = settings.clone();
+    let (done, wait) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = done.send(model_and_snapshot(&reader));
+    });
+    let (model, snapshot) = wait.recv_timeout(Duration::from_secs(5)).expect("reading both must not deadlock");
+    assert_eq!(model, crate::settings::Settings::default().model);
+    let json: serde_json::Value = serde_json::from_str(&snapshot).unwrap();
+    assert_eq!(json["max_steps"], crate::settings::Settings::default().max_steps);
+    // The lock is free again afterwards.
+    assert!(settings.try_lock().is_ok());
+}

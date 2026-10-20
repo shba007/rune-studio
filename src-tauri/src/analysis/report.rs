@@ -128,6 +128,12 @@ pub fn tool() -> Value {
     })
 }
 
+/// The `tools` array of the request: the `report` tool wrapped in a list (the server rejects a bare
+/// tool object with a schema error).
+pub fn tools() -> Value {
+    json!([tool()])
+}
+
 /// The user's question, or the default one when there is none. Trimmed and cut.
 pub fn question_or_default(question: &str) -> String {
     let question = question.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -296,6 +302,17 @@ mod tests {
     fn a_finding_is_written_for_the_ui_with_box_and_camel_case() {
         let f = Finding { n: 2, label: "L".into(), kind: Kind::Issue, bbox: Some([1.0, 2.0, 30.0, 40.0]), description: "d".into(), evidence: "e".into() };
         assert_eq!(serde_json::to_value(&f).unwrap(), json!({ "n": 2, "label": "L", "kind": "issue", "box": [1.0, 2.0, 30.0, 40.0], "description": "d", "evidence": "e" }));
+    }
+
+    #[test]
+    fn the_request_sends_tools_as_an_array_of_functions() {
+        let tools = tools();
+        let list = tools.as_array().expect("tools must be a JSON array");
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0]["type"], "function");
+        let body = crate::model::client::chat_body("m", &request("q", "data:image/jpeg;base64,AA==", &tools));
+        assert_eq!(body["tools"][0]["type"], "function");
+        assert_eq!(body["tools"][0]["function"]["name"], "report");
     }
 
     #[test]

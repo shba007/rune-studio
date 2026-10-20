@@ -23,7 +23,7 @@
     "preview": "vp preview",
     "clean": "(cd src-tauri && cargo clean)",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev",
+    "tauri:dev": "cargo build --manifest-path src-tauri/Cargo.toml --bin rune-studio-cli --features agent-bridge && tauri dev",
     "tauri:build": "tauri build",
     "tauri:dev:mobile": "tauri android dev",
     "tauri:build:mobile": "tauri android build"

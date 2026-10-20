@@ -303,11 +303,7 @@ fn begin(app: &AppHandle, arguments: &Value) -> Reply {
     });
     // The same id in the flight recorder; fire and forget, nothing here waits for it.
     let run_id = if session.is_empty() { format!("norun-{}-{}", scope.id, crate::archive::now()) } else { session.clone() };
-    // One lock for both reads (two `locked()` calls in one statement would wait on each other forever).
-    let (model, settings_json) = {
-        let settings = state.settings.locked();
-        (settings.model.clone(), trace::settings_snapshot(&settings))
-    };
+    let (model, settings_json) = trace::model_and_snapshot(&state.settings);
     state.trace.begin_run(RunInfo {
         id: run_id,
         scope_id: i64::try_from(scope.id).ok(),

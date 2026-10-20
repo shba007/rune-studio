@@ -1,1 +1,0 @@
-close these first, the run would close them: notepad.exe

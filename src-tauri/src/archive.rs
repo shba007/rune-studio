@@ -568,7 +568,8 @@ mod tests {
 
         let mut removed = purge_in(&base, "2026-10-19", 30);
         removed.sort();
-        let expected: Vec<String> = ["sessions/2026-01-01/120000-001-old", "sessions/2026-01-01/130000-002-old-too"].iter().map(|dir| base.join(dir).display().to_string()).collect();
+        // Built from components, like the code under test, so the separators agree on Windows too.
+        let expected: Vec<String> = ["120000-001-old", "130000-002-old-too"].iter().map(|dir| base.join("sessions").join("2026-01-01").join(dir).display().to_string()).collect();
         assert_eq!(removed, expected);
         assert!(!base.join("sessions/2026-01-01").exists());
         for kept in ["sessions/2026-10-19/120000-003-new", "sessions/not-a-date/x", "screenshots/2026-01-01", "voice/2026-01-01", "sessions/readme.txt"] {

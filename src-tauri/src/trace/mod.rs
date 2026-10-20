@@ -226,6 +226,15 @@ pub fn settings_snapshot(settings: &crate::settings::Settings) -> String {
     .to_string()
 }
 
+/// The model name and the settings snapshot a run's row records, read under **one** lock. Two
+/// `locked()` calls in one statement would hold two guards of the same mutex at once and the second
+/// would wait for the first forever (the freeze of every task start, found in the field test).
+pub fn model_and_snapshot(settings: &Mutex<crate::settings::Settings>) -> (String, String) {
+    use crate::sync::LockExt;
+    let settings = settings.locked();
+    (settings.model.clone(), settings_snapshot(&settings))
+}
+
 /// Where the trace database lives, given the app's data folder.
 pub fn db_path(data_dir: &Path) -> std::path::PathBuf {
     data_dir.join("trace.sqlite3")
