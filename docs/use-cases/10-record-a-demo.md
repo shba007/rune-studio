@@ -16,7 +16,7 @@ Make a screen video of Rune working, using an ordinary recorder such as OBS or W
 
 ## The problem today
 
-Rune hides its pill, its screen frame and its analysis window from all screen capture, so the model never reads its own interface. That also hides them from Snipping Tool, Game Bar and OBS.
+Rune hides its pill and its screen overlay (frame, bar and analysis boxes) from all screen capture, so the model never reads its own interface. That also hides them from Snipping Tool, Game Bar and OBS.
 
 ## What happens (planned)
 
