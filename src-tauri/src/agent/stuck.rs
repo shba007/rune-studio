@@ -191,11 +191,12 @@ mod tests {
         assert_eq!(watch.look(screen(10), None), 1);
     }
 
+    const _: () = assert!(GIVE_UP_AFTER > WARN_AFTER);
+
     #[test]
     fn the_warning_starts_at_two() {
         assert!(warning(1).is_none());
         assert!(warning(WARN_AFTER).unwrap().contains("last 2 actions"));
-        assert!(GIVE_UP_AFTER > WARN_AFTER);
     }
 
     #[test]

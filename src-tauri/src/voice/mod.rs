@@ -101,11 +101,6 @@ pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
     }
 }
 
-/// Does what the words ask for. Separate from `handle` so it can be tested without audio.
-pub fn act(app: &AppHandle, text: &str) {
-    apply(app, intent::interpret(text), None, text, None);
-}
-
 /// Does what an intent asks for. `text` is what was typed or heard, if there is a transcript; for
 /// speech the model's own wording of a task is shown instead. `goals` are the plan an
 /// audio model already made for a new task. `recording` is the stored audio of what was said, if
@@ -124,10 +119,8 @@ fn apply(app: &AppHandle, intent: Intent, goals: Option<Vec<String>>, text: &str
             crate::commands::close_microphone(app);
         }
         Intent::No => {
-            if now == AgentState::AwaitingConfirm {
-                if gate::answer_by_voice(app, false) == VoiceAnswer::Answered {
-                    heard(app, text, "Answered no");
-                }
+            if now == AgentState::AwaitingConfirm && gate::answer_by_voice(app, false) == VoiceAnswer::Answered {
+                heard(app, text, "Answered no");
             }
         }
         Intent::Yes => {

@@ -59,6 +59,7 @@ pub fn history_lines(history: &[Entry]) -> Vec<String> {
 /// `current` is the 0-based goal being worked on.
 /// `elements` is the listing of the front window's controls (may be empty) and `warning` a note
 /// about the run going nowhere (see `stuck`).
+#[allow(clippy::too_many_arguments)] // one line of prompt per input; a struct would only rename them
 pub fn user_message(task: &str, plan: &[String], current: usize, history: &[Entry], elements: &str, warning: Option<&str>, step: u32, max_steps: u32) -> String {
     let mut text = format!("Task: {task}\n\n");
     if !plan.is_empty() {

@@ -431,11 +431,11 @@ async fn act_turn(app: &AppHandle, tool: &'static str, arguments: &Value) -> Rep
     row.rec.goal = decision.goal.map(i64::from);
     row.rec.risk_stated = decision.risk.map(|risk| risk.label().to_string());
     advance_goal(app, decision.goal);
-    if let protocol::Action::PressKeys { keys } = &decision.action {
-        if let Some(bad) = keys.iter().find(|key| parse_key(key).is_err()) {
-            row.fail(&format!("\"{bad}\" is not a key name"));
-            return Reply::error("unknown_key", format!("\"{bad}\" is not a key name. Use: {KEY_NAMES}"));
-        }
+    if let protocol::Action::PressKeys { keys } = &decision.action
+        && let Some(bad) = keys.iter().find(|key| parse_key(key).is_err())
+    {
+        row.fail(&format!("\"{bad}\" is not a key name"));
+        return Reply::error("unknown_key", format!("\"{bad}\" is not a key name. Use: {KEY_NAMES}"));
     }
 
     let cancel = state.current_scope().token;

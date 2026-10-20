@@ -11,6 +11,7 @@ use crate::sync::LockExt;
 use std::sync::Mutex;
 
 /// Most controls listed per window; a busy browser page has hundreds.
+#[cfg_attr(not(windows), allow(dead_code))]
 pub const MAX_ELEMENTS: usize = 60;
 
 /// One control in the front window.

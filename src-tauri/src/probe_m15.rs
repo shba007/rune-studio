@@ -341,7 +341,7 @@ fn load_scenes(dir: &Path, only: &Option<Vec<String>>) -> Vec<(SceneFile, PathBu
             let png = path.with_extension("png");
             png.exists().then_some((scene, png))
         })
-        .filter(|(scene, _)| only.as_ref().is_none_or(|names| names.iter().any(|n| *n == scene.scene)))
+        .filter(|(scene, _)| only.as_ref().is_none_or(|names| names.contains(&scene.scene)))
         .collect();
     scenes.sort_by(|a, b| a.0.scene.cmp(&b.0.scene));
     scenes

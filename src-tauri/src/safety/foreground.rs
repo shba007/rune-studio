@@ -50,6 +50,7 @@ pub fn current() -> Foreground {
 /// A window handle as a plain number, so the decision about it needs no Win32 types.
 pub type WindowId = isize;
 
+#[cfg_attr(not(windows), allow(dead_code))]
 /// What to do once the user has answered the question about an action.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Restore {
@@ -64,6 +65,7 @@ pub enum Restore {
 /// Decides what to do after an answer. `remembered` is the foreground window when the question
 /// appeared (`None` when it could not be read), `own` whether it belonged to Rune Studio itself,
 /// `now` the foreground window now and `alive` whether the remembered window still exists.
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn plan_restore(remembered: Option<WindowId>, own: bool, now: Option<WindowId>, alive: bool) -> Restore {
     match remembered {
         None => Restore::Nothing,

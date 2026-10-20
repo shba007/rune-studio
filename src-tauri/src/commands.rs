@@ -130,7 +130,7 @@ pub fn begin_task_planned(app: &AppHandle, text: &str, keep_mic: bool, plan: Opt
     if task.is_empty() {
         return Err(AppError::Invalid("Type or say what you want done".into()));
     }
-    if events::agent_state(&app).is_running() {
+    if events::agent_state(app).is_running() {
         return Err(AppError::Invalid("A task is already running".into()));
     }
     if state.lease.locked().is_held() {

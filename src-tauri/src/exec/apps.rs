@@ -3,6 +3,7 @@
 use super::ExecError;
 
 /// How one name is opened.
+#[cfg_attr(not(windows), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Target {
     /// `ShellExecute` with this one argument (a program, a file, a folder, a protocol such as `ms-settings:`).
@@ -13,6 +14,7 @@ pub enum Target {
 }
 
 /// Friendly names the model uses that Windows does not resolve by itself.
+#[cfg_attr(not(windows), allow(dead_code))]
 const ALIASES: [(&str, &str); 12] = [
     ("calculator", "calc"),
     ("settings", "ms-settings:"),
@@ -32,6 +34,7 @@ const ALIASES: [(&str, &str); 12] = [
 /// extension, no protocol) is opened as `name.exe`: `ShellExecute` would otherwise take an
 /// extensionless **file** of that name from the PATH (Git's `usr\bin\notepad`) and open it in
 /// Notepad. An extensionless file is never treated as an app.
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn plan(name: &str) -> Vec<Target> {
     let name = name.trim();
     let lower = name.to_lowercase();

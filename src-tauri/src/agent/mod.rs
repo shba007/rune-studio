@@ -56,13 +56,9 @@ enum Outcome {
     Failed(String),
 }
 
-/// Starts a task on a background task and returns at once.
-pub fn start(app: &AppHandle, task: String) {
-    start_planned(app, task, None);
-}
-
-/// Like `start`, with the goals already worked out (a spoken task heard by an audio model comes
-/// with its plan, so the separate planning call is skipped).
+/// Starts a task on a background task and returns at once. `plan` is the goals already worked out
+/// (a spoken task heard by an audio model comes with its plan, so the separate planning call is
+/// skipped); `None` plans first.
 pub fn start_planned(app: &AppHandle, task: String, plan: Option<Vec<String>>) {
     // Synchronously, so a second start_task sees a running agent and is refused. The new scope
     // also cancels the previous run's, so nothing from an earlier task can carry on.
