@@ -103,17 +103,17 @@ pub fn parse(args: &[String]) -> Command {
 const HELP: &str = "\
 Rune Studio
 
-  rune-studio                  Open the app.
-  rune-studio connect claude   Connect Claude Code to Rune Studio (works in every project):
+  rune-studio-cli                  Open the app.
+  rune-studio-cli connect claude   Connect Claude Code to Rune Studio (works in every project):
                                registers the tools and installs the Rune Studio skill.
-  rune-studio connect antigravity  Connect Antigravity the same way (settings file and skill).
-  rune-studio connect --print  Show the settings to paste into any other MCP-capable agent.
-  rune-studio skill            Install or refresh the Claude Code skill only (--remove deletes it).
-  rune-studio disconnect <agent>  Remove Rune Studio from claude or antigravity (tools and skill).
+  rune-studio-cli connect antigravity  Connect Antigravity the same way (settings file and skill).
+  rune-studio-cli connect --print  Show the settings to paste into any other MCP-capable agent.
+  rune-studio-cli skill            Install or refresh the Claude Code skill only (--remove deletes it).
+  rune-studio-cli disconnect <agent>  Remove Rune Studio from claude or antigravity (tools and skill).
   rune-studio-cli enable           Allow outside agents to see and use this PC through Rune Studio.
   rune-studio-cli disable          Turn that off again.
   rune-studio-cli status           Show whether Rune Studio is running and what is allowed.
-  rune-studio guide            Print the guide an agent reads.
+  rune-studio-cli guide            Print the guide an agent reads.
   rune-studio-cli runs [--limit N]  List the newest recorded runs (default 20).
   rune-studio-cli run <id>         Show one recorded run: its steps and events.
   rune-studio-cli analyses [--limit N]  List the newest screen analyses (default 20).
@@ -159,9 +159,18 @@ pub fn run() -> i32 {
 /// `rune-studio-cli runs`: a table of the newest runs.
 fn runs_command(limit: usize) -> i32 {
     with_trace(|path| match trace::store::list_runs(path, limit) {
-        Ok(rows) if rows.is_empty() => say("No runs are recorded yet."),
-        Ok(rows) => say(&runs_table(&rows)),
-        Err(err) => say(&format!("Could not read the trace database: {err}")),
+        Ok(rows) if rows.is_empty() => {
+            say("No runs are recorded yet.");
+            0
+        }
+        Ok(rows) => {
+            say(&runs_table(&rows));
+            0
+        }
+        Err(err) => {
+            say(&format!("Could not read the trace database: {err}"));
+            1
+        }
     })
 }
 
@@ -171,19 +180,28 @@ fn run_command(id: &str) -> i32 {
         say("Say which run: rune-studio-cli run <id>   (see rune-studio-cli runs for the ids)");
         return 2;
     }
-    with_trace(|path| match trace::store::get_run(path, id) {
-        Ok(Some(detail)) => say(&run_report(&detail)),
-        Ok(None) => say(&format!("There is no run \"{id}\". See rune-studio-cli runs for the ids.")),
-        Err(err) => say(&format!("Could not read the trace database: {err}")),
+    with_trace(|path| {
+        let (text, code) = lookup_outcome("run", id, "runs", trace::store::get_run(path, id).map(|found| found.map(|detail| run_report(&detail))));
+        say(&text);
+        code
     })
 }
 
 /// `rune-studio-cli analyses`: a table of the newest screen analyses.
 fn analyses_command(limit: usize) -> i32 {
     with_trace(|path| match trace::store::list_analyses(path, limit) {
-        Ok(rows) if rows.is_empty() => say("No screen analyses are recorded yet."),
-        Ok(rows) => say(&analyses_table(&rows)),
-        Err(err) => say(&format!("Could not read the trace database: {err}")),
+        Ok(rows) if rows.is_empty() => {
+            say("No screen analyses are recorded yet.");
+            0
+        }
+        Ok(rows) => {
+            say(&analyses_table(&rows));
+            0
+        }
+        Err(err) => {
+            say(&format!("Could not read the trace database: {err}"));
+            1
+        }
     })
 }
 
@@ -193,15 +211,25 @@ fn analysis_command(id: &str) -> i32 {
         say("Say which analysis: rune-studio-cli analysis <id>   (see rune-studio-cli analyses for the ids)");
         return 2;
     }
-    with_trace(|path| match trace::store::get_analysis(path, id) {
-        Ok(Some(record)) => say(&analysis_report(&record)),
-        Ok(None) => say(&format!("There is no analysis \"{id}\". See rune-studio-cli analyses for the ids.")),
-        Err(err) => say(&format!("Could not read the trace database: {err}")),
+    with_trace(|path| {
+        let (text, code) = lookup_outcome("analysis", id, "analyses", trace::store::get_analysis(path, id).map(|found| found.map(|record| analysis_report(&record))));
+        say(&text);
+        code
     })
 }
 
+/// What `run <id>` and `analysis <id>` print and exit with: the report (0), "there is no such one"
+/// (1, so a script can tell) or the read error (1).
+fn lookup_outcome(noun: &str, id: &str, list_command: &str, found: Result<Option<String>, trace::store::StoreError>) -> (String, i32) {
+    match found {
+        Ok(Some(text)) => (text, 0),
+        Ok(None) => (format!("There is no {noun} \"{id}\". See rune-studio-cli {list_command} for the ids."), 1),
+        Err(err) => (format!("Could not read the trace database: {err}"), 1),
+    }
+}
+
 /// Finds the trace database and hands its path to `show`; says so plainly when there is none.
-fn with_trace(show: impl FnOnce(&std::path::Path)) -> i32 {
+fn with_trace(show: impl FnOnce(&std::path::Path) -> i32) -> i32 {
     let Some(path) = trace::db_path_without_app() else {
         say("Cannot tell where Rune Studio keeps its data on this system (no APPDATA folder).");
         return 1;
@@ -210,8 +238,7 @@ fn with_trace(show: impl FnOnce(&std::path::Path)) -> i32 {
         say(&format!("No trace database yet ({}). It is created the first time a task runs.", path.display()));
         return 0;
     }
-    show(&path);
-    0
+    show(&path)
 }
 
 fn say(text: &str) {
@@ -232,14 +259,50 @@ fn switch_is_on() -> bool {
     settings::path_without_app().is_some_and(|path| settings::read_file(&path).external_agent)
 }
 
+/// Who answers on the bridge's port.
+#[derive(Debug, PartialEq, Eq)]
+enum Door {
+    /// Nothing listens.
+    Closed,
+    /// Rune Studio's bridge.
+    Ours,
+    /// Something else holds the port, so the bridge could not start.
+    Taken,
+}
+
+/// Tells Rune's bridge from another program from one answer to a request that carries no token.
+/// The bridge refuses such a request with `{ "error": <code>, "message": <text> }` (or answers
+/// JSON-RPC); a web server or anything else does not speak that.
+fn classify_door(answer: Option<&str>) -> Door {
+    let Some(answer) = answer else { return Door::Closed };
+    let body = answer.split_once("\r\n\r\n").map_or("", |(_, body)| body);
+    let json: Option<Value> = serde_json::from_str(body.trim()).ok();
+    let ours = json.is_some_and(|json| json["jsonrpc"] == "2.0" || (json["error"].is_string() && json["message"].is_string()));
+    if ours { Door::Ours } else { Door::Taken }
+}
+
+/// Asks the port what it is: one tokenless POST to `/mcp`, answered by Rune with a JSON refusal.
+fn probe_door() -> Door {
+    let address: SocketAddr = ([127, 0, 0, 1], server::PORT).into();
+    let Ok(mut stream) = TcpStream::connect_timeout(&address, Duration::from_millis(300)) else { return Door::Closed };
+    let body = "{}";
+    let request = format!("POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", server::PORT, body.len());
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+    if stream.write_all(request.as_bytes()).is_err() {
+        return Door::Taken;
+    }
+    let mut answer = Vec::new();
+    let _ = std::io::Read::read_to_end(&mut stream, &mut answer);
+    classify_door(Some(&String::from_utf8_lossy(&answer)))
+}
+
 fn status() -> i32 {
-    let running = door_is_open();
-    say(&format!(
-        "Rune Studio {}\n  App:               {}\n  Outside agents:    {}",
-        env!("CARGO_PKG_VERSION"),
-        if running { "running" } else { "not running (it opens when an agent connects, or run: rune-studio)" },
-        if switch_is_on() { "allowed" } else { "not allowed (run: rune-studio-cli enable)" },
-    ));
+    let app = match probe_door() {
+        Door::Ours => "running".to_string(),
+        Door::Closed => "not running (it opens when an agent connects, or run: rune-studio)".to_string(),
+        Door::Taken => format!("another program is using port {}: Rune Studio's agent bridge cannot start while it does", server::PORT),
+    };
+    say(&format!("Rune Studio {}\n  App:               {app}\n  Outside agents:    {}", env!("CARGO_PKG_VERSION"), if switch_is_on() { "allowed" } else { "not allowed (run: rune-studio-cli enable)" }));
     0
 }
 
@@ -777,6 +840,37 @@ mod tests {
         for word in ["runs", "run <id>"] {
             assert!(HELP.contains(word), "help does not mention {word}");
         }
+    }
+
+    #[test]
+    fn an_unknown_id_exits_non_zero_and_a_found_one_exits_zero() {
+        let missing = lookup_outcome("run", "nope", "runs", Ok(None));
+        assert_eq!(missing, ("There is no run \"nope\". See rune-studio-cli runs for the ids.".to_string(), 1));
+        assert_eq!(lookup_outcome("analysis", "a1", "analyses", Ok(Some("report".into()))), ("report".to_string(), 0));
+        let broken = lookup_outcome("run", "x", "runs", Err(trace::store::StoreError::NotFound));
+        assert_eq!(broken.1, 1);
+        assert!(broken.0.contains("no trace database"));
+    }
+
+    #[test]
+    fn the_help_names_only_the_cli_program() {
+        for line in HELP.lines().filter(|line| line.trim_start().starts_with("rune-studio")) {
+            assert!(line.trim_start().starts_with("rune-studio-cli"), "{line}");
+        }
+    }
+
+    #[test]
+    fn the_door_is_told_apart_by_what_answers() {
+        let refused = "HTTP/1.1 401 Unauthorized\r\ncontent-type: application/json\r\n\r\n{\"error\":\"unauthorized\",\"message\":\"Missing or wrong token.\"}";
+        let rpc = "HTTP/1.1 200 OK\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}";
+        let web = "HTTP/1.1 404 Not Found\r\ncontent-type: text/html\r\n\r\n<html>nope</html>";
+        let other_json = "HTTP/1.1 404 Not Found\r\n\r\n{\"detail\":\"Not Found\"}";
+        assert_eq!(classify_door(Some(refused)), Door::Ours);
+        assert_eq!(classify_door(Some(rpc)), Door::Ours);
+        assert_eq!(classify_door(Some(web)), Door::Taken);
+        assert_eq!(classify_door(Some(other_json)), Door::Taken);
+        assert_eq!(classify_door(Some("")), Door::Taken, "something that accepts and says nothing is not ours");
+        assert_eq!(classify_door(None), Door::Closed);
     }
 
     #[test]

@@ -200,8 +200,6 @@ rune-studio-cli guide               # print the guide an agent reads
 rune-studio-cli mcp                 # what agents run: MCP over stdio, starts the app if needed
 ```
 
-> The built-in `--help` text of the CLI still prints some commands as `rune-studio ...`; the executable is `rune-studio-cli`.
-
 One agent holds control at a time (the "lease"). It ends on `rune_done`, on Stop (which also locks agents out until you turn the switch off and on, or run `rune-studio-cli enable` again), or after 5 minutes without a call. The tools are `rune_guide`, `rune_begin`, `rune_plan`, `rune_observe`, `rune_elements`, `rune_click`, `rune_click_element`, `rune_scroll`, `rune_drag`, `rune_type_text`, `rune_press_keys`, `rune_open_app`, `rune_wait`, `rune_status` and `rune_done`; see [`docs/AGENT-GUIDE.md`](docs/AGENT-GUIDE.md).
 
 ---
