@@ -18,9 +18,9 @@ use axum::{
 use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::events::{self, AgentState, AppState, ExternalAgent};
+use crate::events::{self, AgentState, AppState};
 
-use super::{mcp, token};
+use super::{identity, mcp, token};
 
 pub const PORT: u16 = 47600;
 /// Requests are small JSON; anything bigger is refused.
@@ -68,7 +68,7 @@ async fn watch_for_idle(app: AppHandle) {
             app.state::<AppState>()
                 .trace
                 .end_open_run("lease_expired", "");
-            let _ = app.emit(events::EXTERNAL_AGENT, ExternalAgent { agent: None });
+            events::set_external(&app, None);
             if matches!(
                 events::agent_state(&app),
                 AgentState::Acting | AgentState::Observing
@@ -164,10 +164,16 @@ async fn post_mcp(State(app): State<AppHandle>, headers: HeaderMap, body: Bytes)
             "The user has not switched External agent on in Settings.",
         );
     }
-    let request: Value = match serde_json::from_slice(&body) {
+    let mut request: Value = match serde_json::from_slice(&body) {
         Ok(request) => request,
         Err(err) => return refuse(StatusCode::BAD_REQUEST, "bad_json", &err.to_string()),
     };
+    // Who the registration says this is (the shim's `mcp --agent <id>`); a value the agent put in its
+    // own arguments is dropped first.
+    let attested = headers
+        .get(identity::ATTEST_HEADER)
+        .and_then(|value| value.to_str().ok());
+    mcp::inject_attestation(&mut request, attested);
     match mcp::handle(&app, request).await {
         Some(reply) => (
             [(header::CONTENT_TYPE, "application/json")],

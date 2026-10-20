@@ -62,6 +62,8 @@ pub struct AppState {
     pub verifier: Mutex<exec::CancelToken>,
     /// The screen analysis window's state (see `analysis`).
     pub analysis: Mutex<crate::analysis::state::AnalysisState>,
+    /// Who is in control from outside right now (see `bridge::identity`), for a window that opens late.
+    pub external: Mutex<Option<crate::bridge::identity::AgentIdentity>>,
     pub agent_state: Mutex<AgentState>,
     /// Who may drive the PC from outside (see `bridge::lease`).
     pub lease: Mutex<LeaseBook>,
@@ -220,7 +222,47 @@ pub struct ObserveStarted {
 
 #[derive(Clone, Serialize)]
 pub struct ExternalAgent {
+    /// The display name (the old field the overlay already reads); `None` when nobody is in control.
     pub agent: Option<String>,
+    /// The brand id (`claude`, `antigravity`, ..., `external`); `None` when nobody is in control.
+    pub id: Option<String>,
+    pub known: bool,
+    /// The registration (`mcp --agent <id>`) named the agent, not only the agent itself.
+    pub verified: bool,
+    /// What the agent called itself, for a tooltip.
+    pub declared: Option<String>,
+}
+
+/// Records who is in control from outside (`None`: nobody) and tells every window.
+pub fn set_external(app: &AppHandle, who: Option<crate::bridge::identity::AgentIdentity>) {
+    let event = who
+        .as_ref()
+        .map_or_else(ExternalAgent::none, ExternalAgent::of);
+    *app.state::<AppState>().external.locked() = who;
+    let _ = app.emit(EXTERNAL_AGENT, event);
+}
+
+impl ExternalAgent {
+    /// Nobody is in control.
+    pub fn none() -> Self {
+        Self {
+            agent: None,
+            id: None,
+            known: false,
+            verified: false,
+            declared: None,
+        }
+    }
+
+    pub fn of(who: &crate::bridge::identity::AgentIdentity) -> Self {
+        Self {
+            agent: Some(who.name.clone()),
+            id: Some(who.id.clone()),
+            known: who.known,
+            verified: who.verified,
+            declared: Some(who.declared.clone()),
+        }
+    }
 }
 
 #[derive(Clone, Serialize)]
@@ -316,6 +358,7 @@ mod tests {
             run: Mutex::new(RunScope::new()),
             verifier: Mutex::new(exec::CancelToken::default()),
             analysis: Default::default(),
+            external: Default::default(),
             agent_state: Mutex::new(AgentState::Idle),
             lease: Mutex::new(LeaseBook::default()),
             confirm: Mutex::new(None),

@@ -109,11 +109,7 @@ pub fn stop(app: AppHandle) {
         had
     };
     if had_agent {
-        let _ = tauri::Emitter::emit(
-            &app,
-            events::EXTERNAL_AGENT,
-            events::ExternalAgent { agent: None },
-        );
+        events::set_external(&app, None);
     }
     // Whatever task was running is over: close its session folder (a no-op when none is open).
     crate::archive::end_session(None, "stopped", "");
@@ -294,7 +290,8 @@ pub fn bridge_info() -> BridgeInfo {
                     .to_string()
             })
             .unwrap_or_else(|_| "rune-studio".into());
-        let command = format!("claude mcp add --scope user rune-studio -- \"{exe}\" mcp");
+        let command =
+            format!("claude mcp add --scope user rune-studio -- \"{exe}\" mcp --agent claude");
         BridgeInfo {
             available: true,
             url,
@@ -333,4 +330,14 @@ pub fn analysis_state(state: State<'_, AppState>) -> crate::analysis::state::Sna
 #[tauri::command]
 pub fn cancel_analysis(app: AppHandle) {
     crate::analysis::run::cancel(&app);
+}
+
+/// Who is in control from outside right now, so a window that opens late shows the right identity.
+#[tauri::command]
+pub fn external_agent(state: State<'_, AppState>) -> events::ExternalAgent {
+    state
+        .external
+        .locked()
+        .as_ref()
+        .map_or_else(events::ExternalAgent::none, events::ExternalAgent::of)
 }

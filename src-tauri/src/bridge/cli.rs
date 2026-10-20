@@ -24,7 +24,7 @@ use std::{
 use serde_json::{Value, json};
 
 use super::{
-    agents, server,
+    agents, identity, server,
     skill::{self, GUIDE},
     token,
 };
@@ -45,7 +45,8 @@ const DEFAULT_RUNS: usize = 20;
 pub enum Command {
     /// No arguments: open the app.
     App,
-    Mcp,
+    /// `mcp [--agent <id>]`: the stdio shim; the id is what the registration says the agent is.
+    Mcp(Option<String>),
     Status,
     Enable,
     Disable,
@@ -72,7 +73,14 @@ pub fn parse(args: &[String]) -> Command {
         return Command::App;
     };
     match first.as_str() {
-        "mcp" => Command::Mcp,
+        "mcp" => match args.get(1).map(String::as_str) {
+            None => Command::Mcp(None),
+            Some("--agent") => match args.get(2).filter(|id| !id.starts_with('-')) {
+                Some(id) => Command::Mcp(Some(id.clone())),
+                None => Command::Unknown("mcp --agent (needs an id)".into()),
+            },
+            Some(other) => Command::Unknown(format!("mcp {other}")),
+        },
         "status" => Command::Status,
         "enable" => Command::Enable,
         "disable" => Command::Disable,
@@ -131,7 +139,7 @@ pub fn run() -> i32 {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match parse(&args) {
         Command::App => open_app(),
-        Command::Mcp => run_mcp(),
+        Command::Mcp(agent) => run_mcp(agent.as_deref()),
         Command::Status => status(),
         Command::Enable => set_switch(true),
         Command::Disable => set_switch(false),
@@ -473,6 +481,8 @@ fn connect_claude(exe: &str) -> i32 {
         "--",
         exe,
         "mcp",
+        "--agent",
+        "claude",
     ]) {
         Ok(status) if status.success() => {
             let skill_note = match install_skill() {
@@ -493,7 +503,7 @@ fn connect_claude(exe: &str) -> i32 {
             say(&format!(
                 "Could not run Claude Code's \"claude\" command. Connect by hand with:
 
-  claude mcp add --scope user rune-studio -- \"{exe}\" mcp
+  claude mcp add --scope user rune-studio -- \"{exe}\" mcp --agent claude
 "
             ));
             1
@@ -679,12 +689,18 @@ fn ensure_app() -> Result<(), String> {
 }
 
 /// Sends one message to the app. `Ok(None)` means it was a notification and nothing comes back.
-async fn forward(client: &reqwest::Client, message: &Value) -> Result<Option<Value>, String> {
+async fn forward(
+    client: &reqwest::Client,
+    message: &Value,
+    agent: Option<&str>,
+) -> Result<Option<Value>, String> {
     ensure_app()?;
     let secret = token::get_or_create()?;
-    let response = client
-        .post(server::url())
-        .bearer_auth(secret)
+    let mut request = client.post(server::url()).bearer_auth(secret);
+    if let Some(agent) = agent {
+        request = request.header(identity::ATTEST_HEADER, agent);
+    }
+    let response = request
         .json(message)
         .timeout(Duration::from_secs(300))
         .send()
@@ -713,7 +729,7 @@ async fn forward(client: &reqwest::Client, message: &Value) -> Result<Option<Val
         .map_err(|err| err.to_string())
 }
 
-fn run_mcp() -> i32 {
+fn run_mcp(agent: Option<&str>) -> i32 {
     let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -727,7 +743,7 @@ fn run_mcp() -> i32 {
             continue;
         };
         // One at a time keeps replies in the order the agent asked.
-        let reply = match runtime.block_on(forward(&client, &message)) {
+        let reply = match runtime.block_on(forward(&client, &message, agent)) {
             Ok(reply) => reply,
             Err(problem) => message.get("id").map(|id| rpc_error(id, &problem)),
         };
@@ -1036,7 +1052,19 @@ mod tests {
 
     #[test]
     fn commands_parse() {
-        assert_eq!(parse(&args(&["mcp"])), Command::Mcp);
+        assert_eq!(parse(&args(&["mcp"])), Command::Mcp(None));
+        assert_eq!(
+            parse(&args(&["mcp", "--agent", "claude"])),
+            Command::Mcp(Some("claude".into()))
+        );
+        assert!(matches!(
+            parse(&args(&["mcp", "--agent"])),
+            Command::Unknown(_)
+        ));
+        assert!(matches!(
+            parse(&args(&["mcp", "--bogus"])),
+            Command::Unknown(_)
+        ));
         assert_eq!(parse(&args(&["status"])), Command::Status);
         assert_eq!(parse(&args(&["enable"])), Command::Enable);
         assert_eq!(parse(&args(&["disable"])), Command::Disable);

@@ -132,7 +132,7 @@ export function installTauriMock() {
             available: true,
             url: 'http://127.0.0.1:47600/mcp',
             command:
-              'claude mcp add --scope user rune-studio -- "C:/Rune Studio/rune-studio-cli.exe" mcp',
+              'claude mcp add --scope user rune-studio -- "C:/Rune Studio/rune-studio-cli.exe" mcp --agent claude',
           }
         case 'get_control_label':
           return null

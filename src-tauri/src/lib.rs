@@ -126,6 +126,7 @@ pub fn run() {
                 run: Mutex::new(exec::RunScope::new()),
                 verifier: Mutex::new(exec::CancelToken::default()),
                 analysis: Default::default(),
+                external: Default::default(),
                 agent_state: Mutex::new(AgentState::Idle),
                 lease: Mutex::new(bridge::lease::LeaseBook::default()),
                 confirm: Mutex::new(None),
@@ -197,6 +198,7 @@ pub fn run() {
             commands::analyze_again,
             commands::analysis_state,
             commands::cancel_analysis,
+            commands::external_agent,
             commands::bridge_info,
             commands::get_control_label,
             #[cfg(debug_assertions)]

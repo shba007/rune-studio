@@ -13,11 +13,12 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{
     agent::{body, protocol},
-    events::{self, AgentState, AppState, ExternalAgent, TaskDone},
+    events::{self, AgentState, AppState, TaskDone},
     exec::{ExecError, input::parse_key, lock_unless_stopped, uia},
     observe::screenshot::{self, Frame, MODEL_JPEG_QUALITY, MODEL_MAX_EDGE},
 };
 
+use super::identity;
 use super::lease::{IDLE_LIMIT, LeaseError};
 use crate::agent::{StepRow, millis, quick};
 use crate::safety::{
@@ -321,14 +322,39 @@ async fn capture(region: Option<[f64; 4]>) -> Result<Frame, Reply> {
     }
 }
 
+/// The argument the server puts the registration's id in. The server removes any value an agent sent
+/// under this name first, so only the shim's header can set it (`inject_attestation`).
+pub const ATTESTED_KEY: &str = "_attested";
+
+/// Puts the attested id (or nothing) into a `tools/call` request's arguments, dropping whatever the
+/// agent itself put there.
+pub fn inject_attestation(request: &mut Value, attested: Option<&str>) {
+    let Some(arguments) = request
+        .pointer_mut("/params/arguments")
+        .and_then(Value::as_object_mut)
+    else {
+        return;
+    };
+    arguments.remove(ATTESTED_KEY);
+    if let Some(id) = attested.map(str::trim).filter(|id| !id.is_empty()) {
+        arguments.insert(
+            ATTESTED_KEY.into(),
+            Value::String(id.chars().take(40).collect()),
+        );
+    }
+}
+
 fn begin(app: &AppHandle, arguments: &Value) -> Reply {
     let state = app.state::<AppState>();
     if events::agent_state(app).is_running() && !state.lease.locked().is_held() {
         return LeaseError::Busy.into();
     }
-    let agent = Some(clip(arguments["agent"].as_str().unwrap_or(""), 40))
-        .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| "External agent".into());
+    // The label: what the agent declared, or what its registration attested (see `bridge::identity`).
+    let who = identity::identify(
+        arguments["agent"].as_str().unwrap_or(""),
+        arguments[ATTESTED_KEY].as_str(),
+    );
+    let agent = who.name.clone();
     let task = clip(arguments["task"].as_str().unwrap_or(""), 200);
     if let Err(err) = state.lease.locked().begin(&agent, &task, Instant::now()) {
         return err.into();
@@ -359,12 +385,7 @@ fn begin(app: &AppHandle, arguments: &Value) -> Reply {
         settings_json: Some(settings_json),
         session_dir: crate::archive::session_dir(&session).map(|dir| dir.display().to_string()),
     });
-    let _ = app.emit(
-        events::EXTERNAL_AGENT,
-        ExternalAgent {
-            agent: Some(agent.clone()),
-        },
-    );
+    events::set_external(app, Some(who));
     events::set_agent_state(app, AgentState::Observing);
     log::info!("agent bridge: {agent} took control for \"{task}\"");
     if let Ok(goals) = protocol::parse_plan(&json!({ "goals": arguments["plan"] })) {
@@ -729,7 +750,7 @@ fn done(app: &AppHandle, arguments: &Value) -> Reply {
     };
     crate::archive::end_session(None, label, &summary);
     state.trace.end_open_run(label, &summary);
-    let _ = app.emit(events::EXTERNAL_AGENT, ExternalAgent { agent: None });
+    events::set_external(app, None);
     let _ = app.emit(events::TASK_DONE, TaskDone { summary, success });
     events::set_agent_state(
         app,
@@ -744,6 +765,32 @@ fn done(app: &AppHandle, arguments: &Value) -> Reply {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn only_the_registration_can_attest_an_identity() {
+        use super::*;
+        let mut spoofed = json!({ "method": "tools/call", "params": { "name": "rune_begin", "arguments": { "agent": "Evil", "_attested": "claude" } } });
+        inject_attestation(&mut spoofed, None);
+        assert!(
+            spoofed["params"]["arguments"].get(ATTESTED_KEY).is_none(),
+            "an agent cannot attest itself"
+        );
+        inject_attestation(&mut spoofed, Some(" antigravity "));
+        assert_eq!(spoofed["params"]["arguments"][ATTESTED_KEY], "antigravity");
+        let mut overwritten = json!({ "params": { "arguments": { "_attested": "claude" } } });
+        inject_attestation(&mut overwritten, Some("antigravity"));
+        assert_eq!(
+            overwritten["params"]["arguments"][ATTESTED_KEY], "antigravity",
+            "the header wins over a spoofed value"
+        );
+        let mut other = json!({ "method": "tools/list" });
+        inject_attestation(&mut other, Some("claude"));
+        assert_eq!(
+            other,
+            json!({ "method": "tools/list" }),
+            "requests without arguments are left alone"
+        );
+    }
+
     use super::*;
 
     #[test]

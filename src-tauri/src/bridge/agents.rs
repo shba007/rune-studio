@@ -49,7 +49,10 @@ pub fn add_server(existing: &str, exe: &str) -> Result<String, String> {
     let Value::Object(servers) = servers else {
         return Err("\"mcpServers\" in your settings is not an object".into());
     };
-    servers.insert(SERVER.into(), json!({ "command": exe, "args": ["mcp"] }));
+    servers.insert(
+        SERVER.into(),
+        json!({ "command": exe, "args": ["mcp", "--agent", "antigravity"] }),
+    );
     to_text(root)
 }
 
@@ -129,7 +132,10 @@ mod tests {
         for start in ["", "  \n", "{}", r#"{"mcpServers": {}}"#] {
             let result = parsed(&add_server(start, EXE).unwrap());
             assert_eq!(result["mcpServers"]["rune-studio"]["command"], EXE);
-            assert_eq!(result["mcpServers"]["rune-studio"]["args"], json!(["mcp"]));
+            assert_eq!(
+                result["mcpServers"]["rune-studio"]["args"],
+                json!(["mcp", "--agent", "antigravity"])
+            );
         }
     }
 
