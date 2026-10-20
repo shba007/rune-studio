@@ -127,21 +127,24 @@ Rune's windows are excluded from screen capture, so Windows' Snipping Tool, Game
 
 Settings are saved to `settings.json` in the app config folder (identifier `dev.shirsendu-bairagi.rune-studio`). The rune-infer API key is kept in the OS credential store, never in the file. `archiveKeepDays` (default `0`, which keeps everything) has no UI: edit the file to delete session folders older than that many days at startup.
 
-| Group          | Setting                        | Default                                           |
-| -------------- | ------------------------------ | ------------------------------------------------- |
-| Connection     | Base URL                       | `http://127.0.0.1:8080`                           |
-| Connection     | API key                        | none (credential store)                           |
-| Models         | Model                          | `gemma-4-12b-it`                                  |
-| Models         | Fast checks                    | off                                               |
-| Models         | Decision model / URL           | `liquid-d1-3b` / empty (= the model server above) |
-| Models         | Show thinking                  | off                                               |
-| Safety         | Ask before every action        | off                                               |
-| Shortcuts      | Open and close / Stop          | `Alt+Q` / `Ctrl+Alt+Escape`                       |
-| External agent | Allow outside agent            | off (only shown in bridge builds)                 |
-| Updates        | Check for updates              | automatic at launch                               |
-| Developer      | Eyes and hands, state switcher | development builds only                           |
+| Group           | Setting                        | Default                                             |
+| --------------- | ------------------------------ | --------------------------------------------------- |
+| Connection      | Base URL                       | `http://127.0.0.1:8080`                             |
+| Connection      | API key                        | none (credential store)                             |
+| Models          | Model                          | `gemma-4-12b-it`                                    |
+| Models          | Fast checks                    | off                                                 |
+| Models          | Decision model / URL           | `liquid-d1-3b` / empty (= the model server above)   |
+| Models          | Show thinking                  | off                                                 |
+| Safety          | Ask before every action        | off                                                 |
+| Screen analysis | Show boxes (unreliable)        | off                                                 |
+| Recording       | Show Rune in screen recordings | off                                                 |
+| Idle review     | Offer to review tasks          | off (`idleMinutes`, default 10, in `settings.json`) |
+| Shortcuts       | Open and close / Stop          | `Alt+Q` / `Ctrl+Alt+Escape`                         |
+| External agent  | Allow outside agent            | off (only shown in bridge builds)                   |
+| Updates         | Check for updates              | automatic at launch                                 |
+| Developer       | Eyes and hands, state switcher | development builds only                             |
 
-`maxSteps` (default 30) is in `settings.json` but has no UI control. So is `verifyMode`, which controls the **independent check** of a finished task: one more call to the model that looks at the final screen and says `verified`, `contradicted` or `unsure`. `background` (the default) shows "Done" at once and checks afterwards, telling you only if the screen seems to contradict the task; `blocking` checks before finishing and gives the agent one more chance when it is contradicted (slower: one more model call); `off` does nothing. Each result is stored in the trace database (see `rune-studio-cli runs`).
+`maxSteps` (default 30) is in `settings.json` but has no UI control. So is `verifyMode`, which controls the **independent check** of a finished task: one more call to the model that looks at the final screen and says `verified`, `contradicted` or `unsure`. `background` (the default) shows "Done" at once and checks afterwards, telling you only if the screen seems to contradict the task; `blocking` checks before finishing and gives the agent one more chance when it is contradicted (slower: one more model call); `off` does nothing. Each result is stored in the trace database (see `rune-studio-cli runs`). `rune-studio-cli reflections` lists the idle review runs.
 
 ### The model server
 
