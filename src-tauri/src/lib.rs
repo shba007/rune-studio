@@ -20,6 +20,7 @@ mod model;
 mod observe;
 mod overlay;
 mod reflect;
+mod review;
 mod safety;
 mod settings;
 mod sync;
@@ -145,6 +146,7 @@ pub fn run() {
             }
             reflect::start_watcher(app.handle());
             video::start_worker(app.handle());
+            review::start_watcher(app.handle());
             video::start_motion_recorder(app.handle());
             if let Some(pill) = app.get_webview_window(window::MAIN) {
                 window::protect(&pill)?;

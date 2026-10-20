@@ -15,6 +15,7 @@ import { useExternalAgent } from '@/composables/useExternalAgent'
 import AnalysisCard from './AnalysisCard.vue'
 import GlyphOrb from './GlyphOrb.vue'
 import ReflectionCard from './ReflectionCard.vue'
+import ReviewCard from './ReviewCard.vue'
 import HealthDots from './HealthDots.vue'
 import ProgressRing from './ProgressRing.vue'
 import SettingsPanel from './SettingsPanel.vue'
@@ -234,6 +235,15 @@ function onOrb() {
               </section>
               <ReflectionCard
                 v-if="agent.reflectionPrompt.value && !agent.question.value"
+                :agent="agent"
+              />
+              <ReviewCard
+                v-if="
+                  agent.reviewOffer.value &&
+                  !agent.question.value &&
+                  !agent.reflectionPrompt.value &&
+                  !agent.isRunning.value
+                "
                 :agent="agent"
               />
               <ConfirmCard

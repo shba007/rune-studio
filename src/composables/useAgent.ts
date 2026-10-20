@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { useTimeoutFn } from '@vueuse/core'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
+import { REVIEW_SECONDS, readOffer, type ReviewOffer } from '@/config/review'
 import {
   AUDIO_LEVEL,
   VOICE_HEARD,
@@ -129,6 +130,9 @@ export function useAgent() {
   /** How far the idle review is (null when none is running). */
   const reflection = ref<ReflectionProgressPayload | null>(null)
 
+  /** The offer to review a finished session, while it is up (`endsAt` on this window's clock). */
+  const reviewOffer = ref<(ReviewOffer & { endsAt: number }) | null>(null)
+
   const unlisten: UnlistenFn[] = []
   let modeToken = 0
   let heardSound = false
@@ -244,6 +248,12 @@ export function useAgent() {
   }
 
   const stop = () => call('stop')
+  const dismissReview = () => (reviewOffer.value = null)
+  /** Opens the Flight Player on this session and puts the card away. */
+  async function openReview(runId: string) {
+    reviewOffer.value = null
+    await call('open_flight', { runId })
+  }
   /** Start (true) or Deny (false) the idle review. */
   async function answerReflection(start: boolean) {
     reflectionPrompt.value = null
@@ -342,6 +352,14 @@ export function useAgent() {
         reflection.value = event.payload.total > 0 ? event.payload : null
         if (event.payload.total > 0) plan.value = null
       }),
+      await listen('review_offer', (event) => {
+        const offer = readOffer(event.payload)
+        // Never over a running task; the confirm card and the idle prompt take the place first.
+        if (offer && !isRunning.value) {
+          reviewOffer.value = { ...offer, endsAt: Date.now() + REVIEW_SECONDS * 1000 }
+          if (mode.value === 'ambient') void setMode('open')
+        }
+      }),
       await listen<PlanUpdatedPayload>(PLAN_UPDATED, (event) => (plan.value = event.payload)),
       await listen<ConfirmRequestPayload>(CONFIRM_REQUEST, (event) => {
         question.value = event.payload
@@ -402,6 +420,9 @@ export function useAgent() {
     startTask,
     stop,
     reflectionPrompt,
+    reviewOffer,
+    dismissReview,
+    openReview,
     reflection,
     answerReflection,
     noteActivity,
