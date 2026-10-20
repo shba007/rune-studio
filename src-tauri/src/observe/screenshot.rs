@@ -60,9 +60,10 @@ impl Frame {
         Ok(format!("data:image/jpeg;base64,{}", BASE64.encode(jpeg)))
     }
 
-    /// A tiny grey copy (32 by 18), to tell whether the screen changed between two looks.
+    /// A small grey copy (128 by 72, see `stuck::SIGNATURE_SIZE`), to tell whether the screen changed
+    /// between two looks. Fine enough to see a menu or a few words, coarse enough to ignore a caret.
     pub fn signature(&self) -> Vec<u8> {
-        let small = image::imageops::resize(&self.image, 32, 18, FilterType::Triangle);
+        let small = image::imageops::resize(&self.image, crate::agent::stuck::SIGNATURE_SIZE.0, crate::agent::stuck::SIGNATURE_SIZE.1, FilterType::Triangle);
         small.pixels().map(|pixel| ((u32::from(pixel[0]) * 3 + u32::from(pixel[1]) * 6 + u32::from(pixel[2])) / 10) as u8).collect()
     }
 

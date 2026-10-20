@@ -501,7 +501,7 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, canc
     let mut watch = stuck::Watch::default();
     let mut elevated_watch = stuck::ElevatedWatch::default();
     // Whether an action ran since the last look, for noticing a screen that does not change.
-    let mut acted = false;
+    let mut acted: Option<stuck::Acted> = None;
     // Ids from an earlier task must never be clicked in this one.
     uia::forget();
 
@@ -587,12 +587,12 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, canc
         let screenshot = frame.data_uri();
 
         // Going nowhere? Tell the model after two unchanged looks, give up after five.
-        let unchanged = watch.look(frame.signature(), acted);
-        acted = false;
+        let unchanged = watch.look(frame.signature(), acted.as_ref());
+        acted = None;
         if stuck::warning(unchanged).is_some() {
             trace.event(run_id, "stuck_warning", &serde_json::json!({ "unchanged": unchanged }).to_string());
         }
-        if unchanged >= stuck::GIVE_UP_AFTER {
+        if watch.should_give_up() {
             row.fail("the screen stopped changing");
             return Outcome::Failed("Stopped: the screen stopped changing, so the actions are not working".into());
         }
@@ -807,6 +807,7 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, canc
 
         // Act.
         let described = body::announce(app, step, &reason, &action, &frame.monitor);
+        let acted_now = stuck::Acted::new(action.tool_name(), action.describe());
         events::set_agent_state(app, AgentState::Acting);
         let settle = body::settle_time(&action);
         let monitor = frame.monitor;
@@ -846,7 +847,7 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, canc
             }
         }
 
-        acted = true;
+        acted = Some(acted_now);
         let settling = Instant::now();
         let settled = cancel.sleep(settle);
         row.rec.settle_ms = millis(settling);
