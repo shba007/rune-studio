@@ -7,7 +7,10 @@ import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from
 import { KIND_ICON, TOOL_LABEL, kindOf, type ActionKind } from '@/config/actions'
 import type {
   AgentState,
+  OVERLAY_MODE,
   ObserveStartedPayload,
+  OverlayInfo,
+  OverlayOwner,
   PillRect,
   Settings,
   StepStartedPayload,
@@ -15,9 +18,13 @@ import type {
   TypedPayload,
 } from '@/types/protocol'
 
+import { useAnalysis } from '@/composables/useAnalysis'
 import { useExternalAgent } from '@/composables/useExternalAgent'
 
 import AgentMark from './AgentMark.vue'
+import AnalysisBar from './AnalysisBar.vue'
+import AnalysisLayer from './AnalysisLayer.vue'
+import OverlayBarShell from './OverlayBarShell.vue'
 import AppIcon from './AppIcon.vue'
 
 /** Full-screen "the agent is driving" effect: a dot-matrix frame with a pulse circling it. */
@@ -239,6 +246,47 @@ watch(identity, (who, before) => {
     setTimeout(() => (markPulse.value = false), 600)
   }
 })
+// ---- Screen analysis: the same overlay, a second mode. Control and analysis never share it.
+const owner = ref<OverlayOwner>('none')
+const overlayInfo = ref<OverlayInfo | null>(null)
+const analysis = useAnalysis()
+const analysisMode = computed(() => owner.value === 'analysis')
+const view = computed(() => ({
+  width: overlayInfo.value?.width ?? window.innerWidth * (window.devicePixelRatio || 1),
+  height: overlayInfo.value?.height ?? window.innerHeight * (window.devicePixelRatio || 1),
+  scaleFactor: overlayInfo.value?.scaleFactor ?? (window.devicePixelRatio || 1),
+}))
+/** Markers belong on the primary monitor, where the analysis captured. */
+const drawsMarkers = computed(
+  () =>
+    analysisMode.value &&
+    overlayInfo.value?.primary === true &&
+    analysis.snapshot.value.monitor?.primary === true,
+)
+const barShown = ref(false)
+const startedAtMs = ref(0)
+const nowMs = ref(0)
+const scanKey = ref(0)
+let barTimer: number | undefined
+let tick: number | undefined
+watch(
+  () => analysis.snapshot.value.status,
+  (status, before) => {
+    window.clearTimeout(barTimer)
+    if (status === 'capturing' || (status === 'asking' && before !== 'capturing')) {
+      startedAtMs.value = performance.now()
+      barShown.value = true
+    }
+    // The capture has happened: sweep the scan line once.
+    if (status === 'asking' && before === 'capturing') scanKey.value += 1
+    if (status === 'done' || status === 'error' || status === 'cancelled') {
+      // The end word stays for 1.5 s; the markers stay on the screen after the bar is gone.
+      barTimer = window.setTimeout(() => (barShown.value = false), 1500)
+    }
+    if (status === 'idle') barShown.value = false
+  },
+)
+const elapsedMs = computed(() => Math.max(0, nowMs.value - startedAtMs.value))
 const shownName = computed(() => identity.value?.agent ?? agentName.value ?? 'Rune')
 
 /** Characters of typed text shown at once; longer text scrolls so the newest letters stay in view. */
@@ -453,8 +501,21 @@ onMounted(async () => {
       (event) => (agentName.value = event.payload.agent),
     ),
   )
+  unlisten.push(
+    await listen<{ mode: OverlayOwner }>(OVERLAY_MODE, (event) => {
+      owner.value = event.payload.mode
+    }),
+  )
+  try {
+    overlayInfo.value = await invoke<OverlayInfo>('overlay_info')
+    owner.value = overlayInfo.value.mode
+  } catch {
+    // Without it the overlay draws as before (control only).
+  }
+  nowMs.value = performance.now()
+  tick = window.setInterval(() => (nowMs.value = performance.now()), 250)
   // The window is created at the moment control starts, so it may have missed the events.
-  setActive(true)
+  if (owner.value !== 'analysis') setActive(true)
   try {
     agentName.value = await invoke<string | null>('get_control_label')
   } catch {
@@ -480,7 +541,11 @@ onMounted(async () => {
   }
 })
 useEventListener(window, 'resize', layout)
-onBeforeUnmount(() => unlisten.forEach((off) => off()))
+onBeforeUnmount(() => {
+  unlisten.forEach((off) => off())
+  window.clearInterval(tick)
+  window.clearTimeout(barTimer)
+})
 </script>
 
 <template>
@@ -492,9 +557,7 @@ onBeforeUnmount(() => unlisten.forEach((off) => off()))
       <canvas ref="canvas" class="absolute inset-0 size-full" aria-hidden="true" />
 
       <!-- One pill: who is in control, what they are doing right now, and how to stop them. -->
-      <div
-        class="absolute top-6 left-1/2 flex h-10 -translate-x-1/2 items-center gap-3 rounded-full bg-black/85 pr-1 pl-4 text-white"
-      >
+      <OverlayBarShell>
         <span
           class="grid shrink-0 place-items-center"
           :class="{ 'motion-safe:animate-pulse': markPulse }"
@@ -535,8 +598,24 @@ onBeforeUnmount(() => unlisten.forEach((off) => off()))
             <AppIcon name="stop" />
           </span>
         </div>
-      </div>
+      </OverlayBarShell>
     </div>
+
+    <!-- Screen analysis: the same bar, and the boxes on the real screen (primary monitor only). -->
+    <template v-if="analysisMode && overlayInfo?.primary">
+      <AnalysisBar
+        v-if="barShown"
+        :status="analysis.snapshot.value.status"
+        :elapsed-ms="elapsedMs"
+        :hotkey="hotkeyLabel"
+      />
+      <AnalysisLayer
+        v-if="drawsMarkers"
+        :snapshot="analysis.snapshot.value"
+        :view="view"
+        :scan-key="scanKey"
+      />
+    </template>
 
     <!-- The speech bubble at the orb's head. Outside the fading frame, so it outlasts it briefly. -->
     <Transition name="bubble">

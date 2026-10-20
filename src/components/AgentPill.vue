@@ -8,8 +8,10 @@ import { PAGE_GAP, PAGE_WIDTH } from '@/config/layout'
 
 import Composer from './Composer.vue'
 import ConfirmCard from './ConfirmCard.vue'
+import { useAnalysis } from '@/composables/useAnalysis'
 import { useExternalAgent } from '@/composables/useExternalAgent'
 
+import AnalysisCard from './AnalysisCard.vue'
 import GlyphOrb from './GlyphOrb.vue'
 import ReflectionCard from './ReflectionCard.vue'
 import HealthDots from './HealthDots.vue'
@@ -55,6 +57,17 @@ const ringFinished = computed(() =>
   reflecting.value
     ? reflecting.value.done >= reflecting.value.total
     : (agent.plan.value?.finished ?? false),
+)
+
+const analysis = useAnalysis()
+// The cards open by themselves when an analysis starts, and the pill goes back to the composer when
+// they are closed (an analysis that is refused never changes the status, so nothing opens).
+watch(
+  () => analysis.snapshot.value.status,
+  (status) => {
+    if (status !== 'idle' && agent.mode.value !== 'analysis') void agent.setMode('analysis')
+    else if (status === 'idle' && agent.mode.value === 'analysis') void agent.setMode('open')
+  },
 )
 
 const isAmbient = computed(() => agent.mode.value === 'ambient')
@@ -144,7 +157,7 @@ function onOrb() {
         @click="onOrb"
       >
         <GlyphOrb
-          :state="updating ? 'planning' : agent.state.value"
+          :state="updating || analysis.busy.value ? 'planning' : agent.state.value"
           :level="agent.level.value"
           :accent="orbAccent"
           :mark="agentMark"
@@ -171,6 +184,7 @@ function onOrb() {
               <Transition name="page">
                 <TaskPanel v-if="agent.mode.value === 'task'" :agent="agent" />
               </Transition>
+              <AnalysisCard v-if="agent.mode.value === 'analysis'" :analysis="analysis" />
               <section
                 v-if="promptVisible && updater.latest.value"
                 class="flex w-full flex-col gap-2 rounded-[28px] border border-white/15 bg-[#141414] p-4 text-zinc-100"

@@ -12,6 +12,7 @@ import IconArrowLeft from '~icons/ph/arrow-left-fill'
 import IconAppWindow from '~icons/ph/app-window-fill'
 import IconArrowUp from '~icons/ph/arrow-up-fill'
 import IconBrain from '~icons/ph/brain-fill'
+import IconCaretDown from '~icons/ph/caret-down-fill'
 import IconCheckCircle from '~icons/ph/check-circle-fill'
 import IconEye from '~icons/ph/eye-fill'
 import IconKey from '~icons/ph/key-fill'
@@ -38,6 +39,7 @@ import IconTrash from '~icons/ph/trash-fill'
 export const icons = {
   app: IconAppWindow,
   back: IconArrowLeft,
+  chevron: IconCaretDown,
   close: IconX,
   copy: IconCopy,
   plug: IconPlugs,

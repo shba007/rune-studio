@@ -1,87 +1,153 @@
 import { describe, expect, it } from 'vite-plus/test'
 
-import type { Box } from '@/types/protocol'
+import type { AnalysisSnapshot } from '@/types/protocol'
 
-import { layoutChips, readSnapshot, type ChipInput, type ChipLayout } from './analysis'
+import {
+  type CardsState,
+  EMPTY_SNAPSHOT,
+  badgePosition,
+  boxToCss,
+  drawable,
+  escape,
+  formatElapsed,
+  markerOpacity,
+  readSnapshot,
+  stageWord,
+  toggleOpen,
+} from './analysis'
 
-const stage = { width: 800, height: 450 }
-const item = (n: number, box: Box, label = `Item ${n}`): ChipInput => ({ n, label, box })
+const monitor = { id: 1, x: 0, y: 0, width: 1920, height: 1080, scaleFactor: 1, primary: true }
 
-function anyOverlap(chips: ChipLayout[]) {
-  return chips.some((a, i) =>
-    chips
-      .slice(i + 1)
-      .some((b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h),
-  )
-}
-
-describe('layoutChips', () => {
-  it('puts a chip to the right of its box with a leader from the chip to the box edge', () => {
-    const [chip] = layoutChips([item(1, [100, 200, 300, 260])], stage)
-    expect(chip!.side).toBe('right')
-    expect(chip!.x).toBe(314)
-    expect(chip!.leader).toEqual({
-      x1: 314,
-      y1: chip!.y + chip!.h / 2,
-      x2: 300,
-      y2: chip!.y + chip!.h / 2,
+describe('boxToCss', () => {
+  it('maps 0..1000 onto the overlay window at 100 percent', () => {
+    expect(boxToCss([100, 200, 300, 260], { width: 1920, height: 1080, scaleFactor: 1 })).toEqual({
+      left: 192,
+      top: 216,
+      width: 384,
+      height: 64.8,
     })
-    // The chip's height lies inside the box's, so the leader is level.
-    expect(chip!.y + chip!.h / 2).toBeGreaterThan(200)
-    expect(chip!.y + chip!.h / 2).toBeLessThan(260)
   })
 
-  it('moves to the left of a box near the right edge, and inside a box that spans the width', () => {
-    const [left, inside] = layoutChips(
-      [item(1, [800, 100, 980, 160]), item(2, [10, 700, 990, 760], 'A very long label here')],
-      stage,
+  it('is right at 125 and 150 percent: the window is physical pixels over the scale', () => {
+    const at125 = boxToCss([500, 500, 1000, 1000], { width: 1920, height: 1080, scaleFactor: 1.25 })
+    expect(at125).toEqual({ left: 768, top: 432, width: 768, height: 432 })
+    const at150 = boxToCss([0, 0, 500, 500], { width: 2880, height: 1620, scaleFactor: 1.5 })
+    expect(at150).toEqual({ left: 0, top: 0, width: 960, height: 540 })
+  })
+
+  it('does not depend on where the monitor sits on the desktop', () => {
+    // A monitor at x = -1920: its overlay window sits at its origin, so only its size counts.
+    const view = { width: 1920, height: 1080, scaleFactor: 1 }
+    expect(boxToCss([250, 250, 750, 750], view)).toEqual(boxToCss([250, 250, 750, 750], view))
+    expect(boxToCss([250, 250, 750, 750], view).left).toBe(480)
+  })
+
+  it('treats a missing scale as 1', () => {
+    expect(boxToCss([0, 0, 1000, 1000], { width: 800, height: 600, scaleFactor: 0 })).toEqual({
+      left: 0,
+      top: 0,
+      width: 800,
+      height: 600,
+    })
+  })
+})
+
+describe('badgePosition', () => {
+  const view = { width: 1000, height: 1000, scaleFactor: 1 }
+  it('centres the badge on the top-left corner and keeps it inside the window', () => {
+    expect(badgePosition({ left: 300, top: 200, width: 100, height: 100 }, view)).toEqual({
+      x: 290,
+      y: 190,
+    })
+    expect(badgePosition({ left: 0, top: 0, width: 100, height: 100 }, view)).toEqual({
+      x: 0,
+      y: 0,
+    })
+    expect(badgePosition({ left: 1000, top: 1000, width: 10, height: 10 }, view)).toEqual({
+      x: 980,
+      y: 980,
+    })
+  })
+})
+
+describe('what is drawn on the screen', () => {
+  const finding = (n: number, box: [number, number, number, number] | null) => ({
+    n,
+    label: `F${n}`,
+    kind: 'region' as const,
+    box,
+    description: '',
+    evidence: '',
+  })
+  const snapshot = (over: Partial<AnalysisSnapshot>): AnalysisSnapshot => ({
+    ...EMPTY_SNAPSHOT,
+    status: 'done',
+    findings: [finding(1, [10, 10, 100, 100]), finding(2, null), finding(3, [200, 200, 300, 300])],
+    monitor,
+    ...over,
+  })
+
+  it('draws only findings that have a box', () => {
+    expect(drawable(snapshot({})).map((f) => f.n)).toEqual([1, 3])
+  })
+
+  it('draws nothing once the screen has changed: the only way the boxes go', () => {
+    expect(drawable(snapshot({ stale: true }))).toEqual([])
+  })
+
+  it('has no switch that hides the boxes: nothing but staleness changes what is drawn', () => {
+    const states = (['capturing', 'asking', 'done', 'error', 'cancelled', 'idle'] as const).map(
+      (status) => drawable(snapshot({ status })).length,
     )
-    expect(left!.side).toBe('left')
-    expect(left!.x + left!.w).toBeCloseTo(786)
-    expect(left!.leader!.x2).toBe(800)
-    expect(inside!.side).toBe('inside')
-    expect(inside!.leader).toBeNull()
+    expect(states).toEqual([2, 2, 2, 2, 2, 2])
   })
 
-  it('stacks chips of boxes on the same row without overlap', () => {
-    const items = Array.from({ length: 8 }, (_, i) => item(i + 1, [100, 400, 200, 440]))
-    const chips = layoutChips(items, stage)
-    expect(anyOverlap(chips)).toBe(false)
+  it('draws the selected marker at full strength and the others at 35 percent', () => {
+    expect(markerOpacity(1, null)).toBe(1)
+    expect(markerOpacity(1, 1)).toBe(1)
+    expect(markerOpacity(2, 1)).toBe(0.35)
+  })
+})
+
+describe('the stage chip and the timer', () => {
+  it('names the stage', () => {
+    expect(stageWord('capturing')).toBe('LOOKING')
+    expect(stageWord('asking')).toBe('READING')
+    expect(stageWord('done')).toBe('DONE')
+    expect(stageWord('cancelled')).toBe('CANCELLED')
+    expect(stageWord('error')).toBe('FAILED')
+    expect(stageWord('idle')).toBeNull()
   })
 
-  it('keeps every chip inside the picture, also at the bottom edge', () => {
-    const items = Array.from({ length: 6 }, (_, i) => item(i + 1, [50, 960 + i, 150, 1000]))
-    for (const chip of layoutChips(items, stage)) {
-      expect(chip.y).toBeGreaterThanOrEqual(0)
-      expect(chip.y + chip.h).toBeLessThanOrEqual(1000.0001)
-      expect(chip.x).toBeGreaterThanOrEqual(0)
-      expect(chip.x + chip.w).toBeLessThanOrEqual(1000.0001)
-    }
-    const chips = layoutChips(items, stage)
-    expect(anyOverlap(chips)).toBe(false)
+  it('formats elapsed time as mm:ss', () => {
+    expect(formatElapsed(0)).toBe('00:00')
+    expect(formatElapsed(14_300)).toBe('00:14')
+    expect(formatElapsed(61_000)).toBe('01:01')
+    expect(formatElapsed(-5)).toBe('00:00')
+  })
+})
+
+describe('the cards', () => {
+  it('opens one finding at a time and closes the open one on a second tap', () => {
+    expect(toggleOpen(null, 2)).toBe(2)
+    expect(toggleOpen(2, 3)).toBe(3)
+    expect(toggleOpen(3, 3)).toBeNull()
   })
 
-  it('is deterministic and does nothing for an empty or zero-sized stage', () => {
-    const items = [
-      item(1, [10, 10, 90, 50]),
-      item(2, [10, 20, 90, 60]),
-      item(3, [500, 20, 600, 60]),
-    ]
-    expect(layoutChips(items, stage)).toEqual(layoutChips(items, stage))
-    expect(layoutChips([], stage)).toEqual([])
-    expect(layoutChips(items, { width: 0, height: 450 })).toEqual([])
-  })
-
-  it('makes chips taller in units on a short picture (a chip is the same height in pixels)', () => {
-    const tall = layoutChips([item(1, [0, 0, 50, 50])], { width: 800, height: 800 })[0]!
-    const flat = layoutChips([item(1, [0, 0, 50, 50])], { width: 800, height: 400 })[0]!
-    expect(flat.h).toBeCloseTo(tall.h * 2)
+  it('escapes in order: the expanded finding, the selection, then the cards', () => {
+    let state: CardsState = { open: 2, selected: 2, shown: true }
+    state = escape(state)
+    expect(state).toEqual({ open: null, selected: 2, shown: true })
+    state = escape(state)
+    expect(state).toEqual({ open: null, selected: null, shown: true })
+    state = escape(state)
+    expect(state.shown).toBe(false)
   })
 })
 
 describe('readSnapshot', () => {
   it('reads a full snapshot', () => {
-    const snapshot = readSnapshot({
+    const read = readSnapshot({
       status: 'done',
       id: 'a1',
       question: 'q',
@@ -101,29 +167,33 @@ describe('readSnapshot', () => {
       latencyMs: 1500,
       error: null,
       createdUtc: 't',
-      image: 'data:image/jpeg;base64,AA==',
-      width: 640,
-      height: 360,
+      monitor,
+      stale: true,
+      boxesRejected: 2,
+      selected: 1,
     })
-    expect(snapshot.status).toBe('done')
-    expect(snapshot.findings[0]!.box).toEqual([1, 2, 30, 40])
-    expect(snapshot.findings[1]!.box).toBeNull()
-    expect(snapshot.latencyMs).toBe(1500)
+    expect(read.status).toBe('done')
+    expect(read.findings[0]!.box).toEqual([1, 2, 30, 40])
+    expect(read.findings[1]!.box).toBeNull()
+    expect(read.monitor?.width).toBe(1920)
+    expect([read.stale, read.boxesRejected, read.selected]).toEqual([true, 2, 1])
   })
 
-  it('survives garbage: unknown status and kind, a bad box, missing fields, not an object', () => {
-    const snapshot = readSnapshot({
+  it('survives garbage and old shapes (an image field is ignored)', () => {
+    const read = readSnapshot({
       status: 'weird',
+      image: 'data:x',
       findings: [{ kind: 'x', box: [1, 2, 3] }, 7, null],
     })
-    expect(snapshot.status).toBe('idle')
-    expect(snapshot.findings.map((f) => [f.n, f.kind, f.box])).toEqual([
+    expect(read.status).toBe('idle')
+    expect(read.monitor).toBeNull()
+    expect(read.findings.map((f) => [f.n, f.kind, f.box])).toEqual([
       [1, 'other', null],
       [2, 'other', null],
       [3, 'other', null],
     ])
     expect(readSnapshot(null).status).toBe('idle')
-    expect(readSnapshot('text').findings).toEqual([])
     expect(readSnapshot({ findings: 'nope' }).findings).toEqual([])
+    expect(readSnapshot({ monitor: { width: 0, height: 5 } }).monitor).toBeNull()
   })
 })

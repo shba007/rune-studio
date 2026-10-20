@@ -36,6 +36,9 @@ pub struct AnalysisState {
     pub stale: bool,
     /// How many boxes the quality guard dropped (`analysis::boxes`).
     pub boxes_rejected: u32,
+    /// The finding picked in the cards (its marker is full strength on the screen); the cards and the
+    /// overlay are separate pages, so the choice lives here.
+    pub selected: Option<u8>,
     /// Cancels the call in flight (Stop, Cancel, closing the cards).
     pub cancel: CancelToken,
 }
@@ -55,6 +58,7 @@ impl Default for AnalysisState {
             frame: None,
             stale: false,
             boxes_rejected: 0,
+            selected: None,
             cancel: CancelToken::default(),
         }
     }
@@ -78,6 +82,8 @@ pub struct Snapshot {
     /// The screen changed since the capture: no boxes are drawn.
     pub stale: bool,
     pub boxes_rejected: u32,
+    /// The picked finding's number.
+    pub selected: Option<u8>,
 }
 
 impl AnalysisState {
@@ -95,6 +101,7 @@ impl AnalysisState {
             monitor: self.frame.as_ref().map(|frame| frame.monitor),
             stale: self.stale,
             boxes_rejected: self.boxes_rejected,
+            selected: self.selected,
         }
     }
 
@@ -108,6 +115,7 @@ impl AnalysisState {
         self.error = None;
         self.stale = false;
         self.boxes_rejected = 0;
+        self.selected = None;
     }
 
     /// Starts an analysis: clears the last result and gives the new call its own cancel token.
@@ -128,6 +136,7 @@ impl AnalysisState {
         self.created_utc.clear();
         self.stale = false;
         self.boxes_rejected = 0;
+        self.selected = None;
         self.cancel = CancelToken::default();
     }
 }

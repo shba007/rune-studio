@@ -1,4 +1,11 @@
-import type { AnalysisSnapshot, AnalysisStatus, Box, Finding, FindingKind } from '@/types/protocol'
+import type {
+  AnalysisSnapshot,
+  AnalysisStatus,
+  Box,
+  Finding,
+  FindingKind,
+  MonitorInfo,
+} from '@/types/protocol'
 
 const STATUSES: AnalysisStatus[] = ['idle', 'capturing', 'asking', 'done', 'error', 'cancelled']
 const KINDS: FindingKind[] = ['text', 'control', 'image', 'region', 'issue', 'other']
@@ -13,9 +20,10 @@ export const EMPTY_SNAPSHOT: AnalysisSnapshot = {
   latencyMs: 0,
   error: null,
   createdUtc: '',
-  image: null,
-  width: 0,
-  height: 0,
+  monitor: null,
+  stale: false,
+  boxesRejected: 0,
+  selected: null,
 }
 
 const text = (value: unknown) => (typeof value === 'string' ? value : '')
@@ -40,6 +48,23 @@ function readFinding(value: unknown, index: number): Finding {
   }
 }
 
+function readMonitor(value: unknown): MonitorInfo | null {
+  if (typeof value !== 'object' || value === null) return null
+  const raw = value as Record<string, unknown>
+  const width = count(raw.width)
+  const height = count(raw.height)
+  if (width <= 0 || height <= 0) return null
+  return {
+    id: count(raw.id),
+    x: count(raw.x),
+    y: count(raw.y),
+    width,
+    height,
+    scaleFactor: count(raw.scaleFactor) || 1,
+    primary: raw.primary === true,
+  }
+}
+
 /** Reads what the backend sent, whatever it is: unknown fields are ignored, missing ones get defaults. */
 export function readSnapshot(raw: unknown): AnalysisSnapshot {
   if (typeof raw !== 'object' || raw === null) return { ...EMPTY_SNAPSHOT }
@@ -54,103 +79,120 @@ export function readSnapshot(raw: unknown): AnalysisSnapshot {
     latencyMs: count(value.latencyMs),
     error: typeof value.error === 'string' ? value.error : null,
     createdUtc: text(value.createdUtc),
-    image: typeof value.image === 'string' ? value.image : null,
-    width: count(value.width),
-    height: count(value.height),
+    monitor: readMonitor(value.monitor),
+    stale: value.stale === true,
+    boxesRejected: count(value.boxesRejected),
+    selected: typeof value.selected === 'number' ? value.selected : null,
   }
 }
 
-// ---------------------------------------------------------------- label chips
+// ---------------------------------------------------------------- the screen markers
 
-/** What the chips are laid out for: the pixel size of the picture on screen. */
-export interface Stage {
+/** The overlay window as the page knows it: its size in physical pixels and the display scale. */
+export interface OverlayView {
+  width: number
+  height: number
+  scaleFactor: number
+}
+
+export interface CssRect {
+  left: number
+  top: number
   width: number
   height: number
 }
 
-export interface ChipInput {
-  n: number
-  label: string
-  box: Box
-}
-
-/** A chip and its leader line, in 0..1000 units like the boxes. `side` is where the chip sits. */
-export interface ChipLayout {
-  n: number
-  x: number
-  y: number
-  w: number
-  h: number
-  side: 'right' | 'left' | 'inside'
-  /** From the chip's edge to the box's edge; null for a chip drawn inside its box. */
-  leader: { x1: number; y1: number; x2: number; y2: number } | null
-}
-
-/** Chip height in screen pixels, and the pixels one letter and the padding take. */
-const CHIP_HEIGHT_PX = 22
-const CHIP_LETTER_PX = 7.5
-const CHIP_PADDING_PX = 32
-const CHIP_MAX_PX = 220
-/** Space between a box and its chip, and between two stacked chips, in units. */
-const GAP = 14
-const STACK_GAP = 6
-
-const clamp = (value: number, low: number, high: number) => Math.min(Math.max(value, low), high)
-const overlapsAcross = (a: ChipLayout, b: ChipLayout) => a.x < b.x + b.w && b.x < a.x + a.w
-
 /**
- * Puts a label chip beside each box, on the right when it fits and else on the left (else inside
- * the box), and stacks chips that would sit on top of each other. Pure and deterministic: the
- * same boxes always give the same layout, chips stay inside the picture, and chips that share
- * horizontal space never overlap (up to what fits: about forty rows of 22 px on a 1000 px picture).
+ * A finding's box (0..1000 across the whole captured screen) as CSS pixels inside the overlay window,
+ * which covers its monitor. The window's CSS size is its physical size over the display scale, so the
+ * result is right at 100, 125 and 150 percent; the monitor's origin on the desktop does not matter
+ * (the window sits at it).
  */
-export function layoutChips(items: ChipInput[], stage: Stage): ChipLayout[] {
-  if (stage.width <= 0 || stage.height <= 0) return []
-  const h = (CHIP_HEIGHT_PX / stage.height) * 1000
-  const placed: ChipLayout[] = items.map((item) => {
-    const [x0, y0, x1] = item.box
-    const wPx = Math.min(CHIP_MAX_PX, item.label.length * CHIP_LETTER_PX + CHIP_PADDING_PX)
-    const w = Math.min(1000, (wPx / stage.width) * 1000)
-    let side: ChipLayout['side'] = 'right'
-    let x = x1 + GAP
-    if (x + w > 1000) {
-      side = 'left'
-      x = x0 - GAP - w
-      if (x < 0) {
-        side = 'inside'
-        x = clamp(x0, 0, 1000 - w)
-      }
-    }
-    const y = clamp(y0, 0, 1000 - h)
-    return { n: item.n, x, y, w, h, side, leader: null }
-  })
-
-  // Top to bottom, each chip pushed below the ones above it that share its columns.
-  const order = [...placed].sort((a, b) => a.y - b.y || a.n - b.n)
-  order.forEach((chip, at) => {
-    for (const above of order.slice(0, at)) {
-      if (overlapsAcross(chip, above)) chip.y = Math.max(chip.y, above.y + above.h + STACK_GAP)
-    }
-  })
-  // What ran off the bottom is pulled back up, bottom to top.
-  for (let at = order.length - 1; at >= 0; at--) {
-    const chip = order[at]!
-    let limit = 1000 - chip.h
-    for (const below of order.slice(at + 1)) {
-      if (overlapsAcross(chip, below)) limit = Math.min(limit, below.y - chip.h - STACK_GAP)
-    }
-    chip.y = Math.max(0, Math.min(chip.y, limit))
+export function boxToCss(box: Box, view: OverlayView): CssRect {
+  const scale = view.scaleFactor > 0 ? view.scaleFactor : 1
+  const cssWidth = view.width / scale
+  const cssHeight = view.height / scale
+  const [x0, y0, x1, y1] = box
+  return {
+    left: (x0 / 1000) * cssWidth,
+    top: (y0 / 1000) * cssHeight,
+    width: ((x1 - x0) / 1000) * cssWidth,
+    height: ((y1 - y0) / 1000) * cssHeight,
   }
+}
 
-  for (const chip of placed) {
-    const box = items.find((item) => item.n === chip.n)!.box
-    if (chip.side === 'inside') continue
-    const middle = chip.y + chip.h / 2
-    const toY = clamp(middle, box[1], box[3])
-    chip.leader =
-      chip.side === 'right'
-        ? { x1: chip.x, y1: middle, x2: box[2], y2: toY }
-        : { x1: chip.x + chip.w, y1: middle, x2: box[0], y2: toY }
+/** Where the numbered badge goes: centred on the box's top-left corner, kept inside the window. */
+export function badgePosition(
+  rect: CssRect,
+  view: OverlayView,
+  size = 20,
+): { x: number; y: number } {
+  const scale = view.scaleFactor > 0 ? view.scaleFactor : 1
+  const clamp = (value: number, max: number) =>
+    Math.min(Math.max(value, 0), Math.max(0, max - size))
+  return {
+    x: clamp(rect.left - size / 2, view.width / scale),
+    y: clamp(rect.top - size / 2, view.height / scale),
   }
-  return placed
+}
+
+/** The findings that have a box to draw on the screen (a finding without one has no marker). */
+export function drawable(snapshot: AnalysisSnapshot): Finding[] {
+  if (snapshot.stale) return []
+  return snapshot.findings.filter((finding) => finding.box !== null)
+}
+
+/** How strongly a marker is drawn: full for the picked one (or when nothing is picked), dimmed otherwise. */
+export function markerOpacity(n: number, selected: number | null): number {
+  return selected === null || selected === n ? 1 : 0.35
+}
+
+// ---------------------------------------------------------------- the status bar and the cards
+
+export type StageWord = 'LOOKING' | 'READING' | 'DONE' | 'CANCELLED' | 'FAILED'
+
+/** The stage chip of the status bar; null when there is nothing to say. */
+export function stageWord(status: AnalysisStatus): StageWord | null {
+  switch (status) {
+    case 'capturing':
+      return 'LOOKING'
+    case 'asking':
+      return 'READING'
+    case 'done':
+      return 'DONE'
+    case 'cancelled':
+      return 'CANCELLED'
+    case 'error':
+      return 'FAILED'
+    default:
+      return null
+  }
+}
+
+/** Elapsed time as `mm:ss`, the way the bar shows it (`00:14`). */
+export function formatElapsed(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000))
+  const minutes = Math.floor(seconds / 60)
+  return `${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
+}
+
+/** The accordion: one finding open at a time; opening the open one closes it. */
+export function toggleOpen(open: number | null, clicked: number): number | null {
+  return open === clicked ? null : clicked
+}
+
+export interface CardsState {
+  /** The finding row that is expanded. */
+  open: number | null
+  /** The finding whose marker is picked. */
+  selected: number | null
+  /** The cards are showing. */
+  shown: boolean
+}
+
+/** What Escape does: collapse the expanded finding, then clear the selection, then close the cards. */
+export function escape(state: CardsState): CardsState {
+  if (state.open !== null) return { ...state, open: null }
+  if (state.selected !== null) return { ...state, selected: null }
+  return { ...state, shown: false }
 }

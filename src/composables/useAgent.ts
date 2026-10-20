@@ -54,7 +54,13 @@ const STATE_LABELS: Record<AgentState, string> = {
 }
 
 /** Window size order. Bigger modes need a bigger window than smaller ones. */
-const MODE_RANK: Record<PillMode, number> = { ambient: 0, open: 1, task: 2, settings: 3 }
+const MODE_RANK: Record<PillMode, number> = {
+  ambient: 0,
+  open: 1,
+  task: 2,
+  analysis: 2,
+  settings: 3,
+}
 
 /** Longer than the page and width transitions, so the window only shrinks once they have finished. */
 const COLLAPSE_MS = 340
@@ -174,7 +180,8 @@ export function useAgent() {
   /** Open when collapsed; collapse when open or in settings. */
   /** Make the window as tall as the open card's content. Only the open and task pages do this. */
   async function fitHeight(height: number) {
-    if (mode.value === 'open' || mode.value === 'task') await call('fit_height', { height })
+    if (mode.value === 'open' || mode.value === 'task' || mode.value === 'analysis')
+      await call('fit_height', { height })
   }
 
   /** The page the card opens to: the task's progress while there is one, else the composer. */

@@ -15,8 +15,6 @@ export type AgentState =
 export interface Settings {
   /** What happens with the independent check of a finished task. No UI yet: edit settings.json. */
   verifyMode: 'off' | 'background' | 'blocking'
-  /** Draw the numbered boxes in the screen analysis window. Off by default (the boxes were mostly wrong). */
-  analysisBoxes: boolean
   /** Let screen recorders capture Rune's windows; the model still never sees them. */
   demoMode: boolean
   /** Offer an idle review of recent tasks. Off until the job does something real. */
@@ -81,7 +79,7 @@ export interface ClickReport {
   cursorY: number
 }
 
-export type PillMode = 'ambient' | 'open' | 'task' | 'settings'
+export type PillMode = 'ambient' | 'open' | 'task' | 'analysis' | 'settings'
 
 export const STATE_CHANGED = 'state_changed'
 export const SUMMON = 'summon'
@@ -225,7 +223,7 @@ export interface Finding {
   evidence: string
 }
 
-/** The screen analysis as the window shows it (analysis/state.rs `Snapshot`). */
+/** The screen analysis as the cards and the screen markers show it (analysis/state.rs `Snapshot`). */
 export interface AnalysisSnapshot {
   status: AnalysisStatus
   id: string
@@ -236,10 +234,28 @@ export interface AnalysisSnapshot {
   latencyMs: number
   error: string | null
   createdUtc: string
-  /** The screenshot as a data URI; null before the first capture. */
-  image: string | null
+  /** The monitor that was captured: box coordinates are relative to it. Null before a capture. */
+  monitor: MonitorInfo | null
+  /** The screen changed after the capture: no boxes are drawn, the findings text stays. */
+  stale: boolean
+  /** How many boxes the quality guard dropped. */
+  boxesRejected: number
+  /** The finding picked in the cards, by number. */
+  selected: number | null
+}
+
+export const OVERLAY_MODE = 'overlay_mode'
+export type OverlayOwner = 'none' | 'control' | 'analysis'
+
+/** What an overlay page knows about itself (overlay.rs `OverlayInfo`). */
+export interface OverlayInfo {
+  mode: OverlayOwner
+  /** This window is on the primary monitor, where the analysis draws. */
+  primary: boolean
+  /** The window's size in physical pixels. */
   width: number
   height: number
+  scaleFactor: number
 }
 export const REFLECTION_PROMPT = 'reflection_prompt'
 export const REFLECTION_RESOLVED = 'reflection_resolved'

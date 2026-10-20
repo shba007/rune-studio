@@ -305,6 +305,16 @@ pub fn cancel(app: &AppHandle) {
     app.state::<AppState>().analysis.locked().cancel.cancel();
 }
 
+/// Picks a finding (or none): its marker is drawn at full strength, the others dimmed.
+pub fn select(app: &AppHandle, n: Option<u8>) {
+    {
+        let state = app.state::<AppState>();
+        let mut analysis = state.analysis.locked();
+        analysis.selected = n.filter(|n| analysis.findings.iter().any(|finding| finding.n == *n));
+    }
+    publish(app);
+}
+
 /// Closes the cards: cancels what runs, clears the findings and with them the boxes on the screen.
 pub fn close(app: &AppHandle) {
     app.state::<AppState>().analysis.locked().close();

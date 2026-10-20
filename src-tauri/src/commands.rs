@@ -343,6 +343,12 @@ pub fn close_analysis(app: AppHandle) {
     crate::analysis::run::close(&app);
 }
 
+/// Picks a finding in the cards (`None` clears it); the overlay draws that marker at full strength.
+#[tauri::command]
+pub fn select_finding(app: AppHandle, n: Option<u8>) {
+    crate::analysis::run::select(&app, n);
+}
+
 /// What an overlay page needs: who owns the overlay, and whether this window is on the primary monitor.
 #[tauri::command]
 pub fn overlay_info(window: tauri::WebviewWindow) -> crate::overlay::OverlayInfo {
