@@ -18,6 +18,13 @@ import IconEye from '~icons/ph/eye-fill'
 import IconKey from '~icons/ph/key-fill'
 import IconLightning from '~icons/ph/lightning-fill'
 import IconCommand from '~icons/ph/command-fill'
+import IconPlay from '~icons/ph/play-fill'
+import IconPause from '~icons/ph/pause-fill'
+import IconSkipBack from '~icons/ph/skip-back-fill'
+import IconSkipForward from '~icons/ph/skip-forward-fill'
+import IconSidebar from '~icons/ph/sidebar-simple-fill'
+import IconArrowsOut from '~icons/ph/arrows-out-simple-fill'
+import IconEyeSlash from '~icons/ph/eye-slash-fill'
 import IconX from '~icons/ph/x-fill'
 import IconCopy from '~icons/ph/copy-fill'
 import IconHeadphones from '~icons/ph/headphones-fill'
@@ -65,6 +72,13 @@ export const icons = {
   fast: IconLightning,
   tune: IconSlidersHorizontal,
   video: IconVideo,
+  play: IconPlay,
+  pause: IconPause,
+  prev: IconSkipBack,
+  next: IconSkipForward,
+  drawer: IconSidebar,
+  expand: IconArrowsOut,
+  hide: IconEyeSlash,
 } as const
 
 export type IconName = keyof typeof icons

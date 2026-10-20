@@ -126,3 +126,17 @@ input {
 .overlay-view #__vue-devtools-container__ {
   display: none !important;
 }
+/* The Flight Player is a normal opaque window: it paints its own background and lets the details be selected. */
+.flight-view,
+.flight-view body,
+.flight-view #app {
+  background: #141414;
+}
+.flight-view pre,
+.flight-view dd,
+.flight-view [data-testid='caption'] {
+  user-select: text;
+}
+.flight-view #__vue-devtools-container__ {
+  display: none;
+}

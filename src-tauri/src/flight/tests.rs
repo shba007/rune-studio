@@ -157,3 +157,9 @@ fn a_missing_database_is_an_error_not_a_panic() {
     let dir = TempDir::new();
     assert!(runs(&dir.0.join("none.db"), 5, None).is_err());
 }
+
+#[test]
+fn a_run_id_is_made_safe_for_a_url() {
+    assert_eq!(url_safe("120000-1-open-notepad"), "120000-1-open-notepad");
+    assert_eq!(url_safe("a b&c=d/../é"), "a%20b%26c%3Dd%2F%2E%2E%2F%C3%A9");
+}

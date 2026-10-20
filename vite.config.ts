@@ -8,6 +8,10 @@ import { FileSystemIconLoader } from 'unplugin-icons/loaders'
 import Unfonts from 'unplugin-fonts/vite'
 import vueDevTools from 'vite-plugin-vue-devtools'
 
+// Video.js v10 is a set of custom elements. Only the tags used in our templates are listed, never a
+// wildcard (see node_modules/@videojs/html/docs/guides/vue.md).
+const VIDEOJS_TAGS = new Set(['video-player', 'media-container'])
+
 // https://vite.dev/config/
 export default defineConfig({
   staged: {
@@ -117,7 +121,9 @@ export default defineConfig({
     ],
   },
   plugins: lazyPlugins(() => [
-    vue(),
+    vue({
+      template: { compilerOptions: { isCustomElement: (tag) => VIDEOJS_TAGS.has(tag) } },
+    }),
     // Development only: the plugin does nothing in a production build.
     vueDevTools(),
     tailwindcss(),

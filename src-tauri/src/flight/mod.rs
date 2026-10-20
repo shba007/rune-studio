@@ -254,5 +254,63 @@ pub fn session_dir(db: &Path, id: &str) -> Result<Option<PathBuf>, StoreError> {
         .map(PathBuf::from))
 }
 
+/// The window's label.
+pub const WINDOW: &str = "flight";
+/// Sent to an open player to make it switch to another run.
+pub const OPEN_EVENT: &str = "flight_open";
+
+/// Percent-encodes everything but letters, digits, `-` and `_`, so a run id is safe in a URL.
+fn url_safe(text: &str) -> String {
+    text.bytes()
+        .map(|byte| match byte {
+            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'_' => char::from(byte).to_string(),
+            other => format!("%{other:02X}"),
+        })
+        .collect()
+}
+
+/// Opens the player (or brings the open one forward) on a run, or on its run picker when `run` is empty.
+pub fn open(app: &tauri::AppHandle, run: Option<&str>) -> tauri::Result<()> {
+    use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+
+    let run = run.filter(|id| !id.is_empty());
+    if let Some(window) = app.get_webview_window(WINDOW) {
+        let _ = window.unminimize();
+        window.show()?;
+        window.set_focus()?;
+        window.emit(OPEN_EVENT, json!({ "runId": run }))?;
+        return Ok(());
+    }
+    let url = match run {
+        Some(id) => format!("index.html?view=flight&run={}", url_safe(id)),
+        None => "index.html?view=flight".to_string(),
+    };
+    let window = WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::App(url.into()))
+        .title("Rune Studio · Flight Player")
+        .inner_size(1180.0, 760.0)
+        .min_inner_size(880.0, 560.0)
+        .resizable(true)
+        .center()
+        .build()?;
+    // It shows the user's screens, so the agent must never see it.
+    crate::window::protect(&window)?;
+    Ok(())
+}
+
+/// Shows a session folder in the system file manager.
+pub fn reveal(dir: &Path) -> std::io::Result<()> {
+    let program = if cfg!(windows) {
+        "explorer"
+    } else if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    std::process::Command::new(program)
+        .arg(dir)
+        .spawn()
+        .map(|_| ())
+}
+
 #[cfg(test)]
 mod tests;

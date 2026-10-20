@@ -442,9 +442,30 @@ pub fn flight_file(app: AppHandle, id: String, relative: String) -> AppResult<St
     let dir = crate::flight::session_dir(&trace_db(&app)?, &id)
         .map_err(read_error)?
         .ok_or_else(|| AppError::Invalid("This run has no session folder.".into()))?;
-    crate::flight::files::resolve(&dir, &relative)
-        .map(|path| path.to_string_lossy().into_owned())
-        .map_err(|refused| {
-            AppError::Invalid(format!("That file cannot be opened: {}.", refused.why()))
-        })
+    let path = crate::flight::files::resolve(&dir, &relative).map_err(|refused| {
+        AppError::Invalid(format!("That file cannot be opened: {}.", refused.why()))
+    })?;
+    // The asset protocol starts with an empty scope: only files checked here become loadable.
+    app.asset_protocol_scope()
+        .allow_file(&path)
+        .map_err(|err| AppError::Invalid(format!("Could not open the file: {err}")))?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// Opens the Flight Player on a run (or on its picker when no id is given).
+#[tauri::command]
+pub fn open_flight(app: AppHandle, run_id: Option<String>) -> AppResult<()> {
+    crate::flight::open(&app, run_id.as_deref())
+        .map_err(|err| AppError::Invalid(format!("Could not open the Flight Player: {err}")))
+}
+
+/// Shows the run's session folder in the file manager.
+#[tauri::command]
+pub fn flight_reveal(app: AppHandle, id: String) -> AppResult<()> {
+    let dir = crate::flight::session_dir(&trace_db(&app)?, &id)
+        .map_err(read_error)?
+        .filter(|dir| dir.is_dir())
+        .ok_or_else(|| AppError::Invalid("This run has no session folder on disk.".into()))?;
+    crate::flight::reveal(&dir)
+        .map_err(|err| AppError::Invalid(format!("Could not open the folder: {err}")))
 }

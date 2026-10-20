@@ -2,6 +2,11 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "enables the default permissions",
-  "windows": ["main", "overlay-*"],
-  "permissions": ["core:default", "core:window:allow-start-dragging", "process:default"]
+  "windows": ["main", "overlay-*", "flight"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-close",
+    "process:default"
+  ]
 }

@@ -169,15 +169,22 @@ pub fn run() {
             let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
             // Stop lives in the tray too: it works while the window is click-through and does
             // not depend on the Stop hotkey being free.
+            let flight =
+                MenuItem::with_id(app, "flight", "Open Flight Player", true, None::<&str>)?;
             let stop = MenuItem::with_id(app, "stop", "Stop", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &settings, &stop, &quit])?;
+            let menu = Menu::with_items(app, &[&show, &settings, &flight, &stop, &quit])?;
             let mut tray = TrayIconBuilder::new()
                 .menu(&menu)
                 .tooltip("Rune Studio")
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "show" => window::toggle_visibility(app),
                     "settings" => window::open_settings(app),
+                    "flight" => {
+                        if let Err(err) = flight::open(app, None) {
+                            log::warn!("could not open the Flight Player: {err}");
+                        }
+                    }
                     "stop" => commands::stop(app.clone()),
                     "quit" => app.exit(0),
                     _ => {}
@@ -226,6 +233,8 @@ pub fn run() {
             commands::flight_calls,
             commands::flight_call_body,
             commands::flight_file,
+            commands::flight_reveal,
+            commands::open_flight,
             #[cfg(debug_assertions)]
             commands::debug_set_state,
             #[cfg(debug_assertions)]

@@ -1,5 +1,14 @@
 import { mockIPC } from '@tauri-apps/api/mocks'
 
+import {
+  drawnShot,
+  flightCalls,
+  flightEvents,
+  flightHeader,
+  flightRuns,
+  flightSteps,
+} from './flightFixture'
+
 /**
  * Development only: lets the UI render in a plain browser (design review, screenshots) by
  * answering the Tauri commands it calls at startup. Never bundled into a production build.
@@ -82,9 +91,41 @@ function analysisFixture() {
 }
 
 export function installTauriMock() {
+  // `?video=1` gives the fixture session a video, served from /dev/flight.mp4 (`?video=webm`: /dev/flight.webm)
+  // by whoever is testing; nothing is committed under public/dev.
+  const videoParam = new URLSearchParams(location.search).get('video')
+  const withVideo = videoParam !== null
   mockIPC(
-    (command) => {
+    (command, args) => {
+      const given = (args ?? {}) as Record<string, unknown>
       switch (command) {
+        case 'flight_runs':
+          return flightRuns
+        case 'flight_run':
+          return flightRuns.some((run) => run.id === given.id)
+            ? flightHeader(String(given.id), withVideo)
+            : null
+        case 'flight_steps':
+          return flightSteps
+        case 'flight_events':
+          return flightEvents
+        case 'flight_calls':
+          return flightCalls.filter((item) => given.step == null || item.step === given.step)
+        case 'flight_call_body':
+          return [
+            '{"messages":[{"role":"user","content":"typed Buy milk and call Sam"}]}',
+            '{"choices":[{"message":{"reasoning_content":"The menu is open, so type the name."}}]}',
+          ]
+        case 'flight_file': {
+          const file = String(given.relative)
+          if (file.endsWith('.mp4'))
+            return videoParam === 'webm' ? '/dev/flight.webm' : '/dev/flight.mp4'
+          const n = Number(/(\d+)\.jpg$/.exec(file)?.[1] ?? 0)
+          return n > 0 ? drawnShot(n) : file
+        }
+        case 'flight_reveal':
+        case 'open_flight':
+          return null
         case 'get_settings':
           return {
             baseUrl: 'http://127.0.0.1:8080',
