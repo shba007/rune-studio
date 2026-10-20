@@ -2,8 +2,56 @@
 
 use super::ExecError;
 
+/// How one name is opened.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Target {
+    /// `ShellExecute` with this one argument (a program, a file, a folder, a protocol such as `ms-settings:`).
+    Shell(String),
+    /// A local page: handed to the URL handler whole, because `ShellExecute` drops the query string of a
+    /// `file:` address (`file:///page.html?run=3` opened as `page.html`).
+    FileUrl(String),
+}
+
+/// Friendly names the model uses that Windows does not resolve by itself.
+const ALIASES: [(&str, &str); 12] = [
+    ("calculator", "calc"),
+    ("settings", "ms-settings:"),
+    ("windows settings", "ms-settings:"),
+    ("file explorer", "explorer"),
+    ("explorer", "explorer"),
+    ("paint", "mspaint"),
+    ("task manager", "taskmgr"),
+    ("command prompt", "cmd"),
+    ("control panel", "control"),
+    ("snipping tool", "snippingtool"),
+    ("wordpad", "write"),
+    ("registry editor", "regedit"),
+];
+
+/// What to try for a name, decided without touching the system. A bare program name (no folder, no
+/// extension, no protocol) is opened as `name.exe`: `ShellExecute` would otherwise take an
+/// extensionless **file** of that name from the PATH (Git's `usr\bin\notepad`) and open it in
+/// Notepad. An extensionless file is never treated as an app.
+pub fn plan(name: &str) -> Vec<Target> {
+    let name = name.trim();
+    let lower = name.to_lowercase();
+    if lower.starts_with("file:") {
+        return vec![Target::FileUrl(name.to_string())];
+    }
+    if let Some((_, program)) = ALIASES.iter().find(|(alias, _)| *alias == lower) {
+        return vec![Target::Shell((*program).to_string())];
+    }
+    let bare = !name.is_empty() && !name.contains(['\\', '/', ':', '.', ' ']);
+    if bare {
+        vec![Target::Shell(format!("{name}.exe"))]
+    } else {
+        vec![Target::Shell(name.to_string())]
+    }
+}
+
 /// Opens an application, file, folder or web address the way Win+R would, but without a shell:
-/// the name is one argument to `ShellExecute`, so nothing in it can chain a second command.
+/// the name is one argument to `ShellExecute` (or to the URL handler), so nothing in it can chain a
+/// second command.
 #[cfg(windows)]
 pub fn open(name: &str) -> Result<(), ExecError> {
     use windows::{
@@ -15,18 +63,75 @@ pub fn open(name: &str) -> Result<(), ExecError> {
     if name.is_empty() {
         return Err(ExecError::Input("no application name given".into()));
     }
-    // SAFETY: all strings outlive the call; a null parameters/directory pointer is allowed.
-    let result = unsafe {
-        ShellExecuteW(None, &HSTRING::from("open"), &HSTRING::from(name), PCWSTR::null(), PCWSTR::null(), SW_SHOWNORMAL)
-    };
-    // ShellExecute reports failure with a value of 32 or less.
-    if result.0 as isize <= 32 {
-        return Err(ExecError::Input(format!("could not open \"{name}\" (error {})", result.0 as isize)));
+    let mut last = format!("could not open \"{name}\"");
+    for target in plan(name) {
+        match target {
+            Target::FileUrl(url) => {
+                use std::os::windows::process::CommandExt;
+                // CREATE_NO_WINDOW: rundll32 has no window of its own. The address is one argument.
+                std::process::Command::new("rundll32.exe")
+                    .arg("url.dll,FileProtocolHandler")
+                    .arg(&url)
+                    .creation_flags(0x0800_0000)
+                    .spawn()
+                    .map_err(|err| ExecError::Input(format!("could not open \"{name}\": {err}")))?;
+                return Ok(());
+            }
+            Target::Shell(argument) => {
+                // SAFETY: all strings outlive the call; a null parameters/directory pointer is allowed.
+                let result = unsafe { ShellExecuteW(None, &HSTRING::from("open"), &HSTRING::from(argument.as_str()), PCWSTR::null(), PCWSTR::null(), SW_SHOWNORMAL) };
+                // ShellExecute reports failure with a value of 32 or less.
+                if result.0 as isize > 32 {
+                    return Ok(());
+                }
+                last = format!("could not open \"{name}\" (error {})", result.0 as isize);
+            }
+        }
     }
-    Ok(())
+    Err(ExecError::Input(last))
 }
 
 #[cfg(not(windows))]
 pub fn open(_name: &str) -> Result<(), ExecError> {
     Err(ExecError::Input("opening applications is only supported on Windows".into()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn shell(argument: &str) -> Vec<Target> {
+        vec![Target::Shell(argument.into())]
+    }
+
+    #[test]
+    fn a_bare_name_is_opened_as_an_exe_never_as_an_extensionless_file() {
+        assert_eq!(plan("notepad"), shell("notepad.exe"));
+        assert_eq!(plan("  Notepad "), shell("Notepad.exe"));
+        assert_eq!(plan("chrome"), shell("chrome.exe"));
+    }
+
+    #[test]
+    fn paths_extensions_protocols_and_addresses_are_left_alone() {
+        for name in ["notepad.exe", r"C:\Windows\notepad.exe", "C:/x/y.txt", "ms-settings:display", "https://example.com/a?b=1", "mailto:a@b.c", r"\\server\share", "my notes"] {
+            assert_eq!(plan(name), shell(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn friendly_names_map_to_what_windows_understands() {
+        assert_eq!(plan("Calculator"), shell("calc"));
+        assert_eq!(plan("calc"), shell("calc.exe"), "calc.exe exists and is fine");
+        assert_eq!(plan("settings"), shell("ms-settings:"));
+        assert_eq!(plan("Windows Settings"), shell("ms-settings:"));
+        assert_eq!(plan("File Explorer"), shell("explorer"));
+        assert_eq!(plan("task manager"), shell("taskmgr"));
+    }
+
+    #[test]
+    fn a_local_page_keeps_its_query_string_by_going_to_the_url_handler_whole() {
+        let url = "file:///C:/eval/fixtures/click.html?run=20261019-3";
+        assert_eq!(plan(url), vec![Target::FileUrl(url.into())]);
+        assert_eq!(plan("FILE:///x.html?a=1&b=2"), vec![Target::FileUrl("FILE:///x.html?a=1&b=2".into())]);
+    }
 }
