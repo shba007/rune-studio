@@ -124,7 +124,7 @@ pub fn set_mode(app: &AppHandle, mode: Mode) -> tauri::Result<()> {
 /// Makes the window as tall as its content (`height` in logical pixels), keeping its width and the
 /// bottom-right corner. The composer grows with the text; the window follows.
 pub fn fit_height(app: &AppHandle, height: f64) -> tauri::Result<()> {
-    // Never taller than 70% of the work area: the content scrolls inside beyond that.
+    // Never taller than 90% of the work area (the taskbar is already outside it).
     let ceiling = main_window(app)
         .and_then(|window| {
             let area = window.current_monitor().ok()??.work_area().size.height;
@@ -137,10 +137,10 @@ pub fn fit_height(app: &AppHandle, height: f64) -> tauri::Result<()> {
     resize_keeping_corner(app, None, height.clamp(64.0, ceiling))
 }
 
-/// The tallest the pill may grow, in logical pixels: 70% of the monitor's work area (physical
+/// The tallest the pill may grow, in logical pixels: 90% of the monitor's work area (physical
 /// pixels in, `scale` is the display scale), and never more than 1200.
 pub fn max_pill_height(work_area_physical: f64, scale: f64) -> f64 {
-    (0.7 * work_area_physical / scale.max(0.1)).clamp(200.0, 1_200.0)
+    (0.9 * work_area_physical / scale.max(0.1)).clamp(200.0, 1_200.0)
 }
 
 fn resize_keeping_corner(app: &AppHandle, width: Option<f64>, height: f64) -> tauri::Result<()> {
@@ -226,11 +226,11 @@ pub fn show_without_focus(window: &tauri::WebviewWindow) {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn the_pill_never_grows_past_seventy_percent_of_the_work_area() {
+    fn the_pill_never_grows_past_ninety_percent_of_the_work_area() {
         use super::max_pill_height;
-        assert_eq!(max_pill_height(1040.0, 1.0), 728.0);
-        assert_eq!(max_pill_height(1040.0, 1.25), 582.4);
-        assert_eq!(max_pill_height(1040.0, 1.5).round(), 485.0);
+        assert_eq!(max_pill_height(1040.0, 1.0), 936.0);
+        assert_eq!(max_pill_height(1040.0, 1.25), 748.8);
+        assert_eq!(max_pill_height(1040.0, 1.5).round(), 624.0);
         assert_eq!(max_pill_height(5000.0, 1.0), 1200.0, "capped");
         assert_eq!(max_pill_height(100.0, 1.0), 200.0, "never useless");
     }

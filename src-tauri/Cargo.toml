@@ -48,18 +48,18 @@ log = "0.4"
 tauri = { version = "2.12", features = ["tray-icon"] }
 tauri-plugin-log = "2.10"
 tauri-plugin-process = "2.4"
-tauri-plugin-global-shortcut = "2"
+tauri-plugin-global-shortcut = "2.4"
 dotenvy = "0.15"
 reqwest = { version = "0.13", default-features = false, features = ["json", "multipart", "rustls"] }
-keyring = "4"
+keyring = "4.2"
 cpal = "0.18"
 xcap = "0.9"
 enigo = "0.6"
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
 base64 = "0.23"
-thiserror = "2"
+thiserror = "2.0"
 rusqlite = { version = "0.40", default-features = false, features = ["bundled"] }
-tokio = { version = "1", features = ["time", "macros", "rt", "net", "sync"] }
+tokio = { version = "1.54", features = ["time", "macros", "rt", "net", "sync"] }
 
 [dev-dependencies]
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }

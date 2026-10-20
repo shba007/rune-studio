@@ -112,7 +112,11 @@ function statusOf(index: number): 'done' | 'current' | 'pending' {
 
     <div v-if="message" class="flex flex-col gap-1">
       <span class="text-caption text-zinc-500 uppercase">{{ message.label }}</span>
-      <p class="max-h-[72px] overflow-y-auto text-label whitespace-pre-wrap text-zinc-300">
+      <!-- The result is what the user came for: it gets more room once the task is over. -->
+      <p
+        class="overflow-y-auto text-label whitespace-pre-wrap text-zinc-300"
+        :class="agent.isRunning.value ? 'max-h-[72px]' : 'max-h-44'"
+      >
         {{ message.text }}
       </p>
     </div>

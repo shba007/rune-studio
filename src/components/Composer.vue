@@ -38,7 +38,7 @@ const action = computed(() => {
 const offline = computed(() => agent.health.value.tone === 'down')
 const placeholder = computed(() => {
   if (needsConfirm.value) return 'Needs your OK'
-  if (agent.isRunning.value) return 'Working. Stop to cancel'
+  if (agent.isRunning.value) return 'Working…'
   if (isListening.value) return 'Listening…'
   if (offline.value) return 'Model server offline'
   return 'Type or say a task'
@@ -65,7 +65,8 @@ async function submit() {
     <!-- Notices (a refused task, a mic problem, a failed check) get a line of their own: they can be long. -->
     <p
       v-if="agent.notice.value"
-      class="m-0 px-3 pt-1 text-label text-[#ff6b72]"
+      class="m-0 px-3 pt-1 text-label"
+      :class="agent.noticeKind.value === 'info' ? 'text-zinc-200' : 'text-[#ff6b72]'"
       role="status"
       aria-live="polite"
     >

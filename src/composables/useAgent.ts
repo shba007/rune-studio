@@ -91,6 +91,8 @@ export function useAgent() {
   /** The actions taken so far, newest last. */
   const steps = ref<{ step: number; tool: string; detail: string; ok: boolean | null }[]>([])
   const notice = ref<string | null>(null)
+  /** An error (red) or plain information (a confirmation such as "Saved"). */
+  const noticeKind = ref<'error' | 'info'>('error')
   const focusTick = ref(0)
   /** Live microphone level, 0..1. Stays 0 unless the mic is open. */
   const level = ref(0)
@@ -132,6 +134,8 @@ export function useAgent() {
   let heardSound = false
 
   let noticeHandle: ReturnType<typeof setTimeout> | undefined
+  /** The content's height as last reported, so a mode change can restore it. */
+  let wantedHeight = 0
   const silenceTimer = useTimeoutFn(
     () => {
       if (!heardSound) showNotice('No sound from the microphone. Check Windows microphone access')
@@ -141,9 +145,10 @@ export function useAgent() {
   )
 
   /** A newer notice always gets its full time on screen; a longer one stays longer. */
-  function showNotice(message: string) {
+  function showNotice(message: string, kind: 'error' | 'info' = 'error') {
     const text = friendly(message)
     notice.value = text
+    noticeKind.value = kind
     clearTimeout(noticeHandle)
     noticeHandle = setTimeout(() => (notice.value = null), noticeMillis(text))
   }
@@ -178,14 +183,20 @@ export function useAgent() {
       await sleep(COLLAPSE_MS)
       if (token === modeToken) await call('set_mode', { mode: next })
     }
+    // set_mode gives the window the page's default height. The content may have settled at another height
+    // while it waited (the page animates before the window shrinks), so ask for the content's height again.
+    if (token === modeToken && wantedHeight >= 48) await fitHeight(wantedHeight)
     if (next === 'open') focusTick.value += 1
   }
 
   /** Open when collapsed; collapse when open or in settings. */
   /** Make the window as tall as the open card's content. Only the open and task pages do this. */
   async function fitHeight(height: number) {
-    if (mode.value === 'open' || mode.value === 'task' || mode.value === 'analysis')
+    // Only pages that fit their content count: the settings page has a fixed height of its own.
+    if (mode.value === 'open' || mode.value === 'task' || mode.value === 'analysis') {
+      wantedHeight = height
       await call('fit_height', { height })
+    }
   }
 
   /** The page the card opens to: the task's progress while there is one, else the composer. */
@@ -378,6 +389,8 @@ export function useAgent() {
     home,
     clearTask,
     notice,
+    noticeKind,
+    notify: showNotice,
     focusTick,
     level,
     setMode,

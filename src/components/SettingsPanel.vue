@@ -56,26 +56,27 @@ const dirty = computed(
       agent.settings.value !== null &&
       JSON.stringify(draft.value) !== JSON.stringify(agent.settings.value)),
 )
-/** "Saved" for a moment after a save, so the click is answered. */
-const saved = ref(false)
-let savedHandle: ReturnType<typeof setTimeout> | undefined
-
-/** An empty key field means "leave the stored key alone"; removing it is its own action. */
+/**
+ * Saves and goes back to the card, telling there how it went: Save is the end of editing, so the page
+ * does not stay open. An empty key field means "leave the stored key alone"; removing it is its own
+ * action.
+ */
 async function save() {
   if (apiKeyDraft.value.trim()) {
     await agent.saveApiKey(apiKeyDraft.value)
     apiKeyDraft.value = ''
   }
   if (draft.value) await agent.saveSettings(draft.value)
-  saved.value = true
-  clearTimeout(savedHandle)
-  savedHandle = setTimeout(() => (saved.value = false), 2000)
+  const health = agent.health.value
+  agent.notify(
+    health.tone === 'ok' ? 'Saved. Model server OK' : `Saved. ${health.title}`,
+    health.tone === 'ok' ? 'info' : 'error',
+  )
+  await agent.setMode(agent.home())
 }
 
-/** With changes the button saves them; without, it only checks the backend again. */
-const footerLabel = computed(() =>
-  dirty.value ? 'Save and check' : saved.value ? 'Saved' : 'Check the backend',
-)
+/** With changes the button saves them and goes back; without, it only checks the backend again. */
+const footerLabel = computed(() => (dirty.value ? 'Save' : 'Check the backend'))
 function footerAction() {
   if (dirty.value) void save()
   else void agent.refreshBackend()
