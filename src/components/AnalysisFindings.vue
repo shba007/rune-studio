@@ -2,7 +2,7 @@
 import type { Finding } from '@/types/protocol'
 
 /** The evidence column: one row per finding, linked both ways with the markers on the picture. */
-defineProps<{ findings: Finding[]; active: number | null }>()
+defineProps<{ findings: Finding[]; active: number | null; showBoxes: boolean }>()
 const emit = defineEmits<{ hover: [n: number | null]; select: [n: number] }>()
 </script>
 
@@ -37,7 +37,7 @@ const emit = defineEmits<{ hover: [n: number | null]; select: [n: number] }>()
           <span class="text-caption uppercase">Evidence</span>
           {{ finding.evidence || 'none given' }}
         </span>
-        <span v-if="!finding.box" class="mt-1 block text-caption uppercase opacity-60"
+        <span v-if="showBoxes && !finding.box" class="mt-1 block text-caption uppercase opacity-60"
           >No location</span
         >
       </button>

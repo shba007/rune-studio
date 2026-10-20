@@ -15,6 +15,8 @@ export type AgentState =
 export interface Settings {
   /** What happens with the independent check of a finished task. No UI yet: edit settings.json. */
   verifyMode: 'off' | 'background' | 'blocking'
+  /** Draw the numbered boxes in the screen analysis window. Off by default (the boxes were mostly wrong). */
+  analysisBoxes: boolean
   /** Delete session folders older than this many days at startup; 0 keeps everything. No UI yet. */
   archiveKeepDays: number
   baseUrl: string

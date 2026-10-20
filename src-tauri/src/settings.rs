@@ -43,6 +43,9 @@ pub struct Settings {
     /// the user sees Done at once and the check runs afterwards) or `blocking` (the agent gets one more
     /// chance when the check contradicts it). No UI yet: it is edited in `settings.json`.
     pub verify_mode: VerifyMode,
+    /// Draw the numbered boxes on the screen analysis picture. Off by default: the chat model's boxes
+    /// were right 1 time in 8 in the field test, so the findings list and its evidence are shown alone.
+    pub analysis_boxes: bool,
 }
 
 /// What happens with the independent check of a finished task (`agent::verify`).
@@ -78,6 +81,7 @@ impl Default for Settings {
             decision_url: String::new(),
             archive_keep_days: 0,
             verify_mode: VerifyMode::default(),
+            analysis_boxes: false,
         }
     }
 }
@@ -162,6 +166,16 @@ pub fn set_api_key(key: &str) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn analysis_boxes_are_off_by_default_and_a_file_without_the_setting_loads() {
+        assert!(!Settings::default().analysis_boxes);
+        let loaded: Settings = serde_json::from_str(r#"{ "maxSteps": 7 }"#).unwrap();
+        assert!(!loaded.analysis_boxes);
+        let on: Settings = serde_json::from_str(r#"{ "analysisBoxes": true }"#).unwrap();
+        assert!(on.analysis_boxes);
+        assert_eq!(serde_json::to_value(Settings::default()).unwrap()["analysisBoxes"], false);
+    }
 
     #[test]
     fn the_verify_mode_defaults_to_background() {

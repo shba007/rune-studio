@@ -16,6 +16,8 @@ const props = defineProps<{
   height: number
   findings: Finding[]
   active: number | null
+  /** Draw the boxes, markers and chips (the `analysisBoxes` setting). */
+  showBoxes: boolean
 }>()
 const emit = defineEmits<{ hover: [n: number | null]; select: [n: number] }>()
 
@@ -23,7 +25,9 @@ const picture = useTemplateRef<HTMLElement>('picture')
 const { width: shownWidth, height: shownHeight } = useElementSize(picture)
 
 const located = computed(() =>
-  props.findings.filter((finding): finding is Finding & { box: Box } => finding.box !== null),
+  props.showBoxes
+    ? props.findings.filter((finding): finding is Finding & { box: Box } => finding.box !== null)
+    : [],
 )
 const chips = computed(() =>
   layoutChips(

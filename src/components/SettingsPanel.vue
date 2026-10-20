@@ -129,6 +129,10 @@ async function save() {
         <SettingsToggle v-model="draft.showThinking" label="Show thinking" icon="thinking" />
       </SettingsGroup>
 
+      <SettingsGroup title="Screen analysis">
+        <SettingsToggle v-model="draft.analysisBoxes" label="Show boxes (unreliable)" icon="scan" />
+      </SettingsGroup>
+
       <SettingsGroup title="Safety">
         <SettingsToggle
           v-model="draft.askEveryAction"

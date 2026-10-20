@@ -9,7 +9,7 @@ import AnalysisStage from './AnalysisStage.vue'
 import AppIcon from './AppIcon.vue'
 
 /** The screen analysis window: the screenshot with numbered regions, and what supports each. */
-const { snapshot, notice, busy, capture, ask, cancel } = useAnalysis()
+const { snapshot, notice, busy, showBoxes, capture, ask, cancel } = useAnalysis()
 const reducedMotion = usePreferredReducedMotion()
 
 const question = ref('')
@@ -36,6 +36,13 @@ function submit() {
   const text = question.value.trim()
   if (busy.value) return
   void (snapshot.value.image ? ask(text) : capture(text))
+}
+
+/** Retry asks the question that failed, not whatever is typed in the box now. */
+function retry() {
+  if (busy.value) return
+  const failed = snapshot.value.question
+  void (snapshot.value.image ? ask(failed) : capture(failed))
 }
 
 function newCapture() {
@@ -93,6 +100,7 @@ const button =
           :height="snapshot.height"
           :findings="snapshot.findings"
           :active="active"
+          :show-boxes="showBoxes"
           @hover="hovered = $event"
           @select="select"
         />
@@ -117,7 +125,7 @@ const button =
             v-else-if="snapshot.status === 'error'"
             type="button"
             :class="button"
-            @click="submit()"
+            @click="retry()"
           >
             <AppIcon name="refresh" size="sm" /> Retry
           </button>
@@ -159,6 +167,7 @@ const button =
           v-if="snapshot.findings.length"
           :findings="snapshot.findings"
           :active="active"
+          :show-boxes="showBoxes"
           @hover="hovered = $event"
           @select="select"
         />
