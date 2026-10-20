@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.0.15
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.0.14...v0.0.15)
+
+### 🩹 Fixes
+
+- **safety:** Give the program its keyboard back after a no too, and remember the last outside window ([43ee31a](https://github.com/shba007/rune-studio/commit/43ee31a))
+- **exec:** Open a local page with its query through the default browser's program ([fb023d4](https://github.com/shba007/rune-studio/commit/fb023d4))
+- Risk escalation at 0.5, prompt tips for replacing text, windows eval jail tests ([9dd4210](https://github.com/shba007/rune-studio/commit/9dd4210))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+
 ## v0.0.14
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.0.13...v0.0.14)
