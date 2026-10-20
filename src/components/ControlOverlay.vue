@@ -2,7 +2,7 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
 import { useEventListener, usePreferredReducedMotion, useRafFn } from '@vueuse/core'
-import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 
 import { KIND_ICON, TOOL_LABEL, kindOf, type ActionKind } from '@/config/actions'
 import type {
@@ -15,6 +15,9 @@ import type {
   TypedPayload,
 } from '@/types/protocol'
 
+import { useExternalAgent } from '@/composables/useExternalAgent'
+
+import AgentMark from './AgentMark.vue'
 import AppIcon from './AppIcon.vue'
 
 /** Full-screen "the agent is driving" effect: a dot-matrix frame with a pulse circling it. */
@@ -227,6 +230,16 @@ function setActive(next: boolean) {
 
 /** Name of the outside agent in control, or null when it is Rune Studio's own agent. */
 const agentName = ref<string | null>(null)
+const { identity, darkAccent, mark, hint } = useExternalAgent()
+/** The mark pulses for the first 600 ms of a hand-over, then holds still (a steady pulse beside a moving action chip is noise). */
+const markPulse = ref(false)
+watch(identity, (who, before) => {
+  if (who && who.id !== before?.id) {
+    markPulse.value = true
+    setTimeout(() => (markPulse.value = false), 600)
+  }
+})
+const shownName = computed(() => identity.value?.agent ?? agentName.value ?? 'Rune')
 
 /** Characters of typed text shown at once; longer text scrolls so the newest letters stay in view. */
 const TYPED_TAIL = 24
@@ -482,9 +495,16 @@ onBeforeUnmount(() => unlisten.forEach((off) => off()))
       <div
         class="absolute top-6 left-1/2 flex h-10 -translate-x-1/2 items-center gap-3 rounded-full bg-black/85 pr-1 pl-4 text-white"
       >
-        <span class="size-2 shrink-0 animate-pulse rounded-full bg-[#d71921]" />
-        <span class="text-caption whitespace-nowrap uppercase"
-          >{{ agentName ?? 'Rune' }} is in control</span
+        <span
+          class="grid shrink-0 place-items-center"
+          :class="{ 'motion-safe:animate-pulse': markPulse }"
+          :style="{ color: identity ? (darkAccent ?? '#f1f1ef') : '#f1f1ef' }"
+          :title="hint"
+        >
+          <AgentMark :glyph="identity ? mark : null" :own="!identity" />
+        </span>
+        <span class="text-caption whitespace-nowrap uppercase" :title="hint"
+          >{{ shownName }} is in control</span
         >
 
         <Transition name="action" mode="out-in">

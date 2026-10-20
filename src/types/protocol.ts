@@ -92,6 +92,19 @@ export const STEP_STARTED = 'step_started'
 export const TASK_DONE = 'task_done'
 export const TASK_VERIFIED = 'task_verified'
 export const EXTERNAL_AGENT = 'external_agent'
+
+/** Who is in control from outside (events.rs `ExternalAgent`); all null/false when nobody is. */
+export interface ExternalAgentPayload {
+  /** The display name ("Claude", or an unknown agent's own name). */
+  agent: string | null
+  /** The brand id of `src/config/agents.ts`. */
+  id: string | null
+  known: boolean
+  /** The agent's registration named it, not only the agent itself. */
+  verified: boolean
+  /** What the agent called itself, for a tooltip. */
+  declared: string | null
+}
 export const OBSERVE_STARTED = 'observe_started'
 export const TYPED = 'typed'
 export const PLAN_UPDATED = 'plan_updated'

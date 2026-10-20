@@ -15,6 +15,8 @@ const props = defineProps<{
   /** A task is running, so a ring with no plan yet means "planning". */
   running: boolean
   failed: boolean
+  /** An outside agent's colour for the lit arcs (on the dark rim); null is the usual light grey. */
+  accent?: string | null
 }>()
 
 const SIZE = 64
@@ -66,7 +68,13 @@ const arrowTurn = computed(() => {
 </script>
 
 <template>
-  <svg v-if="visible" :viewBox="`0 0 ${SIZE} ${SIZE}`" class="ring" aria-hidden="true">
+  <svg
+    v-if="visible"
+    :viewBox="`0 0 ${SIZE} ${SIZE}`"
+    class="ring"
+    :style="{ '--lit': accent ?? '#f1f1ef' }"
+    aria-hidden="true"
+  >
     <template v-if="goals > 0">
       <path
         v-for="(segment, index) in segments"
@@ -112,7 +120,7 @@ const arrowTurn = computed(() => {
 }
 
 .done {
-  stroke: #f1f1ef;
+  stroke: var(--lit, #f1f1ef);
 }
 
 .pending {
@@ -120,7 +128,7 @@ const arrowTurn = computed(() => {
 }
 
 .current {
-  stroke: #f1f1ef;
+  stroke: var(--lit, #f1f1ef);
   animation: pulse 1.4s ease-in-out infinite;
 }
 
@@ -135,7 +143,7 @@ const arrowTurn = computed(() => {
 }
 
 .arrow {
-  fill: #f1f1ef;
+  fill: var(--lit, #f1f1ef);
 }
 
 .arrow.failed {

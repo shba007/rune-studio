@@ -8,6 +8,9 @@
 //! name. `verified` means "the registration said so", not cryptographic proof. The safety gate treats
 //! every outside agent alike, whatever it is called.
 
+// Only the bridge builds name outside agents; elsewhere this is reachable but unused.
+#![cfg_attr(not(feature = "agent-bridge"), allow(dead_code))]
+
 use serde::Serialize;
 
 /// Longest display name kept.

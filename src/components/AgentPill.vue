@@ -8,6 +8,8 @@ import { PAGE_GAP, PAGE_WIDTH } from '@/config/layout'
 
 import Composer from './Composer.vue'
 import ConfirmCard from './ConfirmCard.vue'
+import { useExternalAgent } from '@/composables/useExternalAgent'
+
 import GlyphOrb from './GlyphOrb.vue'
 import HealthDots from './HealthDots.vue'
 import ProgressRing from './ProgressRing.vue'
@@ -37,6 +39,8 @@ const promptVisible = computed(
 watch(promptVisible, (visible) => {
   if (visible && agent.mode.value === 'ambient') void agent.setMode('open')
 })
+
+const { orbAccent, darkAccent, mark: agentMark } = useExternalAgent()
 
 const isAmbient = computed(() => agent.mode.value === 'ambient')
 
@@ -109,6 +113,7 @@ function onOrb() {
         :finished="agent.plan.value?.finished ?? false"
         :running="agent.isRunning.value"
         :failed="agent.state.value === 'failed'"
+        :accent="darkAccent"
       />
       <button
         type="button"
@@ -119,7 +124,12 @@ function onOrb() {
         :title="updating ? 'Updating Rune Studio' : agent.health.value.title"
         @click="onOrb"
       >
-        <GlyphOrb :state="updating ? 'planning' : agent.state.value" :level="agent.level.value" />
+        <GlyphOrb
+          :state="updating ? 'planning' : agent.state.value"
+          :level="agent.level.value"
+          :accent="orbAccent"
+          :mark="agentMark"
+        />
         <HealthDots :tone="agent.health.value.tone" />
       </button>
     </div>

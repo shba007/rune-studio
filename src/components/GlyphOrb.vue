@@ -2,9 +2,17 @@
 import { useDocumentVisibility, usePreferredReducedMotion, useRafFn } from '@vueuse/core'
 import { onMounted, useTemplateRef, watch, watchEffect } from 'vue'
 
+import { rgba } from '@/config/color'
 import type { AgentState } from '@/types/protocol'
 
-const props = defineProps<{ state: AgentState; level?: number }>()
+const props = defineProps<{
+  state: AgentState
+  level?: number
+  /** An outside agent's colour for the lit dots (on the light disc); null keeps them dark. Red stays red. */
+  accent?: string | null
+  /** That agent's mark, one 24x24 SVG path, drawn in the middle. */
+  mark?: string | null
+}>()
 
 type Kind = 'idle' | 'listening' | 'thinking' | 'acting' | 'attention' | 'done' | 'failed'
 
@@ -142,11 +150,30 @@ function draw(now: number) {
       if (b > 0) {
         ctx.beginPath()
         ctx.arc(px, py, (1.25 + 0.95 * b) * SCALE, 0, Math.PI * 2)
-        ctx.fillStyle = red ? `rgba(215, 25, 33, ${b})` : `rgba(17, 17, 17, ${b})`
+        ctx.fillStyle = red
+          ? `rgba(215, 25, 33, ${b})`
+          : props.accent
+            ? rgba(props.accent, b * (props.mark ? 0.45 : 1))
+            : `rgba(17, 17, 17, ${b})`
         ctx.fill()
       }
     }
   }
+  drawMark(ctx, kind)
+}
+
+/** The outside agent's mark: one flat vector over the dimmed dot field, about 14 px. No glow, no gradient. */
+function drawMark(ctx: CanvasRenderingContext2D, kind: Kind) {
+  if (!props.mark || kind === 'attention' || kind === 'failed') return
+  const size = 14 * SCALE
+  const path = new Path2D(props.mark)
+  ctx.save()
+  ctx.translate((SIZE - size) / 2, (SIZE - size) / 2)
+  ctx.scale(size / 24, size / 24)
+  ctx.globalAlpha = 0.9
+  ctx.fillStyle = props.accent ?? '#111111'
+  ctx.fill(path)
+  ctx.restore()
 }
 
 /** Animates only while the window is visible and the user has not asked for reduced motion. */
