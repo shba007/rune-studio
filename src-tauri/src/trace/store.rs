@@ -6,7 +6,9 @@ use std::path::Path;
 
 use rusqlite::{Connection, OpenFlags, Row, params, params_from_iter, types::Value};
 
-use super::{AnalysisRecord, Msg, RunInfo, STEP_COLUMNS, StepRecord, VerdictRecord, schema};
+use super::{
+    AnalysisRecord, Msg, ReflectionRecord, RunInfo, STEP_COLUMNS, StepRecord, VerdictRecord, schema,
+};
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum StoreError {
@@ -130,6 +132,14 @@ fn apply(db: &Connection, message: &Msg) -> rusqlite::Result<()> {
                     findings_json = excluded.findings_json, model = excluded.model, latency_ms = excluded.latency_ms, status = excluded.status,
                     error = excluded.error, screenshot_path = excluded.screenshot_path, monitor_json = excluded.monitor_json",
                 params![record.id, record.created_utc, record.question, record.answer, record.findings_json, record.model, record.latency_ms, record.status, record.error, record.screenshot_path, record.monitor_json],
+            )?;
+        }
+        Msg::Reflection(record) => {
+            db.execute(
+                "INSERT INTO reflections (id, started_utc, ended_utc, outcome, stages) VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(id) DO UPDATE SET started_utc = excluded.started_utc, ended_utc = excluded.ended_utc,
+                    outcome = excluded.outcome, stages = excluded.stages",
+                params![record.id, record.started_utc, record.ended_utc, record.outcome, record.stages],
             )?;
         }
         Msg::PurgeSessions(dirs) => {
@@ -343,6 +353,28 @@ pub fn list_analyses(path: &Path, limit: usize) -> Result<Vec<AnalysisRecord>, S
         [i64::try_from(limit).unwrap_or(i64::MAX)],
         analysis_from_row,
     )?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// The newest reflection runs first, at most `limit`. A database older than version 4 has none.
+pub fn list_reflections(path: &Path, limit: usize) -> Result<Vec<ReflectionRecord>, StoreError> {
+    let db = open_read(path)?;
+    let version: i64 = db.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version < 4 {
+        return Ok(Vec::new());
+    }
+    let mut statement = db.prepare(
+        "SELECT id, started_utc, ended_utc, outcome, stages FROM reflections ORDER BY started_utc DESC, rowid DESC LIMIT ?1",
+    )?;
+    let rows = statement.query_map([i64::try_from(limit).unwrap_or(i64::MAX)], |row| {
+        Ok(ReflectionRecord {
+            id: row.get(0)?,
+            started_utc: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+            ended_utc: row.get(2)?,
+            outcome: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+            stages: row.get::<_, Option<i64>>(4)?.unwrap_or_default(),
+        })
+    })?;
     Ok(rows.collect::<Result<_, _>>()?)
 }
 

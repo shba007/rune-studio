@@ -68,10 +68,17 @@ fn a_new_database_is_created_at_the_current_version() {
     let dir = TempDir::new();
     let recorder = Recorder::start(&dir.db());
     recorder.flush();
-    assert_eq!(version_of(&dir.db()), 3);
+    assert_eq!(version_of(&dir.db()), 4);
     assert_eq!(
         tables_of(&dir.db()),
-        ["analyses", "events", "runs", "steps", "verdicts"]
+        [
+            "analyses",
+            "events",
+            "reflections",
+            "runs",
+            "steps",
+            "verdicts"
+        ]
     );
 }
 
@@ -83,7 +90,7 @@ fn opening_twice_is_idempotent() {
     first.flush();
     let second = Recorder::start(&dir.db());
     second.flush();
-    assert_eq!(version_of(&dir.db()), 3);
+    assert_eq!(version_of(&dir.db()), 4);
     assert_eq!(
         list_runs(&dir.db(), 10).unwrap().len(),
         1,
@@ -492,7 +499,7 @@ fn a_version_1_database_is_migrated_without_losing_a_run() {
 
     let recorder = Recorder::start(&dir.db());
     recorder.flush();
-    assert_eq!(version_of(&dir.db()), 3);
+    assert_eq!(version_of(&dir.db()), 4);
     assert!(tables_of(&dir.db()).contains(&"verdicts".to_string()));
     let after = get_run(&dir.db(), "old").unwrap().expect("and still reads");
     assert_eq!(
@@ -646,7 +653,7 @@ fn a_version_2_database_is_migrated_and_reads_as_having_no_analyses() {
     assert_eq!(get_analysis(&dir.db(), "any").unwrap(), None);
     let recorder = Recorder::start(&dir.db());
     recorder.flush();
-    assert_eq!(version_of(&dir.db()), 3);
+    assert_eq!(version_of(&dir.db()), 4);
     assert!(tables_of(&dir.db()).contains(&"analyses".to_string()));
     assert_eq!(
         list_runs(&dir.db(), 5).unwrap().len(),
@@ -726,4 +733,61 @@ fn the_model_and_the_snapshot_are_read_under_one_lock_without_waiting_on_themsel
     );
     // The lock is free again afterwards.
     assert!(settings.try_lock().is_ok());
+}
+
+fn reflection(id: &str, started: &str, outcome: &str) -> ReflectionRecord {
+    ReflectionRecord {
+        id: id.into(),
+        started_utc: started.into(),
+        ended_utc: Some("2026-10-19T10:00:03Z".into()),
+        outcome: outcome.into(),
+        stages: 3,
+    }
+}
+
+#[test]
+fn a_version_3_database_is_migrated_to_4_and_reads_as_having_no_reflections() {
+    let dir = TempDir::new();
+    {
+        let db = Connection::open(dir.db()).unwrap();
+        db.execute_batch(&format!(
+            "{} {} {} PRAGMA user_version = 3;",
+            schema::CREATE_V1,
+            schema::CREATE_V2,
+            schema::CREATE_V3
+        ))
+        .unwrap();
+        db.execute("INSERT INTO runs (id, task) VALUES ('old', 'x')", [])
+            .unwrap();
+    }
+    assert_eq!(list_reflections(&dir.db(), 5).unwrap(), vec![]);
+    let recorder = Recorder::start(&dir.db());
+    recorder.flush();
+    assert_eq!(version_of(&dir.db()), 4);
+    assert!(tables_of(&dir.db()).contains(&"reflections".to_string()));
+    assert_eq!(
+        list_runs(&dir.db(), 5).unwrap().len(),
+        1,
+        "the run survives"
+    );
+    recorder.reflection(reflection("r1", "2026-10-19T10:00:00Z", "completed"));
+    recorder.flush();
+    assert_eq!(list_reflections(&dir.db(), 5).unwrap().len(), 1);
+}
+
+#[test]
+fn reflections_round_trip_replace_by_id_and_list_newest_first() {
+    let dir = TempDir::new();
+    let recorder = Recorder::start(&dir.db());
+    recorder.reflection(reflection("a", "2026-10-19T09:00:00Z", "completed"));
+    recorder.reflection(reflection("b", "2026-10-19T11:00:00Z", "preempted"));
+    recorder.reflection(reflection("a", "2026-10-19T09:00:00Z", "preempted"));
+    recorder.flush();
+    let rows = list_reflections(&dir.db(), 10).unwrap();
+    let shown: Vec<(&str, &str)> = rows
+        .iter()
+        .map(|row| (row.id.as_str(), row.outcome.as_str()))
+        .collect();
+    assert_eq!(shown, [("b", "preempted"), ("a", "preempted")]);
+    assert_eq!(list_reflections(&dir.db(), 1).unwrap().len(), 1);
 }

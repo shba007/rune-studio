@@ -107,6 +107,18 @@ pub struct VerdictRecord {
     pub created_utc: String,
 }
 
+/// One idle reflection run (`reflect`). The job is a stub in R5.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ReflectionRecord {
+    pub id: String,
+    pub started_utc: String,
+    pub ended_utc: Option<String>,
+    /// `completed`, `preempted` or `failed`.
+    pub outcome: String,
+    /// How many stages it got through.
+    pub stages: i64,
+}
+
 /// One visual analysis (`analysis`). The id is the archive session id of its folder.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct AnalysisRecord {
@@ -327,6 +339,7 @@ pub enum Msg {
     PurgeSessions(Vec<String>),
     Verdict(Box<VerdictRecord>),
     Analysis(Box<AnalysisRecord>),
+    Reflection(Box<ReflectionRecord>),
     /// Answered once everything queued before it has been written.
     #[cfg(test)]
     Flush(std::sync::mpsc::Sender<()>),
@@ -516,6 +529,11 @@ impl Recorder {
             ..record
         };
         self.send(Msg::Analysis(Box::new(record)));
+    }
+
+    /// Stores one reflection run (the newest write for an id replaces an older one).
+    pub fn reflection(&self, record: ReflectionRecord) {
+        self.send(Msg::Reflection(Box::new(record)));
     }
 
     pub fn purge_sessions(&self, session_dirs: Vec<String>) {

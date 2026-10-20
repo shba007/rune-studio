@@ -3,7 +3,7 @@
 use rusqlite::Connection;
 
 /// The version this code writes. `PRAGMA user_version` holds the version of a database file.
-pub const VERSION: i64 = 3;
+pub const VERSION: i64 = 4;
 
 /// Version 1.
 pub const CREATE_V1: &str = "
@@ -100,6 +100,17 @@ CREATE TABLE analyses (
 CREATE INDEX analyses_created ON analyses(created_utc);
 ";
 
+/// Version 4: idle reflection runs (see `reflect`). One row per run; the job is a stub until R6.
+pub const CREATE_V4: &str = "
+CREATE TABLE reflections (
+    id TEXT PRIMARY KEY,
+    started_utc TEXT,
+    ended_utc TEXT,
+    outcome TEXT,
+    stages INTEGER
+);
+";
+
 /// How opening a database went.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Opened {
@@ -120,17 +131,20 @@ pub fn open(db: &Connection) -> rusqlite::Result<Opened> {
         "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;",
     )?;
     // One transaction per step, so a crash cannot leave half a schema behind.
-    if found < 1 {
+    let mut batch = String::new();
+    for (version, ddl) in [
+        (1, CREATE_V1),
+        (2, CREATE_V2),
+        (3, CREATE_V3),
+        (4, CREATE_V4),
+    ] {
+        if found < version {
+            batch.push_str(ddl);
+        }
+    }
+    if !batch.is_empty() {
         db.execute_batch(&format!(
-            "BEGIN; {CREATE_V1} {CREATE_V2} {CREATE_V3} PRAGMA user_version = 3; COMMIT;"
-        ))?;
-    } else if found < 2 {
-        db.execute_batch(&format!(
-            "BEGIN; {CREATE_V2} {CREATE_V3} PRAGMA user_version = 3; COMMIT;"
-        ))?;
-    } else if found < 3 {
-        db.execute_batch(&format!(
-            "BEGIN; {CREATE_V3} PRAGMA user_version = 3; COMMIT;"
+            "BEGIN; {batch} PRAGMA user_version = {VERSION}; COMMIT;"
         ))?;
     }
     Ok(Opened::Ready)

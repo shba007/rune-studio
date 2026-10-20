@@ -63,6 +63,8 @@ pub enum Command {
     Analyses(usize),
     /// `analysis <id>`: one visual analysis with its findings.
     Analysis(String),
+    /// `reflections [--limit N]`: the newest idle reflection runs.
+    Reflections(usize),
     Help,
     /// Not a command we know: shown as an error with the help text.
     Unknown(String),
@@ -104,6 +106,14 @@ pub fn parse(args: &[String]) -> Command {
             },
             Some(other) => Command::Unknown(format!("analyses {other}")),
         },
+        "reflections" => match args.get(1).map(String::as_str) {
+            None => Command::Reflections(DEFAULT_RUNS),
+            Some("--limit") => match args.get(2).and_then(|number| number.parse::<usize>().ok()) {
+                Some(limit) => Command::Reflections(limit),
+                None => Command::Unknown("reflections --limit (needs a number)".into()),
+            },
+            Some(other) => Command::Unknown(format!("reflections {other}")),
+        },
         "analysis" => Command::Analysis(args.get(1).cloned().unwrap_or_default()),
         "help" | "--help" | "-h" => Command::Help,
         "connect" => Command::Connect(args.get(1).cloned().unwrap_or_default()),
@@ -128,6 +138,7 @@ Rune Studio
   rune-studio-cli runs [--limit N]  List the newest recorded runs (default 20).
   rune-studio-cli run <id>         Show one recorded run: its steps and events.
   rune-studio-cli analyses [--limit N]  List the newest screen analyses (default 20).
+  rune-studio-cli reflections [--limit N]  List the newest idle reflection runs (default 20).
   rune-studio-cli analysis <id>    Show one screen analysis: question, answer and findings.
   rune-studio-cli mcp              Used by agents: speaks MCP on stdin/stdout and opens the app if needed.
 
@@ -150,6 +161,7 @@ pub fn run() -> i32 {
         Command::Run(id) => run_command(&id),
         Command::Analyses(limit) => analyses_command(limit),
         Command::Analysis(id) => analysis_command(&id),
+        Command::Reflections(limit) => reflections_command(limit),
         Command::Guide => {
             say(GUIDE);
             0
@@ -260,6 +272,62 @@ fn lookup_outcome(
         ),
         Err(err) => (format!("Could not read the trace database: {err}"), 1),
     }
+}
+
+/// `rune-studio-cli reflections`: a table of the newest idle reflection runs.
+fn reflections_command(limit: usize) -> i32 {
+    with_trace(|path| match trace::store::list_reflections(path, limit) {
+        Ok(rows) if rows.is_empty() => {
+            say("No reflections are recorded yet.");
+            0
+        }
+        Ok(rows) => {
+            say(&reflections_table(&rows));
+            0
+        }
+        Err(err) => {
+            say(&format!("Could not read the trace database: {err}"));
+            1
+        }
+    })
+}
+
+/// The reflection list: one line per run, columns padded to their widest cell.
+fn reflections_table(rows: &[trace::ReflectionRecord]) -> String {
+    let mut lines = vec![["ID", "STARTED", "OUTCOME", "STAGES", "DURATION"].map(String::from)];
+    for row in rows {
+        lines.push([
+            row.id.clone(),
+            shown_time(
+                Some(&row.started_utc)
+                    .filter(|time| !time.is_empty())
+                    .map(String::as_str),
+            ),
+            row.outcome.clone(),
+            row.stages.to_string(),
+            shown_duration(Some(&row.started_utc), row.ended_utc.as_deref()),
+        ]);
+    }
+    let widths: Vec<usize> = (0..5)
+        .map(|column| {
+            lines
+                .iter()
+                .map(|line| line[column].chars().count())
+                .max()
+                .unwrap_or(0)
+        })
+        .collect();
+    let mut out = String::new();
+    for line in &lines {
+        let cells: Vec<String> = line
+            .iter()
+            .enumerate()
+            .map(|(column, cell)| format!("{cell:<width$}", width = widths[column]))
+            .collect();
+        out.push_str(cells.join("  ").trim_end());
+        out.push('\n');
+    }
+    out
 }
 
 /// Finds the trace database and hands its path to `show`; says so plainly when there is none.
@@ -1176,6 +1244,40 @@ mod tests {
             "something that accepts and says nothing is not ours"
         );
         assert_eq!(classify_door(None), Door::Closed);
+    }
+
+    #[test]
+    fn the_reflections_command_parses_and_its_table_is_laid_out() {
+        assert_eq!(parse(&args(&["reflections"])), Command::Reflections(20));
+        assert_eq!(
+            parse(&args(&["reflections", "--limit", "2"])),
+            Command::Reflections(2)
+        );
+        assert!(matches!(
+            parse(&args(&["reflections", "x"])),
+            Command::Unknown(_)
+        ));
+        assert!(HELP.contains("reflections [--limit N]"));
+        let rows = [
+            trace::ReflectionRecord {
+                id: "a".into(),
+                started_utc: "2026-10-19T10:00:00Z".into(),
+                ended_utc: Some("2026-10-19T10:00:03Z".into()),
+                outcome: "completed".into(),
+                stages: 3,
+            },
+            trace::ReflectionRecord {
+                id: "bb".into(),
+                started_utc: "2026-10-19T09:00:00Z".into(),
+                ended_utc: None,
+                outcome: "preempted".into(),
+                stages: 1,
+            },
+        ];
+        assert_eq!(
+            reflections_table(&rows),
+            "ID  STARTED              OUTCOME    STAGES  DURATION\na   2026-10-19 10:00:00  completed  3       3s\nbb  2026-10-19 09:00:00  preempted  1       -\n"
+        );
     }
 
     #[test]
