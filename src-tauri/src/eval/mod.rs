@@ -300,7 +300,7 @@ async fn execute(app: &AppHandle, suite_path: &Path, out: &Path) -> i32 {
     let env = json!({
         "model": effective.model,
         "settings": serde_json::from_str::<serde_json::Value>(&trace::settings_snapshot(&effective)).unwrap_or_default(),
-        "app_version": env!("CARGO_PKG_VERSION"),
+        "app_version": crate::VERSION,
         "git_commit": option_env!("RUNE_GIT_COMMIT"),
         "date": crate::archive::iso(crate::archive::now()),
         "suite": suite.name,

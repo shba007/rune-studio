@@ -1,4 +1,7 @@
 mod agent;
+/// The app's version: `package.json`'s, the same number Settings shows (see `build.rs`).
+pub const VERSION: &str = env!("RUNE_VERSION");
+
 mod analysis;
 mod archive;
 mod backend;
@@ -215,4 +218,14 @@ pub fn run() {
                 cursor::reset();
             }
         });
+}
+
+#[cfg(test)]
+mod version_tests {
+    #[test]
+    fn the_version_is_package_jsons_and_not_the_empty_cargo_default() {
+        let package: serde_json::Value = serde_json::from_str(include_str!("../../package.json")).unwrap();
+        assert_eq!(super::VERSION, package["version"].as_str().unwrap());
+        assert_ne!(super::VERSION, "0.0.0");
+    }
 }

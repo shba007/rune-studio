@@ -94,7 +94,7 @@ pub async fn handle(app: &AppHandle, request: Value) -> Option<Value> {
                 json!({
                     "protocolVersion": version,
                     "capabilities": { "tools": { "listChanged": false }, "resources": {}, "prompts": {} },
-                    "serverInfo": { "name": "rune-studio", "version": env!("CARGO_PKG_VERSION") },
+                    "serverInfo": { "name": "rune-studio", "version": crate::VERSION },
                     "instructions": "Rune Studio lets you see the user's screen and use their mouse and keyboard. Call rune_guide first for how to use it, then rune_begin. Take one small step at a time and look at every screenshot.",
                 }),
             )
@@ -312,7 +312,7 @@ fn begin(app: &AppHandle, arguments: &Value) -> Reply {
         started_utc: trace::now_utc(),
         plan_json: None,
         model: Some(model),
-        app_version: Some(env!("CARGO_PKG_VERSION").into()),
+        app_version: Some(crate::VERSION.into()),
         settings_json: Some(settings_json),
         session_dir: crate::archive::session_dir(&session).map(|dir| dir.display().to_string()),
     });

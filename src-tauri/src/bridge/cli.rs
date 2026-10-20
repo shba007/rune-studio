@@ -302,7 +302,7 @@ fn status() -> i32 {
         Door::Closed => "not running (it opens when an agent connects, or run: rune-studio)".to_string(),
         Door::Taken => format!("another program is using port {}: Rune Studio's agent bridge cannot start while it does", server::PORT),
     };
-    say(&format!("Rune Studio {}\n  App:               {app}\n  Outside agents:    {}", env!("CARGO_PKG_VERSION"), if switch_is_on() { "allowed" } else { "not allowed (run: rune-studio-cli enable)" }));
+    say(&format!("Rune Studio {}\n  App:               {app}\n  Outside agents:    {}", crate::VERSION, if switch_is_on() { "allowed" } else { "not allowed (run: rune-studio-cli enable)" }));
     0
 }
 

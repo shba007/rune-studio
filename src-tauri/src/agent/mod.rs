@@ -91,7 +91,7 @@ pub fn start_planned(app: &AppHandle, task: String, plan: Option<Vec<String>>) {
         started_utc: trace::now_utc(),
         plan_json: plan.as_ref().and_then(|goals| serde_json::to_string(goals).ok()),
         model: Some(model),
-        app_version: Some(env!("CARGO_PKG_VERSION").into()),
+        app_version: Some(crate::VERSION.into()),
         settings_json: Some(settings_json),
         session_dir: crate::archive::session_dir(&session).map(|dir| dir.display().to_string()),
     });
