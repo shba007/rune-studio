@@ -111,7 +111,18 @@ fn apply(db: &Connection, message: &Msg) -> rusqlite::Result<()> {
             summary,
         } => {
             // Only the first end counts.
-            db.execute("UPDATE runs SET ended_utc = ?2, outcome = ?3, summary = ?4 WHERE id = ?1 AND ended_utc IS NULL", params![run_id, ended_utc, outcome, summary])?;
+            let ended = db.execute("UPDATE runs SET ended_utc = ?2, outcome = ?3, summary = ?4 WHERE id = ?1 AND ended_utc IS NULL", params![run_id, ended_utc, outcome, summary])?;
+            // Counters for the review card and the CLI, so they need not recompute (older runs have none).
+            if ended > 0 {
+                db.execute(
+                    "UPDATE runs SET
+                        step_count = (SELECT COUNT(*) FROM steps WHERE run_id = ?1),
+                        retry_count = (SELECT COUNT(*) FROM calls WHERE run_id = ?1 AND outcome = 'retried'),
+                        duration_ms = CAST((julianday(ended_utc) - julianday(started_utc)) * 86400000 AS INTEGER)
+                     WHERE id = ?1",
+                    [run_id],
+                )?;
+            }
         }
         Msg::Verdict(record) => {
             ensure_run(db, &record.run_id)?;
@@ -134,6 +145,13 @@ fn apply(db: &Connection, message: &Msg) -> rusqlite::Result<()> {
                 params![record.id, record.created_utc, record.question, record.answer, record.findings_json, record.model, record.latency_ms, record.status, record.error, record.screenshot_path, record.monitor_json, record.boxes_rejected],
             )?;
         }
+        Msg::Call(record) => {
+            db.execute(
+                "INSERT INTO calls (run_id, step, kind, attempt, started_utc, duration_ms, wait_before_ms, status, outcome, error, request_json, response_json, truncated, model, prompt_tokens, completion_tokens)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+                params![record.run_id, record.step, record.kind, record.attempt, record.started_utc, record.duration_ms, record.wait_before_ms, record.status, record.outcome, record.error, record.request_json, record.response_json, record.truncated, record.model, record.prompt_tokens, record.completion_tokens],
+            )?;
+        }
         Msg::Reflection(record) => {
             db.execute(
                 "INSERT INTO reflections (id, started_utc, ended_utc, outcome, stages) VALUES (?1, ?2, ?3, ?4, ?5)
@@ -145,6 +163,7 @@ fn apply(db: &Connection, message: &Msg) -> rusqlite::Result<()> {
         Msg::PurgeSessions(dirs) => {
             for dir in dirs {
                 // Foreign keys are on: what hangs on a run goes first.
+                db.execute("DELETE FROM calls WHERE run_id IN (SELECT id FROM runs WHERE session_dir = ?1)", [dir])?;
                 db.execute("DELETE FROM verdicts WHERE run_id IN (SELECT id FROM runs WHERE session_dir = ?1)", [dir])?;
                 db.execute("DELETE FROM events WHERE run_id IN (SELECT id FROM runs WHERE session_dir = ?1)", [dir])?;
                 db.execute("DELETE FROM steps WHERE run_id IN (SELECT id FROM runs WHERE session_dir = ?1)", [dir])?;

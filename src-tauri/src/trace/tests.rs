@@ -68,11 +68,12 @@ fn a_new_database_is_created_at_the_current_version() {
     let dir = TempDir::new();
     let recorder = Recorder::start(&dir.db());
     recorder.flush();
-    assert_eq!(version_of(&dir.db()), 5);
+    assert_eq!(version_of(&dir.db()), 6);
     assert_eq!(
         tables_of(&dir.db()),
         [
             "analyses",
+            "calls",
             "events",
             "reflections",
             "runs",
@@ -90,7 +91,7 @@ fn opening_twice_is_idempotent() {
     first.flush();
     let second = Recorder::start(&dir.db());
     second.flush();
-    assert_eq!(version_of(&dir.db()), 5);
+    assert_eq!(version_of(&dir.db()), 6);
     assert_eq!(
         list_runs(&dir.db(), 10).unwrap().len(),
         1,
@@ -103,7 +104,7 @@ fn a_newer_database_is_left_untouched_and_nothing_is_recorded() {
     let dir = TempDir::new();
     {
         let db = Connection::open(dir.db()).unwrap();
-        db.execute_batch("CREATE TABLE future (x INTEGER); PRAGMA user_version = 6;")
+        db.execute_batch("CREATE TABLE future (x INTEGER); PRAGMA user_version = 7;")
             .unwrap();
     }
     let recorder = Recorder::start(&dir.db());
@@ -112,9 +113,9 @@ fn a_newer_database_is_left_untouched_and_nothing_is_recorded() {
         recorder.tx.is_none(),
         "a newer schema means a no-op recorder"
     );
-    assert_eq!(version_of(&dir.db()), 6);
+    assert_eq!(version_of(&dir.db()), 7);
     assert_eq!(tables_of(&dir.db()), ["future"]);
-    assert_eq!(list_runs(&dir.db(), 10), Err(StoreError::Newer(6)));
+    assert_eq!(list_runs(&dir.db(), 10), Err(StoreError::Newer(7)));
 }
 
 #[test]
@@ -499,7 +500,7 @@ fn a_version_1_database_is_migrated_without_losing_a_run() {
 
     let recorder = Recorder::start(&dir.db());
     recorder.flush();
-    assert_eq!(version_of(&dir.db()), 5);
+    assert_eq!(version_of(&dir.db()), 6);
     assert!(tables_of(&dir.db()).contains(&"verdicts".to_string()));
     let after = get_run(&dir.db(), "old").unwrap().expect("and still reads");
     assert_eq!(
@@ -654,7 +655,7 @@ fn a_version_2_database_is_migrated_and_reads_as_having_no_analyses() {
     assert_eq!(get_analysis(&dir.db(), "any").unwrap(), None);
     let recorder = Recorder::start(&dir.db());
     recorder.flush();
-    assert_eq!(version_of(&dir.db()), 5);
+    assert_eq!(version_of(&dir.db()), 6);
     assert!(tables_of(&dir.db()).contains(&"analyses".to_string()));
     assert_eq!(
         list_runs(&dir.db(), 5).unwrap().len(),
@@ -764,7 +765,7 @@ fn a_version_3_database_is_migrated_to_4_and_reads_as_having_no_reflections() {
     assert_eq!(list_reflections(&dir.db(), 5).unwrap(), vec![]);
     let recorder = Recorder::start(&dir.db());
     recorder.flush();
-    assert_eq!(version_of(&dir.db()), 5);
+    assert_eq!(version_of(&dir.db()), 6);
     assert!(tables_of(&dir.db()).contains(&"reflections".to_string()));
     assert_eq!(
         list_runs(&dir.db(), 5).unwrap().len(),
@@ -818,7 +819,7 @@ fn a_version_4_database_gains_boxes_rejected_and_old_rows_read_as_zero() {
     );
     let recorder = Recorder::start(&dir.db());
     recorder.flush();
-    assert_eq!(version_of(&dir.db()), 5);
+    assert_eq!(version_of(&dir.db()), 6);
     assert_eq!(
         get_analysis(&dir.db(), "old")
             .unwrap()
@@ -838,4 +839,192 @@ fn a_version_4_database_gains_boxes_rejected_and_old_rows_read_as_zero() {
             .boxes_rejected,
         3
     );
+}
+
+fn call(run_id: &str, step: Option<i64>, attempt: i64, outcome: &str) -> CallRecord {
+    CallRecord {
+        run_id: run_id.into(),
+        step,
+        kind: "decide".into(),
+        attempt,
+        started_utc: "2026-10-20T10:00:00Z".into(),
+        duration_ms: 120,
+        wait_before_ms: if attempt > 1 { 500 } else { 0 },
+        status: Some(200),
+        outcome: outcome.into(),
+        request_json: "{}".into(),
+        response_json: "{}".into(),
+        model: "m".into(),
+        ..CallRecord::default()
+    }
+}
+
+fn calls_in(path: &std::path::Path, run_id: &str) -> Vec<(i64, String, i64)> {
+    let db = Connection::open(path).unwrap();
+    let mut statement = db
+        .prepare("SELECT attempt, outcome, wait_before_ms FROM calls WHERE run_id = ?1 ORDER BY id")
+        .unwrap();
+    statement
+        .query_map([run_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect()
+}
+
+#[test]
+fn a_version_5_database_gets_calls_and_the_run_counters() {
+    let dir = TempDir::new();
+    {
+        let db = Connection::open(dir.db()).unwrap();
+        db.execute_batch(&format!(
+            "{} {} {} {} {} PRAGMA user_version = 5;",
+            schema::CREATE_V1,
+            schema::CREATE_V2,
+            schema::CREATE_V3,
+            schema::CREATE_V4,
+            schema::CREATE_V5
+        ))
+        .unwrap();
+        db.execute("INSERT INTO runs (id, task, started_utc, ended_utc, outcome) VALUES ('old', 'x', '2026-10-01T09:00:00Z', '2026-10-01T09:01:00Z', 'succeeded')", []).unwrap();
+    }
+    let recorder = Recorder::start(&dir.db());
+    recorder.flush();
+    assert_eq!(version_of(&dir.db()), 6);
+    assert!(tables_of(&dir.db()).contains(&"calls".to_string()));
+    let db = Connection::open(dir.db()).unwrap();
+    let old: (Option<i64>, Option<i64>) = db
+        .query_row(
+            "SELECT step_count, duration_ms FROM runs WHERE id = 'old'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(old, (None, None), "older runs are not backfilled");
+}
+
+#[test]
+fn attempts_are_stored_in_order_and_a_retry_shows_two_rows() {
+    let dir = TempDir::new();
+    let recorder = Recorder::start(&dir.db());
+    recorder.begin_run(run("r1", "2026-10-20T10:00:00Z"));
+    recorder.call(call("r1", Some(1), 1, "retried"));
+    recorder.call(call("r1", Some(1), 2, "ok"));
+    recorder.flush();
+    assert_eq!(
+        calls_in(&dir.db(), "r1"),
+        [(1, "retried".to_string(), 0), (2, "ok".to_string(), 500)]
+    );
+}
+
+#[test]
+fn a_run_end_fills_step_retry_and_duration_counters() {
+    let dir = TempDir::new();
+    let recorder = Recorder::start(&dir.db());
+    recorder.begin_run(run("r1", "2026-10-01T10:00:00Z"));
+    recorder.step(StepRecord::new("r1", 1));
+    recorder.step(StepRecord::new("r1", 2));
+    recorder.call(call("r1", Some(1), 1, "retried"));
+    recorder.call(call("r1", Some(1), 2, "ok"));
+    recorder.end_run("r1", "succeeded", "done");
+    recorder.flush();
+    let db = Connection::open(dir.db()).unwrap();
+    let counters: (Option<i64>, Option<i64>, Option<i64>) = db
+        .query_row(
+            "SELECT step_count, retry_count, duration_ms FROM runs WHERE id = 'r1'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!((counters.0, counters.1), (Some(2), Some(1)));
+    assert!(
+        counters.2.is_some_and(|ms| ms >= 0),
+        "a duration is computed from the two timestamps"
+    );
+}
+
+#[test]
+fn bodies_lose_images_audio_and_secrets_and_are_cut_at_64_kb() {
+    let body = serde_json::json!({
+        "model": "m",
+        "messages": [{ "role": "user", "content": [
+            { "type": "image_url", "image_url": { "url": format!("data:image/jpeg;base64,{}", "A".repeat(5000)) } },
+            { "type": "input_audio", "input_audio": { "data": "B".repeat(3000), "format": "wav" } },
+            { "type": "text", "text": "hello" },
+        ]}],
+        "headers": { "Authorization": "Bearer sk-abc", "x-api-key": "sk-abc" },
+        "api_key": "sk-abc",
+    });
+    let (text, cut) = redact(&body);
+    assert!(!cut);
+    assert!(
+        !text.contains("AAAA") && !text.contains("BBBB") && !text.contains("sk-abc"),
+        "{text}"
+    );
+    assert!(
+        text.contains("[image 5023 bytes]")
+            && text.contains("[audio 3000 bytes]")
+            && text.contains("hello")
+    );
+    // A 200 KB prompt is cut, and the cut is on a character boundary.
+    let (long, cut) = redact(&serde_json::json!({ "prompt": "é".repeat(100_000) }));
+    assert!(cut);
+    assert!(long.len() <= BODY_CAP);
+    assert!(std::str::from_utf8(long.as_bytes()).is_ok());
+}
+
+#[test]
+fn a_call_log_tags_attempts_with_run_kind_and_step_and_stores_them_redacted() {
+    use crate::model::attempts::{Attempt, AttemptSink};
+    let dir = TempDir::new();
+    let recorder = Recorder::start(&dir.db());
+    let log = recorder.call_log("r1", "plan");
+    let attempt = |request: serde_json::Value| Attempt {
+        attempt: 1,
+        wait_before_ms: 0,
+        started_utc: "2026-10-20T10:00:00Z".into(),
+        duration_ms: 12,
+        status: Some(200),
+        outcome: "ok",
+        error: None,
+        request,
+        response: serde_json::json!({ "usage": { "prompt_tokens": 1, "completion_tokens": 1 } }),
+        model: "m".into(),
+        prompt_tokens: Some(1),
+        completion_tokens: Some(1),
+    };
+    log.record(attempt(
+        serde_json::json!({ "u": "data:image/png;base64,AAAA" }),
+    ));
+    log.set("decide", Some(3));
+    log.record(attempt(serde_json::json!({})));
+    recorder.flush();
+    let db = Connection::open(dir.db()).unwrap();
+    let rows: Vec<(String, Option<i64>, String)> = db
+        .prepare("SELECT kind, step, request_json FROM calls ORDER BY id")
+        .unwrap()
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    assert_eq!(rows[0].0, "plan");
+    assert_eq!(rows[0].1, None);
+    assert!(rows[0].2.contains("[image"));
+    assert_eq!((rows[1].0.as_str(), rows[1].1), ("decide", Some(3)));
+}
+
+#[test]
+fn retention_deletes_a_runs_calls_with_it() {
+    let dir = TempDir::new();
+    let recorder = Recorder::start(&dir.db());
+    let mut old = run("old", "2026-01-01T10:00:00Z");
+    old.session_dir = Some("/s/old".into());
+    recorder.begin_run(old);
+    recorder.begin_run(run("keep", "2026-10-20T10:00:00Z"));
+    recorder.call(call("old", Some(1), 1, "ok"));
+    recorder.call(call("keep", Some(1), 1, "ok"));
+    recorder.flush();
+    recorder.purge_sessions(vec!["/s/old".into()]);
+    recorder.flush();
+    assert!(calls_in(&dir.db(), "old").is_empty());
+    assert_eq!(calls_in(&dir.db(), "keep").len(), 1);
 }

@@ -191,11 +191,14 @@ async fn work(
     set_status(app, Status::Asking);
 
     let (settings, api_key) = (state.settings.locked().clone(), settings::api_key());
+    let analysis_id = state.analysis.locked().id.clone();
+    let call_log = state.trace.call_log(&analysis_id, "analysis");
     let client = ChatClient {
         http: &state.http,
         base_url: &settings.base_url,
         api_key: api_key.as_deref(),
         model: &settings.model,
+        sink: Some(&call_log),
     };
     let image = format!("data:image/jpeg;base64,{}", base64_of(&frame.jpeg));
     let tools = report::tools();

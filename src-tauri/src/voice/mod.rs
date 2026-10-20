@@ -103,6 +103,7 @@ pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
         base_url: &base_url,
         api_key: api_key.as_deref(),
         model: &model,
+        sink: None,
     };
     let audio = BASE64.encode(&wav);
     match direct::listen(&client, &audio, events::agent_state(app)).await {

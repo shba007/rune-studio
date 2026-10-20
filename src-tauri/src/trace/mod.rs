@@ -107,6 +107,140 @@ pub struct VerdictRecord {
     pub created_utc: String,
 }
 
+/// One model attempt (see `model::attempts`), as stored: bodies redacted and capped.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct CallRecord {
+    pub run_id: String,
+    pub step: Option<i64>,
+    /// `plan`, `decide`, `verify` or `analysis`.
+    pub kind: String,
+    pub attempt: i64,
+    pub started_utc: String,
+    pub duration_ms: i64,
+    /// The backoff that preceded this attempt (0 for the first).
+    pub wait_before_ms: i64,
+    pub status: Option<i64>,
+    /// `ok`, `retried`, `failed`, `cancelled` or `timeout`.
+    pub outcome: String,
+    pub error: Option<String>,
+    pub request_json: String,
+    pub response_json: String,
+    /// A body was cut at `BODY_CAP`.
+    pub truncated: bool,
+    pub model: String,
+    /// As the server said. **Unreliable** (it read 1 on every step with thinking off).
+    pub prompt_tokens: Option<i64>,
+    pub completion_tokens: Option<i64>,
+}
+
+/// Longest request or response body kept, in bytes.
+pub const BODY_CAP: usize = 64 * 1024;
+
+/// Makes a request body safe to keep: every `data:` URL (images) and base64 audio payload is replaced
+/// by a note of its size, anything that looks like a credential is dropped, and the text is cut at
+/// `BODY_CAP`. Returns the JSON text and whether it was cut. The `Authorization` header is not part of
+/// a body and is never stored.
+pub fn redact(value: &serde_json::Value) -> (String, bool) {
+    fn walk(value: &serde_json::Value, key: &str) -> serde_json::Value {
+        use serde_json::Value;
+        match value {
+            Value::String(text) if text.starts_with("data:") => {
+                let bytes = text.len();
+                Value::String(format!("[image {bytes} bytes]"))
+            }
+            Value::String(text) if key == "data" && text.len() > 256 => {
+                Value::String(format!("[audio {} bytes]", text.len()))
+            }
+            Value::String(_) if is_secret_key(key) => Value::String("[removed]".into()),
+            Value::Object(map) => {
+                Value::Object(map.iter().map(|(k, v)| (k.clone(), walk(v, k))).collect())
+            }
+            Value::Array(items) => Value::Array(items.iter().map(|v| walk(v, key)).collect()),
+            other => other.clone(),
+        }
+    }
+    fn is_secret_key(key: &str) -> bool {
+        let key = key.to_ascii_lowercase();
+        [
+            "authorization",
+            "api_key",
+            "apikey",
+            "api-key",
+            "token",
+            "secret",
+            "password",
+        ]
+        .iter()
+        .any(|word| key.contains(word))
+    }
+    let text = walk(value, "").to_string();
+    if text.len() <= BODY_CAP {
+        return (text, false);
+    }
+    let mut end = BODY_CAP;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    (text[..end].to_string(), true)
+}
+
+/// Records the attempts a `ChatClient` reports into the `calls` table, tagged with the run, the kind
+/// of call and the step it belongs to (set before each call with [`CallLog::set`]).
+pub struct CallLog {
+    recorder: Recorder,
+    run_id: String,
+    context: Mutex<(String, Option<i64>)>,
+}
+
+impl CallLog {
+    pub fn new(recorder: &Recorder, run_id: &str, kind: &str) -> Self {
+        Self {
+            recorder: recorder.clone(),
+            run_id: run_id.to_string(),
+            context: Mutex::new((kind.to_string(), None)),
+        }
+    }
+
+    /// What the next calls are for: a kind (`plan`, `decide`, `verify`, `analysis`) and, for a step, its number.
+    pub fn set(&self, kind: &str, step: Option<u32>) {
+        if let Ok(mut context) = self.context.lock() {
+            *context = (kind.to_string(), step.map(i64::from));
+        }
+    }
+}
+
+impl crate::model::attempts::AttemptSink for CallLog {
+    fn record(&self, attempt: crate::model::attempts::Attempt) {
+        let (kind, step) = self
+            .context
+            .lock()
+            .map(|context| context.clone())
+            .unwrap_or_default();
+        let (request_json, request_cut) = redact(&attempt.request);
+        let (response_json, response_cut) = redact(&attempt.response);
+        self.recorder.call(CallRecord {
+            run_id: self.run_id.clone(),
+            step,
+            kind,
+            attempt: i64::from(attempt.attempt),
+            started_utc: attempt.started_utc,
+            duration_ms: i64::try_from(attempt.duration_ms).unwrap_or(i64::MAX),
+            wait_before_ms: i64::try_from(attempt.wait_before_ms).unwrap_or(i64::MAX),
+            status: attempt.status.map(i64::from),
+            outcome: attempt.outcome.to_string(),
+            error: attempt.error.map(|text| cap(&text, TEXT_CAP)),
+            request_json,
+            response_json,
+            truncated: request_cut || response_cut,
+            model: attempt.model,
+            prompt_tokens: attempt.prompt_tokens.and_then(|n| i64::try_from(n).ok()),
+            completion_tokens: attempt
+                .completion_tokens
+                .and_then(|n| i64::try_from(n).ok()),
+        });
+    }
+}
+
 /// One idle reflection run (`reflect`). The job is a stub in R5.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ReflectionRecord {
@@ -342,6 +476,7 @@ pub enum Msg {
     Verdict(Box<VerdictRecord>),
     Analysis(Box<AnalysisRecord>),
     Reflection(Box<ReflectionRecord>),
+    Call(Box<CallRecord>),
     /// Answered once everything queued before it has been written.
     #[cfg(test)]
     Flush(std::sync::mpsc::Sender<()>),
@@ -533,9 +668,19 @@ impl Recorder {
         self.send(Msg::Analysis(Box::new(record)));
     }
 
+    /// Stores one model attempt (fire and forget: a full queue drops it, like every other message).
+    pub fn call(&self, record: CallRecord) {
+        self.send(Msg::Call(Box::new(record)));
+    }
+
     /// Stores one reflection run (the newest write for an id replaces an older one).
     pub fn reflection(&self, record: ReflectionRecord) {
         self.send(Msg::Reflection(Box::new(record)));
+    }
+
+    /// A sink for a `ChatClient`: its attempts go to the `calls` table under this run.
+    pub fn call_log(&self, run_id: &str, kind: &str) -> CallLog {
+        CallLog::new(self, run_id, kind)
     }
 
     pub fn purge_sessions(&self, session_dirs: Vec<String>) {

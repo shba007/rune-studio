@@ -325,11 +325,13 @@ fn spawn_background_check(app: &AppHandle, run_id: String, evidence: Option<Evid
     tauri::async_runtime::spawn(async move {
         let state = app.state::<AppState>();
         let (settings, api_key) = (state.settings.locked().clone(), settings::api_key());
+        let call_log = state.trace.call_log(&run_id, "verify");
         let client = ChatClient {
             http: &state.http,
             base_url: &settings.base_url,
             api_key: api_key.as_deref(),
             model: &settings.model,
+            sink: Some(&call_log),
         };
         let started = Instant::now();
         let checked: Result<verify::Verdict, String> = match &evidence {
@@ -589,11 +591,14 @@ async fn run(
     let api_key = settings::api_key();
     let tools = protocol::tools();
     let think = settings.show_thinking;
+    // Every model attempt of this run (retries included) goes to the `calls` table.
+    let call_log = trace.call_log(run_id, "plan");
     let client = ChatClient {
         http: &state.http,
         base_url: &settings.base_url,
         api_key: api_key.as_deref(),
         model: &settings.model,
+        sink: Some(&call_log),
     };
 
     // A simple task needs no plan, and the decision model can say so in a fraction of the time the
@@ -612,6 +617,7 @@ async fn run(
         log::info!("simple task, planning skipped");
         vec![task.trim().chars().take(80).collect::<String>()]
     } else {
+        call_log.set("plan", None);
         match make_plan(app, &client, &cancel, task, think).await {
             Ok(plan) => plan,
             Err(outcome) => return outcome,
@@ -815,6 +821,7 @@ async fn run(
                         screenshot: &screenshot,
                         front: &verify::front_line(),
                     };
+                    call_log.set("verify", Some(step));
                     match blocking_check(
                         &client, &cancel, &trace, run_id, &handoff, challenged, input,
                     )
@@ -873,6 +880,7 @@ async fn run(
         };
         let mut send_thinking = thinking_sender(app);
         let started = Instant::now();
+        call_log.set("decide", Some(step));
         row.rec.prompt_text = Some(text.clone());
         let Some(reply) =
             unless_stopped(&cancel, client.call_retrying(&request, &mut send_thinking)).await
@@ -979,6 +987,7 @@ async fn run(
                     screenshot: &screenshot,
                     front: &verify::front_line(),
                 };
+                call_log.set("verify", Some(step));
                 match blocking_check(
                     &client, &cancel, &trace, run_id, &handoff, challenged, input,
                 )
@@ -1492,6 +1501,7 @@ mod live {
             base_url: "http://127.0.0.1:8080",
             api_key: Some(&key),
             model: "ternary-bonsai-2-27b-pq2-0",
+            sink: None,
         };
         let tools = protocol::plan_tools();
         let request = Request {

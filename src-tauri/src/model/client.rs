@@ -9,6 +9,7 @@
 
 use std::{collections::BTreeMap, time::Duration};
 
+use super::attempts::{Attempt, AttemptSink, Guard};
 use serde_json::{Value, json};
 
 /// A turn can take half a minute on a 27B model that has to read a fresh screenshot.
@@ -54,6 +55,8 @@ pub struct ChatClient<'a> {
     pub base_url: &'a str,
     pub api_key: Option<&'a str>,
     pub model: &'a str,
+    /// Told about every attempt (retries included); `None` records nothing.
+    pub sink: Option<&'a dyn AttemptSink>,
 }
 
 /// One question for the model.
@@ -136,41 +139,127 @@ pub(crate) fn chat_body(model: &str, request: &Request<'_>) -> Value {
     body
 }
 
+/// What one exchange with the server produced, besides the reply.
+struct Exchange {
+    result: Result<Reply, ModelError>,
+    status: Option<u16>,
+    response: Value,
+}
+
 impl ChatClient<'_> {
     /// `call`, tried again when the failure is transient (see `is_retryable`), at most
     /// `MAX_ATTEMPTS` times. The waits are plain sleeps inside this future, so a caller that races
-    /// it against Stop (`unless_stopped`) abandons them by dropping it.
+    /// it against Stop (`unless_stopped`) abandons them by dropping it. Every attempt is reported to
+    /// the sink: a failed one that is followed by another is `retried`, with the wait before the next.
     pub async fn call_retrying(
         &self,
         request: &Request<'_>,
         on_thinking: &mut (dyn FnMut(&str) + Send),
     ) -> Result<Reply, ModelError> {
         let mut attempt = 1;
+        let mut wait_before = Duration::ZERO;
         loop {
-            match self.call(request, on_thinking).await {
+            let (result, mut report) = self
+                .attempt(request, on_thinking, attempt, wait_before)
+                .await;
+            match result {
                 Err(error) if attempt < MAX_ATTEMPTS && is_retryable(&error) => {
                     let wait = backoff(attempt);
                     log::warn!(
                         "model call failed (attempt {attempt} of {MAX_ATTEMPTS}): {error}; trying again in {} ms",
                         wait.as_millis()
                     );
+                    if let (Some(sink), Some(report)) = (self.sink, report.as_mut()) {
+                        report.outcome = "retried";
+                        sink.record(report.clone());
+                    }
                     tokio::time::sleep(wait).await;
                     attempt += 1;
+                    wait_before = wait;
                 }
-                other => return other,
+                other => {
+                    if let (Some(sink), Some(report)) = (self.sink, report) {
+                        sink.record(report);
+                    }
+                    return other;
+                }
             }
         }
     }
 
-    /// Asks for a tool call. `on_thinking` receives the thinking so far (all of it, each time) as
+    /// Asks for a tool call, once. `on_thinking` receives the thinking so far (all of it, each time) as
     /// it streams in; it is never called when `think` is off.
     pub async fn call(
         &self,
         request: &Request<'_>,
         on_thinking: &mut (dyn FnMut(&str) + Send),
     ) -> Result<Reply, ModelError> {
-        let body = chat_body(self.model, request);
+        let (result, report) = self.attempt(request, on_thinking, 1, Duration::ZERO).await;
+        if let (Some(sink), Some(report)) = (self.sink, report) {
+            sink.record(report);
+        }
+        result
+    }
 
+    /// One attempt and its report (when there is a sink). Dropping the future before it ends reports
+    /// the attempt as `cancelled`.
+    async fn attempt(
+        &self,
+        request: &Request<'_>,
+        on_thinking: &mut (dyn FnMut(&str) + Send),
+        attempt: u32,
+        wait_before: Duration,
+    ) -> (Result<Reply, ModelError>, Option<Attempt>) {
+        let body = chat_body(self.model, request);
+        let started = std::time::Instant::now();
+        let mut guard = Guard {
+            sink: self.sink,
+            started,
+            attempt: self.sink.map(|_| Attempt {
+                attempt,
+                wait_before_ms: wait_before.as_millis() as u64,
+                started_utc: crate::trace::now_utc(),
+                duration_ms: 0,
+                status: None,
+                outcome: "cancelled",
+                error: None,
+                request: body.clone(),
+                response: Value::Null,
+                model: self.model.to_string(),
+                prompt_tokens: None,
+                completion_tokens: None,
+            }),
+        };
+        let exchange = self.exchange(request, &body, on_thinking).await;
+        let report = guard.finish().map(|mut report| {
+            report.duration_ms = started.elapsed().as_millis() as u64;
+            report.status = exchange.status;
+            report.response = exchange.response.clone();
+            report.prompt_tokens = exchange.response["usage"]["prompt_tokens"].as_u64();
+            report.completion_tokens = exchange.response["usage"]["completion_tokens"].as_u64();
+            match &exchange.result {
+                Ok(_) => report.outcome = "ok",
+                Err(error) => {
+                    let text = error.to_string();
+                    report.outcome = if text.contains("timed out") {
+                        "timeout"
+                    } else {
+                        "failed"
+                    };
+                    report.error = Some(text);
+                }
+            }
+            report
+        });
+        (exchange.result, report)
+    }
+
+    async fn exchange(
+        &self,
+        request: &Request<'_>,
+        body: &Value,
+        on_thinking: &mut (dyn FnMut(&str) + Send),
+    ) -> Exchange {
         let mut http = self
             .http
             .post(format!(
@@ -178,44 +267,83 @@ impl ChatClient<'_> {
                 self.base_url.trim_end_matches('/')
             ))
             .timeout(REQUEST_TIMEOUT)
-            .json(&body);
+            .json(body);
         if let Some(key) = self.api_key {
             http = http.bearer_auth(key);
         }
-        let mut response = http
-            .send()
-            .await
-            .map_err(|err| ModelError::Request(err.to_string()))?;
+        let mut response = match http.send().await {
+            Ok(response) => response,
+            Err(err) => {
+                return Exchange {
+                    result: Err(ModelError::Request(err.to_string())),
+                    status: None,
+                    response: Value::Null,
+                };
+            }
+        };
         let status = response.status();
+        let code = Some(status.as_u16());
         if !status.is_success() {
             let text = response.text().await.unwrap_or_default();
-            return Err(ModelError::Status {
-                status: status.as_u16(),
-                body: snippet(&text),
-            });
+            return Exchange {
+                response: Value::String(text.chars().take(4_000).collect()),
+                status: code,
+                result: Err(ModelError::Status {
+                    status: status.as_u16(),
+                    body: snippet(&text),
+                }),
+            };
         }
 
         if !request.think {
-            let text = response
-                .text()
-                .await
-                .map_err(|err| ModelError::Request(err.to_string()))?;
-            let value: Value = serde_json::from_str(&text)
-                .map_err(|err| ModelError::Reply(format!("{err}: {}", snippet(&text))))?;
-            return parse_reply(&value);
+            let text = match response.text().await {
+                Ok(text) => text,
+                Err(err) => {
+                    return Exchange {
+                        result: Err(ModelError::Request(err.to_string())),
+                        status: code,
+                        response: Value::Null,
+                    };
+                }
+            };
+            return match serde_json::from_str::<Value>(&text) {
+                Ok(value) => Exchange {
+                    result: parse_reply(&value),
+                    status: code,
+                    response: value,
+                },
+                Err(err) => Exchange {
+                    result: Err(ModelError::Reply(format!("{err}: {}", snippet(&text)))),
+                    status: code,
+                    response: Value::String(text.chars().take(4_000).collect()),
+                },
+            };
         }
 
         let mut stream = Stream::default();
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|err| ModelError::Request(err.to_string()))?
-        {
-            if stream.feed(&chunk) {
-                on_thinking(&stream.thinking);
+        loop {
+            match response.chunk().await {
+                Ok(Some(chunk)) => {
+                    if stream.feed(&chunk) {
+                        on_thinking(&stream.thinking);
+                    }
+                }
+                Ok(None) => break,
+                Err(err) => {
+                    return Exchange {
+                        result: Err(ModelError::Request(err.to_string())),
+                        status: code,
+                        response: stream.summary(),
+                    };
+                }
             }
         }
-        stream.finish()
+        let summary = stream.summary();
+        Exchange {
+            result: stream.finish(),
+            status: code,
+            response: summary,
+        }
     }
 }
 
@@ -306,6 +434,18 @@ struct Stream {
 }
 
 impl Stream {
+    /// What the stream collected, as JSON for the record: the reasoning text, the content, each tool
+    /// call's name and arguments text, and the usage.
+    fn summary(&self) -> Value {
+        json!({
+            "streamed": true,
+            "reasoning": self.thinking,
+            "content": self.content,
+            "tool_calls": self.calls.values().map(|(name, arguments)| json!({ "name": name, "arguments": arguments })).collect::<Vec<_>>(),
+            "usage": { "completion_tokens": self.completion_tokens },
+        })
+    }
+
     /// Takes the next bytes from the server. Returns whether the thinking grew.
     fn feed(&mut self, bytes: &[u8]) -> bool {
         self.pending.extend_from_slice(bytes);
@@ -647,6 +787,7 @@ mod tests {
             base_url: &url,
             api_key: None,
             model: "m",
+            sink: None,
         };
         let tools = json!([]);
         let reply = client
@@ -658,6 +799,111 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn every_attempt_is_reported_with_its_wait_and_a_retry_is_marked_retried() {
+        use crate::model::attempts::Collect;
+        let ok = json!({ "choices": [{ "message": { "tool_calls": [{ "function": { "name": "click", "arguments": "{\"x\": 1}" } }] } }], "usage": { "prompt_tokens": 7, "completion_tokens": 3 } });
+        let (url, _) = serve(vec![
+            ("503 Service Unavailable", "busy".into()),
+            ("200 OK", ok.to_string()),
+        ]);
+        let http = reqwest::Client::builder().no_proxy().build().unwrap();
+        let sink = Collect::default();
+        let client = ChatClient {
+            http: &http,
+            base_url: &url,
+            api_key: Some("sk-secret"),
+            model: "m",
+            sink: Some(&sink),
+        };
+        let tools = json!([]);
+        client
+            .call_retrying(&a_click_request(&tools), &mut |_| {})
+            .await
+            .expect("the second attempt succeeds");
+        let attempts = sink.0.lock().unwrap();
+        assert_eq!(attempts.len(), 2);
+        assert_eq!(
+            (
+                attempts[0].attempt,
+                attempts[0].outcome,
+                attempts[0].status,
+                attempts[0].wait_before_ms
+            ),
+            (1, "retried", Some(503), 0)
+        );
+        assert_eq!(
+            (attempts[1].attempt, attempts[1].outcome, attempts[1].status),
+            (2, "ok", Some(200))
+        );
+        assert!(
+            attempts[1].wait_before_ms >= 500,
+            "the backoff before the second attempt is recorded: {}",
+            attempts[1].wait_before_ms
+        );
+        assert_eq!(attempts[1].completion_tokens, Some(3));
+        assert_eq!(attempts[0].response, json!("busy"));
+        assert!(
+            !attempts[0].request.to_string().contains("sk-secret"),
+            "the key is a header, never in a body"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_final_failure_is_reported_as_failed_and_a_dropped_call_as_cancelled() {
+        use crate::model::attempts::Collect;
+        let (url, _) = serve(vec![("400 Bad Request", "no".into())]);
+        let http = reqwest::Client::builder().no_proxy().build().unwrap();
+        let sink = Collect::default();
+        let client = ChatClient {
+            http: &http,
+            base_url: &url,
+            api_key: None,
+            model: "m",
+            sink: Some(&sink),
+        };
+        let tools = json!([]);
+        client
+            .call_retrying(&a_click_request(&tools), &mut |_| {})
+            .await
+            .err()
+            .expect("a 400 is final");
+        assert_eq!(
+            sink.0
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|a| a.outcome)
+                .collect::<Vec<_>>(),
+            ["failed"]
+        );
+
+        // A server that never answers, and a caller that gives up (Stop).
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let silent = format!("http://{}", listener.local_addr().unwrap());
+        let sink = Collect::default();
+        let client = ChatClient {
+            http: &http,
+            base_url: &silent,
+            api_key: None,
+            model: "m",
+            sink: Some(&sink),
+        };
+        let gave_up = tokio::time::timeout(
+            Duration::from_millis(200),
+            client.call(&a_click_request(&tools), &mut |_| {}),
+        )
+        .await;
+        assert!(gave_up.is_err());
+        let attempts = sink.0.lock().unwrap();
+        assert_eq!(
+            attempts.iter().map(|a| a.outcome).collect::<Vec<_>>(),
+            ["cancelled"]
+        );
+        assert!(attempts[0].duration_ms >= 150);
+        drop(listener);
+    }
+
+    #[tokio::test]
     async fn a_400_is_not_retried() {
         let (url, served) = serve(vec![("400 Bad Request", "no".into())]);
         let http = reqwest::Client::builder().no_proxy().build().unwrap();
@@ -666,6 +912,7 @@ mod tests {
             base_url: &url,
             api_key: None,
             model: "m",
+            sink: None,
         };
         let tools = json!([]);
         let error = client
@@ -715,6 +962,7 @@ mod tests {
             base_url: &url,
             api_key: None,
             model: "m",
+            sink: None,
         };
         let tools = json!([]);
         // What Stop and closing the analysis window do: drop the future (see `agent::unless_stopped`).

@@ -518,6 +518,7 @@ mod tests {
             base_url: url,
             api_key: None,
             model: "m",
+            sink: None,
         }
     }
 

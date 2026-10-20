@@ -3,7 +3,7 @@
 use rusqlite::Connection;
 
 /// The version this code writes. `PRAGMA user_version` holds the version of a database file.
-pub const VERSION: i64 = 5;
+pub const VERSION: i64 = 6;
 
 /// Version 1.
 pub const CREATE_V1: &str = "
@@ -116,6 +116,34 @@ pub const CREATE_V5: &str = "
 ALTER TABLE analyses ADD COLUMN boxes_rejected INTEGER;
 ";
 
+/// Version 6: every model attempt (`calls`, with redacted request and response bodies) and run
+/// counters filled when a run ends. `calls.run_id` has no foreign key: analyses use their session id.
+pub const CREATE_V6: &str = "
+CREATE TABLE calls (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL,
+    step INTEGER,
+    kind TEXT,
+    attempt INTEGER,
+    started_utc TEXT,
+    duration_ms INTEGER,
+    wait_before_ms INTEGER,
+    status INTEGER,
+    outcome TEXT,
+    error TEXT,
+    request_json TEXT,
+    response_json TEXT,
+    truncated INTEGER,
+    model TEXT,
+    prompt_tokens INTEGER,
+    completion_tokens INTEGER
+);
+CREATE INDEX calls_run ON calls(run_id, step);
+ALTER TABLE runs ADD COLUMN step_count INTEGER;
+ALTER TABLE runs ADD COLUMN retry_count INTEGER;
+ALTER TABLE runs ADD COLUMN duration_ms INTEGER;
+";
+
 /// How opening a database went.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Opened {
@@ -143,6 +171,7 @@ pub fn open(db: &Connection) -> rusqlite::Result<Opened> {
         (3, CREATE_V3),
         (4, CREATE_V4),
         (5, CREATE_V5),
+        (6, CREATE_V6),
     ] {
         if found < version {
             batch.push_str(ddl);
