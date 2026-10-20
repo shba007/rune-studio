@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.0.16
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.0.15...v0.0.16)
+
+### 🩹 Fixes
+
+- **ui:** Keep a pending question visible, readable notices, clearer states and settings ([c7f37d7](https://github.com/shba007/rune-studio/commit/c7f37d7))
+- **ui:** Keep the window as tall as its content after a page change, and save settings then go back ([d0c410e](https://github.com/shba007/rune-studio/commit/d0c410e))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+
 ## v0.0.15
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.0.14...v0.0.15)
