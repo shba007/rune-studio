@@ -94,6 +94,20 @@ pub fn signature_of(image: &RgbImage) -> Vec<u8> {
         .collect()
 }
 
+/// A JPEG of the primary monitor right now, **without** storing it in the archive: the full-motion
+/// session video writes its own frames (`video::record_motion`). Rune's windows are masked in demo mode.
+pub fn live_jpeg(max_edge: u32, quality: u8) -> Result<Vec<u8>, ObserveError> {
+    let (xmonitor, monitor) = resolve(None)?;
+    let mut rgba = xmonitor
+        .capture_image()
+        .map_err(|err| ObserveError::Capture(err.to_string()))?;
+    let masked = super::mask::current();
+    if !masked.is_empty() {
+        super::mask::apply(&mut rgba, &masked, monitor.x, monitor.y);
+    }
+    Ok(prepare(rgba, max_edge, quality)?.jpeg)
+}
+
 /// The comparison picture of the primary monitor right now, **without** storing anything in the
 /// archive (the screen-changed watcher looks every second or two; only real captures are archived).
 /// Rune's own windows are masked in demo mode exactly as in a real capture.

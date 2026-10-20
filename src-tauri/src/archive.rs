@@ -332,6 +332,11 @@ pub fn end_session(id: Option<&str>, outcome: &str, summary: &str) {
     }
 }
 
+/// The folder of the session that is open now, whatever its id.
+pub fn open_session_dir() -> Option<PathBuf> {
+    current().as_ref().map(|session| session.dir.clone())
+}
+
 /// The folder of the open session with this id, if it is the one open.
 pub fn session_dir(id: &str) -> Option<PathBuf> {
     current()

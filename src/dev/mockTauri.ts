@@ -102,6 +102,8 @@ export function installTauriMock() {
             archiveKeepDays: 0,
             verifyMode: 'background',
             demoMode: false,
+            recordSessionVideo: 'off',
+            offerReview: 'always',
             reflectionEnabled: false,
             idleMinutes: 10,
           }

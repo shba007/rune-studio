@@ -145,6 +145,7 @@ pub fn run() {
             }
             reflect::start_watcher(app.handle());
             video::start_worker(app.handle());
+            video::start_motion_recorder(app.handle());
             if let Some(pill) = app.get_webview_window(window::MAIN) {
                 window::protect(&pill)?;
                 // Windows clamps the configured size to its minimum window width; an explicit

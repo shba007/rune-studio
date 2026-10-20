@@ -17,6 +17,10 @@ export interface Settings {
   verifyMode: 'off' | 'background' | 'blocking'
   /** Let screen recorders capture Rune's windows; the model still never sees them. */
   demoMode: boolean
+  /** `off`: a storyboard of the step screenshots; `motion`: also the screen twice a second (unmeasured cost). */
+  recordSessionVideo: 'off' | 'motion'
+  /** When the pill offers to review a finished session. */
+  offerReview: 'always' | 'failures' | 'never'
   /** Offer an idle review of recent tasks. Off until the job does something real. */
   reflectionEnabled: boolean
   /** Minutes with no activity before the review prompt (1 to 120). */

@@ -122,6 +122,71 @@ fn has_video(dir: &Path) -> bool {
             .is_some_and(|manifest| manifest.get("video").is_some())
 }
 
+/// Capture rate of the full-motion mode, in milliseconds between frames (2 per second).
+const MOTION_EVERY: Duration = Duration::from_millis(500);
+/// Frames of the motion mode are at most this wide and this good (the video is 1280 wide at most anyway).
+const MOTION_EDGE: u32 = 1280;
+const MOTION_QUALITY: u8 = 60;
+
+/// The motion frames saved in a session folder (`motion/<unix ms>.jpg`) as (path, milliseconds since
+/// the first one), oldest first. Empty when the mode was off.
+pub fn motion_frames(dir: &Path) -> Vec<(String, u64)> {
+    let mut found: Vec<(u64, String)> = std::fs::read_dir(dir.join("motion"))
+        .map(|entries| {
+            entries
+                .filter_map(Result::ok)
+                .filter_map(|entry| {
+                    let path = entry.path();
+                    let at = path.file_stem()?.to_str()?.parse::<u64>().ok()?;
+                    Some((at, path.display().to_string()))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    found.sort_by_key(|(at, _)| *at);
+    let first = found.first().map_or(0, |(at, _)| *at);
+    found
+        .into_iter()
+        .map(|(at, path)| (path, at - first))
+        .collect()
+}
+
+/// While a task runs and the setting is `motion`, saves the primary monitor twice a second into the
+/// session folder. Off by default; its cost (CPU, disk, effect on the observe time) is **unmeasured**.
+pub fn start_motion_recorder(app: &AppHandle) {
+    let app = app.clone();
+    std::thread::Builder::new()
+        .name("session-motion".into())
+        .spawn(move || {
+            loop {
+                std::thread::sleep(MOTION_EVERY);
+                let state = app.state::<AppState>();
+                if state.settings.locked().record_session_video
+                    != crate::settings::RecordVideo::Motion
+                {
+                    continue;
+                }
+                let working =
+                    events::agent_state(&app).is_running() || state.lease.locked().is_held();
+                let Some(dir) = crate::archive::open_session_dir().filter(|_| working) else {
+                    continue;
+                };
+                let Ok(jpeg) = crate::observe::screenshot::live_jpeg(MOTION_EDGE, MOTION_QUALITY)
+                else {
+                    continue;
+                };
+                let folder = dir.join("motion");
+                let millis = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_millis());
+                if std::fs::create_dir_all(&folder).is_ok() {
+                    let _ = std::fs::write(folder.join(format!("{millis}.jpg")), jpeg);
+                }
+            }
+        })
+        .ok();
+}
+
 /// Starts the worker. It looks every few seconds for a run that ended without a video and encodes it
 /// when the PC is idle.
 pub fn start_worker(app: &AppHandle) {
@@ -183,7 +248,17 @@ fn work(app: &AppHandle, db: &Path, id: &str, dir: &Path, tried: &Mutex<HashSet<
     let Some(detail) = store::get_run(db, id).ok().flatten() else {
         return;
     };
-    let (frames, end) = frames_of(&detail);
+    let (mut frames, end) = frames_of(&detail);
+    // Full motion was recorded: those frames replace the storyboard (each is held for its own gap).
+    let motion = motion_frames(dir);
+    let kind = if motion.is_empty() {
+        "storyboard"
+    } else {
+        "motion"
+    };
+    if !motion.is_empty() {
+        frames = motion;
+    }
     let shown = schedule(&frames, end);
     if shown.is_empty() {
         let _ = set_manifest(
@@ -196,10 +271,11 @@ fn work(app: &AppHandle, db: &Path, id: &str, dir: &Path, tried: &Mutex<HashSet<
     match encode::encode(&out, &shown, &|| !idle(app)) {
         Ok(_) => {
             let seconds = total_ms(&shown) as f64 / 1000.0;
-            let _ = set_manifest(
-                dir,
-                video_value(Some("session.mp4"), shown.len(), seconds, None),
-            );
+            let mut value = video_value(Some("session.mp4"), shown.len(), seconds, None);
+            value["kind"] = json!(kind);
+            let _ = set_manifest(dir, value);
+            // The raw frames are not kept once they are in the video.
+            let _ = std::fs::remove_dir_all(dir.join("motion"));
             log::info!(
                 "session video for {id}: {} frames, {seconds:.1} s",
                 shown.len()
@@ -296,6 +372,31 @@ mod tests {
         assert!(frames.is_empty());
         assert_eq!(end, None);
         assert!(schedule(&frames, end).is_empty());
+    }
+
+    #[test]
+    fn motion_frames_are_ordered_and_counted_from_the_first() {
+        let dir = std::env::temp_dir().join(format!("rune-video-motion-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("motion")).unwrap();
+        for name in [
+            "1700000001000.jpg",
+            "1700000000000.jpg",
+            "1700000000500.jpg",
+            "notes.txt",
+        ] {
+            std::fs::write(dir.join("motion").join(name), b"x").unwrap();
+        }
+        let frames = motion_frames(&dir);
+        assert_eq!(
+            frames.iter().map(|(_, at)| *at).collect::<Vec<_>>(),
+            [0, 500, 1000]
+        );
+        assert!(frames[0].0.ends_with("1700000000000.jpg"));
+        assert!(motion_frames(&dir.join("nothing")).is_empty());
+        let shown = schedule(&frames, Some(1_500));
+        assert_eq!(total_ms(&shown), 1_500);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

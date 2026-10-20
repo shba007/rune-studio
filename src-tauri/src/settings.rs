@@ -43,6 +43,12 @@ pub struct Settings {
     /// the user sees Done at once and the check runs afterwards) or `blocking` (the agent gets one more
     /// chance when the check contradicts it). No UI yet: it is edited in `settings.json`.
     pub verify_mode: VerifyMode,
+    /// Whether the session video also records the screen between steps (`motion`, 2 frames per second)
+    /// instead of only the step screenshots. **Off by default**: it records everything on the screen
+    /// during a task and costs CPU and disk; its cost is unmeasured (see docs/ARCHITECTURE.md).
+    pub record_session_video: RecordVideo,
+    /// When the pill offers to review a finished session in the Flight Player.
+    pub offer_review: OfferReview,
     /// Let screen recorders (OBS, Game Bar, the Snipping Tool) capture Rune's windows. The model still
     /// never sees them: they are painted over in its screenshots (`observe::mask`).
     pub demo_mode: bool,
@@ -50,6 +56,30 @@ pub struct Settings {
     pub reflection_enabled: bool,
     /// Minutes with no activity before the prompt (1 to 120).
     pub idle_minutes: u32,
+}
+
+/// How the session video is recorded.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RecordVideo {
+    /// Also capture the primary monitor twice a second while a task runs.
+    Motion,
+    /// A storyboard of the step screenshots, made after the task. Also what any unknown word reads as.
+    #[default]
+    #[serde(other)]
+    Off,
+}
+
+/// When the review card is offered after a session.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OfferReview {
+    Failures,
+    Never,
+    /// Also what any unknown word reads as.
+    #[default]
+    #[serde(other)]
+    Always,
 }
 
 /// What happens with the independent check of a finished task (`agent::verify`).
@@ -85,6 +115,8 @@ impl Default for Settings {
             decision_url: String::new(),
             archive_keep_days: 0,
             verify_mode: VerifyMode::default(),
+            record_session_video: RecordVideo::default(),
+            offer_review: OfferReview::default(),
             demo_mode: false,
             reflection_enabled: false,
             idle_minutes: 10,
@@ -209,6 +241,33 @@ mod tests {
         assert!(
             value.get("analysisBoxes").is_none(),
             "it is no longer written back"
+        );
+    }
+
+    #[test]
+    fn the_video_and_review_settings_default_to_off_and_always_and_unknown_words_read_as_those() {
+        let defaults = Settings::default();
+        assert_eq!(
+            (defaults.record_session_video, defaults.offer_review),
+            (RecordVideo::Off, OfferReview::Always)
+        );
+        let set: Settings = serde_json::from_str(
+            r#"{ "recordSessionVideo": "motion", "offerReview": "failures" }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            (set.record_session_video, set.offer_review),
+            (RecordVideo::Motion, OfferReview::Failures)
+        );
+        let never: Settings = serde_json::from_str(r#"{ "offerReview": "never" }"#).unwrap();
+        assert_eq!(never.offer_review, OfferReview::Never);
+        let typo: Settings = serde_json::from_str(
+            r#"{ "recordSessionVideo": "alwayz", "offerReview": "sometimes", "maxSteps": 7 }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            (typo.record_session_video, typo.offer_review, typo.max_steps),
+            (RecordVideo::Off, OfferReview::Always, 7)
         );
     }
 
