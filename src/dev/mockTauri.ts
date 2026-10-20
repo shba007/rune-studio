@@ -142,10 +142,10 @@ export function installTauriMock() {
             decisionUrl: '',
             archiveKeepDays: 0,
             verifyMode: 'background',
-            demoMode: false,
+            demoMode: true,
             recordSessionVideo: 'off',
             offerReview: 'always',
-            reflectionEnabled: false,
+            reflectionEnabled: true,
             idleMinutes: 10,
           }
         case 'bridge_info':

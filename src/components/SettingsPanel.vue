@@ -156,12 +156,8 @@ function footerAction() {
         <SettingsToggle v-model="draft.showThinking" label="Show thinking" icon="thinking" />
       </SettingsGroup>
 
-      <SettingsGroup title="Idle review">
-        <SettingsToggle
-          v-model="draft.reflectionEnabled"
-          label="Offer to review tasks"
-          icon="thinking"
-        />
+      <SettingsGroup title="Reflection">
+        <SettingsToggle v-model="draft.reflectionEnabled" label="Self reflect" icon="thinking" />
         <p v-if="draft.reflectionEnabled" class="m-0 px-1 text-label opacity-70">
           After {{ draft.idleMinutes }} idle minutes Rune asks first; no answer in 30 seconds starts
           it. Right now it only rehearses: it does not read anything yet.

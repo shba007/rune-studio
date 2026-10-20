@@ -136,6 +136,8 @@ export function useAgent() {
 
   /** The offer to review a finished session, while it is up (`endsAt` on this window's clock). */
   const reviewOffer = ref<(ReviewOffer & { endsAt: number }) | null>(null)
+  /** Where the end-of-session flow is: asking if it completed, asking why not, then the review offer. */
+  const reviewStage = ref<'complete' | 'why' | 'review'>('complete')
 
   const unlisten: UnlistenFn[] = []
   let modeToken = 0
@@ -240,6 +242,7 @@ export function useAgent() {
       resultText.value = null
       plan.value = null
       timing.value = null
+      reviewOffer.value = null
       thinking.value = null
       response.value = null
       steps.value = []
@@ -253,6 +256,34 @@ export function useAgent() {
 
   const stop = () => call('stop')
   const dismissReview = () => (reviewOffer.value = null)
+  /** On to the review offer, whose countdown starts now. */
+  function goReview() {
+    reviewStage.value = 'review'
+    if (reviewOffer.value)
+      reviewOffer.value = { ...reviewOffer.value, endsAt: Date.now() + REVIEW_SECONDS * 1000 }
+  }
+  /** "Did this complete your task?" Yes is recorded at once; No asks why first. Null skips the question. */
+  async function answerComplete(complete: boolean | null) {
+    const offer = reviewOffer.value
+    if (!offer || complete === null) return goReview()
+    if (complete) {
+      await call('session_feedback', { runId: offer.runId, complete: true, reason: null })
+      goReview()
+    } else {
+      reviewStage.value = 'why'
+    }
+  }
+  /** The reason a task was not completed; an empty one is skipped. Either way the review offer follows. */
+  async function answerWhy(reason: string) {
+    const offer = reviewOffer.value
+    if (offer)
+      await call('session_feedback', {
+        runId: offer.runId,
+        complete: false,
+        reason: reason.trim() || null,
+      })
+    goReview()
+  }
   /** Opens the Flight Player on this session and puts the card away. */
   async function openReview(runId: string) {
     reviewOffer.value = null
@@ -375,6 +406,7 @@ export function useAgent() {
         // Never over a running task; the confirm card and the idle prompt take the place first.
         if (offer && !isRunning.value) {
           reviewOffer.value = { ...offer, endsAt: Date.now() + REVIEW_SECONDS * 1000 }
+          reviewStage.value = 'complete'
           if (mode.value === 'ambient') void setMode('open')
         }
       }),
@@ -441,6 +473,9 @@ export function useAgent() {
     stop,
     reflectionPrompt,
     reviewOffer,
+    reviewStage,
+    answerComplete,
+    answerWhy,
     dismissReview,
     openReview,
     reflection,

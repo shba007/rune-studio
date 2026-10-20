@@ -371,6 +371,22 @@ pub fn reflection_answer(app: AppHandle, start: bool) {
     crate::reflect::answer(&app, start);
 }
 
+/// What the user says about how a finished session went: whether it really completed their task and,
+/// if not, why. It goes into the run's record as an event, next to the independent check's verdict.
+#[tauri::command]
+pub fn session_feedback(
+    app: AppHandle,
+    run_id: String,
+    complete: bool,
+    reason: Option<String>,
+) {
+    let reason = reason.map(|text| text.trim().to_string()).filter(|text| !text.is_empty());
+    let data = serde_json::json!({ "complete": complete, "reason": reason });
+    app.state::<AppState>()
+        .trace
+        .event(&run_id, "user_feedback", &data.to_string());
+}
+
 /// The pill was used (clicked, typed in, opened): the user is here, so the idle clock restarts.
 #[tauri::command]
 pub fn pill_activity(app: AppHandle) {

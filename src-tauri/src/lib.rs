@@ -222,6 +222,7 @@ pub fn run() {
             commands::pill_activity,
             commands::bridge_info,
             commands::get_control_label,
+            commands::session_feedback,
             commands::flight_runs,
             commands::flight_run,
             commands::flight_steps,
