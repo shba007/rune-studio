@@ -4,9 +4,10 @@ import { computed, useTemplateRef, watch } from 'vue'
 
 import { useAgent } from '@/composables/useAgent'
 import { useUpdater } from '@/composables/useUpdater'
-import { PAGE_GAP, PAGE_WIDTH } from '@/config/layout'
+import { DOCK_GAP, DOCK_WIDTH, PAGE_GAP, PAGE_WIDTH } from '@/config/layout'
 
 import Composer from './Composer.vue'
+import OrbDock from './OrbDock.vue'
 import ConfirmCard from './ConfirmCard.vue'
 import { useAnalysis } from '@/composables/useAnalysis'
 import { useExternalAgent } from '@/composables/useExternalAgent'
@@ -106,6 +107,15 @@ function onOrb() {
     @pointerdown="agent.noteActivity()"
     @keydown="agent.noteActivity()"
   >
+    <!-- Dock: Settings and Analyse the screen, attached to the orb's left. Hidden while only the orb shows. -->
+    <div
+      class="h-16 shrink-0 self-end overflow-hidden transition-[width] duration-300 ease-out"
+      :style="{ width: isAmbient ? '0px' : `${DOCK_WIDTH + DOCK_GAP}px` }"
+    >
+      <div class="flex h-full justify-start" :style="{ width: `${DOCK_WIDTH}px` }">
+        <OrbDock :agent="agent" />
+      </div>
+    </div>
     <div
       data-tauri-drag-region
       class="relative flex size-16 shrink-0 items-center justify-center rounded-full bg-[#141414]"
