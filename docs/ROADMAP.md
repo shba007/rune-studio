@@ -205,7 +205,11 @@ Scope: (a) outside agents get their own accent colour and mark in the orb, ring 
 - Pre-emption: a task start, hotkey or Stop cancels reflection via its own `RunScope`. rune-infer has no priority and `--parallel 1` by default, so a reflection call already running **will delay** the next user task until it ends (**NOT CERTAIN** how long; mitigation: short calls, one at a time, abort on pre-empt; real fix is a server-side priority, listed below).
   Exit: with a stub job, idle -> prompt -> reflecting -> task start pre-empts within a second; Deny and timeout work.
 
-### R6 Post-mortems and notes — H / medium
+### R6 Screen analysis overlay + post-mortems and notes — H / medium
+
+**R6a Screen analysis as an overlay** (handoff: `docs/handoff/R6a-analysis-overlay.md`; decided: no separate window). The analysis window is removed. A top status bar in the style of the control bar (stage, timer, cancel), a scan line at capture, and compact cards that grow upward from the orb (answer, findings accordion with evidence) replace it. Optional numbered dot markers on the real screen (`off` default, `points`, `boxes`), hidden when the screen changes. Boxes were 1 of 8 right in the field test; whether points are reliable is **NOT CERTAIN** until the maintainer runs the new probe. The pill-above-orb growth on multi-monitor and the final look are **NOT CERTAIN** until seen on a real screen.
+
+**R6b Post-mortems and notes** (handoff to be written after R6a):
 
 - Candidates: failed, stuck, declined, verifier-contradicted, slow outliers (+ failed kit tool calls). One structured call per episode: cause category (grounding miss, stale element, popup/blocker, invalid answer, stuck, declined, elevated window, kit tool error), evidence step ids, proposed note, confidence.
 - Output: reports and **pending** notes scoped by app (foreground process; Windows only). Notes live in Studio's SQLite. Mirroring accepted notes into `rune-memory` (kit) so other agents share them is an option, **NOT CERTAIN** it is wanted; its JSON-graph format is not designed for this.
