@@ -78,6 +78,9 @@ windows = { version = "0.62", features = [
   "Win32_Graphics_Gdi",
   "Win32_Foundation",
   "Win32_Security",
+  # The session video (video/encode.rs): the Media Foundation H.264 sink writer, no extra binary.
+  "Win32_Media",
+  "Win32_Media_MediaFoundation",
 ] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]

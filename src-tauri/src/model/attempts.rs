@@ -2,6 +2,7 @@
 //! (which `call_retrying` used to make invisibly). This module knows nothing about the trace: the
 //! client only calls an [`AttemptSink`], and the app plugs the recorder in behind it.
 
+#[cfg(test)]
 use std::sync::Mutex;
 
 use serde_json::Value;
@@ -33,10 +34,12 @@ pub trait AttemptSink: Send + Sync {
     fn record(&self, attempt: Attempt);
 }
 
+#[cfg(test)]
 /// Collects attempts in memory (tests, and anything that wants to look at them afterwards).
 #[derive(Default)]
 pub struct Collect(pub Mutex<Vec<Attempt>>);
 
+#[cfg(test)]
 impl AttemptSink for Collect {
     fn record(&self, attempt: Attempt) {
         if let Ok(mut list) = self.0.lock() {

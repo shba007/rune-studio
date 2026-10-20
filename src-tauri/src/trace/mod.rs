@@ -486,6 +486,8 @@ pub enum Msg {
 #[derive(Clone)]
 pub struct Recorder {
     tx: Option<SyncSender<Msg>>,
+    /// Where the database file is, for readers that open their own connection (the session video).
+    path: Option<std::path::PathBuf>,
     dropped: Arc<AtomicU64>,
     /// The run that has begun and not ended, so Stop and the idle timer can end it without knowing its id.
     open: Arc<Mutex<Option<String>>>,
@@ -509,6 +511,7 @@ impl Recorder {
     pub fn noop() -> Self {
         Self {
             tx: None,
+            path: None,
             dropped: Arc::default(),
             open: Arc::default(),
         }
@@ -555,6 +558,7 @@ impl Recorder {
         {
             Ok(_) => Self {
                 tx: Some(tx),
+                path: Some(path.to_path_buf()),
                 dropped: Arc::default(),
                 open: Arc::default(),
             },
@@ -563,6 +567,11 @@ impl Recorder {
                 Self::noop()
             }
         }
+    }
+
+    /// The database file, when the recorder is really recording.
+    pub fn db_path(&self) -> Option<&Path> {
+        self.path.as_deref()
     }
 
     /// How many messages were dropped because the queue was full or the writer was gone.
@@ -707,6 +716,7 @@ impl Recorder {
         (
             Self {
                 tx: Some(tx),
+                path: None,
                 dropped: Arc::default(),
                 open: Arc::default(),
             },
