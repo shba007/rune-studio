@@ -33,7 +33,9 @@ impl Machine for System {
 /// Closes every running copy of an allowlisted program. Not running is fine.
 pub fn kill_process(name: &str) -> Result<(), String> {
     if !kill_allowed(name) {
-        return Err(format!("{name} is not on the list of programs a suite may close"));
+        return Err(format!(
+            "{name} is not on the list of programs a suite may close"
+        ));
     }
     imp::kill_process(name)
 }
@@ -72,12 +74,21 @@ mod imp {
     pub fn window_titles() -> Result<Vec<String>, String> {
         let mut titles: Vec<String> = Vec::new();
         // SAFETY: `collect` only uses `lparam` as the vector passed here, which outlives the call.
-        unsafe { EnumWindows(Some(collect), LPARAM(&mut titles as *mut Vec<String> as isize)) }.map_err(|err| format!("could not list the windows: {err}"))?;
+        unsafe {
+            EnumWindows(
+                Some(collect),
+                LPARAM(&mut titles as *mut Vec<String> as isize),
+            )
+        }
+        .map_err(|err| format!("could not list the windows: {err}"))?;
         Ok(titles)
     }
 
     pub fn process_names() -> Result<Vec<String>, String> {
-        let output = Command::new("tasklist").args(["/FO", "CSV", "/NH"]).output().map_err(|err| format!("could not run tasklist: {err}"))?;
+        let output = Command::new("tasklist")
+            .args(["/FO", "CSV", "/NH"])
+            .output()
+            .map_err(|err| format!("could not run tasklist: {err}"))?;
         if !output.status.success() {
             return Err(format!("tasklist failed with {}", output.status));
         }
@@ -86,7 +97,11 @@ mod imp {
 
     pub fn kill_process(name: &str) -> Result<(), String> {
         // taskkill exits non-zero when the program is not running, which is exactly the goal.
-        Command::new("taskkill").args(["/IM", name, "/F"]).output().map(|_| ()).map_err(|err| format!("could not run taskkill: {err}"))
+        Command::new("taskkill")
+            .args(["/IM", name, "/F"])
+            .output()
+            .map(|_| ())
+            .map_err(|err| format!("could not run taskkill: {err}"))
     }
 }
 

@@ -133,13 +133,38 @@ pub const EVIDENCE_CAP: usize = 400;
 
 /// The names of `steps` columns other than the key, in the order `StepRecord::values` lists them.
 pub const STEP_COLUMNS: [&str; 23] = [
-    "started_utc", "goal", "tool", "args_json", "reason", "risk_stated", "risk_final", "risk_reasons_json", "gate", "result", "error", "observation_path", "elements_hash",
-    "prompt_text", "thinking_chars", "completion_tokens", "observe_ms", "screen_check_ms", "finish_check_ms", "decide_ms", "gate_ms", "act_ms", "settle_ms",
+    "started_utc",
+    "goal",
+    "tool",
+    "args_json",
+    "reason",
+    "risk_stated",
+    "risk_final",
+    "risk_reasons_json",
+    "gate",
+    "result",
+    "error",
+    "observation_path",
+    "elements_hash",
+    "prompt_text",
+    "thinking_chars",
+    "completion_tokens",
+    "observe_ms",
+    "screen_check_ms",
+    "finish_check_ms",
+    "decide_ms",
+    "gate_ms",
+    "act_ms",
+    "settle_ms",
 ];
 
 impl StepRecord {
     pub fn new(run_id: &str, step: u32) -> Self {
-        Self { run_id: run_id.to_string(), step, ..Self::default() }
+        Self {
+            run_id: run_id.to_string(),
+            step,
+            ..Self::default()
+        }
     }
 
     /// The values of `STEP_COLUMNS`; `NULL` for what this piece does not carry.
@@ -147,10 +172,29 @@ impl StepRecord {
         let text = |value: &Option<String>| value.clone().map_or(Value::Null, Value::Text);
         let number = |value: &Option<i64>| value.map_or(Value::Null, Value::Integer);
         [
-            text(&self.started_utc), number(&self.goal), text(&self.tool), text(&self.args_json), text(&self.reason), text(&self.risk_stated), text(&self.risk_final),
-            text(&self.risk_reasons_json), text(&self.gate), text(&self.result), text(&self.error), text(&self.observation_path), text(&self.elements_hash), text(&self.prompt_text),
-            number(&self.thinking_chars), number(&self.completion_tokens), number(&self.observe_ms), number(&self.screen_check_ms), number(&self.finish_check_ms),
-            number(&self.decide_ms), number(&self.gate_ms), number(&self.act_ms), number(&self.settle_ms),
+            text(&self.started_utc),
+            number(&self.goal),
+            text(&self.tool),
+            text(&self.args_json),
+            text(&self.reason),
+            text(&self.risk_stated),
+            text(&self.risk_final),
+            text(&self.risk_reasons_json),
+            text(&self.gate),
+            text(&self.result),
+            text(&self.error),
+            text(&self.observation_path),
+            text(&self.elements_hash),
+            text(&self.prompt_text),
+            number(&self.thinking_chars),
+            number(&self.completion_tokens),
+            number(&self.observe_ms),
+            number(&self.screen_check_ms),
+            number(&self.finish_check_ms),
+            number(&self.decide_ms),
+            number(&self.gate_ms),
+            number(&self.act_ms),
+            number(&self.settle_ms),
         ]
     }
 
@@ -183,13 +227,25 @@ pub fn now_utc() -> String {
 /// Unix seconds for `2026-10-19T07:59:12Z`.
 pub fn parse_iso(text: &str) -> Option<u64> {
     let bytes = text.as_bytes();
-    if bytes.len() != 20 || bytes[4] != b'-' || bytes[7] != b'-' || bytes[10] != b'T' || bytes[13] != b':' || bytes[16] != b':' || bytes[19] != b'Z' {
+    if bytes.len() != 20
+        || bytes[4] != b'-'
+        || bytes[7] != b'-'
+        || bytes[10] != b'T'
+        || bytes[13] != b':'
+        || bytes[16] != b':'
+        || bytes[19] != b'Z'
+    {
         return None;
     }
     let number = |range: std::ops::Range<usize>| text.get(range)?.parse::<i64>().ok();
     let (year, month, day) = (number(0..4)?, number(5..7)?, number(8..10)?);
     let (hour, minute, second) = (number(11..13)?, number(14..16)?, number(17..19)?);
-    if !(1..=12).contains(&month) || !(1..=31).contains(&day) || hour > 23 || minute > 59 || second > 60 {
+    if !(1..=12).contains(&month)
+        || !(1..=31).contains(&day)
+        || hour > 23
+        || minute > 59
+        || second > 60
+    {
         return None;
     }
     // Howard Hinnant's days_from_civil.
@@ -250,10 +306,23 @@ pub fn db_path_without_app() -> Option<std::path::PathBuf> {
 /// What the writer thread is asked to do.
 pub enum Msg {
     BeginRun(Box<RunInfo>),
-    SetPlan { run_id: String, plan_json: String },
+    SetPlan {
+        run_id: String,
+        plan_json: String,
+    },
     Step(Box<StepRecord>),
-    Event { run_id: String, at_utc: String, kind: String, data_json: String },
-    EndRun { run_id: String, ended_utc: String, outcome: String, summary: String },
+    Event {
+        run_id: String,
+        at_utc: String,
+        kind: String,
+        data_json: String,
+    },
+    EndRun {
+        run_id: String,
+        ended_utc: String,
+        outcome: String,
+        summary: String,
+    },
     /// Delete the runs whose session folder is one of these (retention), with their steps and events.
     PurgeSessions(Vec<String>),
     Verdict(Box<VerdictRecord>),
@@ -276,7 +345,9 @@ static LAST_WARNING: Mutex<Option<Instant>> = Mutex::new(None);
 
 /// Logs `message` as a warning unless one was logged in the last minute.
 pub(crate) fn warn_rarely(message: impl FnOnce() -> String) {
-    let mut last = LAST_WARNING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut last = LAST_WARNING
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     if last.is_none_or(|at| at.elapsed() >= WARN_EVERY) {
         *last = Some(Instant::now());
         log::warn!("{}", message());
@@ -286,7 +357,11 @@ pub(crate) fn warn_rarely(message: impl FnOnce() -> String) {
 impl Recorder {
     /// A recorder that records nothing (the database could not be opened).
     pub fn noop() -> Self {
-        Self { tx: None, dropped: Arc::default(), open: Arc::default() }
+        Self {
+            tx: None,
+            dropped: Arc::default(),
+            open: Arc::default(),
+        }
     }
 
     /// Opens (creating if needed) the database at `path` and starts its writer thread. If that
@@ -301,21 +376,38 @@ impl Recorder {
             .map_or(Ok(()), std::fs::create_dir_all)
             .map_err(|err| err.to_string())
             .and_then(|()| Connection::open(path).map_err(|err| err.to_string()))
-            .and_then(|db| schema::open(&db).map(|opened| (db, opened)).map_err(|err| err.to_string()));
+            .and_then(|db| {
+                schema::open(&db)
+                    .map(|opened| (db, opened))
+                    .map_err(|err| err.to_string())
+            });
         let db = match opened {
             Ok((db, schema::Opened::Ready)) => db,
             Ok((_, schema::Opened::Newer(version))) => {
-                log::warn!("{} was written by a newer Rune Studio (schema {version}); nothing will be recorded", path.display());
+                log::warn!(
+                    "{} was written by a newer Rune Studio (schema {version}); nothing will be recorded",
+                    path.display()
+                );
                 return Self::noop();
             }
             Err(err) => {
-                log::error!("could not open the trace database {}: {err}; runs will not be recorded", path.display());
+                log::error!(
+                    "could not open the trace database {}: {err}; runs will not be recorded",
+                    path.display()
+                );
                 return Self::noop();
             }
         };
         let (tx, rx) = sync_channel(capacity);
-        match std::thread::Builder::new().name("trace-writer".into()).spawn(move || writer(db, rx)) {
-            Ok(_) => Self { tx: Some(tx), dropped: Arc::default(), open: Arc::default() },
+        match std::thread::Builder::new()
+            .name("trace-writer".into())
+            .spawn(move || writer(db, rx))
+        {
+            Ok(_) => Self {
+                tx: Some(tx),
+                dropped: Arc::default(),
+                open: Arc::default(),
+            },
             Err(err) => {
                 log::error!("could not start the trace writer: {err}");
                 Self::noop()
@@ -333,12 +425,16 @@ impl Recorder {
         let Some(tx) = &self.tx else { return };
         if tx.try_send(message).is_err() {
             let total = self.dropped.fetch_add(1, Ordering::Relaxed) + 1;
-            warn_rarely(|| format!("the trace queue is full or closed; {total} record(s) dropped so far"));
+            warn_rarely(|| {
+                format!("the trace queue is full or closed; {total} record(s) dropped so far")
+            });
         }
     }
 
     fn open_run(&self) -> std::sync::MutexGuard<'_, Option<String>> {
-        self.open.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+        self.open
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// The id of the run that has begun and not ended, if any.
@@ -347,7 +443,10 @@ impl Recorder {
     }
 
     pub fn begin_run(&self, info: RunInfo) {
-        let info = RunInfo { task: cap(&info.task, TEXT_CAP), ..info };
+        let info = RunInfo {
+            task: cap(&info.task, TEXT_CAP),
+            ..info
+        };
         *self.open_run() = Some(info.id.clone());
         self.send(Msg::BeginRun(Box::new(info)));
     }
@@ -362,7 +461,10 @@ impl Recorder {
     }
 
     pub fn set_plan(&self, run_id: &str, plan_json: &str) {
-        self.send(Msg::SetPlan { run_id: run_id.to_string(), plan_json: cap(plan_json, TEXT_CAP) });
+        self.send(Msg::SetPlan {
+            run_id: run_id.to_string(),
+            plan_json: cap(plan_json, TEXT_CAP),
+        });
     }
 
     /// Adds a piece of a step: only the fields it carries are written, the rest are kept.
@@ -371,7 +473,12 @@ impl Recorder {
     }
 
     pub fn event(&self, run_id: &str, kind: &str, data: &str) {
-        self.send(Msg::Event { run_id: run_id.to_string(), at_utc: now_utc(), kind: kind.to_string(), data_json: cap(data, EVENT_CAP) });
+        self.send(Msg::Event {
+            run_id: run_id.to_string(),
+            at_utc: now_utc(),
+            kind: kind.to_string(),
+            data_json: cap(data, EVENT_CAP),
+        });
     }
 
     /// Ends a run. Only the first end counts, like the session folder's.
@@ -381,7 +488,12 @@ impl Recorder {
             *open = None;
         }
         drop(open);
-        self.send(Msg::EndRun { run_id: run_id.to_string(), ended_utc: now_utc(), outcome: outcome.to_string(), summary: cap(summary, TEXT_CAP) });
+        self.send(Msg::EndRun {
+            run_id: run_id.to_string(),
+            ended_utc: now_utc(),
+            outcome: outcome.to_string(),
+            summary: cap(summary, TEXT_CAP),
+        });
     }
 
     /// Stores the check of a finished run (the newest one for a run replaces an older one).
@@ -414,15 +526,27 @@ impl Recorder {
     #[cfg(test)]
     pub(crate) fn flush(&self) {
         let (done, wait) = std::sync::mpsc::channel();
-        self.tx.as_ref().expect("a started recorder").send(Msg::Flush(done)).expect("the writer is alive");
-        wait.recv_timeout(Duration::from_secs(10)).expect("the writer answers");
+        self.tx
+            .as_ref()
+            .expect("a started recorder")
+            .send(Msg::Flush(done))
+            .expect("the writer is alive");
+        wait.recv_timeout(Duration::from_secs(10))
+            .expect("the writer answers");
     }
 
     /// A recorder whose queue nobody reads (tests only), to see what a full queue does.
     #[cfg(test)]
     fn undrained(capacity: usize) -> (Self, Receiver<Msg>) {
         let (tx, rx) = sync_channel(capacity);
-        (Self { tx: Some(tx), dropped: Arc::default(), open: Arc::default() }, rx)
+        (
+            Self {
+                tx: Some(tx),
+                dropped: Arc::default(),
+                open: Arc::default(),
+            },
+            rx,
+        )
     }
 }
 

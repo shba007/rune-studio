@@ -12,12 +12,18 @@ pub fn record(app: &AppHandle, entry: Value) {
         return;
     };
     let _ = std::fs::create_dir_all(&dir);
-    let at = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map_or(0, |elapsed| elapsed.as_secs());
+    let at = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs());
     let mut line = json!({ "at": at });
     if let (Value::Object(base), Value::Object(extra)) = (&mut line, entry) {
         base.extend(extra);
     }
-    let written = OpenOptions::new().create(true).append(true).open(dir.join("audit.log")).and_then(|mut file| writeln!(file, "{line}"));
+    let written = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("audit.log"))
+        .and_then(|mut file| writeln!(file, "{line}"));
     if let Err(err) = written {
         log::warn!("could not write the audit log: {err}");
     }

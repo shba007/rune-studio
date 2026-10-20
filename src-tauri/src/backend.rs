@@ -47,26 +47,42 @@ struct ModelEntry {
 /// True only when the server listed the model's capabilities and `Audio` is not among them.
 /// An empty list means "unknown", never "no audio".
 pub fn lacks_audio(capabilities: &[String]) -> bool {
-    !capabilities.is_empty() && !capabilities.iter().any(|capability| capability.eq_ignore_ascii_case("audio"))
+    !capabilities.is_empty()
+        && !capabilities
+            .iter()
+            .any(|capability| capability.eq_ignore_ascii_case("audio"))
 }
 
 /// Probes `/health` (open), then `/v1/models` (authenticated) and checks that the
 /// models the agent needs are actually served.
-pub async fn check(client: &reqwest::Client, settings: &Settings, api_key: Option<&str>) -> BackendStatus {
+pub async fn check(
+    client: &reqwest::Client,
+    settings: &Settings,
+    api_key: Option<&str>,
+) -> BackendStatus {
     let base = settings.base_url.trim_end_matches('/');
 
     let started = Instant::now();
-    let health = client.get(format!("{base}/health")).timeout(PROBE_TIMEOUT).send().await;
+    let health = client
+        .get(format!("{base}/health"))
+        .timeout(PROBE_TIMEOUT)
+        .send()
+        .await;
     let latency_ms = started.elapsed().as_millis() as u64;
     match health {
         Ok(response) if response.status().is_success() => {}
         Ok(response) => {
-            return BackendStatus::unreachable(format!("health check returned {}", response.status()));
+            return BackendStatus::unreachable(format!(
+                "health check returned {}",
+                response.status()
+            ));
         }
         Err(err) => return BackendStatus::unreachable(format!("cannot reach {base}: {err}")),
     }
 
-    let mut request = client.get(format!("{base}/v1/models")).timeout(PROBE_TIMEOUT);
+    let mut request = client
+        .get(format!("{base}/v1/models"))
+        .timeout(PROBE_TIMEOUT);
     if let Some(key) = api_key {
         request = request.bearer_auth(key);
     }
@@ -104,7 +120,12 @@ pub async fn check(client: &reqwest::Client, settings: &Settings, api_key: Optio
                 .filter(|wanted| !list.data.iter().any(|model| &model.id == *wanted))
                 .cloned()
                 .collect();
-            let model_capabilities = list.data.iter().find(|model| model.id == settings.model).map(|model| model.capabilities.clone()).unwrap_or_default();
+            let model_capabilities = list
+                .data
+                .iter()
+                .find(|model| model.id == settings.model)
+                .map(|model| model.capabilities.clone())
+                .unwrap_or_default();
             BackendStatus {
                 reachable: true,
                 auth_ok: true,
@@ -131,7 +152,11 @@ mod tests {
 
     fn capabilities_of(json: &str, model: &str) -> Vec<String> {
         let list: ModelList = serde_json::from_str(json).unwrap();
-        list.data.iter().find(|entry| entry.id == model).map(|entry| entry.capabilities.clone()).unwrap_or_default()
+        list.data
+            .iter()
+            .find(|entry| entry.id == model)
+            .map(|entry| entry.capabilities.clone())
+            .unwrap_or_default()
     }
 
     #[test]
@@ -140,15 +165,29 @@ mod tests {
             { "id": "omni", "capabilities": ["Chat", "Vision", "Audio", "Omni", "Tool Call"] },
             { "id": "plain" }
         ] }"#;
-        assert_eq!(capabilities_of(json, "omni"), ["Chat", "Vision", "Audio", "Omni", "Tool Call"]);
-        assert!(capabilities_of(json, "plain").is_empty(), "the field is optional");
+        assert_eq!(
+            capabilities_of(json, "omni"),
+            ["Chat", "Vision", "Audio", "Omni", "Tool Call"]
+        );
+        assert!(
+            capabilities_of(json, "plain").is_empty(),
+            "the field is optional"
+        );
         assert!(capabilities_of(json, "unlisted").is_empty());
     }
 
     #[test]
     fn only_a_listed_model_without_audio_lacks_audio() {
-        let list = |items: &[&str]| items.iter().map(|item| item.to_string()).collect::<Vec<_>>();
-        assert!(!lacks_audio(&[]), "no information is not a missing capability");
+        let list = |items: &[&str]| {
+            items
+                .iter()
+                .map(|item| item.to_string())
+                .collect::<Vec<_>>()
+        };
+        assert!(
+            !lacks_audio(&[]),
+            "no information is not a missing capability"
+        );
         assert!(!lacks_audio(&list(&["Chat", "Audio"])));
         assert!(!lacks_audio(&list(&["chat", "audio"])));
         assert!(lacks_audio(&list(&["Chat", "Vision"])));

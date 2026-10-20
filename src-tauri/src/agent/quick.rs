@@ -29,7 +29,9 @@ pub async fn is_simple_task(app: &AppHandle, task: &str) -> bool {
         "Can this request be done as one short step, such as opening a single app, or typing one short line, without separate stages?",
     );
     let text = format!("Request: {}", task.trim());
-    decision::ask(app, &text, &[], &[question]).await.is_some_and(|answers| answers.confident_yes("simple", SIMPLE_TASK))
+    decision::ask(app, &text, &[], &[question])
+        .await
+        .is_some_and(|answers| answers.confident_yes("simple", SIMPLE_TASK))
 }
 
 /// Does the screen show that the whole task has been carried out? Then the loop ends without
@@ -42,7 +44,11 @@ pub async fn looks_finished(app: &AppHandle, task: &str, actions: &str, screensh
         "finished",
         "Looking at the screen and the steps taken, has the whole request been completely carried out, with nothing left to do?",
     );
-    let text = format!("Request: {}\nSteps taken so far:\n{}", task.trim(), actions.trim());
+    let text = format!(
+        "Request: {}\nSteps taken so far:\n{}",
+        task.trim(),
+        actions.trim()
+    );
     decision::ask(app, &text, &[screenshot.to_string()], &[question])
         .await
         .is_some_and(|answers| answers.confident_yes("finished", FINISHED))
@@ -50,7 +56,12 @@ pub async fn looks_finished(app: &AppHandle, task: &str, actions: &str, screensh
 
 /// A second opinion on how risky an action is, from the action itself and the window it targets.
 /// It can only raise the risk, and only to High, so a wrong answer costs the user one click.
-pub async fn risk_opinion(app: &AppHandle, action: &str, reason: &str, window: &str) -> Option<Risk> {
+pub async fn risk_opinion(
+    app: &AppHandle,
+    action: &str,
+    reason: &str,
+    window: &str,
+) -> Option<Risk> {
     let question = Question::choice(
         "risk",
         "How much harm could this action do on the user's computer? High means it could delete or overwrite data, spend money, send a message, change security settings or install something.",
@@ -68,7 +79,14 @@ pub const MAX_LOAD_WAITS: u32 = 4;
 const LOADING: f64 = 0.9;
 /// How sure it must be about something in the way before the big model is told.
 const BLOCKER: f64 = 0.8;
-const BLOCKERS: &[&str] = &["none", "cookie_banner", "popup", "login_required", "captcha", "error_page"];
+const BLOCKERS: &[&str] = &[
+    "none",
+    "cookie_banner",
+    "popup",
+    "login_required",
+    "captcha",
+    "error_page",
+];
 
 /// What the decision model notices on a screenshot. Both are only advice: a wait, or a hint in
 /// the next prompt. The big model still chooses every action.
@@ -84,11 +102,21 @@ pub struct ScreenNotes {
 /// around: it is the user's to handle.
 pub fn hint_for(blocker: &str) -> Option<&'static str> {
     Some(match blocker {
-        "cookie_banner" => "A cookie or consent banner seems to cover part of the page. Dismiss it first, choosing the option that declines non-essential cookies.",
-        "popup" => "A pop-up or dialog seems to be in front of what you want. Answer or close it first.",
-        "login_required" => "The page seems to ask for a login. Never enter credentials: use ask_user, or finish with done and success=false.",
-        "captcha" => "A CAPTCHA seems to be shown. Never try to solve it: use ask_user, or finish with done and success=false.",
-        "error_page" => "This looks like an error page (not found, offline or blocked). Go back or try a different address.",
+        "cookie_banner" => {
+            "A cookie or consent banner seems to cover part of the page. Dismiss it first, choosing the option that declines non-essential cookies."
+        }
+        "popup" => {
+            "A pop-up or dialog seems to be in front of what you want. Answer or close it first."
+        }
+        "login_required" => {
+            "The page seems to ask for a login. Never enter credentials: use ask_user, or finish with done and success=false."
+        }
+        "captcha" => {
+            "A CAPTCHA seems to be shown. Never try to solve it: use ask_user, or finish with done and success=false."
+        }
+        "error_page" => {
+            "This looks like an error page (not found, offline or blocked). Go back or try a different address."
+        }
         _ => return None,
     })
 }
@@ -97,17 +125,29 @@ pub fn hint_for(blocker: &str) -> Option<&'static str> {
 /// when the decision model has nothing to say.
 pub async fn read_screen(app: &AppHandle, screenshot: &str) -> Option<ScreenNotes> {
     let questions = [
-        Question::yes_no("loading", "Is the page or app on this screen still loading: mostly blank, half drawn, or showing a loading spinner or progress bar?"),
+        Question::yes_no(
+            "loading",
+            "Is the page or app on this screen still loading: mostly blank, half drawn, or showing a loading spinner or progress bar?",
+        ),
         Question::choice(
             "blocker",
             "Is something covering or blocking the main content of this screen? Pick none if the content is clearly usable.",
             BLOCKERS,
         ),
     ];
-    let answers = decision::ask(app, "A screenshot of the user's screen.", &[screenshot.to_string()], &questions).await?;
+    let answers = decision::ask(
+        app,
+        "A screenshot of the user's screen.",
+        &[screenshot.to_string()],
+        &questions,
+    )
+    .await?;
     Some(ScreenNotes {
         loading: answers.confident_yes("loading", LOADING),
-        hint: answers.choice("blocker").filter(|(_, confidence)| *confidence >= BLOCKER).and_then(|(blocker, _)| hint_for(&blocker)),
+        hint: answers
+            .choice("blocker")
+            .filter(|(_, confidence)| *confidence >= BLOCKER)
+            .and_then(|(blocker, _)| hint_for(&blocker)),
     })
 }
 
@@ -120,8 +160,16 @@ mod tests {
         for blocker in BLOCKERS {
             assert_eq!(hint_for(blocker).is_some(), *blocker != "none", "{blocker}");
         }
-        assert!(hint_for("captcha").unwrap().contains("Never try to solve it"));
-        assert!(hint_for("login_required").unwrap().contains("Never enter credentials"));
+        assert!(
+            hint_for("captcha")
+                .unwrap()
+                .contains("Never try to solve it")
+        );
+        assert!(
+            hint_for("login_required")
+                .unwrap()
+                .contains("Never enter credentials")
+        );
         assert!(hint_for("something else").is_none());
     }
 }

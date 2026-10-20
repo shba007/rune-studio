@@ -32,7 +32,11 @@ impl CancelToken {
 
     /// Fails with `Cancelled` if Stop was pressed.
     pub fn check(&self) -> Result<(), ExecError> {
-        if self.is_cancelled() { Err(ExecError::Cancelled) } else { Ok(()) }
+        if self.is_cancelled() {
+            Err(ExecError::Cancelled)
+        } else {
+            Ok(())
+        }
     }
 
     /// Sleeps in short slices so Stop is noticed within milliseconds, not at the end.
@@ -62,7 +66,10 @@ pub struct RunScope {
 
 impl RunScope {
     pub fn new() -> Self {
-        Self { id: NEXT_RUN_ID.fetch_add(1, Ordering::SeqCst), token: CancelToken::default() }
+        Self {
+            id: NEXT_RUN_ID.fetch_add(1, Ordering::SeqCst),
+            token: CancelToken::default(),
+        }
     }
 }
 
@@ -96,7 +103,10 @@ pub fn current_scope(slot: &Mutex<RunScope>) -> RunScope {
 /// is). Outside agents' actions take turns through this: a call that is queued behind another one
 /// must not outlive Stop.
 #[cfg(any(test, feature = "agent-bridge"))]
-pub async fn lock_unless_stopped<'a>(lock: &'a tokio::sync::Mutex<()>, cancel: &CancelToken) -> Result<tokio::sync::MutexGuard<'a, ()>, ExecError> {
+pub async fn lock_unless_stopped<'a>(
+    lock: &'a tokio::sync::Mutex<()>,
+    cancel: &CancelToken,
+) -> Result<tokio::sync::MutexGuard<'a, ()>, ExecError> {
     cancel.check()?;
     tokio::select! {
         guard = lock.lock() => Ok(guard),
@@ -127,7 +137,10 @@ mod tests {
         assert!(a.token.is_cancelled(), "the previous run is cancelled");
         assert!(!b.token.is_cancelled(), "the new run starts clean");
         let c = begin_run(&slot);
-        assert!(a.token.is_cancelled() && b.token.is_cancelled(), "starting C does not revive A");
+        assert!(
+            a.token.is_cancelled() && b.token.is_cancelled(),
+            "starting C does not revive A"
+        );
         assert!(!c.token.is_cancelled());
     }
 
@@ -144,7 +157,10 @@ mod tests {
         // A scope installed afterwards is unaffected by the earlier Stop.
         let c = begin_run(&slot);
         assert!(!c.token.is_cancelled());
-        assert!(a.token.is_cancelled(), "A was already cancelled by B's start");
+        assert!(
+            a.token.is_cancelled(),
+            "A was already cancelled by B's start"
+        );
     }
 
     #[test]
@@ -168,7 +184,9 @@ mod tests {
         for _ in 0..4 {
             let (lock, inside, overlapped) = (lock.clone(), inside.clone(), overlapped.clone());
             turns.push(tokio::spawn(async move {
-                let _turn = lock_unless_stopped(&lock, &CancelToken::default()).await.expect("nobody pressed Stop");
+                let _turn = lock_unless_stopped(&lock, &CancelToken::default())
+                    .await
+                    .expect("nobody pressed Stop");
                 if inside.fetch_add(1, SeqCst) != 0 {
                     overlapped.store(true, SeqCst);
                 }
@@ -185,7 +203,9 @@ mod tests {
     #[tokio::test]
     async fn a_waiter_is_released_by_stop() {
         let lock = tokio::sync::Mutex::new(());
-        let first = lock_unless_stopped(&lock, &CancelToken::default()).await.unwrap();
+        let first = lock_unless_stopped(&lock, &CancelToken::default())
+            .await
+            .unwrap();
         let stop = CancelToken::default();
         let stopper = stop.clone();
         tokio::spawn(async move {
@@ -195,9 +215,15 @@ mod tests {
         let started = Instant::now();
         let second = lock_unless_stopped(&lock, &stop).await;
         assert!(matches!(second, Err(ExecError::Cancelled)));
-        assert!(started.elapsed() < Duration::from_secs(2), "released by Stop, not by the first holder");
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "released by Stop, not by the first holder"
+        );
         drop(first);
         // And a token that is already cancelled never takes the lock, even when it is free.
-        assert!(matches!(lock_unless_stopped(&lock, &stop).await, Err(ExecError::Cancelled)));
+        assert!(matches!(
+            lock_unless_stopped(&lock, &stop).await,
+            Err(ExecError::Cancelled)
+        ));
     }
 }

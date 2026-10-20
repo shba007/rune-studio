@@ -70,8 +70,12 @@ fn tools() -> Value {
 
 fn describe(state: AgentState) -> &'static str {
     match state {
-        AgentState::AwaitingConfirm => "The assistant is waiting for the user to answer a yes/no question.",
-        AgentState::Planning | AgentState::Acting | AgentState::Observing => "The assistant is busy carrying out a task.",
+        AgentState::AwaitingConfirm => {
+            "The assistant is waiting for the user to answer a yes/no question."
+        }
+        AgentState::Planning | AgentState::Acting | AgentState::Observing => {
+            "The assistant is busy carrying out a task."
+        }
         _ => "The assistant is idle.",
     }
 }
@@ -86,7 +90,14 @@ const MAX_REPEATS: usize = 3;
 pub fn repeats_a_word(text: &str) -> bool {
     let mut run = 0;
     let mut previous = String::new();
-    for word in text.split_whitespace().map(|word| word.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase()).filter(|word| !word.is_empty()) {
+    for word in text
+        .split_whitespace()
+        .map(|word| {
+            word.trim_matches(|c: char| !c.is_alphanumeric())
+                .to_lowercase()
+        })
+        .filter(|word| !word.is_empty())
+    {
         run = if word == previous { run + 1 } else { 1 };
         if run > MAX_REPEATS {
             return true;
@@ -103,7 +114,9 @@ pub fn ignore_reason(arguments: &Value) -> Option<&'static str> {
         None => Some("the reply had no kind"),
         Some("noise") => Some("the model said it was noise"),
         Some("task") if text.is_empty() => Some("a task with no words"),
-        Some("task") if repeats_a_word(text) => Some("the words repeat one word, so the model was looping"),
+        Some("task") if repeats_a_word(text) => {
+            Some("the words repeat one word, so the model was looping")
+        }
         Some("stop" | "stop_listening" | "yes" | "no" | "task") => None,
         Some(_) => Some("an unknown kind"),
     }
@@ -137,7 +150,11 @@ pub fn parse(arguments: &Value) -> Option<Listened> {
     Some(Listened { intent, goals })
 }
 
-pub async fn listen(client: &ChatClient<'_>, wav_base64: &str, state: AgentState) -> Result<Option<Listened>, ModelError> {
+pub async fn listen(
+    client: &ChatClient<'_>,
+    wav_base64: &str,
+    state: AgentState,
+) -> Result<Option<Listened>, ModelError> {
     let tools = tools();
     let request = Request {
         system: SYSTEM,
@@ -150,7 +167,10 @@ pub async fn listen(client: &ChatClient<'_>, wav_base64: &str, state: AgentState
     };
     let reply = client.call(&request, &mut |_: &str| {}).await?;
     if reply.call.name != "heard" {
-        log::info!("voice ignored: the model called {} instead of heard", reply.call.name);
+        log::info!(
+            "voice ignored: the model called {} instead of heard",
+            reply.call.name
+        );
         return Ok(None);
     }
     let listened = parse(&reply.call.arguments);
@@ -174,33 +194,63 @@ mod tests {
         assert_eq!(u32::from_le_bytes(file[40..44].try_into().unwrap()), 6);
         assert_eq!(file.len(), 44 + 6);
         assert_eq!(i16::from_le_bytes(file[46..48].try_into().unwrap()), -2);
-        assert_eq!(u32::from_le_bytes(file[4..8].try_into().unwrap()) as usize, file.len() - 8);
+        assert_eq!(
+            u32::from_le_bytes(file[4..8].try_into().unwrap()) as usize,
+            file.len() - 8
+        );
     }
 
     #[test]
     fn control_words_and_tasks_are_read() {
-        assert_eq!(parse(&json!({ "kind": "stop" })).unwrap().intent, Intent::Stop);
-        assert_eq!(parse(&json!({ "kind": "yes" })).unwrap().intent, Intent::Yes);
+        assert_eq!(
+            parse(&json!({ "kind": "stop" })).unwrap().intent,
+            Intent::Stop
+        );
+        assert_eq!(
+            parse(&json!({ "kind": "yes" })).unwrap().intent,
+            Intent::Yes
+        );
         let task = parse(&json!({ "kind": "task", "text": " open notepad ", "goals": ["Open Notepad", " ", "Type hello"] })).unwrap();
         assert_eq!(task.intent, Intent::Say("open notepad".into()));
-        assert_eq!(task.goals, Some(vec!["Open Notepad".into(), "Type hello".into()]));
+        assert_eq!(
+            task.goals,
+            Some(vec!["Open Notepad".into(), "Type hello".into()])
+        );
     }
 
     #[test]
     fn a_model_that_loops_on_a_word_is_ignored_with_a_reason() {
         assert!(repeats_a_word("warn warn warn warn"));
         assert!(repeats_a_word("Warn, warn. WARN warn"));
-        assert!(!repeats_a_word("warn warn warn"), "three in a row is allowed");
+        assert!(
+            !repeats_a_word("warn warn warn"),
+            "three in a row is allowed"
+        );
         assert!(!repeats_a_word("open notepad and write hello hello"));
         assert!(!repeats_a_word("no no no wait stop"));
         let looping = json!({ "kind": "task", "text": "warn warn warn warn warn" });
         assert!(parse(&looping).is_none());
-        assert_eq!(ignore_reason(&looping), Some("the words repeat one word, so the model was looping"));
-        assert_eq!(ignore_reason(&json!({ "kind": "noise" })), Some("the model said it was noise"));
-        assert_eq!(ignore_reason(&json!({ "kind": "task", "text": " " })), Some("a task with no words"));
-        assert_eq!(ignore_reason(&json!({ "kind": "dance" })), Some("an unknown kind"));
+        assert_eq!(
+            ignore_reason(&looping),
+            Some("the words repeat one word, so the model was looping")
+        );
+        assert_eq!(
+            ignore_reason(&json!({ "kind": "noise" })),
+            Some("the model said it was noise")
+        );
+        assert_eq!(
+            ignore_reason(&json!({ "kind": "task", "text": " " })),
+            Some("a task with no words")
+        );
+        assert_eq!(
+            ignore_reason(&json!({ "kind": "dance" })),
+            Some("an unknown kind")
+        );
         assert_eq!(ignore_reason(&json!({})), Some("the reply had no kind"));
-        assert_eq!(ignore_reason(&json!({ "kind": "task", "text": "open notepad" })), None);
+        assert_eq!(
+            ignore_reason(&json!({ "kind": "task", "text": "open notepad" })),
+            None
+        );
         assert_eq!(ignore_reason(&json!({ "kind": "stop" })), None);
     }
 
@@ -209,7 +259,15 @@ mod tests {
         assert!(SYSTEM.contains("Transcribe only"));
         assert!(SYSTEM.contains("never guess a word"));
         let tools = tools();
-        let request = Request { system: SYSTEM, user_text: "idle", screenshot: None, audio: Some("AA=="), tools: &tools, think: false, max_tokens: Some(MAX_TRANSCRIPT_TOKENS) };
+        let request = Request {
+            system: SYSTEM,
+            user_text: "idle",
+            screenshot: None,
+            audio: Some("AA=="),
+            tools: &tools,
+            think: false,
+            max_tokens: Some(MAX_TRANSCRIPT_TOKENS),
+        };
         let body = crate::model::client::chat_body("m", &request);
         assert_eq!(body["max_tokens"], 256);
         assert_eq!(body["messages"][0]["role"], "system");

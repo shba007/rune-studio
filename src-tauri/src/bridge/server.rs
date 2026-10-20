@@ -57,13 +57,22 @@ pub fn start(app: &AppHandle) {
 async fn watch_for_idle(app: AppHandle) {
     loop {
         tokio::time::sleep(Duration::from_secs(10)).await;
-        let expired = app.state::<AppState>().lease.locked().expire_if_idle(std::time::Instant::now());
+        let expired = app
+            .state::<AppState>()
+            .lease
+            .locked()
+            .expire_if_idle(std::time::Instant::now());
         if expired {
             log::info!("agent bridge: the agent was silent too long, control released");
             crate::archive::end_session(None, "lease_expired", "");
-            app.state::<AppState>().trace.end_open_run("lease_expired", "");
+            app.state::<AppState>()
+                .trace
+                .end_open_run("lease_expired", "");
             let _ = app.emit(events::EXTERNAL_AGENT, ExternalAgent { agent: None });
-            if matches!(events::agent_state(&app), AgentState::Acting | AgentState::Observing) {
+            if matches!(
+                events::agent_state(&app),
+                AgentState::Acting | AgentState::Observing
+            ) {
                 events::set_agent_state(&app, AgentState::Idle);
             }
         }
@@ -80,7 +89,8 @@ fn switch_is_on(app: &AppHandle) -> bool {
     let settings = crate::settings::load(app);
     let on = settings.external_agent;
     let was_on = WAS_ON.swap(on, Ordering::SeqCst);
-    let enabled_again = settings.external_agent_since > LAST_SINCE.swap(settings.external_agent_since, Ordering::SeqCst);
+    let enabled_again = settings.external_agent_since
+        > LAST_SINCE.swap(settings.external_agent_since, Ordering::SeqCst);
     if on && (!was_on || enabled_again) {
         app.state::<AppState>().lease.locked().rearm();
     }
@@ -92,40 +102,78 @@ async fn not_allowed() -> StatusCode {
 }
 
 fn refuse(status: StatusCode, code: &str, message: &str) -> Response {
-    (status, [(header::CONTENT_TYPE, "application/json")], json!({ "error": code, "message": message }).to_string()).into_response()
+    (
+        status,
+        [(header::CONTENT_TYPE, "application/json")],
+        json!({ "error": code, "message": message }).to_string(),
+    )
+        .into_response()
 }
 
 /// Whether the `Host` header names this machine and our port.
 fn host_is_local(headers: &HeaderMap) -> bool {
-    let Some(host) = headers.get(header::HOST).and_then(|value| value.to_str().ok()) else {
+    let Some(host) = headers
+        .get(header::HOST)
+        .and_then(|value| value.to_str().ok())
+    else {
         return false;
     };
-    [format!("127.0.0.1:{PORT}"), format!("localhost:{PORT}"), format!("[::1]:{PORT}")].iter().any(|allowed| allowed == host)
+    [
+        format!("127.0.0.1:{PORT}"),
+        format!("localhost:{PORT}"),
+        format!("[::1]:{PORT}"),
+    ]
+    .iter()
+    .any(|allowed| allowed == host)
 }
 
 fn bearer(headers: &HeaderMap) -> Option<&str> {
-    headers.get(header::AUTHORIZATION)?.to_str().ok()?.strip_prefix("Bearer ")
+    headers
+        .get(header::AUTHORIZATION)?
+        .to_str()
+        .ok()?
+        .strip_prefix("Bearer ")
 }
 
 async fn post_mcp(State(app): State<AppHandle>, headers: HeaderMap, body: Bytes) -> Response {
     if headers.contains_key(header::ORIGIN) {
-        return refuse(StatusCode::FORBIDDEN, "origin_refused", "Browser requests are not allowed.");
+        return refuse(
+            StatusCode::FORBIDDEN,
+            "origin_refused",
+            "Browser requests are not allowed.",
+        );
     }
     if !host_is_local(&headers) {
-        return refuse(StatusCode::FORBIDDEN, "host_refused", "This door only answers on 127.0.0.1.");
+        return refuse(
+            StatusCode::FORBIDDEN,
+            "host_refused",
+            "This door only answers on 127.0.0.1.",
+        );
     }
     if !bearer(&headers).is_some_and(token::matches) {
-        return refuse(StatusCode::UNAUTHORIZED, "unauthorized", "Missing or wrong token. Ask the user for the token in Settings > External agent.");
+        return refuse(
+            StatusCode::UNAUTHORIZED,
+            "unauthorized",
+            "Missing or wrong token. Ask the user for the token in Settings > External agent.",
+        );
     }
     if !switch_is_on(&app) {
-        return refuse(StatusCode::FORBIDDEN, "not_enabled", "The user has not switched External agent on in Settings.");
+        return refuse(
+            StatusCode::FORBIDDEN,
+            "not_enabled",
+            "The user has not switched External agent on in Settings.",
+        );
     }
     let request: Value = match serde_json::from_slice(&body) {
         Ok(request) => request,
         Err(err) => return refuse(StatusCode::BAD_REQUEST, "bad_json", &err.to_string()),
     };
     match mcp::handle(&app, request).await {
-        Some(reply) => ([(header::CONTENT_TYPE, "application/json")], reply.to_string()).into_response(),
+        Some(reply) => (
+            [(header::CONTENT_TYPE, "application/json")],
+            reply.to_string(),
+        )
+            .into_response(),
         // A notification: nothing to say back.
         None => StatusCode::ACCEPTED.into_response(),
     }
@@ -154,7 +202,10 @@ mod tests {
 
     #[test]
     fn the_bearer_scheme_is_required() {
-        assert_eq!(bearer(&headers(&[("authorization", "Bearer abc")])), Some("abc"));
+        assert_eq!(
+            bearer(&headers(&[("authorization", "Bearer abc")])),
+            Some("abc")
+        );
         assert_eq!(bearer(&headers(&[("authorization", "Basic abc")])), None);
         assert_eq!(bearer(&headers(&[])), None);
     }

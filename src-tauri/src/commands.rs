@@ -22,7 +22,11 @@ pub fn get_settings(app: AppHandle, state: State<'_, AppState>) -> Settings {
 }
 
 #[tauri::command]
-pub fn save_settings(app: AppHandle, state: State<'_, AppState>, settings: Settings) -> AppResult<()> {
+pub fn save_settings(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    settings: Settings,
+) -> AppResult<()> {
     Hotkeys::validate(&settings).map_err(AppError::Invalid)?;
     settings::save(&app, &settings)?;
 
@@ -84,7 +88,12 @@ pub fn pill_rect(app: AppHandle) -> Option<PillRect> {
     }
     let position = window.outer_position().ok()?;
     let size = window.outer_size().ok()?;
-    Some(PillRect { x: position.x, y: position.y, width: size.width, height: size.height })
+    Some(PillRect {
+        x: position.x,
+        y: position.y,
+        width: size.width,
+        height: size.height,
+    })
 }
 
 #[tauri::command]
@@ -100,7 +109,11 @@ pub fn stop(app: AppHandle) {
         had
     };
     if had_agent {
-        let _ = tauri::Emitter::emit(&app, events::EXTERNAL_AGENT, events::ExternalAgent { agent: None });
+        let _ = tauri::Emitter::emit(
+            &app,
+            events::EXTERNAL_AGENT,
+            events::ExternalAgent { agent: None },
+        );
     }
     // Whatever task was running is over: close its session folder (a no-op when none is open).
     crate::archive::end_session(None, "stopped", "");
@@ -123,7 +136,12 @@ pub fn begin_task(app: &AppHandle, text: &str, keep_mic: bool) -> AppResult<()> 
 }
 
 /// `begin_task` with the plan already made (see `agent::start_planned`).
-pub fn begin_task_planned(app: &AppHandle, text: &str, keep_mic: bool, plan: Option<Vec<String>>) -> AppResult<()> {
+pub fn begin_task_planned(
+    app: &AppHandle,
+    text: &str,
+    keep_mic: bool,
+    plan: Option<Vec<String>>,
+) -> AppResult<()> {
     let state = app.state::<AppState>();
     let task = text.trim();
     state.steer.locked().clear();
@@ -151,16 +169,27 @@ pub fn push_steer(app: &AppHandle, text: &str) -> bool {
     if text.is_empty() {
         return false;
     }
-    app.state::<AppState>().steer.locked().push(text.chars().take(300).collect());
+    app.state::<AppState>()
+        .steer
+        .locked()
+        .push(text.chars().take(300).collect());
     true
 }
 
 #[tauri::command]
 pub fn steer(app: AppHandle, text: String) -> AppResult<()> {
     if !events::agent_state(&app).is_running() {
-        return Err(AppError::Invalid("There is no running task to give instructions to".into()));
+        return Err(AppError::Invalid(
+            "There is no running task to give instructions to".into(),
+        ));
     }
-    if push_steer(&app, &text) { Ok(()) } else { Err(AppError::Invalid("Say what the agent should do differently".into())) }
+    if push_steer(&app, &text) {
+        Ok(())
+    } else {
+        Err(AppError::Invalid(
+            "Say what the agent should do differently".into(),
+        ))
+    }
 }
 
 /// Closes the microphone (and leaves the listening state).
@@ -184,7 +213,9 @@ pub async fn toggle_listening(app: AppHandle, state: State<'_, AppState>) -> App
     }
 
     if events::agent_state(&app).is_running() {
-        return Err(AppError::Invalid("Stop the current task before listening".into()));
+        return Err(AppError::Invalid(
+            "Stop the current task before listening".into(),
+        ));
     }
 
     // Voice goes to the omni model as audio. If the server says the model cannot hear, say so in the
@@ -212,7 +243,9 @@ pub fn confirm(app: AppHandle, id: String, approved: bool) -> AppResult<()> {
     if crate::safety::gate::answer(&app, &id, approved) {
         Ok(())
     } else {
-        Err(AppError::Invalid("There is nothing waiting for an answer".into()))
+        Err(AppError::Invalid(
+            "There is nothing waiting for an answer".into(),
+        ))
     }
 }
 
@@ -249,14 +282,26 @@ pub fn bridge_info() -> BridgeInfo {
         let url = crate::bridge::server::url();
         // The `rune-studio-cli` command sits next to this windowed app.
         let exe = std::env::current_exe()
-            .map(|path| path.with_file_name(crate::bridge::exe_name("rune-studio-cli")).display().to_string())
+            .map(|path| {
+                path.with_file_name(crate::bridge::exe_name("rune-studio-cli"))
+                    .display()
+                    .to_string()
+            })
             .unwrap_or_else(|_| "rune-studio".into());
         let command = format!("claude mcp add --scope user rune-studio -- \"{exe}\" mcp");
-        BridgeInfo { available: true, url, command }
+        BridgeInfo {
+            available: true,
+            url,
+            command,
+        }
     }
     #[cfg(not(feature = "agent-bridge"))]
     {
-        BridgeInfo { available: false, url: String::new(), command: String::new() }
+        BridgeInfo {
+            available: false,
+            url: String::new(),
+            command: String::new(),
+        }
     }
 }
 

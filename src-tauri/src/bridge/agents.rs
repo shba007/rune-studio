@@ -24,7 +24,9 @@ pub struct Antigravity {
 }
 
 fn home() -> Option<PathBuf> {
-    std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from)
+    std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .map(PathBuf::from)
 }
 
 pub fn antigravity() -> Option<Antigravity> {
@@ -41,7 +43,9 @@ pub fn antigravity() -> Option<Antigravity> {
 /// An empty file counts as `{}`. A file that is not a JSON object is refused, never overwritten.
 pub fn add_server(existing: &str, exe: &str) -> Result<String, String> {
     let mut root = parse_root(existing)?;
-    let servers = root.entry("mcpServers").or_insert_with(|| Value::Object(Map::new()));
+    let servers = root
+        .entry("mcpServers")
+        .or_insert_with(|| Value::Object(Map::new()));
     let Value::Object(servers) = servers else {
         return Err("\"mcpServers\" in your settings is not an object".into());
     };
@@ -56,7 +60,11 @@ pub fn remove_server(existing: &str) -> Result<Option<String>, String> {
         Some(Value::Object(servers)) => servers.remove(SERVER).is_some(),
         _ => false,
     };
-    if removed { to_text(root).map(Some) } else { Ok(None) }
+    if removed {
+        to_text(root).map(Some)
+    } else {
+        Ok(None)
+    }
 }
 
 fn parse_root(text: &str) -> Result<Map<String, Value>, String> {
@@ -71,12 +79,17 @@ fn parse_root(text: &str) -> Result<Map<String, Value>, String> {
 }
 
 fn to_text(root: Map<String, Value>) -> Result<String, String> {
-    serde_json::to_string_pretty(&Value::Object(root)).map(|text| text + "\n").map_err(|err| err.to_string())
+    serde_json::to_string_pretty(&Value::Object(root))
+        .map(|text| text + "\n")
+        .map_err(|err| err.to_string())
 }
 
 /// Reads a settings file, applies `edit`, and writes the result, keeping the old copy next to it
 /// as `<name>.bak`. A missing file is treated as empty. `edit` returning `None` means no change.
-pub fn edit_file(path: &Path, edit: impl FnOnce(&str) -> Result<Option<String>, String>) -> Result<bool, String> {
+pub fn edit_file(
+    path: &Path,
+    edit: impl FnOnce(&str) -> Result<Option<String>, String>,
+) -> Result<bool, String> {
     let current = match fs::read_to_string(path) {
         Ok(text) => text,
         Err(err) if err.kind() == io::ErrorKind::NotFound => String::new(),
@@ -94,7 +107,8 @@ pub fn edit_file(path: &Path, edit: impl FnOnce(&str) -> Result<Option<String>, 
     if !current.trim().is_empty() {
         let mut backup = path.as_os_str().to_owned();
         backup.push(".bak");
-        fs::write(&backup, &current).map_err(|err| format!("cannot write a backup of {}: {err}", path.display()))?;
+        fs::write(&backup, &current)
+            .map_err(|err| format!("cannot write a backup of {}: {err}", path.display()))?;
     }
     fs::write(path, updated).map_err(|err| format!("cannot write {}: {err}", path.display()))?;
     Ok(true)
@@ -133,7 +147,10 @@ mod tests {
         let once = add_server("", EXE).unwrap();
         assert_eq!(add_server(&once, EXE).unwrap(), once);
         let moved = parsed(&add_server(&once, r"D:\New\rune-studio-cli.exe").unwrap());
-        assert_eq!(moved["mcpServers"]["rune-studio"]["command"], r"D:\New\rune-studio-cli.exe");
+        assert_eq!(
+            moved["mcpServers"]["rune-studio"]["command"],
+            r"D:\New\rune-studio-cli.exe"
+        );
         assert_eq!(moved["mcpServers"].as_object().unwrap().len(), 1);
     }
 
@@ -150,7 +167,10 @@ mod tests {
         let after = parsed(&remove_server(&start).unwrap().unwrap());
         assert!(after["mcpServers"].get("rune-studio").is_none());
         assert_eq!(after["mcpServers"]["other"]["command"], "node");
-        assert_eq!(remove_server(&start.replace("rune-studio", "gone")).unwrap(), None);
+        assert_eq!(
+            remove_server(&start.replace("rune-studio", "gone")).unwrap(),
+            None
+        );
         assert_eq!(remove_server("").unwrap(), None);
     }
 

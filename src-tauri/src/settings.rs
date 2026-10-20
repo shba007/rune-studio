@@ -174,7 +174,10 @@ mod tests {
         assert!(!loaded.analysis_boxes);
         let on: Settings = serde_json::from_str(r#"{ "analysisBoxes": true }"#).unwrap();
         assert!(on.analysis_boxes);
-        assert_eq!(serde_json::to_value(Settings::default()).unwrap()["analysisBoxes"], false);
+        assert_eq!(
+            serde_json::to_value(Settings::default()).unwrap()["analysisBoxes"],
+            false
+        );
     }
 
     #[test]
@@ -188,20 +191,43 @@ mod tests {
         let old = r#"{ "baseUrl": "http://127.0.0.1:9", "model": "m", "maxSteps": 12, "askEveryAction": true }"#;
         let settings: Settings = serde_json::from_str(old).expect("an older settings file loads");
         assert_eq!(settings.verify_mode, VerifyMode::Background);
-        assert_eq!((settings.base_url.as_str(), settings.max_steps, settings.ask_every_action), ("http://127.0.0.1:9", 12, true), "the rest of the file is kept");
-        assert_eq!(serde_json::from_str::<Settings>("{}").unwrap().verify_mode, VerifyMode::Background);
+        assert_eq!(
+            (
+                settings.base_url.as_str(),
+                settings.max_steps,
+                settings.ask_every_action
+            ),
+            ("http://127.0.0.1:9", 12, true),
+            "the rest of the file is kept"
+        );
+        assert_eq!(
+            serde_json::from_str::<Settings>("{}").unwrap().verify_mode,
+            VerifyMode::Background
+        );
     }
 
     #[test]
     fn the_three_modes_are_spelled_in_lower_case_and_an_unknown_word_reads_as_background() {
-        for (text, mode) in [("off", VerifyMode::Off), ("background", VerifyMode::Background), ("blocking", VerifyMode::Blocking)] {
-            let settings: Settings = serde_json::from_str(&format!(r#"{{ "verifyMode": "{text}" }}"#)).unwrap();
+        for (text, mode) in [
+            ("off", VerifyMode::Off),
+            ("background", VerifyMode::Background),
+            ("blocking", VerifyMode::Blocking),
+        ] {
+            let settings: Settings =
+                serde_json::from_str(&format!(r#"{{ "verifyMode": "{text}" }}"#)).unwrap();
             assert_eq!(settings.verify_mode, mode, "{text}");
             assert_eq!(serde_json::to_value(mode).unwrap(), text);
         }
         // A typo must not throw the rest of the settings away.
-        let typo: Settings = serde_json::from_str(r#"{ "verifyMode": "blokcing", "maxSteps": 7 }"#).expect("still loads");
-        assert_eq!((typo.verify_mode, typo.max_steps), (VerifyMode::Background, 7));
-        assert_eq!(serde_json::to_value(Settings::default()).unwrap()["verifyMode"], "background");
+        let typo: Settings = serde_json::from_str(r#"{ "verifyMode": "blokcing", "maxSteps": 7 }"#)
+            .expect("still loads");
+        assert_eq!(
+            (typo.verify_mode, typo.max_steps),
+            (VerifyMode::Background, 7)
+        );
+        assert_eq!(
+            serde_json::to_value(Settings::default()).unwrap()["verifyMode"],
+            "background"
+        );
     }
 }

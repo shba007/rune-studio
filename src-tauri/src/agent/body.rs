@@ -11,8 +11,9 @@ use tauri::{AppHandle, Emitter};
 use crate::{
     events::{self, Point, StepFinished, StepStarted},
     exec::{
-        CancelToken, ExecError, apps, caret, uia,
+        CancelToken, ExecError, apps, caret,
         input::{Input, MouseButton, cursor_position, glide_duration, typing_duration},
+        uia,
     },
     model::coords::{Monitor, model_to_pixels},
 };
@@ -36,7 +37,12 @@ pub fn settle_time(action: &Action) -> Duration {
 /// What the control overlay shows for an action: a caption detail, and for clicks where they land.
 fn visual(action: &Action, monitor: &Monitor) -> (String, Option<Point>, bool, &'static str) {
     match action {
-        Action::Click { x, y, button, double } => {
+        Action::Click {
+            x,
+            y,
+            button,
+            double,
+        } => {
             let (px, py) = model_to_pixels(monitor, *x, *y);
             let name = match button {
                 MouseButton::Left => "left",
@@ -57,9 +63,19 @@ fn visual(action: &Action, monitor: &Monitor) -> (String, Option<Point>, bool, &
             };
             (String::new(), point, *double, name)
         }
-        Action::Scroll { x, y, direction, amount } => {
+        Action::Scroll {
+            x,
+            y,
+            direction,
+            amount,
+        } => {
             let (px, py) = model_to_pixels(monitor, *x, *y);
-            (format!("{} {amount}", direction.name()), Some(Point { x: px, y: py }), false, "left")
+            (
+                format!("{} {amount}", direction.name()),
+                Some(Point { x: px, y: py }),
+                false,
+                "left",
+            )
         }
         Action::Drag { from, .. } => {
             let (px, py) = model_to_pixels(monitor, from.0, from.1);
@@ -76,13 +92,26 @@ fn visual(action: &Action, monitor: &Monitor) -> (String, Option<Point>, bool, &
 
 /// Tells the UI a step is starting (status line, overlay caption and ripple). Returns the one-line
 /// description of the action for the history.
-pub fn announce(app: &AppHandle, step: u32, reason: &str, action: &Action, monitor: &Monitor) -> String {
+pub fn announce(
+    app: &AppHandle,
+    step: u32,
+    reason: &str,
+    action: &Action,
+    monitor: &Monitor,
+) -> String {
     let described = action.describe();
     let (detail, point, double, button) = visual(action, monitor);
     let duration_ms = match (action, &point) {
-        (Action::Click { .. } | Action::ClickElement { .. } | Action::Scroll { .. } | Action::Drag { .. }, Some(target)) => {
+        (
+            Action::Click { .. }
+            | Action::ClickElement { .. }
+            | Action::Scroll { .. }
+            | Action::Drag { .. },
+            Some(target),
+        ) => {
             let (from_x, from_y) = cursor_position().unwrap_or((target.x, target.y));
-            glide_duration(f64::from(target.x - from_x).hypot(f64::from(target.y - from_y))).as_millis() as u64
+            glide_duration(f64::from(target.x - from_x).hypot(f64::from(target.y - from_y)))
+                .as_millis() as u64
         }
         (Action::TypeText { text }, _) => typing_duration(text).as_millis() as u64,
         _ => 0,
@@ -93,7 +122,11 @@ pub fn announce(app: &AppHandle, step: u32, reason: &str, action: &Action, monit
             step,
             tool: action.tool_name(),
             reason: reason.to_string(),
-            text: if reason.is_empty() { described.clone() } else { reason.to_string() },
+            text: if reason.is_empty() {
+                described.clone()
+            } else {
+                reason.to_string()
+            },
             detail,
             point,
             double,
@@ -106,7 +139,13 @@ pub fn announce(app: &AppHandle, step: u32, reason: &str, action: &Action, monit
 
 /// Tells the UI the agent is looking at the screen (or a zoomed part of it).
 pub fn announce_observe(app: &AppHandle, region: Option<[f64; 4]>) {
-    let _ = app.emit(events::OBSERVE_STARTED, events::ObserveStarted { region, continuous: false });
+    let _ = app.emit(
+        events::OBSERVE_STARTED,
+        events::ObserveStarted {
+            region,
+            continuous: false,
+        },
+    );
 }
 
 /// Tells the UI how a step ended.
@@ -120,11 +159,18 @@ pub fn finish_step(app: &AppHandle, step: u32, result: &Result<(), ExecError>) {
 
 /// Performs an action and tells the UI what it did: for typed text, where it went, so the overlay
 /// can mark the spot the way it marks a click.
-pub fn execute_reporting(app: &AppHandle, action: &Action, monitor: &Monitor, cancel: &CancelToken) -> Result<(), ExecError> {
+pub fn execute_reporting(
+    app: &AppHandle,
+    action: &Action,
+    monitor: &Monitor,
+    cancel: &CancelToken,
+) -> Result<(), ExecError> {
     let result = execute(action, monitor, cancel);
     if result.is_ok() && matches!(action, Action::TypeText { .. }) {
         // Apps that do not report a caret still have the mouse where the agent clicked to focus them.
-        let point = caret::position().or_else(cursor_position).map(|(x, y)| Point { x, y });
+        let point = caret::position()
+            .or_else(cursor_position)
+            .map(|(x, y)| Point { x, y });
         let _ = app.emit(events::TYPED, events::Typed { point });
     }
     result
@@ -142,7 +188,12 @@ pub fn centre_cursor(monitor: &Monitor, cancel: &CancelToken) -> Result<(), Exec
 /// caller's business.
 pub fn execute(action: &Action, monitor: &Monitor, cancel: &CancelToken) -> Result<(), ExecError> {
     match action {
-        Action::Click { x, y, button, double } => {
+        Action::Click {
+            x,
+            y,
+            button,
+            double,
+        } => {
             let (px, py) = model_to_pixels(monitor, *x, *y);
             Input::new()?.click(px, py, *button, *double, cancel)
         }
@@ -152,7 +203,12 @@ pub fn execute(action: &Action, monitor: &Monitor, cancel: &CancelToken) -> Resu
             let (px, py) = element.centre();
             Input::new()?.click(px, py, *button, *double, cancel)
         }
-        Action::Scroll { x, y, direction, amount } => {
+        Action::Scroll {
+            x,
+            y,
+            direction,
+            amount,
+        } => {
             let (px, py) = model_to_pixels(monitor, *x, *y);
             Input::new()?.scroll(px, py, *direction, *amount, cancel)
         }

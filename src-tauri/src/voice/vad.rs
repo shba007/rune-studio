@@ -53,12 +53,16 @@ impl Default for Segmenter {
 }
 
 fn level_db(frame: &[f32]) -> f32 {
-    let mean_square = frame.iter().map(|sample| sample * sample).sum::<f32>() / frame.len().max(1) as f32;
+    let mean_square =
+        frame.iter().map(|sample| sample * sample).sum::<f32>() / frame.len().max(1) as f32;
     10.0 * mean_square.max(1e-12).log10()
 }
 
 fn to_pcm(frame: &[f32]) -> Vec<i16> {
-    frame.iter().map(|sample| (sample.clamp(-1.0, 1.0) * f32::from(i16::MAX)) as i16).collect()
+    frame
+        .iter()
+        .map(|sample| (sample.clamp(-1.0, 1.0) * f32::from(i16::MAX)) as i16)
+        .collect()
 }
 
 impl Segmenter {
@@ -129,7 +133,11 @@ impl Segmenter {
         self.quiet_run = 0;
         self.speech_frames = 0;
         self.pre_roll.clear();
-        let keep = utterance.len().saturating_sub(trim).max(FRAME).min(utterance.len());
+        let keep = utterance
+            .len()
+            .saturating_sub(trim)
+            .max(FRAME)
+            .min(utterance.len());
         long_enough.then(|| utterance[..keep].to_vec())
     }
 }
@@ -150,11 +158,21 @@ pub struct Resampler {
 
 impl Resampler {
     pub fn new(input_rate: u32, channels: u16) -> Self {
-        Self { channels: usize::from(channels).max(1), ratio: f64::from(input_rate) / f64::from(RATE), sum: 0.0, count: 0.0, position: 0.0, frame_sum: 0.0, frame_count: 0 }
+        Self {
+            channels: usize::from(channels).max(1),
+            ratio: f64::from(input_rate) / f64::from(RATE),
+            sum: 0.0,
+            count: 0.0,
+            position: 0.0,
+            frame_sum: 0.0,
+            frame_count: 0,
+        }
     }
 
     pub fn push(&mut self, interleaved: &[f32]) -> Vec<f32> {
-        let mut out = Vec::with_capacity(interleaved.len() / self.channels / (self.ratio as usize).max(1) + 1);
+        let mut out = Vec::with_capacity(
+            interleaved.len() / self.channels / (self.ratio as usize).max(1) + 1,
+        );
         for sample in interleaved {
             self.frame_sum += sample;
             self.frame_count += 1;
@@ -185,7 +203,9 @@ mod tests {
 
     /// A tone as loud as speech, `seconds` long, at 16 kHz.
     fn tone(seconds: f32, amplitude: f32) -> Vec<f32> {
-        (0..(seconds * RATE as f32) as usize).map(|i| amplitude * (i as f32 * 0.35).sin()).collect()
+        (0..(seconds * RATE as f32) as usize)
+            .map(|i| amplitude * (i as f32 * 0.35).sin())
+            .collect()
     }
 
     fn silence(seconds: f32) -> Vec<f32> {
@@ -211,13 +231,25 @@ mod tests {
 
     #[test]
     fn two_phrases_with_a_pause_are_two_utterances() {
-        let found = run(&[silence(0.5), tone(0.8, 0.2), silence(1.2), tone(0.8, 0.2), silence(1.2)]);
+        let found = run(&[
+            silence(0.5),
+            tone(0.8, 0.2),
+            silence(1.2),
+            tone(0.8, 0.2),
+            silence(1.2),
+        ]);
         assert_eq!(found.len(), 2);
     }
 
     #[test]
     fn a_short_pause_inside_a_phrase_does_not_split_it() {
-        let found = run(&[silence(0.5), tone(0.6, 0.2), silence(0.3), tone(0.6, 0.2), silence(1.2)]);
+        let found = run(&[
+            silence(0.5),
+            tone(0.6, 0.2),
+            silence(0.3),
+            tone(0.6, 0.2),
+            silence(1.2),
+        ]);
         assert_eq!(found.len(), 1);
     }
 

@@ -20,7 +20,10 @@ use windows::Win32::{
 };
 
 use crate::{
-    exec::{CancelToken, ExecError, input::{Input, MouseButton}},
+    exec::{
+        CancelToken, ExecError,
+        input::{Input, MouseButton},
+    },
     model::coords::{model_to_pixels, pixels_to_model},
     observe::screenshot::{self, MODEL_JPEG_QUALITY, MODEL_MAX_EDGE},
 };
@@ -36,7 +39,9 @@ fn make_dpi_aware() {
 
 fn number(name: &str) -> f64 {
     env::var(name)
-        .unwrap_or_else(|_| panic!("{name} is not set; run these through scripts/m1-system-test.ps1"))
+        .unwrap_or_else(|_| {
+            panic!("{name} is not set; run these through scripts/m1-system-test.ps1")
+        })
         .parse()
         .unwrap_or_else(|_| panic!("{name} is not a number"))
 }
@@ -91,7 +96,10 @@ fn assert_target_has_focus() {
     let mut process_id = 0_u32;
     unsafe { GetWindowThreadProcessId(GetForegroundWindow(), Some(&mut process_id)) };
     let target = number("RUNE_TARGET_PID") as u32;
-    assert_eq!(process_id, target, "the target window does not have focus; refusing to type");
+    assert_eq!(
+        process_id, target,
+        "the target window does not have focus; refusing to type"
+    );
 }
 
 fn focus_textbox(input: &mut Input, cancel: &CancelToken) {
@@ -131,8 +139,14 @@ fn cursor_lands_exactly_on_every_probe_point() {
         let (cx, cy) = cursor();
         let error = (cx - px).abs().max((cy - py).abs());
         worst = worst.max(error);
-        println!("model ({x:>6.1},{y:>6.1}) -> pixel ({px:>4},{py:>4}) cursor ({cx:>4},{cy:>4}) error {error}px");
-        assert_eq!((cx, cy), (px, py), "cursor is off target at model ({x}, {y})");
+        println!(
+            "model ({x:>6.1},{y:>6.1}) -> pixel ({px:>4},{py:>4}) cursor ({cx:>4},{cy:>4}) error {error}px"
+        );
+        assert_eq!(
+            (cx, cy),
+            (px, py),
+            "cursor is off target at model ({x}, {y})"
+        );
     }
     println!("worst error: {worst}px over {} points", probes.len());
 }
@@ -159,8 +173,15 @@ fn clicks_arrive_at_the_requested_pixel_with_the_right_button() {
             (events.len() >= expected_events).then_some(events)
         });
         let last = events.last().unwrap();
-        println!("{button:?} double={double}: target saw ({}, {}) {} x{}", last.0, last.1, last.2, last.3);
-        assert_eq!((last.0, last.1), (px, py), "click landed on the wrong pixel");
+        println!(
+            "{button:?} double={double}: target saw ({}, {}) {} x{}",
+            last.0, last.1, last.2, last.3
+        );
+        assert_eq!(
+            (last.0, last.1),
+            (px, py),
+            "click landed on the wrong pixel"
+        );
         assert_eq!(last.2, expect_button);
         assert_eq!(last.3, expect_clicks, "click count");
     }
@@ -175,7 +196,9 @@ fn typing_and_key_combos_reach_the_focused_field() {
     focus_textbox(&mut input, &cancel);
 
     // Select everything and clear, so the test does not depend on what was there before.
-    input.press_keys(&["ctrl".into(), "a".into()], &cancel).unwrap();
+    input
+        .press_keys(&["ctrl".into(), "a".into()], &cancel)
+        .unwrap();
     input.press_keys(&["backspace".into()], &cancel).unwrap();
 
     let sample = "Hello, wörld! 123 #@% é你好";
@@ -187,9 +210,13 @@ fn typing_and_key_combos_reach_the_focused_field() {
     println!("typed ok: {typed:?}");
 
     // A combination: Ctrl+A selects all, then typing replaces the selection.
-    input.press_keys(&["ctrl".into(), "a".into()], &cancel).unwrap();
+    input
+        .press_keys(&["ctrl".into(), "a".into()], &cancel)
+        .unwrap();
     input.type_text("X", &cancel).unwrap();
-    eventually("Ctrl+A then X to replace the text", || (textbox() == "X").then_some(()));
+    eventually("Ctrl+A then X to replace the text", || {
+        (textbox() == "X").then_some(())
+    });
 
     // A modifier must not stay stuck down after a combination.
     thread::sleep(Duration::from_millis(100));
@@ -210,7 +237,9 @@ fn stop_interrupts_typing_mid_sentence() {
     let cancel = CancelToken::default();
     let mut input = Input::new().unwrap();
     focus_textbox(&mut input, &cancel);
-    input.press_keys(&["ctrl".into(), "a".into()], &cancel).unwrap();
+    input
+        .press_keys(&["ctrl".into(), "a".into()], &cancel)
+        .unwrap();
     input.press_keys(&["backspace".into()], &cancel).unwrap();
 
     let long = "stop me ".repeat(120);
@@ -227,13 +256,26 @@ fn stop_interrupts_typing_mid_sentence() {
     let elapsed = started.elapsed();
     stopper.join().unwrap();
 
-    assert!(matches!(outcome, Err(ExecError::Cancelled)), "typing was not cancelled: {outcome:?}");
+    assert!(
+        matches!(outcome, Err(ExecError::Cancelled)),
+        "typing was not cancelled: {outcome:?}"
+    );
     thread::sleep(Duration::from_millis(300));
     let typed = textbox();
-    println!("typed {} of {} characters before Stop, in {elapsed:?}", typed.chars().count(), long.chars().count());
+    println!(
+        "typed {} of {} characters before Stop, in {elapsed:?}",
+        typed.chars().count(),
+        long.chars().count()
+    );
     assert!(!typed.is_empty(), "nothing was typed before Stop");
-    assert!(typed.chars().count() < long.chars().count(), "Stop did not interrupt typing");
-    assert!(elapsed < Duration::from_millis(900), "Stop took too long to take effect: {elapsed:?}");
+    assert!(
+        typed.chars().count() < long.chars().count(),
+        "Stop did not interrupt typing"
+    );
+    assert!(
+        elapsed < Duration::from_millis(900),
+        "Stop took too long to take effect: {elapsed:?}"
+    );
 }
 
 #[test]
@@ -280,7 +322,10 @@ fn the_model_sees_the_target_where_the_mapping_says() {
         (left + width / 2, top - margin),
         (left + width / 2, top + height + margin),
     ] {
-        assert!(!is_magenta(x, y), "unexpected magenta at pixel ({x}, {y}) outside the target");
+        assert!(
+            !is_magenta(x, y),
+            "unexpected magenta at pixel ({x}, {y}) outside the target"
+        );
     }
 }
 
@@ -312,7 +357,10 @@ fn foreground_title() -> String {
 #[ignore = "opens Notepad and types into it"]
 fn the_caret_is_found_in_notepad() {
     use windows::{
-        Win32::{Foundation::RECT, UI::WindowsAndMessaging::{FindWindowW, GetWindowRect}},
+        Win32::{
+            Foundation::RECT,
+            UI::WindowsAndMessaging::{FindWindowW, GetWindowRect},
+        },
         core::w,
     };
     make_dpi_aware();
@@ -328,14 +376,32 @@ fn the_caret_is_found_in_notepad() {
         GetWindowRect(window, &mut rect).unwrap();
     }
     let mut input = Input::new().unwrap();
-    input.click((rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2, MouseButton::Left, false, &cancel).unwrap();
+    input
+        .click(
+            (rect.left + rect.right) / 2,
+            (rect.top + rect.bottom) / 2,
+            MouseButton::Left,
+            false,
+            &cancel,
+        )
+        .unwrap();
     thread::sleep(Duration::from_millis(500));
     let title = foreground_title();
-    assert!(title.contains("Notepad"), "refusing to type: the focused window is \"{title}\", not Notepad");
+    assert!(
+        title.contains("Notepad"),
+        "refusing to type: the focused window is \"{title}\", not Notepad"
+    );
 
     input.type_text("caret test", &cancel).unwrap();
     thread::sleep(Duration::from_millis(400));
     let caret = crate::exec::caret::position();
-    println!("window: ({}, {}, {}, {}), caret: {caret:?}, mouse: {:?}", rect.left, rect.top, rect.right, rect.bottom, crate::exec::input::cursor_position());
+    println!(
+        "window: ({}, {}, {}, {}), caret: {caret:?}, mouse: {:?}",
+        rect.left,
+        rect.top,
+        rect.right,
+        rect.bottom,
+        crate::exec::input::cursor_position()
+    );
     assert!(caret.is_some(), "the caret could not be located in Notepad");
 }

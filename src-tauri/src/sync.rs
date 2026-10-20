@@ -5,7 +5,10 @@
 //! is left half-written in a way that matters more than being able to stop, so a poisoned lock is
 //! logged once and used anyway.
 
-use std::sync::{Mutex, MutexGuard, atomic::{AtomicBool, Ordering}};
+use std::sync::{
+    Mutex, MutexGuard,
+    atomic::{AtomicBool, Ordering},
+};
 
 static WARNED: AtomicBool = AtomicBool::new(false);
 

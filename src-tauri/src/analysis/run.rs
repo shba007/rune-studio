@@ -2,7 +2,10 @@
 //! frame), ask the model for the `report`, show it, record it. Cancelling (Stop, the Cancel button,
 //! closing the window) drops the model call the same way the agent loop does.
 
-use std::{sync::Arc, time::{Duration, Instant}};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -29,7 +32,10 @@ const CALL_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// How an analysis ended.
 enum Ended {
-    Done { answer: String, findings: Vec<Finding> },
+    Done {
+        answer: String,
+        findings: Vec<Finding>,
+    },
     Failed(String),
     Cancelled,
 }
@@ -45,7 +51,10 @@ fn set_status(app: &AppHandle, status: Status) {
         let state = app.state::<AppState>();
         let mut analysis = state.analysis.locked();
         if !may_follow(analysis.status, status) {
-            log::warn!("analysis status {:?} -> {status:?} is not a step the flow takes", analysis.status);
+            log::warn!(
+                "analysis status {:?} -> {status:?} is not a step the flow takes",
+                analysis.status
+            );
         }
         analysis.status = status;
     }
@@ -60,11 +69,17 @@ pub async fn run(app: &AppHandle, question: &str, fresh: bool) -> AppResult<()> 
     let question = report::question_or_default(question);
     let cancel = {
         let mut analysis = state.analysis.locked();
-        if let Some(why) = refusal(analysis.status, events::agent_state(app).is_running(), state.lease.locked().is_held()) {
+        if let Some(why) = refusal(
+            analysis.status,
+            events::agent_state(app).is_running(),
+            state.lease.locked().is_held(),
+        ) {
             return Err(AppError::Invalid(why.into()));
         }
         if !fresh && analysis.frame.is_none() {
-            return Err(AppError::Invalid("There is no screen to ask about yet. Capture it first.".into()));
+            return Err(AppError::Invalid(
+                "There is no screen to ask about yet. Capture it first.".into(),
+            ));
         }
         analysis.begin(&question, fresh);
         analysis.cancel.clone()
@@ -74,13 +89,19 @@ pub async fn run(app: &AppHandle, question: &str, fresh: bool) -> AppResult<()> 
         let mut analysis = state.analysis.locked();
         analysis.status = Status::Error;
         analysis.error = Some(format!("could not open the analysis window: {err}"));
-        return Err(AppError::Invalid(format!("could not open the analysis window: {err}")));
+        return Err(AppError::Invalid(format!(
+            "could not open the analysis window: {err}"
+        )));
     }
     publish(app);
 
     let started = Instant::now();
     let session = archive::begin_session(&question, "analysis");
-    let session_id = session.as_deref().ok().map(str::to_string).unwrap_or_default();
+    let session_id = session
+        .as_deref()
+        .ok()
+        .map(str::to_string)
+        .unwrap_or_default();
     {
         let mut analysis = state.analysis.locked();
         analysis.id = session_id.clone();
@@ -88,54 +109,113 @@ pub async fn run(app: &AppHandle, question: &str, fresh: bool) -> AppResult<()> 
     }
     let (ended, screenshot_path) = match session {
         Ok(_) => work(app, &question, fresh, &cancel).await,
-        Err(err) => (Ended::Failed(format!("could not open the archive: {err}")), None),
+        Err(err) => (
+            Ended::Failed(format!("could not open the archive: {err}")),
+            None,
+        ),
     };
     let latency_ms = started.elapsed().as_millis() as u64;
-    finish(app, &question, &session_id, ended, screenshot_path, latency_ms);
+    finish(
+        app,
+        &question,
+        &session_id,
+        ended,
+        screenshot_path,
+        latency_ms,
+    );
     Ok(())
 }
 
 /// Captures if asked, then asks the model. Returns how it ended and where the screenshot was stored.
-async fn work(app: &AppHandle, question: &str, fresh: bool, cancel: &CancelToken) -> (Ended, Option<String>) {
+async fn work(
+    app: &AppHandle,
+    question: &str,
+    fresh: bool,
+    cancel: &CancelToken,
+) -> (Ended, Option<String>) {
     let state = app.state::<AppState>();
     let mut path = None;
     if fresh {
-        let captured = unless_stopped(cancel, tauri::async_runtime::spawn_blocking(|| screenshot::capture(None, MODEL_MAX_EDGE, MODEL_JPEG_QUALITY))).await;
+        let captured = unless_stopped(
+            cancel,
+            tauri::async_runtime::spawn_blocking(|| {
+                screenshot::capture(None, MODEL_MAX_EDGE, MODEL_JPEG_QUALITY)
+            }),
+        )
+        .await;
         let frame = match captured {
             None => return (Ended::Cancelled, None),
             Some(Ok(Ok(frame))) => frame,
-            Some(Ok(Err(err))) => return (Ended::Failed(format!("could not see the screen: {err}")), None),
+            Some(Ok(Err(err))) => {
+                return (
+                    Ended::Failed(format!("could not see the screen: {err}")),
+                    None,
+                );
+            }
             Some(Err(err)) => return (Ended::Failed(err.to_string()), None),
         };
         path = Some(frame.path.display().to_string()).filter(|path| !path.is_empty());
-        state.analysis.locked().frame = Some(StoredFrame { jpeg: Arc::new(frame.jpeg), width: frame.width, height: frame.height, monitor: frame.monitor });
+        state.analysis.locked().frame = Some(StoredFrame {
+            jpeg: Arc::new(frame.jpeg),
+            width: frame.width,
+            height: frame.height,
+            monitor: frame.monitor,
+        });
     }
     let Some(frame) = state.analysis.locked().frame.clone() else {
-        return (Ended::Failed("there is no screen to ask about".into()), None);
+        return (
+            Ended::Failed("there is no screen to ask about".into()),
+            None,
+        );
     };
     if !fresh {
         // A new session folder, so the screenshot sits next to the row that is about to describe it.
         match archive::save(archive::Kind::Screenshots, "screen", "jpg", &frame.jpeg) {
             Ok(saved) => path = Some(saved.display().to_string()).filter(|path| !path.is_empty()),
-            Err(err) => return (Ended::Failed(format!("could not store the screenshot: {err}")), None),
+            Err(err) => {
+                return (
+                    Ended::Failed(format!("could not store the screenshot: {err}")),
+                    None,
+                );
+            }
         }
     }
     set_status(app, Status::Asking);
 
     let (settings, api_key) = (state.settings.locked().clone(), settings::api_key());
-    let client = ChatClient { http: &state.http, base_url: &settings.base_url, api_key: api_key.as_deref(), model: &settings.model };
+    let client = ChatClient {
+        http: &state.http,
+        base_url: &settings.base_url,
+        api_key: api_key.as_deref(),
+        model: &settings.model,
+    };
     let image = format!("data:image/jpeg;base64,{}", base64_of(&frame.jpeg));
     let tools = report::tools();
     let request = report::request(question, &image, &tools);
-    let call = async { tokio::time::timeout(CALL_TIMEOUT, client.call_retrying(&request, &mut |_: &str| {})).await };
+    let call = async {
+        tokio::time::timeout(
+            CALL_TIMEOUT,
+            client.call_retrying(&request, &mut |_: &str| {}),
+        )
+        .await
+    };
     let ended = match unless_stopped(cancel, call).await {
         None => Ended::Cancelled,
-        Some(Err(_)) => Ended::Failed(format!("the model did not answer within {} seconds", CALL_TIMEOUT.as_secs())),
+        Some(Err(_)) => Ended::Failed(format!(
+            "the model did not answer within {} seconds",
+            CALL_TIMEOUT.as_secs()
+        )),
         Some(Ok(Err(err))) => Ended::Failed(err.to_string()),
-        Some(Ok(Ok(reply))) if reply.call.name != "report" => Ended::Failed(format!("the model answered with \"{}\" instead of a report", reply.call.name)),
+        Some(Ok(Ok(reply))) if reply.call.name != "report" => Ended::Failed(format!(
+            "the model answered with \"{}\" instead of a report",
+            reply.call.name
+        )),
         Some(Ok(Ok(reply))) => {
             let parsed = report::parse(&reply.call.arguments);
-            Ended::Done { answer: parsed.answer, findings: parsed.findings }
+            Ended::Done {
+                answer: parsed.answer,
+                findings: parsed.findings,
+            }
         }
     };
     (ended, path)
@@ -147,7 +227,14 @@ fn base64_of(bytes: &[u8]) -> String {
 }
 
 /// Shows the end, stores the row and closes the session folder.
-fn finish(app: &AppHandle, question: &str, id: &str, ended: Ended, screenshot_path: Option<String>, latency_ms: u64) {
+fn finish(
+    app: &AppHandle,
+    question: &str,
+    id: &str,
+    ended: Ended,
+    screenshot_path: Option<String>,
+    latency_ms: u64,
+) {
     let state = app.state::<AppState>();
     let model = state.settings.locked().model.clone();
     let (status, label, error) = {
@@ -185,7 +272,10 @@ fn finish(app: &AppHandle, question: &str, id: &str, ended: Ended, screenshot_pa
             status: status.into(),
             error,
             screenshot_path,
-            monitor_json: analysis.frame.as_ref().and_then(|frame| serde_json::to_string(&frame.monitor).ok()),
+            monitor_json: analysis
+                .frame
+                .as_ref()
+                .and_then(|frame| serde_json::to_string(&frame.monitor).ok()),
         }
     };
     if !id.is_empty() {

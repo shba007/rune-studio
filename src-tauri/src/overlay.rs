@@ -20,7 +20,13 @@ const LINGER_AFTER_END: Duration = Duration::from_millis(6_500);
 /// States in which the agent is driving the PC.
 pub fn has_control(state: AgentState) -> bool {
     // Planning too: that is when the model thinks, and the overlay shows what it is saying.
-    matches!(state, AgentState::Planning | AgentState::Observing | AgentState::Acting | AgentState::AwaitingConfirm)
+    matches!(
+        state,
+        AgentState::Planning
+            | AgentState::Observing
+            | AgentState::Acting
+            | AgentState::AwaitingConfirm
+    )
 }
 
 /// Shows or hides the overlay for the new state. Safe to call from any thread.
@@ -35,14 +41,22 @@ pub fn sync(app: &AppHandle, state: AgentState) {
             show(&handle);
         } else {
             crate::cursor::restore();
-            let linger = if matches!(state, AgentState::Done | AgentState::Failed) { LINGER_AFTER_END } else { FADE_OUT };
+            let linger = if matches!(state, AgentState::Done | AgentState::Failed) {
+                LINGER_AFTER_END
+            } else {
+                FADE_OUT
+            };
             hide_after_fade(&handle, linger);
         }
     });
 }
 
 fn overlays(app: &AppHandle) -> Vec<tauri::WebviewWindow> {
-    app.webview_windows().into_iter().filter(|(label, _)| label.starts_with(PREFIX)).map(|(_, window)| window).collect()
+    app.webview_windows()
+        .into_iter()
+        .filter(|(label, _)| label.starts_with(PREFIX))
+        .map(|(_, window)| window)
+        .collect()
 }
 
 fn show(app: &AppHandle) {
@@ -72,8 +86,14 @@ fn show(app: &AppHandle) {
                 }
             },
         };
-        let _ = window.set_position(PhysicalPosition::new(monitor.position().x, monitor.position().y));
-        let _ = window.set_size(PhysicalSize::new(monitor.size().width, monitor.size().height));
+        let _ = window.set_position(PhysicalPosition::new(
+            monitor.position().x,
+            monitor.position().y,
+        ));
+        let _ = window.set_size(PhysicalSize::new(
+            monitor.size().width,
+            monitor.size().height,
+        ));
         show_without_focus(&window);
     }
     // The pill sits above the frame, never under it.
@@ -83,18 +103,22 @@ fn show(app: &AppHandle) {
 }
 
 fn build(app: &AppHandle, label: &str) -> tauri::Result<tauri::WebviewWindow> {
-    let window = WebviewWindowBuilder::new(app, label, WebviewUrl::App("index.html?view=overlay".into()))
-        .title("Rune Studio overlay")
-        .decorations(false)
-        .transparent(true)
-        .shadow(false)
-        .resizable(false)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .focused(false)
-        .focusable(false)
-        .visible(false)
-        .build()?;
+    let window = WebviewWindowBuilder::new(
+        app,
+        label,
+        WebviewUrl::App("index.html?view=overlay".into()),
+    )
+    .title("Rune Studio overlay")
+    .decorations(false)
+    .transparent(true)
+    .shadow(false)
+    .resizable(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .focused(false)
+    .focusable(false)
+    .visible(false)
+    .build()?;
     window.set_ignore_cursor_events(true)?;
     crate::window::exclude_from_capture(&window)?;
     Ok(window)

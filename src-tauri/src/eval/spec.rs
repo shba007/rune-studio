@@ -11,7 +11,13 @@ use crate::settings::VerifyMode;
 pub const SUITE_VERSION: u32 = 1;
 
 /// The programs a suite may ask to have closed. Never a browser, never `explorer.exe`.
-pub const KILL_ALLOWLIST: [&str; 5] = ["notepad.exe", "CalculatorApp.exe", "Calculator.exe", "SystemSettings.exe", "mspaint.exe"];
+pub const KILL_ALLOWLIST: [&str; 5] = [
+    "notepad.exe",
+    "CalculatorApp.exe",
+    "Calculator.exe",
+    "SystemSettings.exe",
+    "mspaint.exe",
+];
 
 /// Most repeats a suite may ask for.
 const MAX_REPEATS: u32 = 20;
@@ -43,7 +49,10 @@ pub struct Defaults {
 
 impl Default for Defaults {
     fn default() -> Self {
-        Self { timeout_secs: 240, max_steps: 30 }
+        Self {
+            timeout_secs: 240,
+            max_steps: 30,
+        }
     }
 }
 
@@ -143,7 +152,10 @@ impl Step {
     fn map(&self, f: &dyn Fn(&str) -> String) -> Step {
         match self {
             Step::MakeDir { path } => Step::MakeDir { path: f(path) },
-            Step::WriteFile { path, content } => Step::WriteFile { path: f(path), content: f(content) },
+            Step::WriteFile { path, content } => Step::WriteFile {
+                path: f(path),
+                content: f(content),
+            },
             Step::DeletePath { path } => Step::DeletePath { path: f(path) },
             Step::KillProcess { name } => Step::KillProcess { name: f(name) },
             Step::WaitMs { ms } => Step::WaitMs { ms: *ms },
@@ -152,7 +164,9 @@ impl Step {
 
     fn path(&self) -> Option<&str> {
         match self {
-            Step::MakeDir { path } | Step::WriteFile { path, .. } | Step::DeletePath { path } => Some(path),
+            Step::MakeDir { path } | Step::WriteFile { path, .. } | Step::DeletePath { path } => {
+                Some(path)
+            }
             Step::KillProcess { .. } | Step::WaitMs { .. } => None,
         }
     }
@@ -163,22 +177,38 @@ impl Check {
         match self {
             Check::FileExists { path } => Check::FileExists { path: f(path) },
             Check::DirExists { path } => Check::DirExists { path: f(path) },
-            Check::FileContains { path, text } => Check::FileContains { path: f(path), text: f(text) },
+            Check::FileContains { path, text } => Check::FileContains {
+                path: f(path),
+                text: f(text),
+            },
             Check::FileAbsent { path } => Check::FileAbsent { path: f(path) },
-            Check::AnyWindowTitleContains { text } => Check::AnyWindowTitleContains { text: f(text) },
+            Check::AnyWindowTitleContains { text } => {
+                Check::AnyWindowTitleContains { text: f(text) }
+            }
             Check::ProcessRunning { name } => Check::ProcessRunning { name: f(name) },
-            Check::All { checks } => Check::All { checks: checks.iter().map(|check| check.map(f)).collect() },
-            Check::Any { checks } => Check::Any { checks: checks.iter().map(|check| check.map(f)).collect() },
-            Check::Not { check } => Check::Not { check: Box::new(check.map(f)) },
+            Check::All { checks } => Check::All {
+                checks: checks.iter().map(|check| check.map(f)).collect(),
+            },
+            Check::Any { checks } => Check::Any {
+                checks: checks.iter().map(|check| check.map(f)).collect(),
+            },
+            Check::Not { check } => Check::Not {
+                check: Box::new(check.map(f)),
+            },
         }
     }
 
     /// Every file path the check reads.
     fn collect(&self, paths: &mut Vec<String>) {
         match self {
-            Check::FileExists { path } | Check::DirExists { path } | Check::FileContains { path, .. } | Check::FileAbsent { path } => paths.push(path.clone()),
+            Check::FileExists { path }
+            | Check::DirExists { path }
+            | Check::FileContains { path, .. }
+            | Check::FileAbsent { path } => paths.push(path.clone()),
             Check::ProcessRunning { .. } | Check::AnyWindowTitleContains { .. } => {}
-            Check::All { checks } | Check::Any { checks } => checks.iter().for_each(|check| check.collect(paths)),
+            Check::All { checks } | Check::Any { checks } => {
+                checks.iter().for_each(|check| check.collect(paths))
+            }
             Check::Not { check } => check.collect(paths),
         }
     }
@@ -217,7 +247,10 @@ impl Task {
         }
         for name in &kills {
             if !kill_allowed(name) {
-                return Err(format!("task {}: {name} is not on the list of programs a suite may close", self.id));
+                return Err(format!(
+                    "task {}: {name} is not on the list of programs a suite may close",
+                    self.id
+                ));
             }
         }
         Ok(())
@@ -225,7 +258,9 @@ impl Task {
 
     /// The outcomes that count as the right behaviour for an `expect: failure` task.
     pub fn accepted_outcomes(&self) -> Vec<String> {
-        self.accept_outcomes.clone().unwrap_or_else(|| vec!["reported_failure".to_string(), "stopped".to_string()])
+        self.accept_outcomes
+            .clone()
+            .unwrap_or_else(|| vec!["reported_failure".to_string(), "stopped".to_string()])
     }
 }
 
@@ -242,11 +277,16 @@ pub fn parse_verify_mode(word: &str) -> Option<VerifyMode> {
 impl Suite {
     /// The check mode of this run: what the suite says, else **off**.
     pub fn verify_mode(&self) -> VerifyMode {
-        self.config.verify_mode.as_deref().and_then(parse_verify_mode).unwrap_or(VerifyMode::Off)
+        self.config
+            .verify_mode
+            .as_deref()
+            .and_then(parse_verify_mode)
+            .unwrap_or(VerifyMode::Off)
     }
 
     pub fn parse(text: &str) -> Result<Suite, String> {
-        let suite: Suite = serde_json::from_str(text).map_err(|err| format!("the suite is not valid: {err}"))?;
+        let suite: Suite =
+            serde_json::from_str(text).map_err(|err| format!("the suite is not valid: {err}"))?;
         suite.validate()?;
         Ok(suite)
     }
@@ -254,7 +294,10 @@ impl Suite {
     /// What can be checked without running anything.
     pub fn validate(&self) -> Result<(), String> {
         if self.version != SUITE_VERSION {
-            return Err(format!("the suite is version {}, this build reads version {SUITE_VERSION}", self.version));
+            return Err(format!(
+                "the suite is version {}, this build reads version {SUITE_VERSION}",
+                self.version
+            ));
         }
         if self.tasks.is_empty() {
             return Err("the suite has no tasks".into());
@@ -265,16 +308,25 @@ impl Suite {
         if let Some(word) = &self.config.verify_mode
             && parse_verify_mode(word).is_none()
         {
-            return Err(format!("config.verify_mode \"{word}\" must be off, background or blocking"));
+            return Err(format!(
+                "config.verify_mode \"{word}\" must be off, background or blocking"
+            ));
         }
         if self.defaults.timeout_secs == 0 || self.defaults.max_steps == 0 {
             return Err("the defaults need a timeout and a step limit above zero".into());
         }
         let mut seen: Vec<&str> = Vec::new();
         for task in &self.tasks {
-            let well_formed = !task.id.is_empty() && task.id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+            let well_formed = !task.id.is_empty()
+                && task
+                    .id
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
             if !well_formed {
-                return Err(format!("task id \"{}\" must be lower case letters, digits and dashes", task.id));
+                return Err(format!(
+                    "task id \"{}\" must be lower case letters, digits and dashes",
+                    task.id
+                ));
             }
             if seen.contains(&task.id.as_str()) {
                 return Err(format!("task id \"{}\" is used twice", task.id));
@@ -291,7 +343,10 @@ impl Suite {
                 if let Step::KillProcess { name } = step
                     && !kill_allowed(name)
                 {
-                    return Err(format!("task {}: {name} is not on the list of programs a suite may close", task.id));
+                    return Err(format!(
+                        "task {}: {name} is not on the list of programs a suite may close",
+                        task.id
+                    ));
                 }
             }
         }
@@ -301,7 +356,9 @@ impl Suite {
 
 /// Whether a suite may close this program (case does not matter).
 pub fn kill_allowed(name: &str) -> bool {
-    KILL_ALLOWLIST.iter().any(|allowed| allowed.eq_ignore_ascii_case(name))
+    KILL_ALLOWLIST
+        .iter()
+        .any(|allowed| allowed.eq_ignore_ascii_case(name))
 }
 
 /// Accepts a path only if it is absolute, has no `..`, lies inside one of `roots`, and (where it
@@ -311,11 +368,16 @@ pub fn jail(path: &str, roots: &[PathBuf]) -> Result<PathBuf, String> {
     if !candidate.is_absolute() {
         return Err(format!("path \"{path}\" is not an absolute path"));
     }
-    if candidate.components().any(|part| matches!(part, Component::ParentDir)) {
+    if candidate
+        .components()
+        .any(|part| matches!(part, Component::ParentDir))
+    {
         return Err(format!("path \"{path}\" has a \"..\" in it"));
     }
     let Some(root) = roots.iter().find(|root| candidate.starts_with(root)) else {
-        return Err(format!("path \"{path}\" is outside the work and output folders"));
+        return Err(format!(
+            "path \"{path}\" is outside the work and output folders"
+        ));
     };
     // The nearest part of the path that exists must still be inside the root once links are followed.
     let existing = candidate.ancestors().find(|part| part.exists());
@@ -323,7 +385,9 @@ pub fn jail(path: &str, roots: &[PathBuf]) -> Result<PathBuf, String> {
         && let (Ok(real), Ok(real_root)) = (existing.canonicalize(), root.canonicalize())
         && !real.starts_with(&real_root)
     {
-        return Err(format!("path \"{path}\" leads outside the work and output folders through a link"));
+        return Err(format!(
+            "path \"{path}\" leads outside the work and output folders through a link"
+        ));
     }
     Ok(candidate.to_path_buf())
 }

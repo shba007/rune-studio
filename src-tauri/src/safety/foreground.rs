@@ -9,8 +9,13 @@ pub fn current() -> Foreground {
     use windows::{
         Win32::{
             Foundation::CloseHandle,
-            System::Threading::{OpenProcess, PROCESS_NAME_FORMAT, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW},
-            UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId},
+            System::Threading::{
+                OpenProcess, PROCESS_NAME_FORMAT, PROCESS_QUERY_LIMITED_INFORMATION,
+                QueryFullProcessImageNameW,
+            },
+            UI::WindowsAndMessaging::{
+                GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId,
+            },
         },
         core::PWSTR,
     };
@@ -32,9 +37,21 @@ pub fn current() -> Foreground {
         if let Ok(handle) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, process_id) {
             let mut path = [0_u16; 520];
             let mut size = path.len() as u32;
-            if QueryFullProcessImageNameW(handle, PROCESS_NAME_FORMAT(0), PWSTR(path.as_mut_ptr()), &mut size).is_ok() {
+            if QueryFullProcessImageNameW(
+                handle,
+                PROCESS_NAME_FORMAT(0),
+                PWSTR(path.as_mut_ptr()),
+                &mut size,
+            )
+            .is_ok()
+            {
                 let full = String::from_utf16_lossy(&path[..size as usize]).to_lowercase();
-                process = full.rsplit(['\\', '/']).next().unwrap_or("").trim_end_matches(".exe").to_string();
+                process = full
+                    .rsplit(['\\', '/'])
+                    .next()
+                    .unwrap_or("")
+                    .trim_end_matches(".exe")
+                    .to_string();
             }
             let _ = CloseHandle(handle);
         }
@@ -66,7 +83,12 @@ pub enum Restore {
 /// appeared (`None` when it could not be read), `own` whether it belonged to Rune Studio itself,
 /// `now` the foreground window now and `alive` whether the remembered window still exists.
 #[cfg_attr(not(windows), allow(dead_code))]
-pub fn plan_restore(remembered: Option<WindowId>, own: bool, now: Option<WindowId>, alive: bool) -> Restore {
+pub fn plan_restore(
+    remembered: Option<WindowId>,
+    own: bool,
+    now: Option<WindowId>,
+    alive: bool,
+) -> Restore {
     match remembered {
         None => Restore::Nothing,
         Some(_) if own => Restore::Nothing,
@@ -106,7 +128,9 @@ pub fn remember() -> Option<WindowId> {
 pub async fn give_back(remembered: Option<WindowId>) -> Result<(), &'static str> {
     use windows::Win32::{
         Foundation::HWND,
-        UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId, IsWindow, SetForegroundWindow},
+        UI::WindowsAndMessaging::{
+            GetForegroundWindow, GetWindowThreadProcessId, IsWindow, SetForegroundWindow,
+        },
     };
 
     let handle = |id: WindowId| HWND(id as *mut core::ffi::c_void);
@@ -122,7 +146,9 @@ pub async fn give_back(remembered: Option<WindowId>) -> Result<(), &'static str>
     };
     let alive = |id: WindowId| unsafe { IsWindow(Some(handle(id))).as_bool() };
 
-    let Some(window) = remembered else { return Ok(()) };
+    let Some(window) = remembered else {
+        return Ok(());
+    };
     match plan_restore(remembered, own(window), now(), alive(window)) {
         Restore::Nothing => Ok(()),
         Restore::Gone => Err("the window for this action is gone"),
@@ -168,7 +194,13 @@ fn token_is_elevated(process: windows::Win32::Foundation::HANDLE) -> Option<bool
         }
         let mut elevation = TOKEN_ELEVATION::default();
         let mut returned = 0_u32;
-        let read = GetTokenInformation(token, TokenElevation, Some(&mut elevation as *mut TOKEN_ELEVATION as *mut core::ffi::c_void), std::mem::size_of::<TOKEN_ELEVATION>() as u32, &mut returned);
+        let read = GetTokenInformation(
+            token,
+            TokenElevation,
+            Some(&mut elevation as *mut TOKEN_ELEVATION as *mut core::ffi::c_void),
+            std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+            &mut returned,
+        );
         let _ = CloseHandle(token);
         read.ok().map(|()| elevation.TokenIsElevated != 0)
     }
@@ -211,7 +243,8 @@ fn app_is_elevated() -> bool {
         #[cfg(windows)]
         {
             // SAFETY: GetCurrentProcess returns a pseudo handle that needs no closing.
-            token_is_elevated(unsafe { windows::Win32::System::Threading::GetCurrentProcess() }).unwrap_or(false)
+            token_is_elevated(unsafe { windows::Win32::System::Threading::GetCurrentProcess() })
+                .unwrap_or(false)
         }
         #[cfg(not(windows))]
         {
@@ -231,20 +264,36 @@ mod tests {
 
     #[test]
     fn nothing_is_done_when_the_target_still_has_the_keyboard_or_was_never_known() {
-        assert_eq!(plan_restore(Some(10), false, Some(10), true), Restore::Nothing);
+        assert_eq!(
+            plan_restore(Some(10), false, Some(10), true),
+            Restore::Nothing
+        );
         assert_eq!(plan_restore(None, false, Some(10), true), Restore::Nothing);
-        assert_eq!(plan_restore(Some(10), true, Some(99), true), Restore::Nothing, "Rune's own window is not a target");
+        assert_eq!(
+            plan_restore(Some(10), true, Some(99), true),
+            Restore::Nothing,
+            "Rune's own window is not a target"
+        );
     }
 
     #[test]
     fn the_target_gets_the_keyboard_back_when_answering_took_it() {
-        assert_eq!(plan_restore(Some(10), false, Some(99), true), Restore::Refocus(10));
-        assert_eq!(plan_restore(Some(10), false, None, true), Restore::Refocus(10));
+        assert_eq!(
+            plan_restore(Some(10), false, Some(99), true),
+            Restore::Refocus(10)
+        );
+        assert_eq!(
+            plan_restore(Some(10), false, None, true),
+            Restore::Refocus(10)
+        );
     }
 
     #[test]
     fn a_target_that_is_gone_stops_the_action() {
-        assert_eq!(plan_restore(Some(10), false, Some(99), false), Restore::Gone);
+        assert_eq!(
+            plan_restore(Some(10), false, Some(99), false),
+            Restore::Gone
+        );
         assert_eq!(plan_restore(Some(10), false, None, false), Restore::Gone);
     }
 }

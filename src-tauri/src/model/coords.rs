@@ -64,7 +64,11 @@ pub fn pixels_to_model(monitor: &Monitor, px: i32, py: i32) -> (f64, f64) {
 }
 
 fn axis_to_pixel(value: f64, extent: u32) -> i32 {
-    let clamped = if value.is_nan() { 0.0 } else { value.clamp(0.0, MODEL_MAX) };
+    let clamped = if value.is_nan() {
+        0.0
+    } else {
+        value.clamp(0.0, MODEL_MAX)
+    };
     let pixel = (clamped / MODEL_MAX * f64::from(extent)).floor() as i64;
     pixel.clamp(0, i64::from(extent) - 1) as i32
 }
@@ -91,7 +95,15 @@ mod tests {
     use super::*;
 
     fn monitor(x: i32, y: i32, width: u32, height: u32, scale_factor: f32) -> Monitor {
-        Monitor { id: 1, x, y, width, height, scale_factor, primary: x == 0 && y == 0 }
+        Monitor {
+            id: 1,
+            x,
+            y,
+            width,
+            height,
+            scale_factor,
+            primary: x == 0 && y == 0,
+        }
     }
 
     /// Representative layouts: plain 1080p, then physical sizes at 125% and 150% scaling,
@@ -134,23 +146,45 @@ mod tests {
             // Every column and every row, checked independently (the axes do not interact).
             for dx in 0..m.width as i32 {
                 let (mx, _) = pixels_to_model(&m, m.x + dx, m.y);
-                assert_eq!(model_to_pixels(&m, mx, 0.0).0, m.x + dx, "column {dx} on {m:?}");
+                assert_eq!(
+                    model_to_pixels(&m, mx, 0.0).0,
+                    m.x + dx,
+                    "column {dx} on {m:?}"
+                );
             }
             for dy in 0..m.height as i32 {
                 let (_, my) = pixels_to_model(&m, m.x, m.y + dy);
-                assert_eq!(model_to_pixels(&m, 0.0, my).1, m.y + dy, "row {dy} on {m:?}");
+                assert_eq!(
+                    model_to_pixels(&m, 0.0, my).1,
+                    m.y + dy,
+                    "row {dy} on {m:?}"
+                );
             }
         }
     }
 
     #[test]
     fn a_click_never_leaves_its_monitor() {
-        let probes = [-50.0, -0.0001, 0.0, 0.5, 333.3, 999.999, 1000.0, 1000.0001, 5000.0, f64::NAN];
+        let probes = [
+            -50.0,
+            -0.0001,
+            0.0,
+            0.5,
+            333.3,
+            999.999,
+            1000.0,
+            1000.0001,
+            5000.0,
+            f64::NAN,
+        ];
         for m in layouts() {
             for &x in &probes {
                 for &y in &probes {
                     let (px, py) = model_to_pixels(&m, x, y);
-                    assert!(m.contains(px, py), "({x}, {y}) escaped {m:?} as ({px}, {py})");
+                    assert!(
+                        m.contains(px, py),
+                        "({x}, {y}) escaped {m:?} as ({px}, {py})"
+                    );
                 }
             }
         }
@@ -196,7 +230,13 @@ mod tests {
         let model = (0.4 * 1000.0, 0.7 * 1000.0);
         // ...is 40% / 70% of the *physical* monitor too.
         let (px, py) = model_to_pixels(&m, model.0, model.1);
-        assert_eq!((px, py), ((0.4 * f64::from(m.width)) as i32, (0.7 * f64::from(m.height)) as i32));
+        assert_eq!(
+            (px, py),
+            (
+                (0.4 * f64::from(m.width)) as i32,
+                (0.7 * f64::from(m.height)) as i32
+            )
+        );
         assert_eq!((sw, sh), (1280, 720));
     }
 }

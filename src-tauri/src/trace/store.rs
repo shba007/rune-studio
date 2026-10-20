@@ -62,28 +62,52 @@ fn apply(db: &Connection, message: &Msg) -> rusqlite::Result<()> {
         }
         Msg::SetPlan { run_id, plan_json } => {
             ensure_run(db, run_id)?;
-            db.execute("UPDATE runs SET plan_json = ?2 WHERE id = ?1", params![run_id, plan_json])?;
+            db.execute(
+                "UPDATE runs SET plan_json = ?2 WHERE id = ?1",
+                params![run_id, plan_json],
+            )?;
         }
         Msg::Step(record) => {
             ensure_run(db, &record.run_id)?;
             // A piece overwrites only what it carries.
             let columns = STEP_COLUMNS.join(", ");
-            let marks: Vec<String> = (3..3 + STEP_COLUMNS.len()).map(|n| format!("?{n}")).collect();
-            let updates: Vec<String> = STEP_COLUMNS.iter().map(|column| format!("{column} = COALESCE(excluded.{column}, steps.{column})")).collect();
+            let marks: Vec<String> = (3..3 + STEP_COLUMNS.len())
+                .map(|n| format!("?{n}"))
+                .collect();
+            let updates: Vec<String> = STEP_COLUMNS
+                .iter()
+                .map(|column| format!("{column} = COALESCE(excluded.{column}, steps.{column})"))
+                .collect();
             let sql = format!(
                 "INSERT INTO steps (run_id, step, {columns}) VALUES (?1, ?2, {}) ON CONFLICT(run_id, step) DO UPDATE SET {}",
                 marks.join(", "),
                 updates.join(", ")
             );
-            let mut values: Vec<Value> = vec![Value::Text(record.run_id.clone()), Value::Integer(i64::from(record.step))];
+            let mut values: Vec<Value> = vec![
+                Value::Text(record.run_id.clone()),
+                Value::Integer(i64::from(record.step)),
+            ];
             values.extend(record.values());
             db.execute(&sql, params_from_iter(values))?;
         }
-        Msg::Event { run_id, at_utc, kind, data_json } => {
+        Msg::Event {
+            run_id,
+            at_utc,
+            kind,
+            data_json,
+        } => {
             ensure_run(db, run_id)?;
-            db.execute("INSERT INTO events (run_id, at_utc, kind, data_json) VALUES (?1, ?2, ?3, ?4)", params![run_id, at_utc, kind, data_json])?;
+            db.execute(
+                "INSERT INTO events (run_id, at_utc, kind, data_json) VALUES (?1, ?2, ?3, ?4)",
+                params![run_id, at_utc, kind, data_json],
+            )?;
         }
-        Msg::EndRun { run_id, ended_utc, outcome, summary } => {
+        Msg::EndRun {
+            run_id,
+            ended_utc,
+            outcome,
+            summary,
+        } => {
             // Only the first end counts.
             db.execute("UPDATE runs SET ended_utc = ?2, outcome = ?3, summary = ?4 WHERE id = ?1 AND ended_utc IS NULL", params![run_id, ended_utc, outcome, summary])?;
         }
@@ -170,7 +194,10 @@ pub fn open_read(path: &Path) -> Result<Connection, StoreError> {
     if !path.exists() {
         return Err(StoreError::NotFound);
     }
-    let db = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
+    let db = Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )?;
     db.busy_timeout(std::time::Duration::from_millis(5000))?;
     let version: i64 = db.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if version > schema::VERSION {
@@ -191,13 +218,26 @@ fn has_verdicts(db: &Connection) -> Result<bool, StoreError> {
 }
 
 pub fn list_runs_in(db: &Connection, limit: usize) -> Result<Vec<RunSummary>, StoreError> {
-    let verdict = if has_verdicts(db)? { "(SELECT v.result FROM verdicts v WHERE v.run_id = r.id)" } else { "NULL" };
+    let verdict = if has_verdicts(db)? {
+        "(SELECT v.result FROM verdicts v WHERE v.run_id = r.id)"
+    } else {
+        "NULL"
+    };
     let mut statement = db.prepare(&format!(
         "SELECT r.id, r.started_utc, r.ended_utc, r.source, r.outcome, r.task, (SELECT COUNT(*) FROM steps s WHERE s.run_id = r.id), {verdict}
          FROM runs r ORDER BY r.started_utc DESC, r.rowid DESC LIMIT ?1"
     ))?;
     let rows = statement.query_map([i64::try_from(limit).unwrap_or(i64::MAX)], |row| {
-        Ok(RunSummary { id: row.get(0)?, started_utc: row.get(1)?, ended_utc: row.get(2)?, source: row.get(3)?, outcome: row.get(4)?, task: row.get(5)?, steps: row.get(6)?, verdict: row.get(7)? })
+        Ok(RunSummary {
+            id: row.get(0)?,
+            started_utc: row.get(1)?,
+            ended_utc: row.get(2)?,
+            source: row.get(3)?,
+            outcome: row.get(4)?,
+            task: row.get(5)?,
+            steps: row.get(6)?,
+            verdict: row.get(7)?,
+        })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
 }
@@ -236,11 +276,24 @@ pub fn get_run_in(db: &Connection, id: &str) -> Result<Option<RunDetail>, StoreE
         Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(None),
         Err(err) => return Err(err.into()),
     };
-    let sql = format!("SELECT run_id, step, {} FROM steps WHERE run_id = ?1 ORDER BY step", STEP_COLUMNS.join(", "));
-    let steps = db.prepare(&sql)?.query_map([id], step_from_row)?.collect::<Result<Vec<_>, _>>()?;
+    let sql = format!(
+        "SELECT run_id, step, {} FROM steps WHERE run_id = ?1 ORDER BY step",
+        STEP_COLUMNS.join(", ")
+    );
+    let steps = db
+        .prepare(&sql)?
+        .query_map([id], step_from_row)?
+        .collect::<Result<Vec<_>, _>>()?;
     let events = db
         .prepare("SELECT id, at_utc, kind, data_json FROM events WHERE run_id = ?1 ORDER BY id")?
-        .query_map([id], |row| Ok(EventRow { id: row.get(0)?, at_utc: row.get(1)?, kind: row.get(2)?, data_json: row.get(3)? }))?
+        .query_map([id], |row| {
+            Ok(EventRow {
+                id: row.get(0)?,
+                at_utc: row.get(1)?,
+                kind: row.get(2)?,
+                data_json: row.get(3)?,
+            })
+        })?
         .collect::<Result<Vec<_>, _>>()?;
     let verdict = if has_verdicts(db)? {
         let found = db.query_row(
@@ -269,7 +322,12 @@ pub fn get_run_in(db: &Connection, id: &str) -> Result<Option<RunDetail>, StoreE
     } else {
         None
     };
-    Ok(Some(RunDetail { run, steps, events, verdict }))
+    Ok(Some(RunDetail {
+        run,
+        steps,
+        events,
+        verdict,
+    }))
 }
 
 /// The newest analyses first, at most `limit`. A database older than version 3 has none.
@@ -281,7 +339,10 @@ pub fn list_analyses(path: &Path, limit: usize) -> Result<Vec<AnalysisRecord>, S
     let mut statement = db.prepare(&format!(
         "SELECT {ANALYSIS_COLUMNS} FROM analyses ORDER BY created_utc DESC, rowid DESC LIMIT ?1"
     ))?;
-    let rows = statement.query_map([i64::try_from(limit).unwrap_or(i64::MAX)], analysis_from_row)?;
+    let rows = statement.query_map(
+        [i64::try_from(limit).unwrap_or(i64::MAX)],
+        analysis_from_row,
+    )?;
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
@@ -291,7 +352,11 @@ pub fn get_analysis(path: &Path, id: &str) -> Result<Option<AnalysisRecord>, Sto
     if !has_analyses(&db)? {
         return Ok(None);
     }
-    match db.query_row(&format!("SELECT {ANALYSIS_COLUMNS} FROM analyses WHERE id = ?1"), [id], analysis_from_row) {
+    match db.query_row(
+        &format!("SELECT {ANALYSIS_COLUMNS} FROM analyses WHERE id = ?1"),
+        [id],
+        analysis_from_row,
+    ) {
         Ok(record) => Ok(Some(record)),
         Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
         Err(err) => Err(err.into()),
@@ -306,7 +371,10 @@ fn has_analyses(db: &Connection) -> Result<bool, StoreError> {
 }
 
 fn analysis_from_row(row: &Row<'_>) -> rusqlite::Result<AnalysisRecord> {
-    let text = |index: usize| row.get::<_, Option<String>>(index).map(Option::unwrap_or_default);
+    let text = |index: usize| {
+        row.get::<_, Option<String>>(index)
+            .map(Option::unwrap_or_default)
+    };
     Ok(AnalysisRecord {
         id: row.get(0)?,
         created_utc: text(1)?,

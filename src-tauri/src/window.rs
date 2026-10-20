@@ -89,8 +89,14 @@ fn resize_keeping_corner(app: &AppHandle, width: Option<f64>, height: f64) -> ta
     let mut y = bottom - new.height as i32;
     if let Some(monitor) = window.current_monitor()? {
         let area = monitor.work_area();
-        x = x.clamp(area.position.x, (area.position.x + area.size.width as i32 - new.width as i32).max(area.position.x));
-        y = y.clamp(area.position.y, (area.position.y + area.size.height as i32 - new.height as i32).max(area.position.y));
+        x = x.clamp(
+            area.position.x,
+            (area.position.x + area.size.width as i32 - new.width as i32).max(area.position.x),
+        );
+        y = y.clamp(
+            area.position.y,
+            (area.position.y + area.size.height as i32 - new.height as i32).max(area.position.y),
+        );
     }
     window.set_position(PhysicalPosition::new(x, y))
 }

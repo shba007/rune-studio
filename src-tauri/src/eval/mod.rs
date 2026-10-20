@@ -73,19 +73,42 @@ pub fn poll_decision(state: AgentState, elapsed: Duration, timeout: Duration) ->
 
 /// Whether the run may start: nothing it would close is already open (it would close the user's
 /// own windows), and the model server is there and has the model.
-pub fn preflight(running: &[String], reachable: bool, auth_ok: bool, missing_models: &[String], backend_error: Option<&str>) -> Result<(), String> {
-    let open: Vec<&str> = KILL_ALLOWLIST.iter().copied().filter(|name| running.iter().any(|process| process.eq_ignore_ascii_case(name))).collect();
+pub fn preflight(
+    running: &[String],
+    reachable: bool,
+    auth_ok: bool,
+    missing_models: &[String],
+    backend_error: Option<&str>,
+) -> Result<(), String> {
+    let open: Vec<&str> = KILL_ALLOWLIST
+        .iter()
+        .copied()
+        .filter(|name| {
+            running
+                .iter()
+                .any(|process| process.eq_ignore_ascii_case(name))
+        })
+        .collect();
     if !open.is_empty() {
-        return Err(format!("close these first, the run would close them: {}", open.join(", ")));
+        return Err(format!(
+            "close these first, the run would close them: {}",
+            open.join(", ")
+        ));
     }
     if !reachable {
-        return Err(format!("the model server cannot be reached ({})", backend_error.unwrap_or("no details")));
+        return Err(format!(
+            "the model server cannot be reached ({})",
+            backend_error.unwrap_or("no details")
+        ));
     }
     if !auth_ok {
         return Err("the model server rejected the API key".into());
     }
     if !missing_models.is_empty() {
-        return Err(format!("the model server does not serve: {}", missing_models.join(", ")));
+        return Err(format!(
+            "the model server does not serve: {}",
+            missing_models.join(", ")
+        ));
     }
     Ok(())
 }
@@ -94,8 +117,21 @@ pub fn preflight(running: &[String], reachable: bool, auth_ok: bool, missing_mod
 pub fn file_url(path: &Path) -> String {
     let text = path.display().to_string().replace('\\', "/");
     let text = text.strip_prefix("//?/").unwrap_or(&text);
-    let encoded: String = text.chars().map(|c| if c == ' ' { "%20".to_string() } else { c.to_string() }).collect();
-    if encoded.starts_with('/') { format!("file://{encoded}") } else { format!("file:///{encoded}") }
+    let encoded: String = text
+        .chars()
+        .map(|c| {
+            if c == ' ' {
+                "%20".to_string()
+            } else {
+                c.to_string()
+            }
+        })
+        .collect();
+    if encoded.starts_with('/') {
+        format!("file://{encoded}")
+    } else {
+        format!("file:///{encoded}")
+    }
 }
 
 /// The server's `usage.completion_tokens` has read 1 for every step with thinking off (62 of 62 in the
@@ -109,8 +145,16 @@ pub fn tokens_of(step: &StepRecord) -> Option<(i64, bool)> {
     match step.completion_tokens {
         Some(tokens) if tokens >= USAGE_BELIEVED_FROM => Some((tokens, false)),
         reported => {
-            let chars = step.args_json.as_ref().map_or(0, |args| args.chars().count() as i64) + step.thinking_chars.unwrap_or(0);
-            if chars > 0 { Some(((chars + 3) / 4, true)) } else { reported.map(|tokens| (tokens, false)) }
+            let chars = step
+                .args_json
+                .as_ref()
+                .map_or(0, |args| args.chars().count() as i64)
+                + step.thinking_chars.unwrap_or(0);
+            if chars > 0 {
+                Some(((chars + 3) / 4, true))
+            } else {
+                reported.map(|tokens| (tokens, false))
+            }
         }
     }
 }
@@ -118,7 +162,16 @@ pub fn tokens_of(step: &StepRecord) -> Option<(i64, bool)> {
 /// Sums over a run's steps: decide, observe and act milliseconds, and completion tokens.
 pub fn totals(steps: &[StepRecord]) -> (i64, i64, i64, i64) {
     let sum = |pick: fn(&StepRecord) -> Option<i64>| steps.iter().filter_map(pick).sum::<i64>();
-    (sum(|step| step.decide_ms), sum(|step| step.observe_ms), sum(|step| step.act_ms), steps.iter().filter_map(tokens_of).map(|(tokens, _)| tokens).sum())
+    (
+        sum(|step| step.decide_ms),
+        sum(|step| step.observe_ms),
+        sum(|step| step.act_ms),
+        steps
+            .iter()
+            .filter_map(tokens_of)
+            .map(|(tokens, _)| tokens)
+            .sum(),
+    )
 }
 
 /// What the independent check said about a run, for `results.jsonl`.
@@ -136,7 +189,12 @@ pub struct Verification {
 
 impl Verification {
     pub fn off() -> Self {
-        Self { mode: "off", verdict: None, verify_ms: None, challenged: false }
+        Self {
+            mode: "off",
+            verdict: None,
+            verify_ms: None,
+            challenged: false,
+        }
     }
 }
 
@@ -150,14 +208,33 @@ fn mode_word(mode: VerifyMode) -> &'static str {
 
 /// What to report about the check of one run: the stored verdict, or `timeout` if the harness
 /// waited for a background check and it never came.
-pub fn verification(mode: VerifyMode, stored: Option<&VerdictRecord>, waited_out: bool) -> Verification {
+pub fn verification(
+    mode: VerifyMode,
+    stored: Option<&VerdictRecord>,
+    waited_out: bool,
+) -> Verification {
     if mode == VerifyMode::Off {
         return Verification::off();
     }
     match (stored, waited_out) {
-        (Some(record), _) => Verification { mode: mode_word(mode), verdict: Some(record.result.clone()), verify_ms: record.latency_ms, challenged: record.challenged },
-        (None, true) => Verification { mode: mode_word(mode), verdict: Some("timeout".into()), verify_ms: None, challenged: false },
-        (None, false) => Verification { mode: mode_word(mode), verdict: None, verify_ms: None, challenged: false },
+        (Some(record), _) => Verification {
+            mode: mode_word(mode),
+            verdict: Some(record.result.clone()),
+            verify_ms: record.latency_ms,
+            challenged: record.challenged,
+        },
+        (None, true) => Verification {
+            mode: mode_word(mode),
+            verdict: Some("timeout".into()),
+            verify_ms: None,
+            challenged: false,
+        },
+        (None, false) => Verification {
+            mode: mode_word(mode),
+            verdict: None,
+            verify_ms: None,
+            challenged: false,
+        },
     }
 }
 
@@ -204,7 +281,18 @@ impl RunResult {
 
 /// Builds the result of one run from what was measured.
 #[allow(clippy::too_many_arguments)]
-pub fn build_result(task: &Task, repeat: u32, run_id: &str, outcome: &str, check_passed: bool, steps: &[StepRecord], duration: Duration, denied_prompts: u32, error: Option<String>, verification: Verification) -> RunResult {
+pub fn build_result(
+    task: &Task,
+    repeat: u32,
+    run_id: &str,
+    outcome: &str,
+    check_passed: bool,
+    steps: &[StepRecord],
+    duration: Duration,
+    denied_prompts: u32,
+    error: Option<String>,
+    verification: Verification,
+) -> RunResult {
     let (decide_ms_total, observe_ms_total, act_ms_total, completion_tokens_total) = totals(steps);
     RunResult {
         task: task.id.clone(),
@@ -213,7 +301,11 @@ pub fn build_result(task: &Task, repeat: u32, run_id: &str, outcome: &str, check
         outcome: outcome.to_string(),
         self_reported_success: outcome == "succeeded",
         check_passed,
-        expect: if task.expect == Expect::Failure { "failure" } else { "success" },
+        expect: if task.expect == Expect::Failure {
+            "failure"
+        } else {
+            "success"
+        },
         passed: check::passed(task, check_passed, outcome),
         steps: steps.len(),
         duration_ms: u64::try_from(duration.as_millis()).unwrap_or(u64::MAX),
@@ -221,7 +313,10 @@ pub fn build_result(task: &Task, repeat: u32, run_id: &str, outcome: &str, check
         observe_ms_total,
         act_ms_total,
         completion_tokens_total,
-        tokens_estimated: steps.iter().filter_map(tokens_of).any(|(_, estimated)| estimated),
+        tokens_estimated: steps
+            .iter()
+            .filter_map(tokens_of)
+            .any(|(_, estimated)| estimated),
         denied_prompts,
         verify_mode: verification.mode,
         verdict: verification.verdict,
@@ -235,7 +330,10 @@ pub fn build_result(task: &Task, repeat: u32, run_id: &str, outcome: &str, check
 
 /// Starts the harness if this is an eval build and both variables are set; otherwise does nothing.
 pub fn start(app: &AppHandle) {
-    let (Some(suite), Some(out)) = (std::env::var_os("RUNE_EVAL_SUITE"), std::env::var_os("RUNE_EVAL_OUT")) else {
+    let (Some(suite), Some(out)) = (
+        std::env::var_os("RUNE_EVAL_SUITE"),
+        std::env::var_os("RUNE_EVAL_OUT"),
+    ) else {
         return;
     };
     let (suite, out) = (PathBuf::from(suite), PathBuf::from(out));
@@ -259,7 +357,12 @@ async fn execute(app: &AppHandle, suite_path: &Path, out: &Path) -> i32 {
     // The suite is the only file this reads.
     let text = match std::fs::read_to_string(suite_path) {
         Ok(text) => text,
-        Err(err) => return refuse(out, &format!("could not read the suite {}: {err}", suite_path.display())),
+        Err(err) => {
+            return refuse(
+                out,
+                &format!("could not read the suite {}: {err}", suite_path.display()),
+            );
+        }
     };
     let suite = match Suite::parse(&text) {
         Ok(suite) => suite,
@@ -290,10 +393,21 @@ async fn execute(app: &AppHandle, suite_path: &Path, out: &Path) -> i32 {
 
     let running = match check::Machine::process_names(&windows::System) {
         Ok(running) => running,
-        Err(why) => return refuse(out, &format!("cannot tell what is running ({why}); the evaluation needs Windows")),
+        Err(why) => {
+            return refuse(
+                out,
+                &format!("cannot tell what is running ({why}); the evaluation needs Windows"),
+            );
+        }
     };
     let status = backend::check(&state.http, &effective, settings::api_key().as_deref()).await;
-    if let Err(why) = preflight(&running, status.reachable, status.auth_ok, &status.missing_models, status.error.as_deref()) {
+    if let Err(why) = preflight(
+        &running,
+        status.reachable,
+        status.auth_ok,
+        &status.missing_models,
+        status.error.as_deref(),
+    ) {
         return refuse(out, &why);
     }
 
@@ -307,11 +421,17 @@ async fn execute(app: &AppHandle, suite_path: &Path, out: &Path) -> i32 {
         "suite_hash": trace::text_hash(&text),
         "repeats": suite.repeats,
     });
-    if let Err(err) = std::fs::write(out.join("env.json"), serde_json::to_string_pretty(&env).unwrap_or_default()) {
+    if let Err(err) = std::fs::write(
+        out.join("env.json"),
+        serde_json::to_string_pretty(&env).unwrap_or_default(),
+    ) {
         return refuse(out, &format!("could not write env.json: {err}"));
     }
 
-    let fixtures = suite_path.parent().unwrap_or(Path::new(".")).join("fixtures");
+    let fixtures = suite_path
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join("fixtures");
     let Ok(data_dir) = app.path().app_data_dir() else {
         return refuse(out, "no app data folder, so the runs cannot be read back");
     };
@@ -327,11 +447,32 @@ async fn execute(app: &AppHandle, suite_path: &Path, out: &Path) -> i32 {
                 fixtures: fixtures.clone(),
                 fixtures_url: file_url(&fixtures),
             };
-            let timeout = Duration::from_secs(task.timeout_secs.unwrap_or(suite.defaults.timeout_secs));
-            let (result, housekeeping_failed) = run_one(app, &database, &task.resolve(&vars), repeat, out, &vars.work, timeout, suite.verify_mode()).await;
-            log::info!("eval: {} #{repeat}: outcome {} check {} passed {}", result.task, result.outcome, result.check_passed, result.passed);
+            let timeout =
+                Duration::from_secs(task.timeout_secs.unwrap_or(suite.defaults.timeout_secs));
+            let (result, housekeeping_failed) = run_one(
+                app,
+                &database,
+                &task.resolve(&vars),
+                repeat,
+                out,
+                &vars.work,
+                timeout,
+                suite.verify_mode(),
+            )
+            .await;
+            log::info!(
+                "eval: {} #{repeat}: outcome {} check {} passed {}",
+                result.task,
+                result.outcome,
+                result.check_passed,
+                result.passed
+            );
             any_problem |= housekeeping_failed;
-            let written = std::fs::OpenOptions::new().create(true).append(true).open(&results).and_then(|mut file| writeln!(file, "{}", result.to_line()));
+            let written = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&results)
+                .and_then(|mut file| writeln!(file, "{}", result.to_line()));
             if let Err(err) = written {
                 return refuse(out, &format!("could not write results.jsonl: {err}"));
             }
@@ -343,11 +484,36 @@ async fn execute(app: &AppHandle, suite_path: &Path, out: &Path) -> i32 {
 /// One run of one task, start to finish. Never fails: problems go in the result's `error`. The
 /// second value says whether setup or teardown failed (which makes the whole run exit with 1).
 #[allow(clippy::too_many_arguments)]
-async fn run_one(app: &AppHandle, database: &Path, task: &Task, repeat: u32, out: &Path, work: &Path, timeout: Duration, verify_mode: VerifyMode) -> (RunResult, bool) {
+async fn run_one(
+    app: &AppHandle,
+    database: &Path,
+    task: &Task,
+    repeat: u32,
+    out: &Path,
+    work: &Path,
+    timeout: Duration,
+    verify_mode: VerifyMode,
+) -> (RunResult, bool) {
     let roots = vec![work.to_path_buf(), out.to_path_buf()];
     let started = Instant::now();
     let mut problems: Vec<String> = Vec::new();
-    let failed = |problems: Vec<String>, started: Instant| (build_result(task, repeat, "", "setup_failed", false, &[], started.elapsed(), 0, Some(problems.join("; ")), verification(verify_mode, None, false)), true);
+    let failed = |problems: Vec<String>, started: Instant| {
+        (
+            build_result(
+                task,
+                repeat,
+                "",
+                "setup_failed",
+                false,
+                &[],
+                started.elapsed(),
+                0,
+                Some(problems.join("; ")),
+                verification(verify_mode, None, false),
+            ),
+            true,
+        )
+    };
 
     if let Err(why) = task.confine(&roots) {
         return failed(vec![why], started);
@@ -363,7 +529,11 @@ async fn run_one(app: &AppHandle, database: &Path, task: &Task, repeat: u32, out
         return failed(vec![format!("could not start the task: {err}")], started);
     }
     let started = Instant::now();
-    let run_id = app.state::<AppState>().trace.open_run_id().unwrap_or_default();
+    let run_id = app
+        .state::<AppState>()
+        .trace
+        .open_run_id()
+        .unwrap_or_default();
 
     // Watch it. A question is answered No (never by the harness approving anything); out of time means Stop.
     let mut denied = 0_u32;
@@ -407,8 +577,21 @@ async fn run_one(app: &AppHandle, database: &Path, task: &Task, repeat: u32, out
     }
     let detail = read_run(database, &run_id).await;
     let (outcome, recorded_steps) = match (&detail, timed_out) {
-        (_, true) => ("timeout".to_string(), detail.as_ref().map(|detail| detail.steps.clone()).unwrap_or_default()),
-        (Some(detail), false) => (detail.run.outcome.clone().unwrap_or_else(|| "unknown".into()), detail.steps.clone()),
+        (_, true) => (
+            "timeout".to_string(),
+            detail
+                .as_ref()
+                .map(|detail| detail.steps.clone())
+                .unwrap_or_default(),
+        ),
+        (Some(detail), false) => (
+            detail
+                .run
+                .outcome
+                .clone()
+                .unwrap_or_else(|| "unknown".into()),
+            detail.steps.clone(),
+        ),
         (None, false) => ("unknown".to_string(), Vec::new()),
     };
     if detail.is_none() {
@@ -422,7 +605,18 @@ async fn run_one(app: &AppHandle, database: &Path, task: &Task, repeat: u32, out
         stored = wait_for_verdict(database, &run_id).await;
         waited_out = stored.is_none();
     }
-    let result = build_result(task, repeat, &run_id, &outcome, check_passed, &recorded_steps, duration, denied, (!problems.is_empty()).then(|| problems.join("; ")), verification(verify_mode, stored.as_ref(), waited_out));
+    let result = build_result(
+        task,
+        repeat,
+        &run_id,
+        &outcome,
+        check_passed,
+        &recorded_steps,
+        duration,
+        denied,
+        (!problems.is_empty()).then(|| problems.join("; ")),
+        verification(verify_mode, stored.as_ref(), waited_out),
+    );
     (result, teardown_failed)
 }
 

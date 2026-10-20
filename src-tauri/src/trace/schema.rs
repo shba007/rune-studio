@@ -116,14 +116,22 @@ pub fn open(db: &Connection) -> rusqlite::Result<Opened> {
         return Ok(Opened::Newer(found));
     }
     db.busy_timeout(std::time::Duration::from_millis(5000))?;
-    db.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;")?;
+    db.execute_batch(
+        "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;",
+    )?;
     // One transaction per step, so a crash cannot leave half a schema behind.
     if found < 1 {
-        db.execute_batch(&format!("BEGIN; {CREATE_V1} {CREATE_V2} {CREATE_V3} PRAGMA user_version = 3; COMMIT;"))?;
+        db.execute_batch(&format!(
+            "BEGIN; {CREATE_V1} {CREATE_V2} {CREATE_V3} PRAGMA user_version = 3; COMMIT;"
+        ))?;
     } else if found < 2 {
-        db.execute_batch(&format!("BEGIN; {CREATE_V2} {CREATE_V3} PRAGMA user_version = 3; COMMIT;"))?;
+        db.execute_batch(&format!(
+            "BEGIN; {CREATE_V2} {CREATE_V3} PRAGMA user_version = 3; COMMIT;"
+        ))?;
     } else if found < 3 {
-        db.execute_batch(&format!("BEGIN; {CREATE_V3} PRAGMA user_version = 3; COMMIT;"))?;
+        db.execute_batch(&format!(
+            "BEGIN; {CREATE_V3} PRAGMA user_version = 3; COMMIT;"
+        ))?;
     }
     Ok(Opened::Ready)
 }

@@ -89,7 +89,14 @@ impl LeaseBook {
         if self.current.is_some() {
             return Err(LeaseError::Busy);
         }
-        self.current = Some(Lease { agent: agent.to_string(), task: task.to_string(), step: 0, plan: Vec::new(), current_goal: 0, last_call: now });
+        self.current = Some(Lease {
+            agent: agent.to_string(),
+            task: task.to_string(),
+            step: 0,
+            plan: Vec::new(),
+            current_goal: 0,
+            last_call: now,
+        });
         Ok(())
     }
 
@@ -126,7 +133,10 @@ impl LeaseBook {
 
     /// Ends the lease if the holder has been silent too long. Returns whether it did.
     pub fn expire_if_idle(&mut self, now: Instant) -> bool {
-        let idle = self.current.as_ref().is_some_and(|lease| now.duration_since(lease.last_call) >= IDLE_LIMIT);
+        let idle = self
+            .current
+            .as_ref()
+            .is_some_and(|lease| now.duration_since(lease.last_call) >= IDLE_LIMIT);
         if idle {
             self.current = None;
         }
@@ -165,7 +175,10 @@ mod tests {
         book.begin("claude", "task", now).unwrap();
         book.revoke();
         assert_eq!(book.touch(now).err(), Some(LeaseError::StoppedByUser));
-        assert_eq!(book.begin("claude", "task", now), Err(LeaseError::StoppedByUser));
+        assert_eq!(
+            book.begin("claude", "task", now),
+            Err(LeaseError::StoppedByUser)
+        );
         book.rearm();
         assert_eq!(book.begin("claude", "task", now), Ok(()));
     }
@@ -182,7 +195,10 @@ mod tests {
         let mut book = LeaseBook::default();
         let start = t0();
         book.begin("claude", "task", start).unwrap();
-        assert!(book.touch(start + IDLE_LIMIT - Duration::from_secs(1)).is_ok());
+        assert!(
+            book.touch(start + IDLE_LIMIT - Duration::from_secs(1))
+                .is_ok()
+        );
         let late = start + IDLE_LIMIT - Duration::from_secs(1) + IDLE_LIMIT;
         assert_eq!(book.touch(late).err(), Some(LeaseError::Expired));
         // And the next agent can take over.
@@ -191,8 +207,15 @@ mod tests {
 
     #[test]
     fn every_error_has_a_code_from_the_guide() {
-        for error in [LeaseError::Busy, LeaseError::NotBegun, LeaseError::StoppedByUser, LeaseError::Expired] {
-            assert!(["busy", "not_begun", "stopped_by_user", "lease_expired"].contains(&error.code()));
+        for error in [
+            LeaseError::Busy,
+            LeaseError::NotBegun,
+            LeaseError::StoppedByUser,
+            LeaseError::Expired,
+        ] {
+            assert!(
+                ["busy", "not_begun", "stopped_by_user", "lease_expired"].contains(&error.code())
+            );
         }
     }
 }

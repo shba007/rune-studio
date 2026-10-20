@@ -52,7 +52,6 @@ pub fn cli_main() -> i32 {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-
     let _ = dotenvy::from_filename("../.env").or_else(|_| dotenvy::dotenv());
 
     let mut builder = tauri::Builder::default();
@@ -61,7 +60,9 @@ pub fn run() {
     {
         // First, as the plugin requires: a second launch hands over to this process and exits,
         // so the pill opens here instead of a second app fighting over the hotkeys and the door.
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| window::summon(app)));
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            window::summon(app)
+        }));
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     }
 
@@ -224,7 +225,8 @@ pub fn run() {
 mod version_tests {
     #[test]
     fn the_version_is_package_jsons_and_not_the_empty_cargo_default() {
-        let package: serde_json::Value = serde_json::from_str(include_str!("../../package.json")).unwrap();
+        let package: serde_json::Value =
+            serde_json::from_str(include_str!("../../package.json")).unwrap();
         assert_eq!(super::VERSION, package["version"].as_str().unwrap());
         assert_ne!(super::VERSION, "0.0.0");
     }

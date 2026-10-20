@@ -82,7 +82,16 @@ pub fn open(name: &str) -> Result<(), ExecError> {
             }
             Target::Shell(argument) => {
                 // SAFETY: all strings outlive the call; a null parameters/directory pointer is allowed.
-                let result = unsafe { ShellExecuteW(None, &HSTRING::from("open"), &HSTRING::from(argument.as_str()), PCWSTR::null(), PCWSTR::null(), SW_SHOWNORMAL) };
+                let result = unsafe {
+                    ShellExecuteW(
+                        None,
+                        &HSTRING::from("open"),
+                        &HSTRING::from(argument.as_str()),
+                        PCWSTR::null(),
+                        PCWSTR::null(),
+                        SW_SHOWNORMAL,
+                    )
+                };
                 // ShellExecute reports failure with a value of 32 or less.
                 if result.0 as isize > 32 {
                     return Ok(());
@@ -96,7 +105,9 @@ pub fn open(name: &str) -> Result<(), ExecError> {
 
 #[cfg(not(windows))]
 pub fn open(_name: &str) -> Result<(), ExecError> {
-    Err(ExecError::Input("opening applications is only supported on Windows".into()))
+    Err(ExecError::Input(
+        "opening applications is only supported on Windows".into(),
+    ))
 }
 
 #[cfg(test)]
@@ -116,7 +127,16 @@ mod tests {
 
     #[test]
     fn paths_extensions_protocols_and_addresses_are_left_alone() {
-        for name in ["notepad.exe", r"C:\Windows\notepad.exe", "C:/x/y.txt", "ms-settings:display", "https://example.com/a?b=1", "mailto:a@b.c", r"\\server\share", "my notes"] {
+        for name in [
+            "notepad.exe",
+            r"C:\Windows\notepad.exe",
+            "C:/x/y.txt",
+            "ms-settings:display",
+            "https://example.com/a?b=1",
+            "mailto:a@b.c",
+            r"\\server\share",
+            "my notes",
+        ] {
             assert_eq!(plan(name), shell(name), "{name}");
         }
     }
@@ -124,7 +144,11 @@ mod tests {
     #[test]
     fn friendly_names_map_to_what_windows_understands() {
         assert_eq!(plan("Calculator"), shell("calc"));
-        assert_eq!(plan("calc"), shell("calc.exe"), "calc.exe exists and is fine");
+        assert_eq!(
+            plan("calc"),
+            shell("calc.exe"),
+            "calc.exe exists and is fine"
+        );
         assert_eq!(plan("settings"), shell("ms-settings:"));
         assert_eq!(plan("Windows Settings"), shell("ms-settings:"));
         assert_eq!(plan("File Explorer"), shell("explorer"));
@@ -135,6 +159,9 @@ mod tests {
     fn a_local_page_keeps_its_query_string_by_going_to_the_url_handler_whole() {
         let url = "file:///C:/eval/fixtures/click.html?run=20261019-3";
         assert_eq!(plan(url), vec![Target::FileUrl(url.into())]);
-        assert_eq!(plan("FILE:///x.html?a=1&b=2"), vec![Target::FileUrl("FILE:///x.html?a=1&b=2".into())]);
+        assert_eq!(
+            plan("FILE:///x.html?a=1&b=2"),
+            vec![Target::FileUrl("FILE:///x.html?a=1&b=2".into())]
+        );
     }
 }

@@ -73,7 +73,10 @@ impl Drop for Capture {
     }
 }
 
-fn open_stream(app: &AppHandle, utterances: UnboundedSender<Vec<i16>>) -> Result<cpal::Stream, String> {
+fn open_stream(
+    app: &AppHandle,
+    utterances: UnboundedSender<Vec<i16>>,
+) -> Result<cpal::Stream, String> {
     let device = cpal::default_host()
         .default_input_device()
         .ok_or("No microphone found")?;
@@ -102,7 +105,12 @@ fn open_stream(app: &AppHandle, utterances: UnboundedSender<Vec<i16>>) -> Result
     Ok(stream)
 }
 
-fn build<T>(device: &cpal::Device, config: cpal::StreamConfig, app: &AppHandle, utterances: UnboundedSender<Vec<i16>>) -> Result<cpal::Stream, String>
+fn build<T>(
+    device: &cpal::Device,
+    config: cpal::StreamConfig,
+    app: &AppHandle,
+    utterances: UnboundedSender<Vec<i16>>,
+) -> Result<cpal::Stream, String>
 where
     T: SizedSample + Send + 'static,
     f32: FromSample<T>,

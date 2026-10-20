@@ -61,7 +61,12 @@ pub fn typing_duration(text: &str) -> Duration {
 /// Experiment knob: RUNE_TYPE_DELAY_MS overrides the pause between typed characters.
 fn type_delay() -> Duration {
     static DELAY: std::sync::OnceLock<Duration> = std::sync::OnceLock::new();
-    *DELAY.get_or_init(|| std::env::var("RUNE_TYPE_DELAY_MS").ok().and_then(|v| v.parse().ok()).map_or(TYPE_DELAY, Duration::from_millis))
+    *DELAY.get_or_init(|| {
+        std::env::var("RUNE_TYPE_DELAY_MS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .map_or(TYPE_DELAY, Duration::from_millis)
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -144,7 +149,9 @@ pub struct Input {
 
 impl Input {
     pub fn new() -> Result<Self, ExecError> {
-        Ok(Self { enigo: Enigo::new(&Settings::default()).map_err(input_error)? })
+        Ok(Self {
+            enigo: Enigo::new(&Settings::default()).map_err(input_error)?,
+        })
     }
 
     /// Where the cursor is now, in physical desktop pixels.
@@ -155,7 +162,9 @@ impl Input {
 
     pub fn move_to(&mut self, px: i32, py: i32, cancel: &CancelToken) -> Result<(), ExecError> {
         cancel.check()?;
-        self.enigo.move_mouse(px, py, Coordinate::Abs).map_err(input_error)?;
+        self.enigo
+            .move_mouse(px, py, Coordinate::Abs)
+            .map_err(input_error)?;
         cancel.sleep(SETTLE_AFTER_MOVE)
     }
 
@@ -173,7 +182,13 @@ impl Input {
                 break;
             }
             let amount = ease(elapsed.as_secs_f64() / total.as_secs_f64());
-            self.enigo.move_mouse(lerp(from_x, px, amount), lerp(from_y, py, amount), Coordinate::Abs).map_err(input_error)?;
+            self.enigo
+                .move_mouse(
+                    lerp(from_x, px, amount),
+                    lerp(from_y, py, amount),
+                    Coordinate::Abs,
+                )
+                .map_err(input_error)?;
             cancel.sleep(GLIDE_STEP)?;
         }
         self.move_to(px, py, cancel)
@@ -188,17 +203,28 @@ impl Input {
         cancel: &CancelToken,
     ) -> Result<(), ExecError> {
         self.glide_to(px, py, cancel)?;
-        self.enigo.button(button.into(), Direction::Click).map_err(input_error)?;
+        self.enigo
+            .button(button.into(), Direction::Click)
+            .map_err(input_error)?;
         if double {
             cancel.sleep(DOUBLE_CLICK_GAP)?;
-            self.enigo.button(button.into(), Direction::Click).map_err(input_error)?;
+            self.enigo
+                .button(button.into(), Direction::Click)
+                .map_err(input_error)?;
         }
         Ok(())
     }
 
     /// Scrolls the wheel `amount` notches with the pointer at a point (the window under the pointer
     /// is the one that scrolls).
-    pub fn scroll(&mut self, px: i32, py: i32, direction: ScrollDirection, amount: u32, cancel: &CancelToken) -> Result<(), ExecError> {
+    pub fn scroll(
+        &mut self,
+        px: i32,
+        py: i32,
+        direction: ScrollDirection,
+        amount: u32,
+        cancel: &CancelToken,
+    ) -> Result<(), ExecError> {
         self.glide_to(px, py, cancel)?;
         let (length, axis) = match direction {
             ScrollDirection::Up => (-1, Axis::Vertical),
@@ -216,9 +242,16 @@ impl Input {
 
     /// Presses the left button at `from`, glides to `to` and lets go. The button is released even
     /// if Stop or an error interrupts the drag, so it can never stay held down.
-    pub fn drag(&mut self, from: (i32, i32), to: (i32, i32), cancel: &CancelToken) -> Result<(), ExecError> {
+    pub fn drag(
+        &mut self,
+        from: (i32, i32),
+        to: (i32, i32),
+        cancel: &CancelToken,
+    ) -> Result<(), ExecError> {
         self.glide_to(from.0, from.1, cancel)?;
-        self.enigo.button(Button::Left, Direction::Press).map_err(input_error)?;
+        self.enigo
+            .button(Button::Left, Direction::Press)
+            .map_err(input_error)?;
         let outcome = (|| {
             cancel.sleep(DRAG_GRAB)?;
             self.glide_to(to.0, to.1, cancel)?;
@@ -233,7 +266,9 @@ impl Input {
         let mut buffer = [0_u8; 4];
         for character in text.chars() {
             cancel.check()?;
-            self.enigo.text(character.encode_utf8(&mut buffer)).map_err(input_error)?;
+            self.enigo
+                .text(character.encode_utf8(&mut buffer))
+                .map_err(input_error)?;
             cancel.sleep(type_delay())?;
         }
         Ok(())
@@ -243,7 +278,10 @@ impl Input {
     /// the held keys are released in reverse order. The release runs even if Stop or an error
     /// interrupts the combination, so a modifier can never stay stuck down.
     pub fn press_keys(&mut self, names: &[String], cancel: &CancelToken) -> Result<(), ExecError> {
-        let keys = names.iter().map(|name| parse_key(name)).collect::<Result<Vec<_>, _>>()?;
+        let keys = names
+            .iter()
+            .map(|name| parse_key(name))
+            .collect::<Result<Vec<_>, _>>()?;
         let Some((last, held)) = keys.split_last() else {
             return Ok(());
         };
@@ -252,11 +290,15 @@ impl Input {
         let outcome = (|| {
             for key in held {
                 cancel.check()?;
-                self.enigo.key(*key, Direction::Press).map_err(input_error)?;
+                self.enigo
+                    .key(*key, Direction::Press)
+                    .map_err(input_error)?;
                 pressed.push(*key);
             }
             cancel.check()?;
-            self.enigo.key(*last, Direction::Click).map_err(input_error)?;
+            self.enigo
+                .key(*last, Direction::Click)
+                .map_err(input_error)?;
             Ok(())
         })();
 
@@ -301,7 +343,9 @@ pub fn parse_key(name: &str) -> Result<Key, ExecError> {
         "f10" => Key::F10,
         "f11" => Key::F11,
         "f12" => Key::F12,
-        single if single.chars().count() == 1 => Key::Unicode(single.chars().next().unwrap_or_default()),
+        single if single.chars().count() == 1 => {
+            Key::Unicode(single.chars().next().unwrap_or_default())
+        }
         _ => return Err(ExecError::UnknownKey(name.to_string())),
     };
     Ok(key)
@@ -368,7 +412,10 @@ mod tests {
     #[test]
     fn mouse_buttons_parse() {
         assert_eq!("LEFT".parse::<MouseButton>().ok(), Some(MouseButton::Left));
-        assert_eq!("right".parse::<MouseButton>().ok(), Some(MouseButton::Right));
+        assert_eq!(
+            "right".parse::<MouseButton>().ok(),
+            Some(MouseButton::Right)
+        );
         assert!("wheel".parse::<MouseButton>().is_err());
     }
 
@@ -376,7 +423,14 @@ mod tests {
     fn stop_interrupts_a_sleep_immediately() {
         let cancel = CancelToken::default();
         cancel.cancel();
-        assert!(matches!(cancel.sleep(Duration::from_secs(5)), Err(ExecError::Cancelled)));
-        assert!(CancelToken::default().sleep(Duration::from_millis(5)).is_ok());
+        assert!(matches!(
+            cancel.sleep(Duration::from_secs(5)),
+            Err(ExecError::Cancelled)
+        ));
+        assert!(
+            CancelToken::default()
+                .sleep(Duration::from_millis(5))
+                .is_ok()
+        );
     }
 }

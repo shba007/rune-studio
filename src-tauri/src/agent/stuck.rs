@@ -25,7 +25,10 @@ pub struct Acted {
 
 impl Acted {
     pub fn new(tool: &str, key: String) -> Self {
-        Self { key, quiet: matches!(tool, "type_text" | "press_keys" | "scroll" | "wait") }
+        Self {
+            key,
+            quiet: matches!(tool, "type_text" | "press_keys" | "scroll" | "wait"),
+        }
     }
 }
 
@@ -44,7 +47,11 @@ impl Watch {
     /// Returns how many actions in a row left the screen as it was.
     pub fn look(&mut self, signature: Vec<u8>, acted: Option<&Acted>) -> u32 {
         if let Some(acted) = acted {
-            self.repeats = if self.last_key.as_deref() == Some(acted.key.as_str()) { self.repeats + 1 } else { 1 };
+            self.repeats = if self.last_key.as_deref() == Some(acted.key.as_str()) {
+                self.repeats + 1
+            } else {
+                1
+            };
             self.last_key = Some(acted.key.clone());
             match &self.last {
                 Some(before) if same(before, &signature) => {
@@ -87,7 +94,11 @@ fn same(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() || a.is_empty() {
         return false;
     }
-    let changed = a.iter().zip(b).filter(|(x, y)| x.abs_diff(**y) > PIXEL_DELTA).count();
+    let changed = a
+        .iter()
+        .zip(b)
+        .filter(|(x, y)| x.abs_diff(**y) > PIXEL_DELTA)
+        .count();
     (changed as f64 / a.len() as f64) < CHANGED_FRACTION
 }
 
@@ -132,15 +143,27 @@ mod tests {
         let mut watch = Watch::default();
         watch.look(screen(10), None);
         assert_eq!(watch.look(screen(10), Some(&click(1))), 1);
-        assert_eq!(watch.look(screen(11), Some(&click(1))), 2, "a tiny change is still the same screen");
-        assert_eq!(watch.look(screen(90), Some(&click(1))), 0, "a real change starts over");
+        assert_eq!(
+            watch.look(screen(11), Some(&click(1))),
+            2,
+            "a tiny change is still the same screen"
+        );
+        assert_eq!(
+            watch.look(screen(90), Some(&click(1))),
+            0,
+            "a real change starts over"
+        );
     }
 
     #[test]
     fn a_blinking_caret_is_not_a_change_but_a_menu_opening_is() {
         let mut watch = Watch::default();
         watch.look(screen(200), None);
-        assert_eq!(watch.look(with_patch(200, 4, 20), Some(&click(1))), 1, "4 of 9216 pixels is a caret");
+        assert_eq!(
+            watch.look(with_patch(200, 4, 20), Some(&click(1))),
+            1,
+            "4 of 9216 pixels is a caret"
+        );
         // 5 percent of the picture: a menu, a dialog, a page.
         assert_eq!(watch.look(with_patch(200, 460, 20), Some(&click(2))), 0);
     }
@@ -157,10 +180,23 @@ mod tests {
     fn typing_keys_and_scrolling_that_change_little_are_not_counted_as_stuck() {
         let mut watch = Watch::default();
         watch.look(screen(10), None);
-        for (tool, key) in [("type_text", "type hello"), ("press_keys", "press Enter"), ("scroll", "scroll down"), ("type_text", "type rune")] {
-            assert_eq!(watch.look(screen(10), Some(&Acted::new(tool, key.into()))), 0, "{tool}");
+        for (tool, key) in [
+            ("type_text", "type hello"),
+            ("press_keys", "press Enter"),
+            ("scroll", "scroll down"),
+            ("type_text", "type rune"),
+        ] {
+            assert_eq!(
+                watch.look(screen(10), Some(&Acted::new(tool, key.into()))),
+                0,
+                "{tool}"
+            );
         }
-        assert_eq!(watch.look(screen(10), Some(&click(1))), 1, "a click that does nothing still counts");
+        assert_eq!(
+            watch.look(screen(10), Some(&click(1))),
+            1,
+            "a click that does nothing still counts"
+        );
     }
 
     #[test]

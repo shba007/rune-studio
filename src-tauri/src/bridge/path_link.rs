@@ -40,13 +40,17 @@ pub fn ensure() {
     if std::env::var_os("APPIMAGE").is_some() {
         return;
     }
-    let Ok(app) = std::env::current_exe().and_then(fs::canonicalize) else { return };
+    let Ok(app) = std::env::current_exe().and_then(fs::canonicalize) else {
+        return;
+    };
     let cli = app.with_file_name(NAME);
     // A package install already put it in /usr/bin.
     if !cli.exists() || cli.starts_with("/usr/") {
         return;
     }
-    let Some(home) = std::env::var_os("HOME") else { return };
+    let Some(home) = std::env::var_os("HOME") else {
+        return;
+    };
     match point_link_at(&link_path(Path::new(&home)), &cli) {
         Ok(true) => log::info!("{NAME} linked into ~/.local/bin"),
         Ok(false) => {}
@@ -59,7 +63,8 @@ mod tests {
     use super::*;
 
     fn scratch(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("rune-path-link-{name}-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("rune-path-link-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir

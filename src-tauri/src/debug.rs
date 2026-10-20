@@ -9,7 +9,10 @@ use tauri::{AppHandle, Manager};
 use crate::{
     error::{AppError, AppResult},
     events::AppState,
-    exec::{CancelToken, ExecError, input::{Input, MouseButton}},
+    exec::{
+        CancelToken, ExecError,
+        input::{Input, MouseButton},
+    },
     model::coords::{Monitor, model_to_pixels},
     observe::screenshot::{self, MODEL_JPEG_QUALITY, MODEL_MAX_EDGE},
     window,
@@ -64,10 +67,16 @@ pub struct CaptureReport {
 #[tauri::command]
 pub async fn debug_capture(monitor: Option<u32>) -> AppResult<CaptureReport> {
     tauri::async_runtime::spawn_blocking(move || {
-        let frame = screenshot::capture(monitor, MODEL_MAX_EDGE, MODEL_JPEG_QUALITY).map_err(invalid)?;
+        let frame =
+            screenshot::capture(monitor, MODEL_MAX_EDGE, MODEL_JPEG_QUALITY).map_err(invalid)?;
         log::info!(
             "debug_capture: {}x{} from a {}x{} monitor, {} KB, {} ms",
-            frame.width, frame.height, frame.monitor.width, frame.monitor.height, frame.jpeg.len() / 1024, frame.elapsed_ms
+            frame.width,
+            frame.height,
+            frame.monitor.width,
+            frame.monitor.height,
+            frame.jpeg.len() / 1024,
+            frame.elapsed_ms
         );
         Ok(CaptureReport {
             monitor: frame.monitor,
@@ -105,7 +114,10 @@ pub async fn debug_click(
     delay_ms: Option<u64>,
 ) -> AppResult<ClickReport> {
     let monitor = screenshot::monitor(monitor).map_err(invalid)?;
-    let button = button.as_deref().map_or(Ok(MouseButton::Left), str::parse).map_err(invalid)?;
+    let button = button
+        .as_deref()
+        .map_or(Ok(MouseButton::Left), str::parse)
+        .map_err(invalid)?;
     let (pixel_x, pixel_y) = model_to_pixels(&monitor, x, y);
 
     run_input(app, delay_ms, move |input, cancel| {
@@ -119,10 +131,16 @@ pub async fn debug_click(
 
 #[tauri::command]
 pub async fn debug_type(app: AppHandle, text: String, delay_ms: Option<u64>) -> AppResult<()> {
-    run_input(app, delay_ms, move |input, cancel| input.type_text(&text, cancel)).await
+    run_input(app, delay_ms, move |input, cancel| {
+        input.type_text(&text, cancel)
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn debug_keys(app: AppHandle, keys: Vec<String>, delay_ms: Option<u64>) -> AppResult<()> {
-    run_input(app, delay_ms, move |input, cancel| input.press_keys(&keys, cancel)).await
+    run_input(app, delay_ms, move |input, cancel| {
+        input.press_keys(&keys, cancel)
+    })
+    .await
 }

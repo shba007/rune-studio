@@ -24,10 +24,16 @@ impl Hotkeys {
     }
 
     pub fn validate(settings: &Settings) -> Result<(), String> {
-        for (label, text) in [("Summon", &settings.toggle_hotkey), ("Stop", &settings.stop_hotkey)] {
+        for (label, text) in [
+            ("Summon", &settings.toggle_hotkey),
+            ("Stop", &settings.stop_hotkey),
+        ] {
             Shortcut::from_str(text).map_err(|err| format!("{label} hotkey '{text}': {err}"))?;
         }
-        if settings.toggle_hotkey.eq_ignore_ascii_case(&settings.stop_hotkey) {
+        if settings
+            .toggle_hotkey
+            .eq_ignore_ascii_case(&settings.stop_hotkey)
+        {
             return Err("Summon and Stop hotkeys must differ".into());
         }
         Ok(())
@@ -58,5 +64,9 @@ pub fn apply(app: &AppHandle, previous: Option<&Hotkeys>, next: &Hotkeys) -> Res
             failures.push(format!("{shortcut} is unavailable ({err})"));
         }
     }
-    if failures.is_empty() { Ok(()) } else { Err(failures.join("; ")) }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(failures.join("; "))
+    }
 }

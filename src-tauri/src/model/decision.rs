@@ -45,18 +45,32 @@ pub struct Question {
 impl Question {
     /// A yes or no question. Word it so that "yes" is the answer you can act on.
     pub fn yes_no(name: &'static str, instruction: impl Into<String>) -> Self {
-        Self { name, instruction: instruction.into(), options: None }
+        Self {
+            name,
+            instruction: instruction.into(),
+            options: None,
+        }
     }
 
     /// Pick one of `options`.
-    pub fn choice(name: &'static str, instruction: impl Into<String>, options: &'static [&'static str]) -> Self {
-        Self { name, instruction: instruction.into(), options: Some(options) }
+    pub fn choice(
+        name: &'static str,
+        instruction: impl Into<String>,
+        options: &'static [&'static str],
+    ) -> Self {
+        Self {
+            name,
+            instruction: instruction.into(),
+            options: Some(options),
+        }
     }
 
     fn to_json(&self) -> Value {
         // The server calls a yes/no question "noul".
         match self.options {
-            Some(options) => json!({ "name": self.name, "type": "choice", "instruction": self.instruction, "criteria": options }),
+            Some(options) => {
+                json!({ "name": self.name, "type": "choice", "instruction": self.instruction, "criteria": options })
+            }
             None => json!({ "name": self.name, "type": "noul", "instruction": self.instruction }),
         }
     }
@@ -78,15 +92,26 @@ enum Shape {
 }
 
 fn shape_of(answer: &Value) -> Shape {
-    if answer["type"].is_string() && !answer["value"].is_null() { Shape::Spec } else { Shape::Source }
+    if answer["type"].is_string() && !answer["value"].is_null() {
+        Shape::Spec
+    } else {
+        Shape::Source
+    }
 }
 
 impl Answers {
     pub fn from_response(response: &Value) -> Self {
-        let answers: Option<HashMap<String, Value>> = response["answers"].as_object().map(|map| map.iter().map(|(name, value)| (name.clone(), value.clone())).collect());
+        let answers: Option<HashMap<String, Value>> = response["answers"].as_object().map(|map| {
+            map.iter()
+                .map(|(name, value)| (name.clone(), value.clone()))
+                .collect()
+        });
         let answers = answers.unwrap_or_default();
         if let Some(first) = answers.values().next() {
-            static LOGGED: [std::sync::atomic::AtomicBool; 2] = [std::sync::atomic::AtomicBool::new(false), std::sync::atomic::AtomicBool::new(false)];
+            static LOGGED: [std::sync::atomic::AtomicBool; 2] = [
+                std::sync::atomic::AtomicBool::new(false),
+                std::sync::atomic::AtomicBool::new(false),
+            ];
             let shape = shape_of(first);
             if !LOGGED[shape as usize].swap(true, std::sync::atomic::Ordering::Relaxed) {
                 log::info!("decision model answers in the {shape:?} shape");
@@ -102,8 +127,14 @@ impl Answers {
                 Shape::Source => "source",
                 Shape::Spec => "spec",
             };
-            let value = if answer["decision"].is_null() { &answer["value"] } else { &answer["decision"] };
-            let number = |number: Option<f64>| number.map_or_else(|| "-".to_string(), |number| format!("{number:.4}"));
+            let value = if answer["decision"].is_null() {
+                &answer["value"]
+            } else {
+                &answer["decision"]
+            };
+            let number = |number: Option<f64>| {
+                number.map_or_else(|| "-".to_string(), |number| format!("{number:.4}"))
+            };
             log::info!(
                 "decision answer {name}: shape={shape} decision={value} confidence={} probability={} p(picked)={}",
                 number(answer["confidence"].as_f64()),
@@ -117,13 +148,26 @@ impl Answers {
     /// True only when the model said yes and was at least `min_probability` sure. Anything else,
     /// including a missing answer, is "not sure", never "no".
     pub fn confident_yes(&self, name: &str, min_probability: f64) -> bool {
-        let Some(answer) = self.0.get(name) else { return false };
+        let Some(answer) = self.0.get(name) else {
+            return false;
+        };
         match shape_of(answer) {
-            Shape::Source => answer["decision"].as_bool() == Some(true) && answer["probability"].as_f64().is_some_and(|p| p >= min_probability),
+            Shape::Source => {
+                answer["decision"].as_bool() == Some(true)
+                    && answer["probability"]
+                        .as_f64()
+                        .is_some_and(|p| p >= min_probability)
+            }
             Shape::Spec => {
-                let yes = answer["type"] == "noul" && (answer["value"].as_bool() == Some(true) || answer["value"].as_str().is_some_and(|value| value.eq_ignore_ascii_case("yes")));
+                let yes = answer["type"] == "noul"
+                    && (answer["value"].as_bool() == Some(true)
+                        || answer["value"]
+                            .as_str()
+                            .is_some_and(|value| value.eq_ignore_ascii_case("yes")));
                 // NOT CERTAIN: that `confidence` is the probability of `value` for a yes/no answer.
-                yes && answer["confidence"].as_f64().is_some_and(|p| p >= min_probability)
+                yes && answer["confidence"]
+                    .as_f64()
+                    .is_some_and(|p| p >= min_probability)
             }
         }
     }
@@ -144,26 +188,45 @@ impl Answers {
     pub fn choice(&self, name: &str) -> Option<(String, f64)> {
         let answer = self.0.get(name)?;
         match shape_of(answer) {
-            Shape::Source => Some((answer["decision"].as_str()?.to_string(), self.picked_probability(name).or_else(|| answer["confidence"].as_f64())?)),
-            Shape::Spec if answer["type"] == "choice" => Some((answer["value"].as_str()?.to_string(), answer["confidence"].as_f64()?)),
+            Shape::Source => Some((
+                answer["decision"].as_str()?.to_string(),
+                self.picked_probability(name)
+                    .or_else(|| answer["confidence"].as_f64())?,
+            )),
+            Shape::Spec if answer["type"] == "choice" => Some((
+                answer["value"].as_str()?.to_string(),
+                answer["confidence"].as_f64()?,
+            )),
             Shape::Spec => None,
         }
     }
 }
 
 fn request_body(model: &str, text: &str, images: &[String], questions: &[Question]) -> Value {
-    let state = if images.is_empty() { json!(text) } else { json!({ "text": text, "images": images }) };
+    let state = if images.is_empty() {
+        json!(text)
+    } else {
+        json!({ "text": text, "images": images })
+    };
     json!({ "model": model, "state": state, "questions": questions.iter().map(Question::to_json).collect::<Vec<_>>() })
 }
 
 /// The decision endpoint: the Decision URL, or the chat server's when it is empty (one server is the usual setup).
 fn endpoint(decision_url: &str, base_url: &str) -> String {
-    let url = if decision_url.trim().is_empty() { base_url } else { decision_url };
+    let url = if decision_url.trim().is_empty() {
+        base_url
+    } else {
+        decision_url
+    };
     format!("{}/v1/decisions", url.trim().trim_end_matches('/'))
 }
 
 fn cooling_down() -> bool {
-    FAILED_AT.lock().ok().and_then(|failed| *failed).is_some_and(|at| at.elapsed() < COOLDOWN)
+    FAILED_AT
+        .lock()
+        .ok()
+        .and_then(|failed| *failed)
+        .is_some_and(|at| at.elapsed() < COOLDOWN)
 }
 
 fn note_failure() {
@@ -174,11 +237,20 @@ fn note_failure() {
 
 /// Asks the decision model. `None` means "no answer, do it the usual way": the feature is off,
 /// the model is cooling down after a failure, or the call failed.
-pub async fn ask(app: &AppHandle, text: &str, images: &[String], questions: &[Question]) -> Option<Answers> {
+pub async fn ask(
+    app: &AppHandle,
+    text: &str,
+    images: &[String],
+    questions: &[Question],
+) -> Option<Answers> {
     let state = app.state::<AppState>();
     let (enabled, url, model) = {
         let settings = state.settings.locked();
-        (settings.fast_checks, endpoint(&settings.decision_url, &settings.base_url), settings.decision_model.clone())
+        (
+            settings.fast_checks,
+            endpoint(&settings.decision_url, &settings.base_url),
+            settings.decision_model.clone(),
+        )
     };
     if !enabled || url.starts_with("/v1") || model.trim().is_empty() || cooling_down() {
         return None;
@@ -188,7 +260,11 @@ pub async fn ask(app: &AppHandle, text: &str, images: &[String], questions: &[Qu
     let mut request = state
         .http
         .post(url)
-        .timeout(if images.is_empty() { TEXT_TIMEOUT } else { IMAGE_TIMEOUT })
+        .timeout(if images.is_empty() {
+            TEXT_TIMEOUT
+        } else {
+            IMAGE_TIMEOUT
+        })
         .json(&request_body(&model, text, images, questions));
     if let Some(key) = settings::api_key() {
         request = request.bearer_auth(key);
@@ -200,14 +276,21 @@ pub async fn ask(app: &AppHandle, text: &str, images: &[String], questions: &[Qu
         if !status.is_success() {
             return Err(format!("status {status}"));
         }
-        response.json::<Value>().await.map_err(|err| err.to_string())
+        response
+            .json::<Value>()
+            .await
+            .map_err(|err| err.to_string())
     }
     .await;
 
     match outcome {
         Ok(value) => {
             let answers = Answers::from_response(&value);
-            log::info!("decision model answered {} question(s) in {} ms", answers.0.len(), started.elapsed().as_millis());
+            log::info!(
+                "decision model answered {} question(s) in {} ms",
+                answers.0.len(),
+                started.elapsed().as_millis()
+            );
             Some(answers)
         }
         Err(err) => {
@@ -239,16 +322,26 @@ mod tests {
     fn only_a_confident_yes_counts() {
         let answers = Answers::from_response(&sample());
         assert!(answers.confident_yes("single", 0.9));
-        assert!(!answers.confident_yes("unsure", 0.9), "a hesitant yes is not enough");
+        assert!(
+            !answers.confident_yes("unsure", 0.9),
+            "a hesitant yes is not enough"
+        );
         assert!(!answers.confident_yes("no", 0.9), "a no is never a yes");
-        assert!(!answers.confident_yes("missing", 0.0), "no answer is not a yes");
+        assert!(
+            !answers.confident_yes("missing", 0.0),
+            "no answer is not a yes"
+        );
     }
 
     #[test]
     fn choices_come_back_with_their_confidence() {
         let answers = Answers::from_response(&sample());
         assert_eq!(answers.choice("risk"), Some(("high".to_string(), 0.88)));
-        assert_eq!(answers.choice("single"), None, "a yes/no answer is not a choice");
+        assert_eq!(
+            answers.choice("single"),
+            None,
+            "a yes/no answer is not a choice"
+        );
     }
 
     #[test]
@@ -260,16 +353,30 @@ mod tests {
 
     #[test]
     fn the_request_uses_the_servers_names() {
-        let questions = [Question::yes_no("done", "Is it done?"), Question::choice("risk", "How risky?", &["low", "high"])];
+        let questions = [
+            Question::yes_no("done", "Is it done?"),
+            Question::choice("risk", "How risky?", &["low", "high"]),
+        ];
         let text_only = request_body("m", "state", &[], &questions);
         assert_eq!(text_only["state"], "state");
         assert_eq!(text_only["questions"][0]["type"], "noul");
         assert_eq!(text_only["questions"][1]["type"], "choice");
-        assert_eq!(text_only["questions"][1]["criteria"], json!(["low", "high"]));
+        assert_eq!(
+            text_only["questions"][1]["criteria"],
+            json!(["low", "high"])
+        );
 
-        let with_image = request_body("m", "state", &["data:image/jpeg;base64,AA".to_string()], &questions);
+        let with_image = request_body(
+            "m",
+            "state",
+            &["data:image/jpeg;base64,AA".to_string()],
+            &questions,
+        );
         assert_eq!(with_image["state"]["text"], "state");
-        assert_eq!(with_image["state"]["images"][0], "data:image/jpeg;base64,AA");
+        assert_eq!(
+            with_image["state"]["images"][0],
+            "data:image/jpeg;base64,AA"
+        );
     }
 
     fn answers_of(answer: Value) -> Answers {
@@ -286,10 +393,17 @@ mod tests {
         let no = answers_of(json!({"type":"noul","value":"no","confidence":0.99}));
         assert!(!no.confident_yes("q", 0.0), "a no is never a yes");
         let as_bool = answers_of(json!({"type":"noul","value":true,"confidence":0.95}));
-        assert!(as_bool.confident_yes("q", 0.9), "a JSON bool value is accepted");
+        assert!(
+            as_bool.confident_yes("q", 0.9),
+            "a JSON bool value is accepted"
+        );
 
-        let picked = answers_of(json!({"type":"choice","value":"canary_rollout","confidence":0.94}));
-        assert_eq!(picked.choice("q"), Some(("canary_rollout".to_string(), 0.94)));
+        let picked =
+            answers_of(json!({"type":"choice","value":"canary_rollout","confidence":0.94}));
+        assert_eq!(
+            picked.choice("q"),
+            Some(("canary_rollout".to_string(), 0.94))
+        );
         assert!(!picked.confident_yes("q", 0.0), "a choice is not a yes");
     }
 
@@ -298,13 +412,22 @@ mod tests {
         let yes = answers_of(json!({"decision":true,"probability":0.96}));
         assert!(yes.confident_yes("q", 0.9));
         assert!(!yes.confident_yes("q", 0.97));
-        let high = answers_of(json!({"decision":"high","confidence":0.88,"probabilities":{"low":0.02,"medium":0.1,"high":0.88}}));
+        let high = answers_of(
+            json!({"decision":"high","confidence":0.88,"probabilities":{"low":0.02,"medium":0.1,"high":0.88}}),
+        );
         assert_eq!(high.choice("q"), Some(("high".to_string(), 0.88)));
     }
 
     #[test]
     fn an_answer_in_neither_shape_is_not_sure_and_never_no_or_a_pick() {
-        for odd in [json!({}), json!({"type":"noul"}), json!({"type":"noul","value":"yes"}), json!({"decision":true}), json!({"type":"score","value":3.0,"confidence":0.9}), json!("yes")] {
+        for odd in [
+            json!({}),
+            json!({"type":"noul"}),
+            json!({"type":"noul","value":"yes"}),
+            json!({"decision":true}),
+            json!({"type":"score","value":3.0,"confidence":0.9}),
+            json!("yes"),
+        ] {
             let answers = answers_of(odd.clone());
             assert!(!answers.confident_yes("q", 0.0), "{odd}");
             assert_eq!(answers.choice("q"), None, "{odd}");
@@ -314,10 +437,14 @@ mod tests {
     #[test]
     fn a_choice_is_as_sure_as_its_picked_probability_not_its_confidence() {
         // The field test's "click Pay now": high, probability 0.587, confidence 0.38.
-        let pay = answers_of(json!({"decision":"high","confidence":0.38,"probabilities":{"low":0.2,"medium":0.213,"high":0.587}}));
+        let pay = answers_of(
+            json!({"decision":"high","confidence":0.38,"probabilities":{"low":0.2,"medium":0.213,"high":0.587}}),
+        );
         assert_eq!(pay.choice("q"), Some(("high".to_string(), 0.587)));
         // Shift+Delete: 0.92.
-        let delete = answers_of(json!({"decision":"high","confidence":0.8,"probabilities":{"low":0.02,"medium":0.06,"high":0.92}}));
+        let delete = answers_of(
+            json!({"decision":"high","confidence":0.8,"probabilities":{"low":0.02,"medium":0.06,"high":0.92}}),
+        );
         assert_eq!(delete.choice("q"), Some(("high".to_string(), 0.92)));
         // No probabilities in the reply: confidence is all there is.
         let bare = answers_of(json!({"decision":"low","confidence":0.7}));
@@ -326,9 +453,15 @@ mod tests {
 
     #[test]
     fn an_empty_decision_url_means_the_same_server_as_the_chat_model() {
-        assert_eq!(endpoint("", "http://127.0.0.1:8080/"), "http://127.0.0.1:8080/v1/decisions");
+        assert_eq!(
+            endpoint("", "http://127.0.0.1:8080/"),
+            "http://127.0.0.1:8080/v1/decisions"
+        );
         assert_eq!(endpoint("  ", "http://a:1"), "http://a:1/v1/decisions");
-        assert_eq!(endpoint("http://b:2/", "http://a:1"), "http://b:2/v1/decisions");
+        assert_eq!(
+            endpoint("http://b:2/", "http://a:1"),
+            "http://b:2/v1/decisions"
+        );
     }
 
     #[test]
@@ -337,9 +470,21 @@ mod tests {
             "routing": { "decision": "blue_green", "confidence": 0.1374, "probabilities": { "immediate_switch": 0.2555, "canary_rollout": 0.3196, "blue_green": 0.4249 } },
             "requires_approval": { "decision": true, "probability": 0.6816 }
         } }));
-        assert_eq!(answers.choice("routing"), Some(("blue_green".to_string(), 0.4249)), "the picked probability, not confidence");
-        assert_eq!(answers.picked_probability("routing"), Some(0.4249), "confidence is not the picked probability");
-        assert_eq!(answers.picked_probability("requires_approval"), None, "a yes/no answer has no picked option");
+        assert_eq!(
+            answers.choice("routing"),
+            Some(("blue_green".to_string(), 0.4249)),
+            "the picked probability, not confidence"
+        );
+        assert_eq!(
+            answers.picked_probability("routing"),
+            Some(0.4249),
+            "confidence is not the picked probability"
+        );
+        assert_eq!(
+            answers.picked_probability("requires_approval"),
+            None,
+            "a yes/no answer has no picked option"
+        );
         assert_eq!(answers.picked_probability("missing"), None);
         assert!(answers.confident_yes("requires_approval", 0.68));
         assert!(!answers.confident_yes("requires_approval", 0.69));

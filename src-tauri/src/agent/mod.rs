@@ -30,9 +30,9 @@ use crate::{
     settings::VerifyMode,
     trace::{self, RunInfo, StepRecord, VerdictRecord},
 };
-use verify::VerifyInput;
 use prompt::Entry;
 use protocol::{Action, Decision};
+use verify::VerifyInput;
 
 use crate::safety::{
     foreground,
@@ -72,7 +72,11 @@ pub fn start_planned(app: &AppHandle, task: String, plan: Option<Vec<String>>) {
         String::new()
     });
     // The run's id in the flight recorder is its session id, or a stand-in when there is no session folder.
-    let run_id = if session.is_empty() { format!("norun-{}-{}", scope.id, crate::archive::now()) } else { session.clone() };
+    let run_id = if session.is_empty() {
+        format!("norun-{}-{}", scope.id, crate::archive::now())
+    } else {
+        session.clone()
+    };
     let state = app.state::<AppState>();
     let trace = state.trace.clone();
     // Read once: a change to the setting in the middle of a task does not change how this one ends.
@@ -85,7 +89,9 @@ pub fn start_planned(app: &AppHandle, task: String, plan: Option<Vec<String>>) {
         task: task.clone(),
         source: "built-in".into(),
         started_utc: trace::now_utc(),
-        plan_json: plan.as_ref().and_then(|goals| serde_json::to_string(goals).ok()),
+        plan_json: plan
+            .as_ref()
+            .and_then(|goals| serde_json::to_string(goals).ok()),
         model: Some(model),
         app_version: Some(crate::VERSION.into()),
         settings_json: Some(settings_json),
@@ -99,7 +105,19 @@ pub fn start_planned(app: &AppHandle, task: String, plan: Option<Vec<String>>) {
         let leftovers = scope.token.clone();
         let work_id = run_id.clone();
         let work_handoff = handoff.clone();
-        let outcome = supervised(async move { run(&work_app, &task, plan, scope.token, &work_id, mode, work_handoff).await }).await;
+        let outcome = supervised(async move {
+            run(
+                &work_app,
+                &task,
+                plan,
+                scope.token,
+                &work_id,
+                mode,
+                work_handoff,
+            )
+            .await
+        })
+        .await;
         stop_leftovers(&leftovers, &outcome);
         end_session(&session, &outcome);
         let (label, summary) = outcome_label(&outcome);
@@ -114,7 +132,11 @@ pub fn start_planned(app: &AppHandle, task: String, plan: Option<Vec<String>>) {
         match next {
             AfterRun::Nothing => {}
             AfterRun::Check => spawn_background_check(&app, run_id, evidence),
-            AfterRun::Skip => trace.verdict(skipped_record(&run_id, mode, &app.state::<AppState>().settings.locked().model)),
+            AfterRun::Skip => trace.verdict(skipped_record(
+                &run_id,
+                mode,
+                &app.state::<AppState>().settings.locked().model,
+            )),
         }
     });
 }
@@ -134,8 +156,21 @@ struct Evidence {
 }
 
 impl Evidence {
-    fn new(task: &str, goals: &[String], history: &[Entry], claim_summary: &str, screenshot: Option<&str>) -> Self {
-        Self { task: task.to_string(), goals: goals.to_vec(), history: history.to_vec(), claim_summary: claim_summary.to_string(), screenshot: screenshot.map(str::to_string), front: verify::front_line() }
+    fn new(
+        task: &str,
+        goals: &[String],
+        history: &[Entry],
+        claim_summary: &str,
+        screenshot: Option<&str>,
+    ) -> Self {
+        Self {
+            task: task.to_string(),
+            goals: goals.to_vec(),
+            history: history.to_vec(),
+            claim_summary: claim_summary.to_string(),
+            screenshot: screenshot.map(str::to_string),
+            front: verify::front_line(),
+        }
     }
 }
 
@@ -183,13 +218,31 @@ fn mode_label(mode: VerifyMode) -> &'static str {
 
 /// The row for a run that was not checked because the agent did not claim success.
 fn skipped_record(run_id: &str, mode: VerifyMode, model: &str) -> VerdictRecord {
-    VerdictRecord { run_id: run_id.to_string(), mode: mode_label(mode).into(), result: "skipped".into(), model: Some(model.to_string()), created_utc: trace::now_utc(), ..VerdictRecord::default() }
+    VerdictRecord {
+        run_id: run_id.to_string(),
+        mode: mode_label(mode).into(),
+        result: "skipped".into(),
+        model: Some(model.to_string()),
+        created_utc: trace::now_utc(),
+        ..VerdictRecord::default()
+    }
 }
 
 /// The row for a check that ran (or failed to).
-fn verdict_record(run_id: &str, mode: VerifyMode, model: &str, checked: &Result<verify::Verdict, String>, latency_ms: Option<i64>, challenged: bool) -> VerdictRecord {
+fn verdict_record(
+    run_id: &str,
+    mode: VerifyMode,
+    model: &str,
+    checked: &Result<verify::Verdict, String>,
+    latency_ms: Option<i64>,
+    challenged: bool,
+) -> VerdictRecord {
     let (result, evidence, error) = match checked {
-        Ok(verdict) => (verdict.result.as_str(), Some(verdict.evidence.clone()), None),
+        Ok(verdict) => (
+            verdict.result.as_str(),
+            Some(verdict.evidence.clone()),
+            None,
+        ),
         Err(why) => ("error", None, Some(why.clone())),
     };
     VerdictRecord {
@@ -219,18 +272,38 @@ enum Blocking {
 /// Blocking mode: checks the screen before a claimed success is accepted and stores the verdict.
 /// It runs inside `unless_stopped`, so Stop works; any failure of the check is stored and the
 /// task finishes as it would have. Never challenges twice.
-async fn blocking_check(client: &ChatClient<'_>, cancel: &CancelToken, trace: &trace::Recorder, run_id: &str, handoff: &Shared, challenged: bool, input: VerifyInput<'_>) -> Blocking {
+async fn blocking_check(
+    client: &ChatClient<'_>,
+    cancel: &CancelToken,
+    trace: &trace::Recorder,
+    run_id: &str,
+    handoff: &Shared,
+    challenged: bool,
+    input: VerifyInput<'_>,
+) -> Blocking {
     let started = Instant::now();
     let Some(checked) = unless_stopped(cancel, verify::verify(client, input)).await else {
         return Blocking::Stopped;
     };
-    let challenge = checked.as_ref().is_ok_and(|verdict| verify::should_challenge(VerifyMode::Blocking, true, challenged, verdict.result));
-    trace.verdict(verdict_record(run_id, VerifyMode::Blocking, client.model, &checked, millis(started), challenge));
+    let challenge = checked.as_ref().is_ok_and(|verdict| {
+        verify::should_challenge(VerifyMode::Blocking, true, challenged, verdict.result)
+    });
+    trace.verdict(verdict_record(
+        run_id,
+        VerifyMode::Blocking,
+        client.model,
+        &checked,
+        millis(started),
+        challenge,
+    ));
     handoff.locked().checked = true;
     match (challenge, checked) {
         (true, Ok(verdict)) => {
             trace.event(run_id, "note", r#"{"text":"the independent check contradicted the claim; the agent was asked to keep going"}"#);
-            Blocking::Challenge(format!("an independent check says the screen does not show the task as done: {}. Keep working, or use ask_user if you are stuck", verdict.evidence.trim_end_matches('.')))
+            Blocking::Challenge(format!(
+                "an independent check says the screen does not show the task as done: {}. Keep working, or use ask_user if you are stuck",
+                verdict.evidence.trim_end_matches('.')
+            ))
         }
         _ => Blocking::Finish,
     }
@@ -252,11 +325,30 @@ fn spawn_background_check(app: &AppHandle, run_id: String, evidence: Option<Evid
     tauri::async_runtime::spawn(async move {
         let state = app.state::<AppState>();
         let (settings, api_key) = (state.settings.locked().clone(), settings::api_key());
-        let client = ChatClient { http: &state.http, base_url: &settings.base_url, api_key: api_key.as_deref(), model: &settings.model };
+        let client = ChatClient {
+            http: &state.http,
+            base_url: &settings.base_url,
+            api_key: api_key.as_deref(),
+            model: &settings.model,
+        };
         let started = Instant::now();
         let checked: Result<verify::Verdict, String> = match &evidence {
-            Some(Evidence { task, goals, history, claim_summary, screenshot: Some(screenshot), front }) => {
-                let input = VerifyInput { task, goals, history, claim_summary, screenshot, front };
+            Some(Evidence {
+                task,
+                goals,
+                history,
+                claim_summary,
+                screenshot: Some(screenshot),
+                front,
+            }) => {
+                let input = VerifyInput {
+                    task,
+                    goals,
+                    history,
+                    claim_summary,
+                    screenshot,
+                    front,
+                };
                 tokio::select! {
                     checked = verify::verify(&client, input) => checked,
                     () = until_the_user_needs_the_screen(&app, &token) => Err("cancelled: the screen was needed for something else".into()),
@@ -264,10 +356,30 @@ fn spawn_background_check(app: &AppHandle, run_id: String, evidence: Option<Evid
             }
             _ => Err("no final screen was kept to check".into()),
         };
-        log::info!("independent check of run {run_id}: {}", match &checked { Ok(verdict) => verdict.result.as_str().to_string(), Err(why) => format!("error ({why})") });
-        state.trace.verdict(verdict_record(&run_id, VerifyMode::Background, &settings.model, &checked, millis(started), false));
+        log::info!(
+            "independent check of run {run_id}: {}",
+            match &checked {
+                Ok(verdict) => verdict.result.as_str().to_string(),
+                Err(why) => format!("error ({why})"),
+            }
+        );
+        state.trace.verdict(verdict_record(
+            &run_id,
+            VerifyMode::Background,
+            &settings.model,
+            &checked,
+            millis(started),
+            false,
+        ));
         if let Ok(verdict) = checked {
-            let _ = app.emit(events::TASK_VERIFIED, events::TaskVerified { run_id, result: verdict.result.as_str(), evidence: verdict.evidence });
+            let _ = app.emit(
+                events::TASK_VERIFIED,
+                events::TaskVerified {
+                    run_id,
+                    result: verdict.result.as_str(),
+                    evidence: verdict.evidence,
+                },
+            );
         }
     });
 }
@@ -284,7 +396,10 @@ impl StepRow {
     pub(crate) fn new(trace: &trace::Recorder, run_id: &str, step: u32) -> Self {
         let mut rec = StepRecord::new(run_id, step);
         rec.started_utc = Some(trace::now_utc());
-        Self { trace: trace.clone(), rec }
+        Self {
+            trace: trace.clone(),
+            rec,
+        }
     }
 
     /// Ends the step as failed with a message.
@@ -323,7 +438,11 @@ async fn settle(run: tokio::task::JoinHandle<Outcome>) -> Outcome {
         Ok(outcome) => outcome,
         Err(err) if err.is_panic() => {
             let payload = err.into_panic();
-            let message = payload.downcast_ref::<&str>().map(|text| text.to_string()).or_else(|| payload.downcast_ref::<String>().cloned()).unwrap_or_else(|| "(no message)".into());
+            let message = payload
+                .downcast_ref::<&str>()
+                .map(|text| text.to_string())
+                .or_else(|| payload.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "(no message)".into());
             log::error!("the agent run panicked: {message}");
             Outcome::Failed("Something went wrong inside Rune: the task was stopped".into())
         }
@@ -334,8 +453,14 @@ async fn settle(run: tokio::task::JoinHandle<Outcome>) -> Outcome {
 /// How a run ended, in the words the session manifest and the flight recorder share.
 fn outcome_label(outcome: &Outcome) -> (&'static str, &str) {
     match outcome {
-        Outcome::Finished { summary, success: true } => ("succeeded", summary.as_str()),
-        Outcome::Finished { summary, success: false } => ("reported_failure", summary.as_str()),
+        Outcome::Finished {
+            summary,
+            success: true,
+        } => ("succeeded", summary.as_str()),
+        Outcome::Finished {
+            summary,
+            success: false,
+        } => ("reported_failure", summary.as_str()),
         Outcome::Stopped => ("stopped", ""),
         Outcome::Failed(message) => ("failed", message.as_str()),
     }
@@ -385,7 +510,10 @@ fn finish(app: &AppHandle, outcome: Outcome) {
 
 /// Resolves to `None` if Stop is pressed before the future completes. The future is dropped, so
 /// an in-flight model request is aborted rather than waited for.
-pub(crate) async fn unless_stopped<T>(cancel: &CancelToken, work: impl Future<Output = T>) -> Option<T> {
+pub(crate) async fn unless_stopped<T>(
+    cancel: &CancelToken,
+    work: impl Future<Output = T>,
+) -> Option<T> {
     tokio::select! {
         output = work => Some(output),
         () = async { while !cancel.is_cancelled() { tokio::time::sleep(Duration::from_millis(25)).await } } => None,
@@ -427,7 +555,8 @@ async fn make_plan(
     };
     let mut send_thinking = thinking_sender(app);
     let started = Instant::now();
-    let Some(result) = unless_stopped(cancel, client.call_retrying(&request, &mut send_thinking)).await
+    let Some(result) =
+        unless_stopped(cancel, client.call_retrying(&request, &mut send_thinking)).await
     else {
         return Err(Outcome::Stopped);
     };
@@ -445,13 +574,18 @@ async fn make_plan(
     Ok(goals)
 }
 
-async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, cancel: CancelToken, run_id: &str, mode: VerifyMode, handoff: Shared) -> Outcome {
+async fn run(
+    app: &AppHandle,
+    task: &str,
+    preset_plan: Option<Vec<String>>,
+    cancel: CancelToken,
+    run_id: &str,
+    mode: VerifyMode,
+    handoff: Shared,
+) -> Outcome {
     let state = app.state::<AppState>();
     let trace = state.trace.clone();
-    let settings = state
-        .settings
-        .locked()
-        .clone();
+    let settings = state.settings.locked().clone();
     let api_key = settings::api_key();
     let tools = protocol::tools();
     let think = settings.show_thinking;
@@ -506,7 +640,10 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, canc
     // Control starts from the middle of the screen. Failing to move the cursor is not worth a task.
     if let Ok(monitor) = screenshot::monitor(None) {
         let worker_cancel = cancel.clone();
-        let moved = tauri::async_runtime::spawn_blocking(move || body::centre_cursor(&monitor, &worker_cancel)).await;
+        let moved = tauri::async_runtime::spawn_blocking(move || {
+            body::centre_cursor(&monitor, &worker_cancel)
+        })
+        .await;
         if matches!(moved, Ok(Err(ExecError::Cancelled))) {
             return Outcome::Stopped;
         }
@@ -521,8 +658,15 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, canc
 
         // Anything the user said since the last step goes into the history as an instruction.
         for note in state.steer.locked().drain(..) {
-            trace.event(run_id, "steer", &serde_json::json!({ "text": note }).to_string());
-            history.push(Entry { action: format!("the user said: \"{note}\""), outcome: "follow this from now on".into() });
+            trace.event(
+                run_id,
+                "steer",
+                &serde_json::json!({ "text": note }).to_string(),
+            );
+            history.push(Entry {
+                action: format!("the user said: \"{note}\""),
+                outcome: "follow this from now on".into(),
+            });
         }
 
         // Look. If the decision model sees the page still loading, wait a moment and look again
@@ -558,8 +702,10 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, canc
             // Not on the first look: the desktop before any action is not loading anything.
             let notes = if step > 1 {
                 let checking = Instant::now();
-                let read = unless_stopped(&cancel, quick::read_screen(app, &frame.data_uri())).await;
-                screen_check_ms = Some(screen_check_ms.unwrap_or(0) + millis(checking).unwrap_or(0));
+                let read =
+                    unless_stopped(&cancel, quick::read_screen(app, &frame.data_uri())).await;
+                screen_check_ms =
+                    Some(screen_check_ms.unwrap_or(0) + millis(checking).unwrap_or(0));
                 match read {
                     Some(notes) => notes,
                     None => return Outcome::Stopped,
@@ -579,7 +725,8 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, canc
         };
         row.rec.observe_ms = Some(observe_ms);
         row.rec.screen_check_ms = screen_check_ms;
-        row.rec.observation_path = Some(frame.path.display().to_string()).filter(|path| !path.is_empty());
+        row.rec.observation_path =
+            Some(frame.path.display().to_string()).filter(|path| !path.is_empty());
         row.rec.elements_hash = Some(trace::text_hash(&element_text));
 
         let screenshot = frame.data_uri();
@@ -588,11 +735,17 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, canc
         let unchanged = watch.look(frame.signature(), acted.as_ref());
         acted = None;
         if stuck::warning(unchanged).is_some() {
-            trace.event(run_id, "stuck_warning", &serde_json::json!({ "unchanged": unchanged }).to_string());
+            trace.event(
+                run_id,
+                "stuck_warning",
+                &serde_json::json!({ "unchanged": unchanged }).to_string(),
+            );
         }
         if watch.should_give_up() {
             row.fail("the screen stopped changing");
-            return Outcome::Failed("Stopped: the screen stopped changing, so the actions are not working".into());
+            return Outcome::Failed(
+                "Stopped: the screen stopped changing, so the actions are not working".into(),
+            );
         }
         // A window that runs as administrator ignores our clicks and typing: say so, and give up if it stays in front.
         let elevated = foreground::blocked_by_elevation();
@@ -601,35 +754,78 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, canc
         }
         if elevated_watch.look(elevated) >= stuck::ELEVATED_GIVE_UP_AFTER {
             row.fail("the front window runs as administrator");
-            return Outcome::Failed("I can't control this window because it runs as administrator.".into());
+            return Outcome::Failed(
+                "I can't control this window because it runs as administrator.".into(),
+            );
         }
         // What to tell the big model: that it is stuck, anything in the way of the page, and the administrator window.
-        let warning = [stuck::warning(unchanged), notes.and_then(|notes| notes.hint).map(String::from), elevated.then(|| foreground::ELEVATED_WARNING.to_string())].into_iter().flatten().collect::<Vec<_>>().join(" ");
+        let warning = [
+            stuck::warning(unchanged),
+            notes.and_then(|notes| notes.hint).map(String::from),
+            elevated.then(|| foreground::ELEVATED_WARNING.to_string()),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(" ");
         let warning = (!warning.is_empty()).then_some(warning);
 
         // Already finished? Once the last goal has had its steps, the decision model can tell from
         // the screen, without a full chat call just to say "done". Unsure means the big model decides.
-        let succeeded = history.iter().filter(|entry| entry.outcome == "done").count();
-        if current + 1 == plan.len() && succeeded >= plan.len() && history.last().is_some_and(|entry| entry.outcome == "done") {
+        let succeeded = history
+            .iter()
+            .filter(|entry| entry.outcome == "done")
+            .count();
+        if current + 1 == plan.len()
+            && succeeded >= plan.len()
+            && history.last().is_some_and(|entry| entry.outcome == "done")
+        {
             let skipped = history.len().saturating_sub(10);
-            let actions: Vec<String> = history.iter().skip(skipped).map(|entry| format!("{} -> {}", entry.action, entry.outcome)).collect();
+            let actions: Vec<String> = history
+                .iter()
+                .skip(skipped)
+                .map(|entry| format!("{} -> {}", entry.action, entry.outcome))
+                .collect();
             let checking = Instant::now();
-            let Some(finished) = unless_stopped(&cancel, quick::looks_finished(app, task, &actions.join("\n"), &screenshot)).await else {
+            let Some(finished) = unless_stopped(
+                &cancel,
+                quick::looks_finished(app, task, &actions.join("\n"), &screenshot),
+            )
+            .await
+            else {
                 return Outcome::Stopped;
             };
             row.rec.finish_check_ms = millis(checking);
             if finished {
                 log::info!("step {step}: the decision model sees the task is finished");
-                trace.event(run_id, "note", r#"{"text":"the decision model saw the task was finished"}"#);
+                trace.event(
+                    run_id,
+                    "note",
+                    r#"{"text":"the decision model saw the task was finished"}"#,
+                );
                 row.rec.gate = Some("none".into());
                 row.rec.result = Some("skipped".into());
                 let summary = format!("Done: {}", task.trim());
                 if mode == VerifyMode::Blocking && !challenged {
-                    let input = VerifyInput { task, goals: &plan, history: &history, claim_summary: &summary, screenshot: &screenshot, front: &verify::front_line() };
-                    match blocking_check(&client, &cancel, &trace, run_id, &handoff, challenged, input).await {
+                    let input = VerifyInput {
+                        task,
+                        goals: &plan,
+                        history: &history,
+                        claim_summary: &summary,
+                        screenshot: &screenshot,
+                        front: &verify::front_line(),
+                    };
+                    match blocking_check(
+                        &client, &cancel, &trace, run_id, &handoff, challenged, input,
+                    )
+                    .await
+                    {
                         Blocking::Stopped => return Outcome::Stopped,
                         Blocking::Challenge(line) => {
-                            history.push(Entry { action: "done".into(), outcome: line });
+                            history.push(Entry {
+                                action: "done".into(),
+                                outcome: line,
+                            });
                             challenged = true;
                             row.rec.error = Some("challenged by the independent check".into());
                             continue;
@@ -638,16 +834,34 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, canc
                     }
                 }
                 if mode == VerifyMode::Background {
-                    handoff.locked().evidence = Some(Evidence::new(task, &plan, &history, &summary, Some(&screenshot)));
+                    handoff.locked().evidence = Some(Evidence::new(
+                        task,
+                        &plan,
+                        &history,
+                        &summary,
+                        Some(&screenshot),
+                    ));
                 }
                 events::emit_plan(app, &plan, plan.len(), true);
-                return Outcome::Finished { summary, success: true };
+                return Outcome::Finished {
+                    summary,
+                    success: true,
+                };
             }
         }
 
         // Decide.
         events::set_agent_state(app, AgentState::Planning);
-        let text = prompt::user_message(task, &plan, current, &history, &element_text, warning.as_deref(), step, settings.max_steps);
+        let text = prompt::user_message(
+            task,
+            &plan,
+            current,
+            &history,
+            &element_text,
+            warning.as_deref(),
+            step,
+            settings.max_steps,
+        );
         let request = Request {
             system: prompt::SYSTEM,
             user_text: &text,
@@ -660,7 +874,8 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, canc
         let mut send_thinking = thinking_sender(app);
         let started = Instant::now();
         row.rec.prompt_text = Some(text.clone());
-        let Some(reply) = unless_stopped(&cancel, client.call_retrying(&request, &mut send_thinking)).await
+        let Some(reply) =
+            unless_stopped(&cancel, client.call_retrying(&request, &mut send_thinking)).await
         else {
             return Outcome::Stopped;
         };
@@ -669,7 +884,11 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, canc
             Ok(reply) => reply,
             Err(err @ (ModelError::NoToolCall(_) | ModelError::BadArguments(_))) => {
                 invalid_in_a_row += 1;
-                trace.event(run_id, "invalid_answer", &serde_json::json!({ "error": err.to_string() }).to_string());
+                trace.event(
+                    run_id,
+                    "invalid_answer",
+                    &serde_json::json!({ "error": err.to_string() }).to_string(),
+                );
                 if invalid_in_a_row >= MAX_INVALID_IN_A_ROW {
                     row.fail(&err.to_string());
                     return Outcome::Failed(err.to_string());
@@ -693,7 +912,9 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, canc
         };
         row.rec.tool = Some(reply.call.name.clone());
         row.rec.args_json = Some(reply.call.arguments.to_string());
-        row.rec.completion_tokens = reply.completion_tokens.and_then(|tokens| i64::try_from(tokens).ok());
+        row.rec.completion_tokens = reply
+            .completion_tokens
+            .and_then(|tokens| i64::try_from(tokens).ok());
         row.rec.thinking_chars = i64::try_from(reply.thinking.chars().count()).ok();
         log::info!(
             "step {step}: {} in {} ms ({:?} tokens)",
@@ -714,7 +935,11 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, canc
             Ok(decision) => decision,
             Err(problem) => {
                 invalid_in_a_row += 1;
-                trace.event(run_id, "invalid_answer", &serde_json::json!({ "tool": reply.call.name, "problem": problem }).to_string());
+                trace.event(
+                    run_id,
+                    "invalid_answer",
+                    &serde_json::json!({ "tool": reply.call.name, "problem": problem }).to_string(),
+                );
                 if invalid_in_a_row >= MAX_INVALID_IN_A_ROW {
                     row.fail(&problem);
                     return Outcome::Failed(problem);
@@ -746,11 +971,25 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, canc
             row.rec.gate = Some("none".into());
             row.rec.result = Some("ok".into());
             if success && mode == VerifyMode::Blocking && !challenged {
-                let input = VerifyInput { task, goals: &plan, history: &history, claim_summary: &summary, screenshot: &screenshot, front: &verify::front_line() };
-                match blocking_check(&client, &cancel, &trace, run_id, &handoff, challenged, input).await {
+                let input = VerifyInput {
+                    task,
+                    goals: &plan,
+                    history: &history,
+                    claim_summary: &summary,
+                    screenshot: &screenshot,
+                    front: &verify::front_line(),
+                };
+                match blocking_check(
+                    &client, &cancel, &trace, run_id, &handoff, challenged, input,
+                )
+                .await
+                {
                     Blocking::Stopped => return Outcome::Stopped,
                     Blocking::Challenge(line) => {
-                        history.push(Entry { action: "done".into(), outcome: line });
+                        history.push(Entry {
+                            action: "done".into(),
+                            outcome: line,
+                        });
                         challenged = true;
                         row.rec.result = Some("skipped".into());
                         row.rec.error = Some("challenged by the independent check".into());
@@ -760,7 +999,13 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, canc
                 }
             }
             if success && mode == VerifyMode::Background {
-                handoff.locked().evidence = Some(Evidence::new(task, &plan, &history, &summary, Some(&screenshot)));
+                handoff.locked().evidence = Some(Evidence::new(
+                    task,
+                    &plan,
+                    &history,
+                    &summary,
+                    Some(&screenshot),
+                ));
             }
             events::emit_plan(app, &plan, plan.len(), true);
             return Outcome::Finished { summary, success };
@@ -772,14 +1017,23 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, canc
             let outcome = match gate::ask_question(app, &cancel, "Rune", question).await {
                 Verdict::Allow => "the user answered: yes".to_string(),
                 Verdict::Denied("declined") => "the user answered: no".to_string(),
-                Verdict::Denied(_) => "the user did not answer in time, which counts as no".to_string(),
+                Verdict::Denied(_) => {
+                    "the user did not answer in time, which counts as no".to_string()
+                }
                 Verdict::Stopped => return Outcome::Stopped,
             };
             row.rec.gate_ms = millis(asking);
             row.rec.gate = Some("none".into());
             row.rec.result = Some("ok".into());
-            trace.event(run_id, "ask_user", &serde_json::json!({ "question": question, "answer": outcome }).to_string());
-            history.push(Entry { action: action.describe(), outcome });
+            trace.event(
+                run_id,
+                "ask_user",
+                &serde_json::json!({ "question": question, "answer": outcome }).to_string(),
+            );
+            history.push(Entry {
+                action: action.describe(),
+                outcome,
+            });
             continue;
         }
 
@@ -888,20 +1142,48 @@ mod tests {
             Outcome::Stopped
         })
         .await;
-        assert_eq!(outcome, Outcome::Failed("Something went wrong inside Rune: the task was stopped".into()));
+        assert_eq!(
+            outcome,
+            Outcome::Failed("Something went wrong inside Rune: the task was stopped".into())
+        );
     }
 
     #[tokio::test]
     async fn a_run_that_returns_passes_its_outcome_through() {
-        let finished = Outcome::Finished { summary: "ok".into(), success: true };
-        assert_eq!(supervised(async { Outcome::Finished { summary: "ok".into(), success: true } }).await, finished);
-        assert_eq!(supervised(async { Outcome::Stopped }).await, Outcome::Stopped);
-        assert_eq!(supervised(async { Outcome::Failed("no".into()) }).await, Outcome::Failed("no".into()));
+        let finished = Outcome::Finished {
+            summary: "ok".into(),
+            success: true,
+        };
+        assert_eq!(
+            supervised(async {
+                Outcome::Finished {
+                    summary: "ok".into(),
+                    success: true,
+                }
+            })
+            .await,
+            finished
+        );
+        assert_eq!(
+            supervised(async { Outcome::Stopped }).await,
+            Outcome::Stopped
+        );
+        assert_eq!(
+            supervised(async { Outcome::Failed("no".into()) }).await,
+            Outcome::Failed("no".into())
+        );
     }
 
     #[test]
     fn a_finished_run_cancels_what_it_left_behind() {
-        for outcome in [Outcome::Failed("boom".into()), Outcome::Stopped, Outcome::Finished { summary: "ok".into(), success: true }] {
+        for outcome in [
+            Outcome::Failed("boom".into()),
+            Outcome::Stopped,
+            Outcome::Finished {
+                summary: "ok".into(),
+                success: true,
+            },
+        ] {
             let token = CancelToken::default();
             let in_flight = token.clone();
             stop_leftovers(&token, &outcome);
@@ -909,85 +1191,210 @@ mod tests {
         }
         let next_run = CancelToken::default();
         stop_leftovers(&CancelToken::default(), &Outcome::Stopped);
-        assert!(!next_run.is_cancelled(), "another run's token is not touched");
+        assert!(
+            !next_run.is_cancelled(),
+            "another run's token is not touched"
+        );
     }
 
     fn finished(success: bool) -> Outcome {
-        Outcome::Finished { summary: "s".into(), success }
+        Outcome::Finished {
+            summary: "s".into(),
+            success,
+        }
     }
 
     #[test]
     fn what_to_do_about_the_check_after_a_run() {
         use VerifyMode::*;
-        let outcomes = [finished(true), finished(false), Outcome::Stopped, Outcome::Failed("boom".into())];
+        let outcomes = [
+            finished(true),
+            finished(false),
+            Outcome::Stopped,
+            Outcome::Failed("boom".into()),
+        ];
         // Off: nothing, whatever happened.
         for outcome in &outcomes {
             assert_eq!(after_run(Off, outcome, false), AfterRun::Nothing);
             assert_eq!(after_run(Off, outcome, true), AfterRun::Nothing);
         }
         // Background: a claimed success is checked after the run; everything else is recorded as skipped.
-        assert_eq!(after_run(Background, &finished(true), false), AfterRun::Check);
+        assert_eq!(
+            after_run(Background, &finished(true), false),
+            AfterRun::Check
+        );
         for outcome in &outcomes[1..] {
-            assert_eq!(after_run(Background, outcome, false), AfterRun::Skip, "{outcome:?}");
+            assert_eq!(
+                after_run(Background, outcome, false),
+                AfterRun::Skip,
+                "{outcome:?}"
+            );
         }
         // Blocking checks inside the run: a claimed success is left alone, the rest is skipped...
-        assert_eq!(after_run(Blocking, &finished(true), false), AfterRun::Nothing);
+        assert_eq!(
+            after_run(Blocking, &finished(true), false),
+            AfterRun::Nothing
+        );
         for outcome in &outcomes[1..] {
-            assert_eq!(after_run(Blocking, outcome, false), AfterRun::Skip, "{outcome:?}");
+            assert_eq!(
+                after_run(Blocking, outcome, false),
+                AfterRun::Skip,
+                "{outcome:?}"
+            );
         }
         // ...unless the run already stored a verdict (a challenged task that later failed keeps its verdict).
         for outcome in &outcomes {
             for mode in [Background, Blocking] {
-                assert_eq!(after_run(mode, outcome, true), AfterRun::Nothing, "{mode:?} {outcome:?}");
+                assert_eq!(
+                    after_run(mode, outcome, true),
+                    AfterRun::Nothing,
+                    "{mode:?} {outcome:?}"
+                );
             }
         }
     }
 
     #[test]
     fn a_check_becomes_a_verdict_row_and_a_failure_becomes_an_error_row() {
-        let ok = Ok(verify::Verdict { result: verify::VerdictResult::Contradicted, evidence: "The window is empty.".into() });
+        let ok = Ok(verify::Verdict {
+            result: verify::VerdictResult::Contradicted,
+            evidence: "The window is empty.".into(),
+        });
         let row = verdict_record("r1", VerifyMode::Blocking, "gemma", &ok, Some(4_200), true);
-        assert_eq!((row.run_id.as_str(), row.mode.as_str(), row.result.as_str()), ("r1", "blocking", "contradicted"));
-        assert_eq!((row.evidence.as_deref(), row.error.as_deref(), row.model.as_deref()), (Some("The window is empty."), None, Some("gemma")));
-        assert_eq!((row.latency_ms, row.claimed_success, row.challenged), (Some(4_200), true, true));
+        assert_eq!(
+            (row.run_id.as_str(), row.mode.as_str(), row.result.as_str()),
+            ("r1", "blocking", "contradicted")
+        );
+        assert_eq!(
+            (
+                row.evidence.as_deref(),
+                row.error.as_deref(),
+                row.model.as_deref()
+            ),
+            (Some("The window is empty."), None, Some("gemma"))
+        );
+        assert_eq!(
+            (row.latency_ms, row.claimed_success, row.challenged),
+            (Some(4_200), true, true)
+        );
         let failed = Err("the check took longer than 30 seconds".to_string());
-        let row = verdict_record("r2", VerifyMode::Background, "gemma", &failed, Some(30_001), false);
-        assert_eq!((row.result.as_str(), row.evidence.as_deref(), row.error.as_deref()), ("error", None, Some("the check took longer than 30 seconds")));
+        let row = verdict_record(
+            "r2",
+            VerifyMode::Background,
+            "gemma",
+            &failed,
+            Some(30_001),
+            false,
+        );
+        assert_eq!(
+            (
+                row.result.as_str(),
+                row.evidence.as_deref(),
+                row.error.as_deref()
+            ),
+            ("error", None, Some("the check took longer than 30 seconds"))
+        );
         assert_eq!((row.mode.as_str(), row.challenged), ("background", false));
         let skipped = skipped_record("r3", VerifyMode::Background, "gemma");
-        assert_eq!((skipped.result.as_str(), skipped.claimed_success, skipped.challenged, skipped.latency_ms), ("skipped", false, false, None));
-        assert_eq!((mode_label(VerifyMode::Off), mode_label(VerifyMode::Background), mode_label(VerifyMode::Blocking)), ("off", "background", "blocking"));
+        assert_eq!(
+            (
+                skipped.result.as_str(),
+                skipped.claimed_success,
+                skipped.challenged,
+                skipped.latency_ms
+            ),
+            ("skipped", false, false, None)
+        );
+        assert_eq!(
+            (
+                mode_label(VerifyMode::Off),
+                mode_label(VerifyMode::Background),
+                mode_label(VerifyMode::Blocking)
+            ),
+            ("off", "background", "blocking")
+        );
     }
 
     #[test]
     fn the_evidence_keeps_the_latest_frame_and_omits_a_missing_one() {
         let goals = vec!["Open".to_string(), "Type".to_string()];
-        let history: Vec<Entry> = (1..=20).map(|n| Entry { action: format!("click {n}"), outcome: "done".into() }).collect();
-        let evidence = Evidence::new("write hello", &goals, &history, "Done: write hello", Some("data:image/jpeg;base64,AA"));
-        assert_eq!((evidence.task.as_str(), evidence.goals.len(), evidence.history.len()), ("write hello", 2, 20));
-        assert_eq!(evidence.screenshot.as_deref(), Some("data:image/jpeg;base64,AA"));
+        let history: Vec<Entry> = (1..=20)
+            .map(|n| Entry {
+                action: format!("click {n}"),
+                outcome: "done".into(),
+            })
+            .collect();
+        let evidence = Evidence::new(
+            "write hello",
+            &goals,
+            &history,
+            "Done: write hello",
+            Some("data:image/jpeg;base64,AA"),
+        );
+        assert_eq!(
+            (
+                evidence.task.as_str(),
+                evidence.goals.len(),
+                evidence.history.len()
+            ),
+            ("write hello", 2, 20)
+        );
+        assert_eq!(
+            evidence.screenshot.as_deref(),
+            Some("data:image/jpeg;base64,AA")
+        );
         assert_eq!(Evidence::new("t", &[], &[], "", None).screenshot, None);
         // What the check shows of those 20 steps is capped at twelve (plus the note that older ones were left out).
-        let shown = verify::user_message(&evidence.task, &evidence.goals, &evidence.history, &evidence.claim_summary, &evidence.front);
-        assert_eq!(shown.lines().filter(|line| line.contains(" -> ")).count(), 12);
+        let shown = verify::user_message(
+            &evidence.task,
+            &evidence.goals,
+            &evidence.history,
+            &evidence.claim_summary,
+            &evidence.front,
+        );
+        assert_eq!(
+            shown.lines().filter(|line| line.contains(" -> ")).count(),
+            12
+        );
         assert!(shown.contains("8 earlier steps omitted"));
     }
 
     #[test]
     fn the_handoff_starts_empty_and_gives_up_its_evidence_once() {
         let handoff: Shared = Shared::default();
-        assert!(handoff.locked().evidence.is_none() && !handoff.locked().checked, "a run that never finishes leaves nothing to check");
+        assert!(
+            handoff.locked().evidence.is_none() && !handoff.locked().checked,
+            "a run that never finishes leaves nothing to check"
+        );
         handoff.locked().evidence = Some(Evidence::new("t", &[], &[], "c", Some("data:x")));
         let taken = handoff.locked().evidence.take();
-        assert!(taken.is_some() && handoff.locked().evidence.is_none(), "the evidence is taken once");
+        assert!(
+            taken.is_some() && handoff.locked().evidence.is_none(),
+            "the evidence is taken once"
+        );
     }
 
     #[test]
     fn every_outcome_has_one_label_for_the_manifest_and_the_recorder() {
-        assert_eq!(outcome_label(&Outcome::Finished { summary: "ok".into(), success: true }), ("succeeded", "ok"));
-        assert_eq!(outcome_label(&Outcome::Finished { summary: "no".into(), success: false }), ("reported_failure", "no"));
+        assert_eq!(
+            outcome_label(&Outcome::Finished {
+                summary: "ok".into(),
+                success: true
+            }),
+            ("succeeded", "ok")
+        );
+        assert_eq!(
+            outcome_label(&Outcome::Finished {
+                summary: "no".into(),
+                success: false
+            }),
+            ("reported_failure", "no")
+        );
         assert_eq!(outcome_label(&Outcome::Stopped), ("stopped", ""));
-        assert_eq!(outcome_label(&Outcome::Failed("boom".into())), ("failed", "boom"));
+        assert_eq!(
+            outcome_label(&Outcome::Failed("boom".into())),
+            ("failed", "boom")
+        );
     }
 
     #[test]
@@ -996,7 +1403,14 @@ mod tests {
         let trace = trace::Recorder::noop();
         let mut row = StepRow::new(&trace, "r1", 4);
         row.fail("no screen");
-        assert_eq!((row.rec.result.as_deref(), row.rec.error.as_deref(), row.rec.step), (Some("failed"), Some("no screen"), 4));
+        assert_eq!(
+            (
+                row.rec.result.as_deref(),
+                row.rec.error.as_deref(),
+                row.rec.step
+            ),
+            (Some("failed"), Some("no screen"), 4)
+        );
         drop(row);
         let untouched = StepRow::new(&trace, "r1", 5);
         assert!(untouched.rec.result.is_none());
@@ -1005,11 +1419,18 @@ mod tests {
 
     #[test]
     fn a_dropped_step_row_reaches_the_database() {
-        let dir = std::env::temp_dir().join(format!("rune-agent-trace-test-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("rune-agent-trace-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let path = trace::db_path(&dir);
         let recorder = trace::Recorder::start(&path);
-        recorder.begin_run(RunInfo { id: "r1".into(), task: "t".into(), source: "built-in".into(), started_utc: trace::now_utc(), ..RunInfo::default() });
+        recorder.begin_run(RunInfo {
+            id: "r1".into(),
+            task: "t".into(),
+            source: "built-in".into(),
+            started_utc: trace::now_utc(),
+            ..RunInfo::default()
+        });
         {
             let mut cancelled = StepRow::new(&recorder, "r1", 1);
             cancelled.rec.tool = Some("click".into());
@@ -1020,8 +1441,24 @@ mod tests {
         }
         recorder.flush();
         let steps = trace::store::get_run(&path, "r1").unwrap().unwrap().steps;
-        let summary: Vec<_> = steps.iter().map(|row| (row.step, row.tool.as_deref(), row.result.as_deref(), row.error.as_deref())).collect();
-        assert_eq!(summary, [(1, Some("click"), Some("cancelled"), None), (2, None, Some("failed"), Some("no screen"))]);
+        let summary: Vec<_> = steps
+            .iter()
+            .map(|row| {
+                (
+                    row.step,
+                    row.tool.as_deref(),
+                    row.result.as_deref(),
+                    row.error.as_deref(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            summary,
+            [
+                (1, Some("click"), Some("cancelled"), None),
+                (2, None, Some("failed"), Some("no screen"))
+            ]
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

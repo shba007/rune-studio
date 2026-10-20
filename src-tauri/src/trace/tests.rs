@@ -14,7 +14,11 @@ struct TempDir(PathBuf);
 impl TempDir {
     fn new() -> Self {
         static COUNTER: AtomicU32 = AtomicU32::new(0);
-        let dir = std::env::temp_dir().join(format!("rune-trace-test-{}-{}", std::process::id(), COUNTER.fetch_add(1, Ordering::Relaxed)));
+        let dir = std::env::temp_dir().join(format!(
+            "rune-trace-test-{}-{}",
+            std::process::id(),
+            COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         Self(dir)
@@ -32,17 +36,31 @@ impl Drop for TempDir {
 }
 
 fn run(id: &str, started: &str) -> RunInfo {
-    RunInfo { id: id.into(), scope_id: Some(7), task: "open notepad".into(), source: "built-in".into(), started_utc: started.into(), ..RunInfo::default() }
+    RunInfo {
+        id: id.into(),
+        scope_id: Some(7),
+        task: "open notepad".into(),
+        source: "built-in".into(),
+        started_utc: started.into(),
+        ..RunInfo::default()
+    }
 }
 
 fn version_of(path: &std::path::Path) -> i64 {
-    Connection::open(path).unwrap().query_row("PRAGMA user_version", [], |row| row.get(0)).unwrap()
+    Connection::open(path)
+        .unwrap()
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap()
 }
 
 fn tables_of(path: &std::path::Path) -> Vec<String> {
     let db = Connection::open(path).unwrap();
     let mut statement = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").unwrap();
-    statement.query_map([], |row| row.get(0)).unwrap().map(Result::unwrap).collect()
+    statement
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect()
 }
 
 #[test]
@@ -51,7 +69,10 @@ fn a_new_database_is_created_at_the_current_version() {
     let recorder = Recorder::start(&dir.db());
     recorder.flush();
     assert_eq!(version_of(&dir.db()), 3);
-    assert_eq!(tables_of(&dir.db()), ["analyses", "events", "runs", "steps", "verdicts"]);
+    assert_eq!(
+        tables_of(&dir.db()),
+        ["analyses", "events", "runs", "steps", "verdicts"]
+    );
 }
 
 #[test]
@@ -63,7 +84,11 @@ fn opening_twice_is_idempotent() {
     let second = Recorder::start(&dir.db());
     second.flush();
     assert_eq!(version_of(&dir.db()), 3);
-    assert_eq!(list_runs(&dir.db(), 10).unwrap().len(), 1, "the second open keeps the data");
+    assert_eq!(
+        list_runs(&dir.db(), 10).unwrap().len(),
+        1,
+        "the second open keeps the data"
+    );
 }
 
 #[test]
@@ -71,11 +96,15 @@ fn a_newer_database_is_left_untouched_and_nothing_is_recorded() {
     let dir = TempDir::new();
     {
         let db = Connection::open(dir.db()).unwrap();
-        db.execute_batch("CREATE TABLE future (x INTEGER); PRAGMA user_version = 5;").unwrap();
+        db.execute_batch("CREATE TABLE future (x INTEGER); PRAGMA user_version = 5;")
+            .unwrap();
     }
     let recorder = Recorder::start(&dir.db());
     recorder.begin_run(run("r1", "2026-10-19T10:00:00Z"));
-    assert!(recorder.tx.is_none(), "a newer schema means a no-op recorder");
+    assert!(
+        recorder.tx.is_none(),
+        "a newer schema means a no-op recorder"
+    );
     assert_eq!(version_of(&dir.db()), 5);
     assert_eq!(tables_of(&dir.db()), ["future"]);
     assert_eq!(list_runs(&dir.db(), 10), Err(StoreError::Newer(5)));
@@ -103,20 +132,46 @@ fn a_run_with_steps_and_events_round_trips() {
     recorder.end_run(&info.id, "succeeded", "Done");
     recorder.flush();
 
-    let detail = get_run(&dir.db(), &info.id).unwrap().expect("the run exists");
+    let detail = get_run(&dir.db(), &info.id)
+        .unwrap()
+        .expect("the run exists");
     assert_eq!(detail.run.info.task, "open notepad");
     assert_eq!(detail.run.info.scope_id, Some(7));
     assert_eq!(detail.run.info.model.as_deref(), Some("gemma"));
-    assert_eq!(detail.run.info.plan_json.as_deref(), Some(r#"["open","type"]"#));
+    assert_eq!(
+        detail.run.info.plan_json.as_deref(),
+        Some(r#"["open","type"]"#)
+    );
     assert_eq!(detail.run.info.session_dir, info.session_dir);
     assert_eq!(detail.run.outcome.as_deref(), Some("succeeded"));
     assert_eq!(detail.run.summary.as_deref(), Some("Done"));
     assert!(detail.run.ended_utc.is_some());
     assert_eq!(detail.steps.len(), 1);
-    assert_eq!((detail.steps[0].step, detail.steps[0].tool.as_deref(), detail.steps[0].gate.as_deref()), (1, Some("click"), Some("allowed")));
-    assert_eq!((detail.steps[0].decide_ms, detail.steps[0].act_ms, detail.steps[0].observe_ms), (Some(812), Some(40), None), "a phase that did not run stays NULL");
+    assert_eq!(
+        (
+            detail.steps[0].step,
+            detail.steps[0].tool.as_deref(),
+            detail.steps[0].gate.as_deref()
+        ),
+        (1, Some("click"), Some("allowed"))
+    );
+    assert_eq!(
+        (
+            detail.steps[0].decide_ms,
+            detail.steps[0].act_ms,
+            detail.steps[0].observe_ms
+        ),
+        (Some(812), Some(40), None),
+        "a phase that did not run stays NULL"
+    );
     assert_eq!(detail.events.len(), 1);
-    assert_eq!((detail.events[0].kind.as_deref(), detail.events[0].data_json.as_deref()), (Some("plan"), Some(r#"{"goals":2}"#)));
+    assert_eq!(
+        (
+            detail.events[0].kind.as_deref(),
+            detail.events[0].data_json.as_deref()
+        ),
+        (Some("plan"), Some(r#"{"goals":2}"#))
+    );
     assert_eq!(get_run(&dir.db(), "missing").unwrap(), None);
 }
 
@@ -140,8 +195,16 @@ fn a_step_sent_in_two_pieces_is_one_row() {
     let steps = get_run(&dir.db(), "r1").unwrap().unwrap().steps;
     assert_eq!(steps.len(), 1);
     let row = &steps[0];
-    assert_eq!((row.tool.as_deref(), row.reason.as_deref(), row.decide_ms), (Some("type_text"), Some("fill the field"), Some(900)), "the first piece survives");
-    assert_eq!((row.result.as_deref(), row.error.as_deref(), row.act_ms), (Some("failed"), Some("no focus"), Some(12)), "the second piece is added");
+    assert_eq!(
+        (row.tool.as_deref(), row.reason.as_deref(), row.decide_ms),
+        (Some("type_text"), Some("fill the field"), Some(900)),
+        "the first piece survives"
+    );
+    assert_eq!(
+        (row.result.as_deref(), row.error.as_deref(), row.act_ms),
+        (Some("failed"), Some("no focus"), Some(12)),
+        "the second piece is added"
+    );
 }
 
 #[test]
@@ -160,8 +223,14 @@ fn over_long_text_is_cut_to_its_limits() {
     let args = detail.steps[0].args_json.clone().unwrap();
     assert_eq!(args.chars().count(), ARGS_CAP);
     assert!(args.ends_with('…'));
-    assert_eq!(detail.steps[0].prompt_text.clone().unwrap().chars().count(), PROMPT_CAP);
-    assert_eq!(detail.events[0].data_json.clone().unwrap().chars().count(), EVENT_CAP);
+    assert_eq!(
+        detail.steps[0].prompt_text.clone().unwrap().chars().count(),
+        PROMPT_CAP
+    );
+    assert_eq!(
+        detail.events[0].data_json.clone().unwrap().chars().count(),
+        EVENT_CAP
+    );
     assert_eq!(cap("short", 10), "short");
     assert_eq!(cap("abcdef", 4), "abc…");
 }
@@ -173,8 +242,15 @@ fn a_full_queue_drops_at_once_and_counts() {
     for number in 0..5 {
         recorder.event("r1", "note", &number.to_string());
     }
-    assert!(started.elapsed() < Duration::from_secs(1), "recording never waits for the writer");
-    assert_eq!(recorder.dropped(), 3, "two fit in the queue, three were dropped");
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "recording never waits for the writer"
+    );
+    assert_eq!(
+        recorder.dropped(),
+        3,
+        "two fit in the queue, three were dropped"
+    );
     drop(queue);
     recorder.event("r1", "note", "after the writer is gone");
     assert_eq!(recorder.dropped(), 4, "a closed queue also counts");
@@ -194,7 +270,10 @@ fn runs_are_listed_newest_first_up_to_the_limit() {
     recorder.flush();
 
     let all = list_runs(&dir.db(), 10).unwrap();
-    assert_eq!(all.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(), ["newest", "newer", "old"]);
+    assert_eq!(
+        all.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(),
+        ["newest", "newer", "old"]
+    );
     assert_eq!(all[0].steps, 2);
     assert_eq!(all[1].steps, 0);
     assert_eq!(list_runs(&dir.db(), 2).unwrap().len(), 2);
@@ -228,7 +307,10 @@ fn a_step_for_a_run_whose_beginning_was_dropped_is_still_kept() {
     recorder.flush();
     let detail = get_run(&dir.db(), "lost").unwrap().unwrap();
     assert_eq!(detail.steps.len(), 1);
-    assert_eq!(detail.run.info.task, "open notepad", "the late beginning fills the bare row");
+    assert_eq!(
+        detail.run.info.task, "open notepad",
+        "the late beginning fills the bare row"
+    );
 }
 
 #[test]
@@ -242,7 +324,11 @@ fn reading_while_the_writer_is_writing_works() {
         if step % 25 == 0 {
             let listed = list_runs(&dir.db(), 5).expect("a read during writes succeeds");
             assert_eq!(listed.len(), 1);
-            assert!(get_run(&dir.db(), "busy").expect("so does a full read").is_some());
+            assert!(
+                get_run(&dir.db(), "busy")
+                    .expect("so does a full read")
+                    .is_some()
+            );
         }
     }
     recorder.flush();
@@ -277,7 +363,15 @@ fn a_missing_file_is_reported_not_created() {
 
 #[test]
 fn iso_times_parse_back_to_the_seconds_they_came_from() {
-    for seconds in [0_u64, 1, 86_399, 86_400, 951_782_400, 1_760_000_000, 1_781_870_352] {
+    for seconds in [
+        0_u64,
+        1,
+        86_399,
+        86_400,
+        951_782_400,
+        1_760_000_000,
+        1_781_870_352,
+    ] {
         assert_eq!(parse_iso(&crate::archive::iso(seconds)), Some(seconds));
     }
     assert_eq!(parse_iso("2026-10-19"), None);
@@ -289,9 +383,13 @@ fn iso_times_parse_back_to_the_seconds_they_came_from() {
 #[test]
 fn sqlite_opens_and_stores_a_row() {
     let db = Connection::open_in_memory().unwrap();
-    db.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)", []).unwrap();
-    db.execute("INSERT INTO t (name) VALUES (?1)", ["hello"]).unwrap();
-    let name: String = db.query_row("SELECT name FROM t WHERE id = 1", [], |row| row.get(0)).unwrap();
+    db.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)", [])
+        .unwrap();
+    db.execute("INSERT INTO t (name) VALUES (?1)", ["hello"])
+        .unwrap();
+    let name: String = db
+        .query_row("SELECT name FROM t WHERE id = 1", [], |row| row.get(0))
+        .unwrap();
     assert_eq!(name, "hello");
 }
 
@@ -305,12 +403,33 @@ fn the_text_hash_is_fnv_1a_and_tells_texts_apart() {
 
 #[test]
 fn the_settings_snapshot_has_only_the_five_settings() {
-    let settings = crate::settings::Settings { max_steps: 12, ask_every_action: true, ..crate::settings::Settings::default() };
+    let settings = crate::settings::Settings {
+        max_steps: 12,
+        ask_every_action: true,
+        ..crate::settings::Settings::default()
+    };
     let snapshot: serde_json::Value = serde_json::from_str(&settings_snapshot(&settings)).unwrap();
-    let mut keys: Vec<&str> = snapshot.as_object().unwrap().keys().map(String::as_str).collect();
+    let mut keys: Vec<&str> = snapshot
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
     keys.sort_unstable();
-    assert_eq!(keys, ["ask_every_action", "fast_checks", "max_steps", "show_thinking", "verify_mode"]);
-    assert_eq!(snapshot["verify_mode"], "background", "the default mode is stored with every run");
+    assert_eq!(
+        keys,
+        [
+            "ask_every_action",
+            "fast_checks",
+            "max_steps",
+            "show_thinking",
+            "verify_mode"
+        ]
+    );
+    assert_eq!(
+        snapshot["verify_mode"], "background",
+        "the default mode is stored with every run"
+    );
     assert_eq!(snapshot["max_steps"], 12);
     assert_eq!(snapshot["ask_every_action"], true);
 }
@@ -332,11 +451,21 @@ fn the_open_run_is_tracked_so_stop_can_end_it() {
     assert_eq!(recorder.open_run_id(), None);
     recorder.flush();
     let outcome = |id: &str| get_run(&dir.db(), id).unwrap().unwrap().run.outcome;
-    assert_eq!((outcome("a").as_deref(), outcome("b").as_deref()), (Some("stopped"), Some("succeeded")));
+    assert_eq!(
+        (outcome("a").as_deref(), outcome("b").as_deref()),
+        (Some("stopped"), Some("succeeded"))
+    );
 }
 
 fn verdict(run_id: &str, mode: &str, result: &str) -> VerdictRecord {
-    VerdictRecord { run_id: run_id.into(), mode: mode.into(), result: result.into(), claimed_success: true, created_utc: "2026-10-19T12:01:00Z".into(), ..VerdictRecord::default() }
+    VerdictRecord {
+        run_id: run_id.into(),
+        mode: mode.into(),
+        result: result.into(),
+        claimed_success: true,
+        created_utc: "2026-10-19T12:01:00Z".into(),
+        ..VerdictRecord::default()
+    }
 }
 
 #[test]
@@ -345,12 +474,19 @@ fn a_version_1_database_is_migrated_without_losing_a_run() {
     {
         // A database exactly as the first release of the recorder made it.
         let db = Connection::open(dir.db()).unwrap();
-        db.execute_batch(&format!("{} PRAGMA user_version = 1;", schema::CREATE_V1)).unwrap();
+        db.execute_batch(&format!("{} PRAGMA user_version = 1;", schema::CREATE_V1))
+            .unwrap();
         db.execute("INSERT INTO runs (id, task, source, started_utc, outcome) VALUES ('old', 'open notepad', 'built-in', '2026-10-01T09:00:00Z', 'succeeded')", []).unwrap();
-        db.execute("INSERT INTO steps (run_id, step, tool, result) VALUES ('old', 1, 'click', 'ok')", []).unwrap();
+        db.execute(
+            "INSERT INTO steps (run_id, step, tool, result) VALUES ('old', 1, 'click', 'ok')",
+            [],
+        )
+        .unwrap();
     }
     // Read before the app has opened it: no verdicts table yet, and that is fine.
-    let before = get_run(&dir.db(), "old").unwrap().expect("the old run reads");
+    let before = get_run(&dir.db(), "old")
+        .unwrap()
+        .expect("the old run reads");
     assert_eq!((before.steps.len(), before.verdict.clone()), (1, None));
     assert_eq!(list_runs(&dir.db(), 5).unwrap()[0].verdict, None);
 
@@ -359,10 +495,26 @@ fn a_version_1_database_is_migrated_without_losing_a_run() {
     assert_eq!(version_of(&dir.db()), 3);
     assert!(tables_of(&dir.db()).contains(&"verdicts".to_string()));
     let after = get_run(&dir.db(), "old").unwrap().expect("and still reads");
-    assert_eq!((after.run.info.task.as_str(), after.steps.len(), after.verdict), ("open notepad", 1, None), "a run without a verdict reads as before");
+    assert_eq!(
+        (
+            after.run.info.task.as_str(),
+            after.steps.len(),
+            after.verdict
+        ),
+        ("open notepad", 1, None),
+        "a run without a verdict reads as before"
+    );
     recorder.verdict(verdict("old", "background", "verified"));
     recorder.flush();
-    assert_eq!(get_run(&dir.db(), "old").unwrap().unwrap().verdict.unwrap().result, "verified");
+    assert_eq!(
+        get_run(&dir.db(), "old")
+            .unwrap()
+            .unwrap()
+            .verdict
+            .unwrap()
+            .result,
+        "verified"
+    );
 }
 
 #[test]
@@ -397,9 +549,18 @@ fn a_verdict_round_trips_and_shows_in_the_list() {
             created_utc: "2026-10-19T12:01:00Z".into(),
         }
     );
-    assert_eq!(get_run(&dir.db(), "without").unwrap().unwrap().verdict, None);
+    assert_eq!(
+        get_run(&dir.db(), "without").unwrap().unwrap().verdict,
+        None
+    );
     let listed = list_runs(&dir.db(), 5).unwrap();
-    assert_eq!(listed.iter().map(|row| (row.id.as_str(), row.verdict.as_deref())).collect::<Vec<_>>(), [("without", None), ("with", Some("contradicted"))]);
+    assert_eq!(
+        listed
+            .iter()
+            .map(|row| (row.id.as_str(), row.verdict.as_deref()))
+            .collect::<Vec<_>>(),
+        [("without", None), ("with", Some("contradicted"))]
+    );
 }
 
 #[test]
@@ -408,10 +569,17 @@ fn a_new_verdict_for_a_run_replaces_the_old_one_and_the_text_is_capped() {
     let recorder = Recorder::start(&dir.db());
     recorder.begin_run(run("r1", "2026-10-19T10:00:00Z"));
     recorder.verdict(verdict("r1", "background", "unsure"));
-    recorder.verdict(VerdictRecord { evidence: Some("e".repeat(1_000)), error: Some("x".repeat(5_000)), ..verdict("r1", "background", "verified") });
+    recorder.verdict(VerdictRecord {
+        evidence: Some("e".repeat(1_000)),
+        error: Some("x".repeat(5_000)),
+        ..verdict("r1", "background", "verified")
+    });
     recorder.flush();
     let stored = get_run(&dir.db(), "r1").unwrap().unwrap().verdict.unwrap();
-    assert_eq!(stored.result, "verified", "one verdict per run, the last one wins");
+    assert_eq!(
+        stored.result, "verified",
+        "one verdict per run, the last one wins"
+    );
     assert_eq!(stored.evidence.unwrap().chars().count(), EVIDENCE_CAP);
     assert_eq!(stored.error.unwrap().chars().count(), 2_000);
 }
@@ -428,8 +596,20 @@ fn purging_a_session_removes_its_verdict_too() {
     recorder.verdict(verdict("keep", "background", "unsure"));
     recorder.purge_sessions(vec!["/s/2026-01-01/a".into()]);
     recorder.flush();
-    assert_eq!(get_run(&dir.db(), "old").unwrap(), None, "a verdict does not keep its run from being purged");
-    assert_eq!(get_run(&dir.db(), "keep").unwrap().unwrap().verdict.unwrap().result, "unsure");
+    assert_eq!(
+        get_run(&dir.db(), "old").unwrap(),
+        None,
+        "a verdict does not keep its run from being purged"
+    );
+    assert_eq!(
+        get_run(&dir.db(), "keep")
+            .unwrap()
+            .unwrap()
+            .verdict
+            .unwrap()
+            .result,
+        "unsure"
+    );
 }
 
 fn analysis(id: &str, created: &str) -> AnalysisRecord {
@@ -453,8 +633,14 @@ fn a_version_2_database_is_migrated_and_reads_as_having_no_analyses() {
     let dir = TempDir::new();
     {
         let db = Connection::open(dir.db()).unwrap();
-        db.execute_batch(&format!("{} {} PRAGMA user_version = 2;", schema::CREATE_V1, schema::CREATE_V2)).unwrap();
-        db.execute("INSERT INTO runs (id, task) VALUES ('old', 'x')", []).unwrap();
+        db.execute_batch(&format!(
+            "{} {} PRAGMA user_version = 2;",
+            schema::CREATE_V1,
+            schema::CREATE_V2
+        ))
+        .unwrap();
+        db.execute("INSERT INTO runs (id, task) VALUES ('old', 'x')", [])
+            .unwrap();
     }
     assert_eq!(list_analyses(&dir.db(), 5).unwrap(), vec![]);
     assert_eq!(get_analysis(&dir.db(), "any").unwrap(), None);
@@ -462,10 +648,17 @@ fn a_version_2_database_is_migrated_and_reads_as_having_no_analyses() {
     recorder.flush();
     assert_eq!(version_of(&dir.db()), 3);
     assert!(tables_of(&dir.db()).contains(&"analyses".to_string()));
-    assert_eq!(list_runs(&dir.db(), 5).unwrap().len(), 1, "the run survives");
+    assert_eq!(
+        list_runs(&dir.db(), 5).unwrap().len(),
+        1,
+        "the run survives"
+    );
     recorder.analysis(analysis("a1", "2026-10-19T10:00:00Z"));
     recorder.flush();
-    assert_eq!(get_analysis(&dir.db(), "a1").unwrap().unwrap().answer, "a settings window");
+    assert_eq!(
+        get_analysis(&dir.db(), "a1").unwrap().unwrap().answer,
+        "a settings window"
+    );
 }
 
 #[test]
@@ -474,11 +667,21 @@ fn an_analysis_round_trips_and_the_same_id_replaces_it() {
     let recorder = Recorder::start(&dir.db());
     recorder.analysis(analysis("a1", "2026-10-19T10:00:00Z"));
     recorder.flush();
-    assert_eq!(get_analysis(&dir.db(), "a1").unwrap(), Some(analysis("a1", "2026-10-19T10:00:00Z")));
-    recorder.analysis(AnalysisRecord { status: "error".into(), error: Some("timed out".into()), ..analysis("a1", "2026-10-19T10:00:00Z") });
+    assert_eq!(
+        get_analysis(&dir.db(), "a1").unwrap(),
+        Some(analysis("a1", "2026-10-19T10:00:00Z"))
+    );
+    recorder.analysis(AnalysisRecord {
+        status: "error".into(),
+        error: Some("timed out".into()),
+        ..analysis("a1", "2026-10-19T10:00:00Z")
+    });
     recorder.flush();
     let now = get_analysis(&dir.db(), "a1").unwrap().unwrap();
-    assert_eq!((now.status.as_str(), now.error.as_deref()), ("error", Some("timed out")));
+    assert_eq!(
+        (now.status.as_str(), now.error.as_deref()),
+        ("error", Some("timed out"))
+    );
     assert_eq!(get_analysis(&dir.db(), "missing").unwrap(), None);
 }
 
@@ -487,10 +690,17 @@ fn analyses_are_listed_newest_first_up_to_the_limit_and_findings_are_capped() {
     let dir = TempDir::new();
     let recorder = Recorder::start(&dir.db());
     recorder.analysis(analysis("old", "2026-10-19T09:00:00Z"));
-    recorder.analysis(AnalysisRecord { findings_json: "x".repeat(FINDINGS_CAP + 500), ..analysis("new", "2026-10-19T11:00:00Z") });
+    recorder.analysis(AnalysisRecord {
+        findings_json: "x".repeat(FINDINGS_CAP + 500),
+        ..analysis("new", "2026-10-19T11:00:00Z")
+    });
     recorder.analysis(analysis("mid", "2026-10-19T10:00:00Z"));
     recorder.flush();
-    let ids: Vec<String> = list_analyses(&dir.db(), 10).unwrap().into_iter().map(|record| record.id).collect();
+    let ids: Vec<String> = list_analyses(&dir.db(), 10)
+        .unwrap()
+        .into_iter()
+        .map(|record| record.id)
+        .collect();
     assert_eq!(ids, ["new", "mid", "old"]);
     assert_eq!(list_analyses(&dir.db(), 2).unwrap().len(), 2);
     let capped = get_analysis(&dir.db(), "new").unwrap().unwrap();
@@ -505,10 +715,15 @@ fn the_model_and_the_snapshot_are_read_under_one_lock_without_waiting_on_themsel
     std::thread::spawn(move || {
         let _ = done.send(model_and_snapshot(&reader));
     });
-    let (model, snapshot) = wait.recv_timeout(Duration::from_secs(5)).expect("reading both must not deadlock");
+    let (model, snapshot) = wait
+        .recv_timeout(Duration::from_secs(5))
+        .expect("reading both must not deadlock");
     assert_eq!(model, crate::settings::Settings::default().model);
     let json: serde_json::Value = serde_json::from_str(&snapshot).unwrap();
-    assert_eq!(json["max_steps"], crate::settings::Settings::default().max_steps);
+    assert_eq!(
+        json["max_steps"],
+        crate::settings::Settings::default().max_steps
+    );
     // The lock is free again afterwards.
     assert!(settings.try_lock().is_ok());
 }

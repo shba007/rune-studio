@@ -95,14 +95,18 @@ pub fn init(app: &AppHandle) -> Result<PathBuf, String> {
         .map(|dir| dir.join(FOLDER))
         .and_then(|root| {
             for kind in [Kind::Screenshots, Kind::Voice, Kind::Recordings] {
-                fs::create_dir_all(root.join(kind.folder())).map_err(|err| format!("{}: {err}", root.display()))?;
+                fs::create_dir_all(root.join(kind.folder()))
+                    .map_err(|err| format!("{}: {err}", root.display()))?;
             }
-            fs::create_dir_all(root.join(SESSIONS_FOLDER)).map_err(|err| format!("{}: {err}", root.display()))?;
+            fs::create_dir_all(root.join(SESSIONS_FOLDER))
+                .map_err(|err| format!("{}: {err}", root.display()))?;
             Ok(root)
         });
     match &result {
         Ok(root) => log::info!("record folder: {}", root.display()),
-        Err(err) => log::error!("record folder unavailable, the agent cannot see or hear until this is fixed: {err}"),
+        Err(err) => log::error!(
+            "record folder unavailable, the agent cannot see or hear until this is fixed: {err}"
+        ),
     }
     let _ = ROOT.set(result.clone());
     result
@@ -121,11 +125,16 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
     let z = days + 719_468;
     let era = z.div_euclid(146_097);
     let day_of_era = z.rem_euclid(146_097);
-    let year_of_era = (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
     let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
     let month_index = (5 * day_of_year + 2) / 153;
     let day = (day_of_year - (153 * month_index + 2) / 5 + 1) as u32;
-    let month = if month_index < 10 { month_index + 3 } else { month_index - 9 } as u32;
+    let month = if month_index < 10 {
+        month_index + 3
+    } else {
+        month_index - 9
+    } as u32;
     let year = year_of_era + era * 400 + i64::from(month <= 2);
     (year, month, day)
 }
@@ -134,7 +143,15 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
 fn stamp(seconds: u64) -> (String, String) {
     let (year, month, day) = civil_from_days((seconds / 86_400) as i64);
     let in_day = seconds % 86_400;
-    (format!("{year:04}-{month:02}-{day:02}"), format!("{:02}{:02}{:02}", in_day / 3_600, in_day % 3_600 / 60, in_day % 60))
+    (
+        format!("{year:04}-{month:02}-{day:02}"),
+        format!(
+            "{:02}{:02}{:02}",
+            in_day / 3_600,
+            in_day % 3_600 / 60,
+            in_day % 60
+        ),
+    )
 }
 
 /// One open session: a task run's folder.
@@ -149,7 +166,10 @@ struct Session {
 }
 
 pub(crate) fn now() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|elapsed| elapsed.as_secs()).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or(0)
 }
 
 fn current() -> MutexGuard<'static, Option<Session>> {
@@ -170,18 +190,30 @@ pub(crate) fn iso(seconds: u64) -> String {
 fn slug(task: &str) -> String {
     let mut out = String::new();
     for c in task.chars() {
-        let c = if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' };
+        let c = if c.is_ascii_alphanumeric() {
+            c.to_ascii_lowercase()
+        } else {
+            '-'
+        };
         if c != '-' || !(out.is_empty() || out.ends_with('-')) {
             out.push(c);
         }
     }
     let out: String = out.trim_end_matches('-').chars().take(SLUG_MAX).collect();
     let out = out.trim_end_matches('-');
-    if out.is_empty() { "task".to_string() } else { out.to_string() }
+    if out.is_empty() {
+        "task".to_string()
+    } else {
+        out.to_string()
+    }
 }
 
 /// What the manifest says about a session; `ended` is `(outcome, summary, time)` once it is over.
-fn manifest(session: &Session, ended: Option<(&str, &str, u64)>, files: Option<[usize; 3]>) -> Value {
+fn manifest(
+    session: &Session,
+    ended: Option<(&str, &str, u64)>,
+    files: Option<[usize; 3]>,
+) -> Value {
     let mut value = json!({
         "id": session.id,
         "task": session.task,
@@ -197,18 +229,31 @@ fn manifest(session: &Session, ended: Option<(&str, &str, u64)>, files: Option<[
         value["summary"] = json!(summary.chars().take(400).collect::<String>());
     }
     if let Some([screenshots, voice, recordings]) = files {
-        value["files"] = json!({ "screenshots": screenshots, "voice": voice, "recordings": recordings });
+        value["files"] =
+            json!({ "screenshots": screenshots, "voice": voice, "recordings": recordings });
     }
     value
 }
 
-fn write_manifest(session: &Session, ended: Option<(&str, &str, u64)>, files: Option<[usize; 3]>) -> std::io::Result<()> {
-    let text = serde_json::to_string_pretty(&manifest(session, ended, files)).map_err(std::io::Error::other)?;
+fn write_manifest(
+    session: &Session,
+    ended: Option<(&str, &str, u64)>,
+    files: Option<[usize; 3]>,
+) -> std::io::Result<()> {
+    let text = serde_json::to_string_pretty(&manifest(session, ended, files))
+        .map_err(std::io::Error::other)?;
     fs::write(session.dir.join(MANIFEST), text)
 }
 
 fn count_files(dir: &Path) -> usize {
-    fs::read_dir(dir).map(|entries| entries.filter_map(Result::ok).filter(|entry| entry.path().is_file()).count()).unwrap_or(0)
+    fs::read_dir(dir)
+        .map(|entries| {
+            entries
+                .filter_map(Result::ok)
+                .filter(|entry| entry.path().is_file())
+                .count()
+        })
+        .unwrap_or(0)
 }
 
 /// Makes a new session folder under `base` (never reusing one) and writes its first manifest.
@@ -222,7 +267,13 @@ fn begin_in(base: &Path, task: &str, source: &str, seconds: u64) -> Result<Sessi
         let dir = parent.join(&id);
         match fs::create_dir(&dir) {
             Ok(()) => {
-                let session = Session { id, dir, task: task.trim().chars().take(200).collect(), source: source.chars().take(40).collect(), started: seconds };
+                let session = Session {
+                    id,
+                    dir,
+                    task: task.trim().chars().take(200).collect(),
+                    source: source.chars().take(40).collect(),
+                    started: seconds,
+                };
                 if let Err(err) = write_manifest(&session, None, None) {
                     log::warn!("could not write the session manifest: {err}");
                 }
@@ -236,7 +287,8 @@ fn begin_in(base: &Path, task: &str, source: &str, seconds: u64) -> Result<Sessi
 
 /// Writes the final manifest of a session (outcome, summary, how many files of each kind).
 fn end_in(session: &Session, outcome: &str, summary: &str, seconds: u64) -> std::io::Result<()> {
-    let files = [Kind::Screenshots, Kind::Voice, Kind::Recordings].map(|kind| count_files(&session.dir.join(kind.folder())));
+    let files = [Kind::Screenshots, Kind::Voice, Kind::Recordings]
+        .map(|kind| count_files(&session.dir.join(kind.folder())));
     write_manifest(session, Some((outcome, summary, seconds)), Some(files))
 }
 
@@ -268,7 +320,9 @@ pub fn begin_session(task: &str, source: &str) -> Result<String, ArchiveError> {
 pub fn end_session(id: Option<&str>, outcome: &str, summary: &str) {
     let taken = {
         let mut open = current();
-        let matches = open.as_ref().is_some_and(|session| id.is_none_or(|wanted| session.id == wanted));
+        let matches = open
+            .as_ref()
+            .is_some_and(|session| id.is_none_or(|wanted| session.id == wanted));
         if matches { open.take() } else { None }
     };
     if let Some(session) = taken
@@ -280,7 +334,10 @@ pub fn end_session(id: Option<&str>, outcome: &str, summary: &str) {
 
 /// The folder of the open session with this id, if it is the one open.
 pub fn session_dir(id: &str) -> Option<PathBuf> {
-    current().as_ref().filter(|session| session.id == id).map(|session| session.dir.clone())
+    current()
+        .as_ref()
+        .filter(|session| session.id == id)
+        .map(|session| session.dir.clone())
 }
 
 /// Days since 1970-01-01 for a calendar date (Howard Hinnant's days_from_civil).
@@ -297,10 +354,21 @@ fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
 /// Days since 1970-01-01 for a name of exactly the form `YYYY-MM-DD` that is a real date.
 fn day_number(name: &str) -> Option<i64> {
     let bytes = name.as_bytes();
-    if bytes.len() != 10 || bytes[4] != b'-' || bytes[7] != b'-' || !bytes.iter().enumerate().all(|(index, byte)| index == 4 || index == 7 || byte.is_ascii_digit()) {
+    if bytes.len() != 10
+        || bytes[4] != b'-'
+        || bytes[7] != b'-'
+        || !bytes
+            .iter()
+            .enumerate()
+            .all(|(index, byte)| index == 4 || index == 7 || byte.is_ascii_digit())
+    {
         return None;
     }
-    let (year, month, day) = (name[0..4].parse::<i64>().ok()?, name[5..7].parse::<u32>().ok()?, name[8..10].parse::<u32>().ok()?);
+    let (year, month, day) = (
+        name[0..4].parse::<i64>().ok()?,
+        name[5..7].parse::<u32>().ok()?,
+        name[8..10].parse::<u32>().ok()?,
+    );
     let days = days_from_civil(year, month, day);
     // 2026-02-30 and the like come back as another date.
     (civil_from_days(days) == (year, month, day)).then_some(days)
@@ -314,7 +382,11 @@ pub fn expired_dates(names: &[String], today: &str, keep_days: u32) -> Vec<Strin
         return Vec::new();
     };
     let cutoff = today - i64::from(keep_days);
-    names.iter().filter(|name| day_number(name).is_some_and(|day| day < cutoff)).cloned().collect()
+    names
+        .iter()
+        .filter(|name| day_number(name).is_some_and(|day| day < cutoff))
+        .cloned()
+        .collect()
 }
 
 /// Deletes the session folders of `base/sessions/<date>/` for every expired date, and nothing
@@ -328,19 +400,38 @@ fn purge_in(base: &Path, today: &str, keep_days: u32) -> Vec<String> {
     // Real folders only: a link in here is not ours to follow.
     let names: Vec<String> = entries
         .flatten()
-        .filter(|entry| entry.path().symlink_metadata().is_ok_and(|meta| meta.is_dir()))
+        .filter(|entry| {
+            entry
+                .path()
+                .symlink_metadata()
+                .is_ok_and(|meta| meta.is_dir())
+        })
         .filter_map(|entry| entry.file_name().into_string().ok())
         .collect();
     let mut removed = Vec::new();
     for date in expired_dates(&names, today, keep_days) {
         let day_dir = sessions.join(&date);
-        let sessions_inside: Vec<String> = fs::read_dir(&day_dir).map(|entries| entries.flatten().map(|entry| entry.path().display().to_string()).collect()).unwrap_or_default();
+        let sessions_inside: Vec<String> = fs::read_dir(&day_dir)
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .map(|entry| entry.path().display().to_string())
+                    .collect()
+            })
+            .unwrap_or_default();
         match fs::remove_dir_all(&day_dir) {
             Ok(()) => {
-                log::info!("record retention: removed {} ({} session folder(s)) older than {keep_days} days", day_dir.display(), sessions_inside.len());
+                log::info!(
+                    "record retention: removed {} ({} session folder(s)) older than {keep_days} days",
+                    day_dir.display(),
+                    sessions_inside.len()
+                );
                 removed.extend(sessions_inside);
             }
-            Err(err) => log::warn!("record retention: could not remove {}: {err}", day_dir.display()),
+            Err(err) => log::warn!(
+                "record retention: could not remove {}: {err}",
+                day_dir.display()
+            ),
         }
     }
     removed
@@ -386,12 +477,28 @@ fn dir_in(base: &Path, session: Option<&Session>, kind: Kind, seconds: u64) -> P
     }
 }
 
-fn path_in(base: &Path, session: Option<&Session>, kind: Kind, label: &str, extension: &str, seconds: u64) -> Result<PathBuf, ArchiveError> {
+fn path_in(
+    base: &Path,
+    session: Option<&Session>,
+    kind: Kind,
+    label: &str,
+    extension: &str,
+    seconds: u64,
+) -> Result<PathBuf, ArchiveError> {
     let dir = dir_in(base, session, kind, seconds);
     fs::create_dir_all(&dir).map_err(write_error)?;
     let (_, time) = stamp(seconds);
     let number = COUNTER.fetch_add(1, Ordering::Relaxed);
-    let label: String = label.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' }).collect();
+    let label: String = label
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
     Ok(dir.join(format!("{time}-{number:05}-{label}.{extension}")))
 }
 
@@ -410,13 +517,24 @@ pub fn path_for(kind: Kind, label: &str, extension: &str) -> Result<PathBuf, Arc
 }
 
 /// Stores one file. `Err` means it was NOT stored, and the caller must not use the data.
-pub fn save(kind: Kind, label: &str, extension: &str, bytes: &[u8]) -> Result<PathBuf, ArchiveError> {
+pub fn save(
+    kind: Kind,
+    label: &str,
+    extension: &str,
+    bytes: &[u8],
+) -> Result<PathBuf, ArchiveError> {
     let path = path_for(kind, label, extension)?;
     if path.as_os_str().is_empty() {
         return Ok(path);
     }
-    let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&path).map_err(|err| ArchiveError::Write(err.to_string()))?;
-    file.write_all(bytes).and_then(|()| file.sync_data()).map_err(|err| ArchiveError::Write(err.to_string()))?;
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .map_err(|err| ArchiveError::Write(err.to_string()))?;
+    file.write_all(bytes)
+        .and_then(|()| file.sync_data())
+        .map_err(|err| ArchiveError::Write(err.to_string()))?;
     Ok(path)
 }
 
@@ -432,15 +550,24 @@ mod tests {
     }
 
     fn scratch(name: &str) -> PathBuf {
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.subsec_nanos()).unwrap_or(0);
-        let dir = std::env::temp_dir().join(format!("rune-archive-{name}-{}-{nanos}", std::process::id()));
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.subsec_nanos())
+            .unwrap_or(0);
+        let dir = std::env::temp_dir().join(format!(
+            "rune-archive-{name}-{}-{nanos}",
+            std::process::id()
+        ));
         fs::create_dir_all(&dir).unwrap();
         dir
     }
 
     #[test]
     fn a_task_becomes_a_short_file_name_safe_slug() {
-        assert_eq!(slug("Open Notepad & write hello!"), "open-notepad-write-hello");
+        assert_eq!(
+            slug("Open Notepad & write hello!"),
+            "open-notepad-write-hello"
+        );
         assert_eq!(slug("  ../..\\ "), "task");
         assert_eq!(slug(""), "task");
         assert!(slug(&"a ".repeat(100)).chars().count() <= SLUG_MAX);
@@ -458,8 +585,15 @@ mod tests {
         let base = scratch("begin");
         let first = begin_in(&base, "Open Notepad", "built-in", 1_792_396_752).unwrap();
         let second = begin_in(&base, "Open Notepad", "built-in", 1_792_396_752).unwrap();
-        assert_ne!(first.id, second.id, "two sessions in the same second never share a folder");
-        assert!(first.dir.starts_with(base.join("sessions").join("2026-10-19")));
+        assert_ne!(
+            first.id, second.id,
+            "two sessions in the same second never share a folder"
+        );
+        assert!(
+            first
+                .dir
+                .starts_with(base.join("sessions").join("2026-10-19"))
+        );
         assert!(first.id.starts_with("075912-") && first.id.ends_with("-open-notepad"));
         let text = fs::read_to_string(first.dir.join(MANIFEST)).unwrap();
         let value: Value = serde_json::from_str(&text).unwrap();
@@ -474,13 +608,46 @@ mod tests {
     fn files_go_inside_the_session_by_type_or_by_day_when_there_is_none() {
         let base = scratch("paths");
         let session = begin_in(&base, "task", "built-in", 1_792_396_752).unwrap();
-        let inside = path_in(&base, Some(&session), Kind::Screenshots, "screen", "jpg", 1_792_396_760).unwrap();
+        let inside = path_in(
+            &base,
+            Some(&session),
+            Kind::Screenshots,
+            "screen",
+            "jpg",
+            1_792_396_760,
+        )
+        .unwrap();
         assert_eq!(inside.parent().unwrap(), session.dir.join("screenshots"));
-        assert!(inside.file_name().unwrap().to_string_lossy().starts_with("075920-"));
-        let voice = path_in(&base, Some(&session), Kind::Voice, "utterance", "wav", 1_792_396_760).unwrap();
+        assert!(
+            inside
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("075920-")
+        );
+        let voice = path_in(
+            &base,
+            Some(&session),
+            Kind::Voice,
+            "utterance",
+            "wav",
+            1_792_396_760,
+        )
+        .unwrap();
         assert_eq!(voice.parent().unwrap(), session.dir.join("voice"));
-        let outside = path_in(&base, None, Kind::Screenshots, "screen", "jpg", 1_792_396_760).unwrap();
-        assert_eq!(outside.parent().unwrap(), base.join("screenshots").join("2026-10-19"));
+        let outside = path_in(
+            &base,
+            None,
+            Kind::Screenshots,
+            "screen",
+            "jpg",
+            1_792_396_760,
+        )
+        .unwrap();
+        assert_eq!(
+            outside.parent().unwrap(),
+            base.join("screenshots").join("2026-10-19")
+        );
         assert_ne!(inside, outside);
         fs::remove_dir_all(&base).unwrap();
     }
@@ -490,17 +657,37 @@ mod tests {
         let base = scratch("end");
         let session = begin_in(&base, "task", "Claude", 1_792_396_752).unwrap();
         for _ in 0..3 {
-            let path = path_in(&base, Some(&session), Kind::Screenshots, "screen", "jpg", 1_792_396_753).unwrap();
+            let path = path_in(
+                &base,
+                Some(&session),
+                Kind::Screenshots,
+                "screen",
+                "jpg",
+                1_792_396_753,
+            )
+            .unwrap();
             fs::write(path, b"x").unwrap();
         }
-        let path = path_in(&base, Some(&session), Kind::Voice, "utterance", "wav", 1_792_396_753).unwrap();
+        let path = path_in(
+            &base,
+            Some(&session),
+            Kind::Voice,
+            "utterance",
+            "wav",
+            1_792_396_753,
+        )
+        .unwrap();
         fs::write(path, b"x").unwrap();
         end_in(&session, "succeeded", "Typed hello", 1_792_396_800).unwrap();
-        let value: Value = serde_json::from_str(&fs::read_to_string(session.dir.join(MANIFEST)).unwrap()).unwrap();
+        let value: Value =
+            serde_json::from_str(&fs::read_to_string(session.dir.join(MANIFEST)).unwrap()).unwrap();
         assert_eq!(value["outcome"], "succeeded");
         assert_eq!(value["summary"], "Typed hello");
         assert_eq!(value["ended_utc"], "2026-10-19T08:00:00Z");
-        assert_eq!(value["files"], json!({ "screenshots": 3, "voice": 1, "recordings": 0 }));
+        assert_eq!(
+            value["files"],
+            json!({ "screenshots": 3, "voice": 1, "recordings": 0 })
+        );
         fs::remove_dir_all(&base).unwrap();
     }
 
@@ -519,7 +706,10 @@ mod tests {
 
     #[test]
     fn folders_are_the_three_kinds() {
-        assert_eq!([Kind::Screenshots, Kind::Voice, Kind::Recordings].map(Kind::folder), ["screenshots", "voice", "recordings"]);
+        assert_eq!(
+            [Kind::Screenshots, Kind::Voice, Kind::Recordings].map(Kind::folder),
+            ["screenshots", "voice", "recordings"]
+        );
     }
 
     fn names(list: &[&str]) -> Vec<String> {
@@ -536,17 +726,46 @@ mod tests {
         let all = names(&["2026-10-11", "2026-10-12", "2026-10-13", "2026-10-19"]);
         // Today is the 19th; 7 days back is the 12th: the 12th stays, the 11th goes.
         assert_eq!(expired_dates(&all, "2026-10-19", 7), ["2026-10-11"]);
-        assert_eq!(expired_dates(&all, "2026-10-19", 1), ["2026-10-11", "2026-10-12", "2026-10-13"]);
+        assert_eq!(
+            expired_dates(&all, "2026-10-19", 1),
+            ["2026-10-11", "2026-10-12", "2026-10-13"]
+        );
         // Across a month and a year boundary, and a leap day.
-        assert_eq!(expired_dates(&names(&["2025-12-30", "2025-12-31", "2026-01-01"]), "2026-01-31", 31), ["2025-12-30"]);
-        assert_eq!(expired_dates(&names(&["2024-02-28", "2024-02-29", "2024-03-01"]), "2024-03-01", 1), ["2024-02-28"]);
+        assert_eq!(
+            expired_dates(
+                &names(&["2025-12-30", "2025-12-31", "2026-01-01"]),
+                "2026-01-31",
+                31
+            ),
+            ["2025-12-30"]
+        );
+        assert_eq!(
+            expired_dates(
+                &names(&["2024-02-28", "2024-02-29", "2024-03-01"]),
+                "2024-03-01",
+                1
+            ),
+            ["2024-02-28"]
+        );
     }
 
     #[test]
     fn names_that_are_not_dates_are_ignored() {
-        let odd = names(&["notes", "2026-1-1", "2026-13-01", "2026-02-30", "20261001", "2026-10-1x", "2026-10-11-extra", ""]);
+        let odd = names(&[
+            "notes",
+            "2026-1-1",
+            "2026-13-01",
+            "2026-02-30",
+            "20261001",
+            "2026-10-1x",
+            "2026-10-11-extra",
+            "",
+        ]);
         assert!(expired_dates(&odd, "2030-01-01", 1).is_empty());
-        assert!(expired_dates(&names(&["2020-01-01"]), "not a date", 5).is_empty(), "an unreadable today deletes nothing");
+        assert!(
+            expired_dates(&names(&["2020-01-01"]), "not a date", 5).is_empty(),
+            "an unreadable today deletes nothing"
+        );
     }
 
     #[test]
@@ -563,19 +782,41 @@ mod tests {
         ] {
             fs::create_dir_all(base.join(dir)).unwrap();
         }
-        fs::write(base.join("sessions/2026-01-01/120000-001-old/shot.jpg"), b"x").unwrap();
+        fs::write(
+            base.join("sessions/2026-01-01/120000-001-old/shot.jpg"),
+            b"x",
+        )
+        .unwrap();
         fs::write(base.join("sessions/readme.txt"), b"x").unwrap();
 
         let mut removed = purge_in(&base, "2026-10-19", 30);
         removed.sort();
         // Built from components, like the code under test, so the separators agree on Windows too.
-        let expected: Vec<String> = ["120000-001-old", "130000-002-old-too"].iter().map(|dir| base.join("sessions").join("2026-01-01").join(dir).display().to_string()).collect();
+        let expected: Vec<String> = ["120000-001-old", "130000-002-old-too"]
+            .iter()
+            .map(|dir| {
+                base.join("sessions")
+                    .join("2026-01-01")
+                    .join(dir)
+                    .display()
+                    .to_string()
+            })
+            .collect();
         assert_eq!(removed, expected);
         assert!(!base.join("sessions/2026-01-01").exists());
-        for kept in ["sessions/2026-10-19/120000-003-new", "sessions/not-a-date/x", "screenshots/2026-01-01", "voice/2026-01-01", "sessions/readme.txt"] {
+        for kept in [
+            "sessions/2026-10-19/120000-003-new",
+            "sessions/not-a-date/x",
+            "screenshots/2026-01-01",
+            "voice/2026-01-01",
+            "sessions/readme.txt",
+        ] {
             assert!(base.join(kept).exists(), "{kept} must survive");
         }
-        assert!(purge_in(&base, "2026-10-19", 0).is_empty(), "0 days removes nothing");
+        assert!(
+            purge_in(&base, "2026-10-19", 0).is_empty(),
+            "0 days removes nothing"
+        );
         assert!(base.join("sessions/2026-10-19").exists());
         let _ = fs::remove_dir_all(&base);
     }

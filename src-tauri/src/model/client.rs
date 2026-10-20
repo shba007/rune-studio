@@ -88,7 +88,9 @@ pub fn is_retryable(error: &ModelError) -> bool {
 pub fn backoff(attempt: u32) -> Duration {
     let base = RETRY_WAITS[(attempt.max(1) as usize - 1).min(RETRY_WAITS.len() - 1)];
     // No random-number crate for this: the clock's nanoseconds are random enough to spread retries.
-    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |since| since.subsec_nanos());
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.subsec_nanos());
     base + base.mul_f64(f64::from(nanos % 1001) / 1000.0 * 0.2)
 }
 
@@ -104,7 +106,9 @@ pub(crate) fn chat_body(model: &str, request: &Request<'_>) -> Value {
         // Audio and image first, text last, like the probe: the screenshot is the expensive part.
         let mut parts = Vec::new();
         if let Some(audio) = request.audio {
-            parts.push(json!({ "type": "input_audio", "input_audio": { "data": audio, "format": "wav" } }));
+            parts.push(
+                json!({ "type": "input_audio", "input_audio": { "data": audio, "format": "wav" } }),
+            );
         }
         if let Some(screenshot) = request.screenshot {
             parts.push(json!({ "type": "image_url", "image_url": { "url": screenshot } }));
@@ -136,13 +140,20 @@ impl ChatClient<'_> {
     /// `call`, tried again when the failure is transient (see `is_retryable`), at most
     /// `MAX_ATTEMPTS` times. The waits are plain sleeps inside this future, so a caller that races
     /// it against Stop (`unless_stopped`) abandons them by dropping it.
-    pub async fn call_retrying(&self, request: &Request<'_>, on_thinking: &mut (dyn FnMut(&str) + Send)) -> Result<Reply, ModelError> {
+    pub async fn call_retrying(
+        &self,
+        request: &Request<'_>,
+        on_thinking: &mut (dyn FnMut(&str) + Send),
+    ) -> Result<Reply, ModelError> {
         let mut attempt = 1;
         loop {
             match self.call(request, on_thinking).await {
                 Err(error) if attempt < MAX_ATTEMPTS && is_retryable(&error) => {
                     let wait = backoff(attempt);
-                    log::warn!("model call failed (attempt {attempt} of {MAX_ATTEMPTS}): {error}; trying again in {} ms", wait.as_millis());
+                    log::warn!(
+                        "model call failed (attempt {attempt} of {MAX_ATTEMPTS}): {error}; trying again in {} ms",
+                        wait.as_millis()
+                    );
                     tokio::time::sleep(wait).await;
                     attempt += 1;
                 }
@@ -153,32 +164,53 @@ impl ChatClient<'_> {
 
     /// Asks for a tool call. `on_thinking` receives the thinking so far (all of it, each time) as
     /// it streams in; it is never called when `think` is off.
-    pub async fn call(&self, request: &Request<'_>, on_thinking: &mut (dyn FnMut(&str) + Send)) -> Result<Reply, ModelError> {
+    pub async fn call(
+        &self,
+        request: &Request<'_>,
+        on_thinking: &mut (dyn FnMut(&str) + Send),
+    ) -> Result<Reply, ModelError> {
         let body = chat_body(self.model, request);
 
         let mut http = self
             .http
-            .post(format!("{}/v1/chat/completions", self.base_url.trim_end_matches('/')))
+            .post(format!(
+                "{}/v1/chat/completions",
+                self.base_url.trim_end_matches('/')
+            ))
             .timeout(REQUEST_TIMEOUT)
             .json(&body);
         if let Some(key) = self.api_key {
             http = http.bearer_auth(key);
         }
-        let mut response = http.send().await.map_err(|err| ModelError::Request(err.to_string()))?;
+        let mut response = http
+            .send()
+            .await
+            .map_err(|err| ModelError::Request(err.to_string()))?;
         let status = response.status();
         if !status.is_success() {
             let text = response.text().await.unwrap_or_default();
-            return Err(ModelError::Status { status: status.as_u16(), body: snippet(&text) });
+            return Err(ModelError::Status {
+                status: status.as_u16(),
+                body: snippet(&text),
+            });
         }
 
         if !request.think {
-            let text = response.text().await.map_err(|err| ModelError::Request(err.to_string()))?;
-            let value: Value = serde_json::from_str(&text).map_err(|err| ModelError::Reply(format!("{err}: {}", snippet(&text))))?;
+            let text = response
+                .text()
+                .await
+                .map_err(|err| ModelError::Request(err.to_string()))?;
+            let value: Value = serde_json::from_str(&text)
+                .map_err(|err| ModelError::Reply(format!("{err}: {}", snippet(&text))))?;
             return parse_reply(&value);
         }
 
         let mut stream = Stream::default();
-        while let Some(chunk) = response.chunk().await.map_err(|err| ModelError::Request(err.to_string()))? {
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|err| ModelError::Request(err.to_string()))?
+        {
             if stream.feed(&chunk) {
                 on_thinking(&stream.thinking);
             }
@@ -190,18 +222,27 @@ impl ChatClient<'_> {
 /// The model's thinking in a message or stream delta: servers call the field `reasoning` (vLLM)
 /// or `reasoning_content` (older ones).
 fn reasoning_of(message: &Value) -> &str {
-    ["reasoning", "reasoning_content"].iter().filter_map(|key| message[*key].as_str()).find(|text| !text.is_empty()).unwrap_or("")
+    ["reasoning", "reasoning_content"]
+        .iter()
+        .filter_map(|key| message[*key].as_str())
+        .find(|text| !text.is_empty())
+        .unwrap_or("")
 }
 
 /// Pulls the first tool call out of a chat completion.
 pub fn parse_reply(value: &Value) -> Result<Reply, ModelError> {
     let message = &value["choices"][0]["message"];
     let Some(call) = message["tool_calls"].get(0) else {
-        return Err(ModelError::NoToolCall(snippet(message["content"].as_str().unwrap_or(""))));
+        return Err(ModelError::NoToolCall(snippet(
+            message["content"].as_str().unwrap_or(""),
+        )));
     };
     let name = call["function"]["name"].as_str().unwrap_or("").to_string();
     Ok(Reply {
-        call: ToolCall { name, arguments: parse_arguments(&call["function"]["arguments"])? },
+        call: ToolCall {
+            name,
+            arguments: parse_arguments(&call["function"]["arguments"])?,
+        },
         completion_tokens: value["usage"]["completion_tokens"].as_u64(),
         thinking: reasoning_of(message).to_string(),
     })
@@ -212,7 +253,9 @@ fn parse_arguments(arguments: &Value) -> Result<Value, ModelError> {
     match arguments {
         Value::String(text) => match serde_json::from_str(text) {
             Ok(value) => Ok(value),
-            Err(err) => repair_arguments(text).ok_or_else(|| ModelError::BadArguments(err.to_string())),
+            Err(err) => {
+                repair_arguments(text).ok_or_else(|| ModelError::BadArguments(err.to_string()))
+            }
         },
         other => Ok(other.clone()),
     }
@@ -285,13 +328,22 @@ impl Stream {
         let Ok(event) = serde_json::from_str::<Value>(data) else {
             return false;
         };
-        if let Some(tokens) = event["usage"]["completion_tokens"].as_u64().filter(|tokens| *tokens > 0) {
+        if let Some(tokens) = event["usage"]["completion_tokens"]
+            .as_u64()
+            .filter(|tokens| *tokens > 0)
+        {
             self.completion_tokens = Some(tokens);
         }
         let delta = &event["choices"][0]["delta"];
         for call in delta["tool_calls"].as_array().into_iter().flatten() {
-            let entry = self.calls.entry(call["index"].as_u64().unwrap_or(0)).or_default();
-            if let Some(name) = call["function"]["name"].as_str().filter(|name| !name.is_empty()) {
+            let entry = self
+                .calls
+                .entry(call["index"].as_u64().unwrap_or(0))
+                .or_default();
+            if let Some(name) = call["function"]["name"]
+                .as_str()
+                .filter(|name| !name.is_empty())
+            {
                 entry.0 = name.to_string();
             }
             match &call["function"]["arguments"] {
@@ -317,7 +369,11 @@ impl Stream {
             return Err(ModelError::NoToolCall(snippet(&self.content)));
         };
         let arguments = parse_arguments(&Value::String(arguments))?;
-        Ok(Reply { call: ToolCall { name, arguments }, completion_tokens: self.completion_tokens, thinking: self.thinking })
+        Ok(Reply {
+            call: ToolCall { name, arguments },
+            completion_tokens: self.completion_tokens,
+            thinking: self.thinking,
+        })
     }
 }
 
@@ -333,12 +389,16 @@ mod tests {
         assert_eq!(reply.call.arguments["x"], 1);
 
         let as_object = json!({ "choices": [{ "message": { "tool_calls": [{ "function": { "name": "done", "arguments": { "summary": "ok" } } }] } }] });
-        assert_eq!(parse_reply(&as_object).unwrap().call.arguments["summary"], "ok");
+        assert_eq!(
+            parse_reply(&as_object).unwrap().call.arguments["summary"],
+            "ok"
+        );
     }
 
     #[test]
     fn a_reply_without_a_tool_call_is_an_error_with_the_text() {
-        let value = json!({ "choices": [{ "message": { "content": "I will click the button now" } }] });
+        let value =
+            json!({ "choices": [{ "message": { "content": "I will click the button now" } }] });
         let error = parse_reply(&value).err().unwrap();
         assert!(matches!(error, ModelError::NoToolCall(text) if text.contains("click the button")));
     }
@@ -346,7 +406,10 @@ mod tests {
     #[test]
     fn broken_argument_json_is_an_error_the_agent_can_answer() {
         let value = json!({ "choices": [{ "message": { "tool_calls": [{ "function": { "name": "click", "arguments": "{x:" } }] } }] });
-        assert!(matches!(parse_reply(&value), Err(ModelError::BadArguments(_))));
+        assert!(matches!(
+            parse_reply(&value),
+            Err(ModelError::BadArguments(_))
+        ));
     }
 
     fn arguments_of(text: &str) -> Result<Value, ModelError> {
@@ -355,22 +418,53 @@ mod tests {
 
     #[test]
     fn junk_after_the_closing_brace_is_dropped_and_nothing_inside_is_touched() {
-        assert_eq!(arguments_of(r#"{"x": 1, "y": 2}"#).unwrap(), json!({ "x": 1, "y": 2 }));
-        assert_eq!(arguments_of(r#"{"name":"calc","risk":"low"}"}"#).unwrap(), json!({ "name": "calc", "risk": "low" }));
-        assert_eq!(arguments_of(r#"{"text":"a } b \" {"} trailing"#).unwrap(), json!({ "text": "a } b \" {" }), "braces inside strings do not count");
-        assert_eq!(arguments_of("Sure! {\"x\": 1} hope that helps").unwrap(), json!({ "x": 1 }), "prose around it is dropped");
-        assert_eq!(arguments_of(r#"{"a":{"b":2}} {"a":3}"#).unwrap(), json!({ "a": { "b": 2 } }), "the first object wins");
+        assert_eq!(
+            arguments_of(r#"{"x": 1, "y": 2}"#).unwrap(),
+            json!({ "x": 1, "y": 2 })
+        );
+        assert_eq!(
+            arguments_of(r#"{"name":"calc","risk":"low"}"}"#).unwrap(),
+            json!({ "name": "calc", "risk": "low" })
+        );
+        assert_eq!(
+            arguments_of(r#"{"text":"a } b \" {"} trailing"#).unwrap(),
+            json!({ "text": "a } b \" {" }),
+            "braces inside strings do not count"
+        );
+        assert_eq!(
+            arguments_of("Sure! {\"x\": 1} hope that helps").unwrap(),
+            json!({ "x": 1 }),
+            "prose around it is dropped"
+        );
+        assert_eq!(
+            arguments_of(r#"{"a":{"b":2}} {"a":3}"#).unwrap(),
+            json!({ "a": { "b": 2 } }),
+            "the first object wins"
+        );
     }
 
     #[test]
     fn what_cannot_be_repaired_stays_an_error_and_values_are_never_guessed() {
-        for broken in ["{x:", r#"{"a": 1"#, r#"{"a": }"#, "no braces at all", r#"{"name":"calc\",reason:","#, ""] {
-            assert!(matches!(arguments_of(broken), Err(ModelError::BadArguments(_))), "{broken:?}");
+        for broken in [
+            "{x:",
+            r#"{"a": 1"#,
+            r#"{"a": }"#,
+            "no braces at all",
+            r#"{"name":"calc\",reason:","#,
+            "",
+        ] {
+            assert!(
+                matches!(arguments_of(broken), Err(ModelError::BadArguments(_))),
+                "{broken:?}"
+            );
         }
     }
 
     fn event(delta: Value) -> String {
-        format!("data: {}\n\n", json!({ "choices": [{ "index": 0, "delta": delta }], "usage": { "completion_tokens": 0 } }))
+        format!(
+            "data: {}\n\n",
+            json!({ "choices": [{ "index": 0, "delta": delta }], "usage": { "completion_tokens": 0 } })
+        )
     }
 
     #[test]
@@ -381,7 +475,9 @@ mod tests {
         text.push_str(&event(json!({ "reasoning_content": "The user " })));
         text.push_str(&event(json!({ "reasoning_content": "wants Notepad" })));
         text.push_str(&event(json!({ "tool_calls": [{ "index": 0, "id": "a", "function": { "name": "set_plan", "arguments": "{\"goals\":[\"Open\"," } }] })));
-        text.push_str(&event(json!({ "tool_calls": [{ "index": 0, "function": { "arguments": "\"Type\"]}" } }] })));
+        text.push_str(&event(
+            json!({ "tool_calls": [{ "index": 0, "function": { "arguments": "\"Type\"]}" } }] }),
+        ));
         text.push_str("data: [DONE]\n\n");
         // Feed it in awkward pieces, including a split in the middle of a line and of a word.
         let bytes = text.as_bytes();
@@ -409,7 +505,9 @@ mod tests {
     fn a_stream_without_a_tool_call_reports_what_the_model_said() {
         let mut stream = Stream::default();
         stream.feed(event(json!({ "content": "I would click it" })).as_bytes());
-        assert!(matches!(stream.finish(), Err(ModelError::NoToolCall(text)) if text.contains("click it")));
+        assert!(
+            matches!(stream.finish(), Err(ModelError::NoToolCall(text)) if text.contains("click it"))
+        );
     }
 
     #[test]
@@ -427,31 +525,63 @@ mod tests {
     fn only_transient_failures_are_retried() {
         assert!(is_retryable(&ModelError::Request("refused".into())));
         for status in [429, 502, 503, 504] {
-            assert!(is_retryable(&ModelError::Status { status, body: String::new() }), "{status}");
+            assert!(
+                is_retryable(&ModelError::Status {
+                    status,
+                    body: String::new()
+                }),
+                "{status}"
+            );
         }
         for status in [400, 401, 404, 500] {
-            assert!(!is_retryable(&ModelError::Status { status, body: String::new() }), "{status}");
+            assert!(
+                !is_retryable(&ModelError::Status {
+                    status,
+                    body: String::new()
+                }),
+                "{status}"
+            );
         }
         assert!(!is_retryable(&ModelError::Reply("bad json".into())));
-        assert!(!is_retryable(&ModelError::NoToolCall("I would click".into())));
+        assert!(!is_retryable(&ModelError::NoToolCall(
+            "I would click".into()
+        )));
     }
 
     #[test]
     fn the_wait_grows_and_the_jitter_stays_within_20_percent() {
         for _ in 0..200 {
             let first = backoff(1);
-            assert!(first >= Duration::from_millis(500) && first <= Duration::from_millis(600), "{first:?}");
+            assert!(
+                first >= Duration::from_millis(500) && first <= Duration::from_millis(600),
+                "{first:?}"
+            );
             let second = backoff(2);
-            assert!(second >= Duration::from_millis(1500) && second <= Duration::from_millis(1800), "{second:?}");
+            assert!(
+                second >= Duration::from_millis(1500) && second <= Duration::from_millis(1800),
+                "{second:?}"
+            );
         }
-        assert!(backoff(9) <= Duration::from_millis(1800), "later attempts reuse the last wait");
+        assert!(
+            backoff(9) <= Duration::from_millis(1800),
+            "later attempts reuse the last wait"
+        );
     }
 
     /// A one-connection-at-a-time HTTP server on a free port. Each connection gets the next canned
     /// answer as `(status line, body)`; the request is read in full first so the client does not
     /// see a reset. Returns its base URL and how many requests it has served.
-    fn serve(answers: Vec<(&'static str, String)>) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
-        use std::{io::{Read, Write}, net::TcpListener, sync::{Arc, atomic::{AtomicUsize, Ordering}}};
+    fn serve(
+        answers: Vec<(&'static str, String)>,
+    ) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        use std::{
+            io::{Read, Write},
+            net::TcpListener,
+            sync::{
+                Arc,
+                atomic::{AtomicUsize, Ordering},
+            },
+        };
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         let served = Arc::new(AtomicUsize::new(0));
@@ -464,9 +594,14 @@ mod tests {
                 let (header_end, length) = loop {
                     let read = stream.read(&mut chunk).unwrap();
                     received.extend_from_slice(&chunk[..read]);
-                    if let Some(end) = received.windows(4).position(|window| window == b"\r\n\r\n") {
+                    if let Some(end) = received.windows(4).position(|window| window == b"\r\n\r\n")
+                    {
                         let head = String::from_utf8_lossy(&received[..end]).to_lowercase();
-                        let length = head.lines().find_map(|line| line.strip_prefix("content-length:")).and_then(|value| value.trim().parse::<usize>().ok()).unwrap_or(0);
+                        let length = head
+                            .lines()
+                            .find_map(|line| line.strip_prefix("content-length:"))
+                            .and_then(|value| value.trim().parse::<usize>().ok())
+                            .unwrap_or(0);
                         break (end + 4, length);
                     }
                     assert!(read > 0, "the client hung up before sending its request");
@@ -477,7 +612,10 @@ mod tests {
                     received.extend_from_slice(&chunk[..read]);
                 }
                 counter.fetch_add(1, Ordering::SeqCst);
-                let response = format!("HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
                 stream.write_all(response.as_bytes()).unwrap();
             }
         });
@@ -485,17 +623,36 @@ mod tests {
     }
 
     fn a_click_request(tools: &Value) -> Request<'_> {
-        Request { system: "s", user_text: "u", screenshot: None, audio: None, tools, think: false, max_tokens: None }
+        Request {
+            system: "s",
+            user_text: "u",
+            screenshot: None,
+            audio: None,
+            tools,
+            think: false,
+            max_tokens: None,
+        }
     }
 
     #[tokio::test]
     async fn a_503_is_retried_and_the_second_answer_is_used() {
         let ok = json!({ "choices": [{ "message": { "tool_calls": [{ "function": { "name": "click", "arguments": "{\"x\": 1}" } }] } }] });
-        let (url, served) = serve(vec![("503 Service Unavailable", "busy".into()), ("200 OK", ok.to_string())]);
+        let (url, served) = serve(vec![
+            ("503 Service Unavailable", "busy".into()),
+            ("200 OK", ok.to_string()),
+        ]);
         let http = reqwest::Client::builder().no_proxy().build().unwrap();
-        let client = ChatClient { http: &http, base_url: &url, api_key: None, model: "m" };
+        let client = ChatClient {
+            http: &http,
+            base_url: &url,
+            api_key: None,
+            model: "m",
+        };
         let tools = json!([]);
-        let reply = client.call_retrying(&a_click_request(&tools), &mut |_| {}).await.expect("the second attempt succeeds");
+        let reply = client
+            .call_retrying(&a_click_request(&tools), &mut |_| {})
+            .await
+            .expect("the second attempt succeeds");
         assert_eq!(reply.call.name, "click");
         assert_eq!(served.load(std::sync::atomic::Ordering::SeqCst), 2);
     }
@@ -504,9 +661,18 @@ mod tests {
     async fn a_400_is_not_retried() {
         let (url, served) = serve(vec![("400 Bad Request", "no".into())]);
         let http = reqwest::Client::builder().no_proxy().build().unwrap();
-        let client = ChatClient { http: &http, base_url: &url, api_key: None, model: "m" };
+        let client = ChatClient {
+            http: &http,
+            base_url: &url,
+            api_key: None,
+            model: "m",
+        };
         let tools = json!([]);
-        let error = client.call_retrying(&a_click_request(&tools), &mut |_| {}).await.err().expect("a 400 is final");
+        let error = client
+            .call_retrying(&a_click_request(&tools), &mut |_| {})
+            .await
+            .err()
+            .expect("a 400 is final");
         assert!(matches!(error, ModelError::Status { status: 400, .. }));
         assert_eq!(served.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
@@ -519,7 +685,9 @@ mod tests {
         let (closed, wait) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
-            stream.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
+            stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                .unwrap();
             let mut chunk = [0_u8; 4096];
             // The request arrives, and the server never answers (a model that keeps generating).
             let _ = stream.read(&mut chunk);
@@ -528,43 +696,98 @@ mod tests {
                 match stream.read(&mut chunk) {
                     Ok(0) => break "closed",
                     Ok(_) => continue,
-                    Err(err) if matches!(err.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => break "left open",
+                    Err(err)
+                        if matches!(
+                            err.kind(),
+                            std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                        ) =>
+                    {
+                        break "left open";
+                    }
                     Err(_) => break "closed",
                 }
             };
             let _ = closed.send(outcome);
         });
         let http = reqwest::Client::builder().no_proxy().build().unwrap();
-        let client = ChatClient { http: &http, base_url: &url, api_key: None, model: "m" };
+        let client = ChatClient {
+            http: &http,
+            base_url: &url,
+            api_key: None,
+            model: "m",
+        };
         let tools = json!([]);
         // What Stop and closing the analysis window do: drop the future (see `agent::unless_stopped`).
-        let cancelled = tokio::time::timeout(std::time::Duration::from_millis(300), client.call(&a_click_request(&tools), &mut |_| {})).await;
-        assert!(cancelled.is_err(), "the server never answers, so the call is still pending when it is dropped");
+        let cancelled = tokio::time::timeout(
+            std::time::Duration::from_millis(300),
+            client.call(&a_click_request(&tools), &mut |_| {}),
+        )
+        .await;
+        assert!(
+            cancelled.is_err(),
+            "the server never answers, so the call is still pending when it is dropped"
+        );
         // Wait off the runtime's thread: it must stay free to close the connection.
-        let outcome = tokio::task::spawn_blocking(move || wait.recv_timeout(std::time::Duration::from_secs(8)).unwrap()).await.unwrap();
-        assert_eq!(outcome, "closed", "the connection must be closed, not left for the server to keep generating into");
+        let outcome = tokio::task::spawn_blocking(move || {
+            wait.recv_timeout(std::time::Duration::from_secs(8))
+                .unwrap()
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            outcome, "closed",
+            "the connection must be closed, not left for the server to keep generating into"
+        );
     }
 
     #[test]
     fn the_audio_part_is_input_audio_with_the_whole_wav_and_comes_first() {
         let tools = json!([]);
-        let request = Request { system: "sys", user_text: "what now", screenshot: Some("data:image/jpeg;base64,AA"), audio: Some("UklGRg=="), tools: &tools, think: false, max_tokens: None };
+        let request = Request {
+            system: "sys",
+            user_text: "what now",
+            screenshot: Some("data:image/jpeg;base64,AA"),
+            audio: Some("UklGRg=="),
+            tools: &tools,
+            think: false,
+            max_tokens: None,
+        };
         let body = chat_body("m", &request);
         let parts = body["messages"][1]["content"].as_array().expect("parts");
         assert_eq!(parts.len(), 3);
-        assert_eq!(parts[0], json!({ "type": "input_audio", "input_audio": { "data": "UklGRg==", "format": "wav" } }));
-        assert_eq!(parts[1], json!({ "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,AA" } }));
+        assert_eq!(
+            parts[0],
+            json!({ "type": "input_audio", "input_audio": { "data": "UklGRg==", "format": "wav" } })
+        );
+        assert_eq!(
+            parts[1],
+            json!({ "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,AA" } })
+        );
         assert_eq!(parts[2], json!({ "type": "text", "text": "what now" }));
-        assert!(!body.to_string().contains("audio_url"), "the old part name is gone");
+        assert!(
+            !body.to_string().contains("audio_url"),
+            "the old part name is gone"
+        );
     }
 
     #[test]
     fn the_thinking_switch_is_sent_both_ways() {
         let tools = json!([]);
-        let mut request = Request { system: "s", user_text: "u", screenshot: None, audio: None, tools: &tools, think: false, max_tokens: None };
+        let mut request = Request {
+            system: "s",
+            user_text: "u",
+            screenshot: None,
+            audio: None,
+            tools: &tools,
+            think: false,
+            max_tokens: None,
+        };
         let off = chat_body("m", &request);
         assert_eq!(off["thinking"], json!({ "type": "disabled" }));
-        assert_eq!(off["chat_template_kwargs"], json!({ "enable_thinking": false }));
+        assert_eq!(
+            off["chat_template_kwargs"],
+            json!({ "enable_thinking": false })
+        );
         assert_eq!(off["max_tokens"], 512);
         assert!(off.get("stream").is_none());
         assert!(off.get("reasoning_effort").is_none());
@@ -572,7 +795,10 @@ mod tests {
         request.think = true;
         let on = chat_body("m", &request);
         assert_eq!(on["thinking"], json!({ "type": "enabled" }));
-        assert_eq!(on["chat_template_kwargs"], json!({ "enable_thinking": true }));
+        assert_eq!(
+            on["chat_template_kwargs"],
+            json!({ "enable_thinking": true })
+        );
         assert_eq!(on["stream"], true);
         assert_eq!(on["max_tokens"], 3000);
     }
@@ -580,11 +806,25 @@ mod tests {
     #[test]
     fn a_text_only_request_keeps_its_shape() {
         let tools = json!([{ "type": "function", "function": { "name": "click" } }]);
-        let request = Request { system: "sys", user_text: "plan this", screenshot: None, audio: None, tools: &tools, think: false, max_tokens: None };
+        let request = Request {
+            system: "sys",
+            user_text: "plan this",
+            screenshot: None,
+            audio: None,
+            tools: &tools,
+            think: false,
+            max_tokens: None,
+        };
         let body = chat_body("the-model", &request);
         assert_eq!(body["model"], "the-model");
-        assert_eq!(body["messages"][0], json!({ "role": "system", "content": "sys" }));
-        assert_eq!(body["messages"][1], json!({ "role": "user", "content": "plan this" }));
+        assert_eq!(
+            body["messages"][0],
+            json!({ "role": "system", "content": "sys" })
+        );
+        assert_eq!(
+            body["messages"][1],
+            json!({ "role": "user", "content": "plan this" })
+        );
         assert_eq!(body["tools"], tools);
         assert_eq!(body["tool_choice"], "required");
         assert_eq!(body["temperature"], 0);

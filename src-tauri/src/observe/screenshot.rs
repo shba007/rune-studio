@@ -2,7 +2,9 @@ use std::io::Cursor;
 use std::time::Instant;
 
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
-use image::{DynamicImage, ImageBuffer, Rgb, RgbImage, codecs::jpeg::JpegEncoder, imageops::FilterType};
+use image::{
+    DynamicImage, ImageBuffer, Rgb, RgbImage, codecs::jpeg::JpegEncoder, imageops::FilterType,
+};
 use xcap::Monitor as XMonitor;
 
 use crate::model::coords::{Monitor, fit_within};
@@ -39,7 +41,7 @@ pub struct Frame {
     pub jpeg: Vec<u8>,
     /// Where the archive stored this exact image (empty in unit tests).
     pub path: std::path::PathBuf,
-#[cfg_attr(not(debug_assertions), allow(dead_code))]
+    #[cfg_attr(not(debug_assertions), allow(dead_code))]
     pub elapsed_ms: u64,
     image: RgbImage,
 }
@@ -51,7 +53,7 @@ impl Frame {
         format!("data:image/jpeg;base64,{}", BASE64.encode(&self.jpeg))
     }
 
-#[cfg_attr(not(debug_assertions), allow(dead_code))]
+    #[cfg_attr(not(debug_assertions), allow(dead_code))]
     /// A smaller copy as a data URI, for showing in the UI.
     pub fn thumbnail_data_uri(&self, max_edge: u32) -> Result<String, ObserveError> {
         let (w, h) = fit_within(self.width, self.height, max_edge);
@@ -63,8 +65,19 @@ impl Frame {
     /// A small grey copy (128 by 72, see `stuck::SIGNATURE_SIZE`), to tell whether the screen changed
     /// between two looks. Fine enough to see a menu or a few words, coarse enough to ignore a caret.
     pub fn signature(&self) -> Vec<u8> {
-        let small = image::imageops::resize(&self.image, crate::agent::stuck::SIGNATURE_SIZE.0, crate::agent::stuck::SIGNATURE_SIZE.1, FilterType::Triangle);
-        small.pixels().map(|pixel| ((u32::from(pixel[0]) * 3 + u32::from(pixel[1]) * 6 + u32::from(pixel[2])) / 10) as u8).collect()
+        let small = image::imageops::resize(
+            &self.image,
+            crate::agent::stuck::SIGNATURE_SIZE.0,
+            crate::agent::stuck::SIGNATURE_SIZE.1,
+            FilterType::Triangle,
+        );
+        small
+            .pixels()
+            .map(|pixel| {
+                ((u32::from(pixel[0]) * 3 + u32::from(pixel[1]) * 6 + u32::from(pixel[2])) / 10)
+                    as u8
+            })
+            .collect()
     }
 
     /// The colour of the downscaled image at a model-space point (0..=1000 on both axes).
@@ -85,7 +98,9 @@ fn describe(monitor: &XMonitor) -> Result<Monitor, ObserveError> {
         y: monitor.y().map_err(|e| read("y", e))?,
         width: monitor.width().map_err(|e| read("width", e))?,
         height: monitor.height().map_err(|e| read("height", e))?,
-        scale_factor: monitor.scale_factor().map_err(|e| read("scale factor", e))?,
+        scale_factor: monitor
+            .scale_factor()
+            .map_err(|e| read("scale factor", e))?,
         primary: monitor.is_primary().map_err(|e| read("primary", e))?,
     })
 }
@@ -127,7 +142,8 @@ pub fn monitor(id: Option<u32>) -> Result<Monitor, ObserveError> {
 /// The monitor a physical desktop pixel is on. Used from M2 to pick the monitor under the cursor.
 #[allow(dead_code)]
 pub fn monitor_at(px: i32, py: i32) -> Result<Monitor, ObserveError> {
-    let monitor = XMonitor::from_point(px, py).map_err(|err| ObserveError::Display(err.to_string()))?;
+    let monitor =
+        XMonitor::from_point(px, py).map_err(|err| ObserveError::Display(err.to_string()))?;
     describe(&monitor)
 }
 
@@ -142,7 +158,11 @@ pub struct Prepared {
 /// The one place a captured screen becomes a model-sized JPEG: downscale so the longer edge is at
 /// most `max_edge`, then encode. The app and the M1.5 grounding probe both go through here, so the
 /// probe measures exactly what the agent will send.
-pub fn prepare(rgba: image::RgbaImage, max_edge: u32, quality: u8) -> Result<Prepared, ObserveError> {
+pub fn prepare(
+    rgba: image::RgbaImage,
+    max_edge: u32,
+    quality: u8,
+) -> Result<Prepared, ObserveError> {
     let (width, height) = fit_within(rgba.width(), rgba.height(), max_edge);
     let rgb = DynamicImage::ImageRgba8(rgba).into_rgb8();
     let image = if (width, height) == (rgb.width(), rgb.height()) {
@@ -151,7 +171,12 @@ pub fn prepare(rgba: image::RgbaImage, max_edge: u32, quality: u8) -> Result<Pre
         image::imageops::resize(&rgb, width, height, FilterType::Triangle)
     };
     let jpeg = encode_jpeg(&image, quality)?;
-    Ok(Prepared { width, height, jpeg, image })
+    Ok(Prepared {
+        width,
+        height,
+        jpeg,
+        image,
+    })
 }
 
 /// Captures a monitor and downscales it so the longer edge is at most `max_edge`.
@@ -165,24 +190,45 @@ const MIN_REGION_PX: u32 = 16;
 /// Like [`capture`], but only the part inside `region` (`[x0, y0, x1, y1]` in model units,
 /// 0..=1000 across the monitor) when given. The crop is scaled up to the same budget as a full
 /// screenshot, which is how a small target gets enough pixels to be read and aimed at.
-pub fn capture_region(id: Option<u32>, region: Option<[f64; 4]>, max_edge: u32, quality: u8) -> Result<Frame, ObserveError> {
+pub fn capture_region(
+    id: Option<u32>,
+    region: Option<[f64; 4]>,
+    max_edge: u32,
+    quality: u8,
+) -> Result<Frame, ObserveError> {
     let started = Instant::now();
     let (xmonitor, monitor) = resolve(id)?;
-    let mut rgba = xmonitor.capture_image().map_err(|err| ObserveError::Capture(err.to_string()))?;
+    let mut rgba = xmonitor
+        .capture_image()
+        .map_err(|err| ObserveError::Capture(err.to_string()))?;
     if let Some([x0, y0, x1, y1]) = region {
         let (w, h) = (f64::from(rgba.width()), f64::from(rgba.height()));
-        let to_px = |value: f64, extent: f64| (value.clamp(0.0, 1000.0) / 1000.0 * extent).round() as u32;
+        let to_px =
+            |value: f64, extent: f64| (value.clamp(0.0, 1000.0) / 1000.0 * extent).round() as u32;
         let (left, right) = (to_px(x0.min(x1), w), to_px(x0.max(x1), w));
         let (top, bottom) = (to_px(y0.min(y1), h), to_px(y0.max(y1), h));
-        if right.saturating_sub(left) < MIN_REGION_PX || bottom.saturating_sub(top) < MIN_REGION_PX {
-            return Err(ObserveError::Capture("the region is too small to show".into()));
+        if right.saturating_sub(left) < MIN_REGION_PX || bottom.saturating_sub(top) < MIN_REGION_PX
+        {
+            return Err(ObserveError::Capture(
+                "the region is too small to show".into(),
+            ));
         }
         rgba = image::imageops::crop_imm(&rgba, left, top, right - left, bottom - top).to_image();
     }
-    let Prepared { width, height, jpeg, image } = prepare(rgba, max_edge, quality)?;
+    let Prepared {
+        width,
+        height,
+        jpeg,
+        image,
+    } = prepare(rgba, max_edge, quality)?;
     // Exactly what the agent will see, stored first; no caller can skip this.
-    let path = crate::archive::save(crate::archive::Kind::Screenshots, if region.is_some() { "region" } else { "screen" }, "jpg", &jpeg)
-        .map_err(|err| ObserveError::Archive(err.to_string()))?;
+    let path = crate::archive::save(
+        crate::archive::Kind::Screenshots,
+        if region.is_some() { "region" } else { "screen" },
+        "jpg",
+        &jpeg,
+    )
+    .map_err(|err| ObserveError::Archive(err.to_string()))?;
     Ok(Frame {
         monitor,
         width,
@@ -194,7 +240,10 @@ pub fn capture_region(id: Option<u32>, region: Option<[f64; 4]>, max_edge: u32, 
     })
 }
 
-fn encode_jpeg(image: &ImageBuffer<Rgb<u8>, Vec<u8>>, quality: u8) -> Result<Vec<u8>, ObserveError> {
+fn encode_jpeg(
+    image: &ImageBuffer<Rgb<u8>, Vec<u8>>,
+    quality: u8,
+) -> Result<Vec<u8>, ObserveError> {
     let mut bytes = Cursor::new(Vec::new());
     DynamicImage::ImageRgb8(image.clone())
         .write_with_encoder(JpegEncoder::new_with_quality(&mut bytes, quality))

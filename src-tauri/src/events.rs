@@ -4,7 +4,16 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::{bridge::lease::LeaseBook, safety::gate::Pending, exec::{self, RunScope}, hotkeys::Hotkeys, overlay, settings::Settings, voice::capture::Capture, window};
+use crate::{
+    bridge::lease::LeaseBook,
+    exec::{self, RunScope},
+    hotkeys::Hotkeys,
+    overlay,
+    safety::gate::Pending,
+    settings::Settings,
+    voice::capture::Capture,
+    window,
+};
 
 pub const STATE_CHANGED: &str = "state_changed";
 /// The independent check of a finished task came back: `{ runId, result, evidence }`.
@@ -34,7 +43,10 @@ impl AgentState {
     /// Whether a task is under way: a new one is refused and Stop has something to stop.
     /// `Reflecting` is not running: the task is over and the agent is only looking back.
     pub fn is_running(self) -> bool {
-        matches!(self, Self::Planning | Self::AwaitingConfirm | Self::Acting | Self::Observing)
+        matches!(
+            self,
+            Self::Planning | Self::AwaitingConfirm | Self::Acting | Self::Observing
+        )
     }
 }
 
@@ -155,7 +167,14 @@ pub struct PlanUpdated {
 }
 
 pub fn emit_plan(app: &AppHandle, goals: &[String], current: usize, finished: bool) {
-    let _ = app.emit(PLAN_UPDATED, PlanUpdated { goals: goals.to_vec(), current, finished });
+    let _ = app.emit(
+        PLAN_UPDATED,
+        PlanUpdated {
+            goals: goals.to_vec(),
+            current,
+            finished,
+        },
+    );
 }
 
 /// What the model is thinking, as it streams in (only when "Show thinking" is on).
@@ -170,7 +189,13 @@ pub struct Thinking {
 }
 
 pub fn emit_thinking(app: &AppHandle, text: &str, done: bool) {
-    let _ = app.emit(THINKING, Thinking { text: text.to_string(), done });
+    let _ = app.emit(
+        THINKING,
+        Thinking {
+            text: text.to_string(),
+            done,
+        },
+    );
 }
 
 /// Text was just typed: the overlay marks the spot, like a click does.
@@ -239,12 +264,21 @@ pub struct TaskDone {
 mod tests {
     #[test]
     fn step_started_is_sent_with_the_camel_case_names_the_ui_reads() {
-        let started = super::StepStarted { step: 1, tool: "click", reason: String::new(), text: String::new(), detail: String::new(), point: None, double: false, button: "left", duration_ms: 250 };
+        let started = super::StepStarted {
+            step: 1,
+            tool: "click",
+            reason: String::new(),
+            text: String::new(),
+            detail: String::new(),
+            point: None,
+            double: false,
+            button: "left",
+            duration_ms: 250,
+        };
         let json = serde_json::to_value(started).unwrap();
         assert_eq!(json["durationMs"], 250, "the overlay reads durationMs");
         assert!(json.get("duration_ms").is_none());
     }
-
 
     use super::*;
 
@@ -252,13 +286,24 @@ mod tests {
     fn only_the_four_working_states_count_as_running() {
         use AgentState::*;
         let table = [
-            (Idle, false), (Listening, false), (Planning, true), (AwaitingConfirm, true), (Acting, true),
-            (Observing, true), (Reflecting, false), (Done, false), (Failed, false), (Stopped, false),
+            (Idle, false),
+            (Listening, false),
+            (Planning, true),
+            (AwaitingConfirm, true),
+            (Acting, true),
+            (Observing, true),
+            (Reflecting, false),
+            (Done, false),
+            (Failed, false),
+            (Stopped, false),
         ];
         for (state, running) in table {
             assert_eq!(state.is_running(), running, "{state:?}");
         }
-        assert_eq!(serde_json::to_string(&Reflecting).unwrap(), "\"reflecting\"");
+        assert_eq!(
+            serde_json::to_string(&Reflecting).unwrap(),
+            "\"reflecting\""
+        );
     }
 
     /// An `AppState` with nothing running, for the tests of how a new task and Stop reach the checks.
@@ -288,13 +333,19 @@ mod tests {
         let check = state.begin_verification();
         assert!(!check.is_cancelled());
         let run = state.begin_run();
-        assert!(check.is_cancelled(), "a new task cancels the check of the last one");
+        assert!(
+            check.is_cancelled(),
+            "a new task cancels the check of the last one"
+        );
         assert!(!run.token.is_cancelled(), "and its own token is untouched");
         // The next check gets a fresh token; the one before it is cancelled by then.
         let next = state.begin_verification();
         assert!(!next.is_cancelled());
         let after = state.begin_verification();
-        assert!(next.is_cancelled() && !after.is_cancelled(), "only the newest check is live");
+        assert!(
+            next.is_cancelled() && !after.is_cancelled(),
+            "only the newest check is live"
+        );
     }
 
     #[test]
@@ -303,7 +354,10 @@ mod tests {
         let check = state.begin_verification();
         let scope = exec::current_scope(&state.run);
         state.stop_current();
-        assert!(check.is_cancelled(), "Stop reaches the check from Idle, like it reaches typing");
+        assert!(
+            check.is_cancelled(),
+            "Stop reaches the check from Idle, like it reaches typing"
+        );
         assert!(scope.token.is_cancelled());
         // A check started after the Stop is not affected by it.
         assert!(!state.begin_verification().is_cancelled());

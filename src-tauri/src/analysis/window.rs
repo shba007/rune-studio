@@ -15,15 +15,19 @@ pub fn open(app: &AppHandle) -> tauri::Result<()> {
         window.unminimize()?;
         return window.set_focus();
     }
-    let window = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html?view=analysis".into()))
-        .title("Rune Studio - Screen analysis")
-        .inner_size(1040.0, 680.0)
-        .min_inner_size(720.0, 480.0)
-        .resizable(true)
-        .decorations(true)
-        .center()
-        .visible(false)
-        .build()?;
+    let window = WebviewWindowBuilder::new(
+        app,
+        LABEL,
+        WebviewUrl::App("index.html?view=analysis".into()),
+    )
+    .title("Rune Studio - Screen analysis")
+    .inner_size(1040.0, 680.0)
+    .min_inner_size(720.0, 480.0)
+    .resizable(true)
+    .decorations(true)
+    .center()
+    .visible(false)
+    .build()?;
     // Excluded before it is ever shown.
     crate::window::exclude_from_capture(&window)?;
     let handle = app.clone();

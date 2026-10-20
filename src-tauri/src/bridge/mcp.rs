@@ -20,11 +20,11 @@ use crate::{
 
 use super::lease::{IDLE_LIMIT, LeaseError};
 use crate::agent::{StepRow, millis, quick};
-use crate::trace::{self, RunInfo};
 use crate::safety::{
     foreground,
     gate::{self, Verdict},
 };
+use crate::trace::{self, RunInfo};
 
 use super::skill::GUIDE;
 const LATEST_PROTOCOL: &str = "2025-06-18";
@@ -40,22 +40,36 @@ struct Reply {
 
 impl Reply {
     fn text(text: impl Into<String>) -> Self {
-        Self { text: text.into(), image: None, is_error: false }
+        Self {
+            text: text.into(),
+            image: None,
+            is_error: false,
+        }
     }
 
     fn shot(text: impl Into<String>, jpeg: Vec<u8>) -> Self {
-        Self { text: text.into(), image: Some(jpeg), is_error: false }
+        Self {
+            text: text.into(),
+            image: Some(jpeg),
+            is_error: false,
+        }
     }
 
     /// An error carries a short code from the guide, then a sentence on what to do.
     fn error(code: &str, message: impl std::fmt::Display) -> Self {
-        Self { text: format!("{code}: {message}"), image: None, is_error: true }
+        Self {
+            text: format!("{code}: {message}"),
+            image: None,
+            is_error: true,
+        }
     }
 
     fn into_result(self) -> Value {
         let mut content = vec![json!({ "type": "text", "text": self.text })];
         if let Some(jpeg) = self.image {
-            content.push(json!({ "type": "image", "data": BASE64.encode(jpeg), "mimeType": "image/jpeg" }));
+            content.push(
+                json!({ "type": "image", "data": BASE64.encode(jpeg), "mimeType": "image/jpeg" }),
+            );
         }
         json!({ "content": content, "isError": self.is_error })
     }
@@ -64,10 +78,16 @@ impl Reply {
 impl From<LeaseError> for Reply {
     fn from(error: LeaseError) -> Self {
         let advice = match error {
-            LeaseError::Busy => "Another agent, or Rune Studio's own agent, is working. Wait, or tell the user.",
+            LeaseError::Busy => {
+                "Another agent, or Rune Studio's own agent, is working. Wait, or tell the user."
+            }
             LeaseError::NotBegun => "Call rune_begin first.",
-            LeaseError::StoppedByUser => "The user pressed Stop. Stop working and report. Do not try again unless the user asks.",
-            LeaseError::Expired => "Control ended because there were no calls for a while. Ask the user, then call rune_begin again.",
+            LeaseError::StoppedByUser => {
+                "The user pressed Stop. Stop working and report. Do not try again unless the user asks."
+            }
+            LeaseError::Expired => {
+                "Control ended because there were no calls for a while. Ask the user, then call rune_begin again."
+            }
         };
         Reply::error(error.code(), advice)
     }
@@ -88,7 +108,11 @@ pub async fn handle(app: &AppHandle, request: Value) -> Option<Value> {
     Some(match method {
         "initialize" => {
             let asked = request["params"]["protocolVersion"].as_str().unwrap_or("");
-            let version = if SUPPORTED_PROTOCOLS.contains(&asked) { asked } else { LATEST_PROTOCOL };
+            let version = if SUPPORTED_PROTOCOLS.contains(&asked) {
+                asked
+            } else {
+                LATEST_PROTOCOL
+            };
             rpc_result(
                 &id,
                 json!({
@@ -106,7 +130,10 @@ pub async fn handle(app: &AppHandle, request: Value) -> Option<Value> {
             None => rpc_error(&id, -32002, "resource not found"),
         },
         "prompts/list" => rpc_result(&id, json!({ "prompts": prompt_list() })),
-        "prompts/get" => match get_prompt(request["params"]["name"].as_str().unwrap_or(""), &request["params"]["arguments"]) {
+        "prompts/get" => match get_prompt(
+            request["params"]["name"].as_str().unwrap_or(""),
+            &request["params"]["arguments"],
+        ) {
             Some(prompt) => rpc_result(&id, prompt),
             None => rpc_error(&id, -32602, "unknown prompt"),
         },
@@ -135,7 +162,8 @@ fn resource_list() -> Value {
 }
 
 fn read_resource(uri: &str) -> Option<Value> {
-    (uri == GUIDE_URI).then(|| json!({ "uri": GUIDE_URI, "mimeType": "text/markdown", "text": GUIDE }))
+    (uri == GUIDE_URI)
+        .then(|| json!({ "uri": GUIDE_URI, "mimeType": "text/markdown", "text": GUIDE }))
 }
 
 fn prompt_list() -> Value {
@@ -151,14 +179,20 @@ fn get_prompt(name: &str, arguments: &Value) -> Option<Value> {
     if name != "rune_start" {
         return None;
     }
-    let task = arguments["task"].as_str().map(str::trim).filter(|task| !task.is_empty());
+    let task = arguments["task"]
+        .as_str()
+        .map(str::trim)
+        .filter(|task| !task.is_empty());
     let lead = match task {
-        Some(task) => format!("Use Rune Studio to do this on the user's PC: {task}
+        Some(task) => format!(
+            "Use Rune Studio to do this on the user's PC: {task}
 
-"),
+"
+        ),
         None => "Use Rune Studio to work on the user's PC.
 
-".to_string(),
+"
+        .to_string(),
     };
     Some(json!({
         "description": "Rune Studio guide and task",
@@ -276,7 +310,11 @@ fn screen_note(frame: &Frame) -> String {
 }
 
 async fn capture(region: Option<[f64; 4]>) -> Result<Frame, Reply> {
-    match tauri::async_runtime::spawn_blocking(move || screenshot::capture_region(None, region, MODEL_MAX_EDGE, MODEL_JPEG_QUALITY)).await {
+    match tauri::async_runtime::spawn_blocking(move || {
+        screenshot::capture_region(None, region, MODEL_MAX_EDGE, MODEL_JPEG_QUALITY)
+    })
+    .await
+    {
         Ok(Ok(frame)) => Ok(frame),
         Ok(Err(err)) => Err(Reply::error("screen_unavailable", err)),
         Err(err) => Err(Reply::error("screen_unavailable", err)),
@@ -285,11 +323,12 @@ async fn capture(region: Option<[f64; 4]>) -> Result<Frame, Reply> {
 
 fn begin(app: &AppHandle, arguments: &Value) -> Reply {
     let state = app.state::<AppState>();
-    if events::agent_state(app).is_running() && !state.lease.locked().is_held()
-    {
+    if events::agent_state(app).is_running() && !state.lease.locked().is_held() {
         return LeaseError::Busy.into();
     }
-    let agent = Some(clip(arguments["agent"].as_str().unwrap_or(""), 40)).filter(|name| !name.is_empty()).unwrap_or_else(|| "External agent".into());
+    let agent = Some(clip(arguments["agent"].as_str().unwrap_or(""), 40))
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "External agent".into());
     let task = clip(arguments["task"].as_str().unwrap_or(""), 200);
     if let Err(err) = state.lease.locked().begin(&agent, &task, Instant::now()) {
         return err.into();
@@ -302,7 +341,11 @@ fn begin(app: &AppHandle, arguments: &Value) -> Reply {
         String::new()
     });
     // The same id in the flight recorder; fire and forget, nothing here waits for it.
-    let run_id = if session.is_empty() { format!("norun-{}-{}", scope.id, crate::archive::now()) } else { session.clone() };
+    let run_id = if session.is_empty() {
+        format!("norun-{}-{}", scope.id, crate::archive::now())
+    } else {
+        session.clone()
+    };
     let (model, settings_json) = trace::model_and_snapshot(&state.settings);
     state.trace.begin_run(RunInfo {
         id: run_id,
@@ -316,7 +359,12 @@ fn begin(app: &AppHandle, arguments: &Value) -> Reply {
         settings_json: Some(settings_json),
         session_dir: crate::archive::session_dir(&session).map(|dir| dir.display().to_string()),
     });
-    let _ = app.emit(events::EXTERNAL_AGENT, ExternalAgent { agent: Some(agent.clone()) });
+    let _ = app.emit(
+        events::EXTERNAL_AGENT,
+        ExternalAgent {
+            agent: Some(agent.clone()),
+        },
+    );
     events::set_agent_state(app, AgentState::Observing);
     log::info!("agent bridge: {agent} took control for \"{task}\"");
     if let Ok(goals) = protocol::parse_plan(&json!({ "goals": arguments["plan"] })) {
@@ -344,10 +392,18 @@ fn parse_region(value: &Value) -> Result<Option<[f64; 4]>, Reply> {
     if value.is_null() {
         return Ok(None);
     }
-    let numbers: Vec<f64> = value.as_array().map(|list| list.iter().filter_map(Value::as_f64).collect()).unwrap_or_default();
+    let numbers: Vec<f64> = value
+        .as_array()
+        .map(|list| list.iter().filter_map(Value::as_f64).collect())
+        .unwrap_or_default();
     match numbers.as_slice() {
-        [x0, y0, x1, y1] if numbers.iter().all(|n| (0.0..=1000.0).contains(n)) => Ok(Some([*x0, *y0, *x1, *y1])),
-        _ => Err(Reply::error("out_of_range", "region must be [x0, y0, x1, y1], four numbers from 0 to 1000")),
+        [x0, y0, x1, y1] if numbers.iter().all(|n| (0.0..=1000.0).contains(n)) => {
+            Ok(Some([*x0, *y0, *x1, *y1]))
+        }
+        _ => Err(Reply::error(
+            "out_of_range",
+            "region must be [x0, y0, x1, y1], four numbers from 0 to 1000",
+        )),
     }
 }
 
@@ -384,13 +440,19 @@ async fn elements(app: &AppHandle) -> Reply {
     if let Err(reply) = touch(app) {
         return reply;
     }
-    let found = tauri::async_runtime::spawn_blocking(uia::snapshot).await.unwrap_or_default();
+    let found = tauri::async_runtime::spawn_blocking(uia::snapshot)
+        .await
+        .unwrap_or_default();
     let text = uia::describe(&found);
     uia::remember(found);
     if text.is_empty() {
-        return Reply::text("No controls could be listed for the front window (it may not support it, or it may be one of Rune's own). Use rune_observe and click a point instead.");
+        return Reply::text(
+            "No controls could be listed for the front window (it may not support it, or it may be one of Rune's own). Use rune_observe and click a point instead.",
+        );
     }
-    Reply::text(format!("Controls in the front window. Use the id with rune_click_element; the ids are valid until the next list.\n{text}"))
+    Reply::text(format!(
+        "Controls in the front window. Use the id with rune_click_element; the ids are valid until the next list.\n{text}"
+    ))
 }
 
 /// One action by the outside agent. Calls take turns: the guard is held from before the lease is
@@ -423,7 +485,11 @@ async fn act_turn(app: &AppHandle, tool: &'static str, arguments: &Value) -> Rep
         Ok(decision) => decision,
         Err(problem) => {
             row.fail(&problem);
-            let code = if problem.contains("outside the 0 to 1000") { "out_of_range" } else { "bad_arguments" };
+            let code = if problem.contains("outside the 0 to 1000") {
+                "out_of_range"
+            } else {
+                "bad_arguments"
+            };
             return Reply::error(code, problem);
         }
     };
@@ -435,14 +501,30 @@ async fn act_turn(app: &AppHandle, tool: &'static str, arguments: &Value) -> Rep
         && let Some(bad) = keys.iter().find(|key| parse_key(key).is_err())
     {
         row.fail(&format!("\"{bad}\" is not a key name"));
-        return Reply::error("unknown_key", format!("\"{bad}\" is not a key name. Use: {KEY_NAMES}"));
+        return Reply::error(
+            "unknown_key",
+            format!("\"{bad}\" is not a key name. Use: {KEY_NAMES}"),
+        );
     }
 
     let cancel = state.current_scope().token;
     // Risky actions wait for the user's yes, exactly as the built-in agent's do.
-    let source = state.lease.locked().agent().unwrap_or("External agent").to_string();
+    let source = state
+        .lease
+        .locked()
+        .agent()
+        .unwrap_or("External agent")
+        .to_string();
     let gating = Instant::now();
-    let checked = gate::check_detailed(app, &cancel, &source, &decision.action, &decision.reason, decision.risk).await;
+    let checked = gate::check_detailed(
+        app,
+        &cancel,
+        &source,
+        &decision.action,
+        &decision.reason,
+        decision.risk,
+    )
+    .await;
     row.rec.gate_ms = millis(gating);
     row.rec.risk_final = Some(checked.risk_final.label().to_string());
     row.rec.risk_reasons_json = serde_json::to_string(&checked.reasons).ok();
@@ -453,7 +535,12 @@ async fn act_turn(app: &AppHandle, tool: &'static str, arguments: &Value) -> Rep
         Verdict::Denied(why) => {
             row.rec.result = Some("skipped".into());
             events::set_agent_state(app, AgentState::Observing);
-            return Reply::error("declined_by_user", format!("the user did not allow it ({why}). Do not try another way to do the same thing; ask the user what they want instead."));
+            return Reply::error(
+                "declined_by_user",
+                format!(
+                    "the user did not allow it ({why}). Do not try another way to do the same thing; ask the user what they want instead."
+                ),
+            );
         }
     }
     let monitor = match screenshot::monitor(None) {
@@ -494,7 +581,12 @@ async fn act_turn(app: &AppHandle, tool: &'static str, arguments: &Value) -> Rep
     events::set_agent_state(app, AgentState::Observing);
     if let Err(err) = result {
         row.fail(&err.to_string());
-        return Reply::error("action_failed", format!("could not {described}: {err}. Look at the screen and try something different."));
+        return Reply::error(
+            "action_failed",
+            format!(
+                "could not {described}: {err}. Look at the screen and try something different."
+            ),
+        );
     }
 
     // If the decision model sees the page still loading, give it a moment (a few times at most)
@@ -510,14 +602,20 @@ async fn act_turn(app: &AppHandle, tool: &'static str, arguments: &Value) -> Rep
             }
         };
         row.rec.result = Some("ok".into());
-        row.rec.observation_path = Some(frame.path.display().to_string()).filter(|path| !path.is_empty());
-        let notes = quick::read_screen(app, &frame.data_uri()).await.unwrap_or_default();
+        row.rec.observation_path =
+            Some(frame.path.display().to_string()).filter(|path| !path.is_empty());
+        let notes = quick::read_screen(app, &frame.data_uri())
+            .await
+            .unwrap_or_default();
         if notes.loading && attempt < quick::MAX_LOAD_WAITS && !cancel.is_cancelled() {
             attempt += 1;
             tokio::time::sleep(std::time::Duration::from_millis(900)).await;
             continue;
         }
-        let mut text = format!("Done: {described}. Here is the screen now. {}", screen_note(&frame));
+        let mut text = format!(
+            "Done: {described}. Here is the screen now. {}",
+            screen_note(&frame)
+        );
         if notes.loading {
             text.push_str(" It may still be loading: look again with rune_observe in a moment.");
         }
@@ -538,7 +636,8 @@ fn set_goals(app: &AppHandle, goals: Vec<String>) {
         lease.plan = goals.clone();
         lease.current_goal = 0;
     }
-    if let (Some(run_id), Ok(listing)) = (state.trace.open_run_id(), serde_json::to_string(&goals)) {
+    if let (Some(run_id), Ok(listing)) = (state.trace.open_run_id(), serde_json::to_string(&goals))
+    {
         state.trace.set_plan(&run_id, &listing);
         state.trace.event(&run_id, "plan", &listing);
     }
@@ -551,9 +650,16 @@ fn plan(app: &AppHandle, arguments: &Value) -> Reply {
     }
     match protocol::parse_plan(arguments) {
         Ok(goals) => {
-            let listing = goals.iter().enumerate().map(|(index, goal)| format!("{}. {goal}", index + 1)).collect::<Vec<_>>().join(" ");
+            let listing = goals
+                .iter()
+                .enumerate()
+                .map(|(index, goal)| format!("{}. {goal}", index + 1))
+                .collect::<Vec<_>>()
+                .join(" ");
             set_goals(app, goals);
-            Reply::text(format!("Plan saved: {listing} Now pass goal=1 (then 2, 3, ...) on your actions so the user sees your progress."))
+            Reply::text(format!(
+                "Plan saved: {listing} Now pass goal=1 (then 2, 3, ...) on your actions so the user sees your progress."
+            ))
         }
         Err(problem) => Reply::error("bad_arguments", problem),
     }
@@ -606,17 +712,33 @@ fn done(app: &AppHandle, arguments: &Value) -> Reply {
     let state = app.state::<AppState>();
     let summary = clip(arguments["summary"].as_str().unwrap_or(""), 400);
     let success = arguments["success"].as_bool().unwrap_or(true);
-    let finished_plan = state.lease.locked().current().map(|lease| lease.plan.clone()).filter(|plan| !plan.is_empty());
+    let finished_plan = state
+        .lease
+        .locked()
+        .current()
+        .map(|lease| lease.plan.clone())
+        .filter(|plan| !plan.is_empty());
     if let Some(plan) = finished_plan {
         events::emit_plan(app, &plan, plan.len(), true);
     }
     state.lease.locked().end();
-    let label = if success { "succeeded" } else { "reported_failure" };
+    let label = if success {
+        "succeeded"
+    } else {
+        "reported_failure"
+    };
     crate::archive::end_session(None, label, &summary);
     state.trace.end_open_run(label, &summary);
     let _ = app.emit(events::EXTERNAL_AGENT, ExternalAgent { agent: None });
     let _ = app.emit(events::TASK_DONE, TaskDone { summary, success });
-    events::set_agent_state(app, if success { AgentState::Done } else { AgentState::Failed });
+    events::set_agent_state(
+        app,
+        if success {
+            AgentState::Done
+        } else {
+            AgentState::Failed
+        },
+    );
     Reply::text("Thanks. Control is back with the user and your summary is shown to them.")
 }
 
@@ -626,10 +748,21 @@ mod tests {
 
     #[test]
     fn every_tool_in_the_list_has_a_handler_or_is_special() {
-        let special = ["rune_guide", "rune_begin", "rune_observe", "rune_plan", "rune_elements", "rune_status", "rune_done"];
+        let special = [
+            "rune_guide",
+            "rune_begin",
+            "rune_observe",
+            "rune_plan",
+            "rune_elements",
+            "rune_status",
+            "rune_done",
+        ];
         for tool in tool_list().as_array().unwrap() {
             let name = tool["name"].as_str().unwrap();
-            assert!(special.contains(&name) || protocol_name(name).is_some(), "{name} has no handler");
+            assert!(
+                special.contains(&name) || protocol_name(name).is_some(),
+                "{name} has no handler"
+            );
             assert_eq!(tool["inputSchema"]["type"], "object");
         }
     }
@@ -638,14 +771,33 @@ mod tests {
     fn the_guide_documents_every_tool() {
         for tool in tool_list().as_array().unwrap() {
             let name = tool["name"].as_str().unwrap();
-            assert!(GUIDE.contains(&format!("`{name}`")), "the guide does not mention {name}");
+            assert!(
+                GUIDE.contains(&format!("`{name}`")),
+                "the guide does not mention {name}"
+            );
         }
     }
 
     #[test]
     fn the_guide_documents_every_error_code() {
-        for code in ["not_enabled", "unauthorized", "busy", "not_begun", "stopped_by_user", "lease_expired", "out_of_range", "unknown_key", "action_failed", "screen_unavailable", "bad_arguments", "unknown_tool"] {
-            assert!(GUIDE.contains(&format!("`{code}`")), "the guide does not mention {code}");
+        for code in [
+            "not_enabled",
+            "unauthorized",
+            "busy",
+            "not_begun",
+            "stopped_by_user",
+            "lease_expired",
+            "out_of_range",
+            "unknown_key",
+            "action_failed",
+            "screen_unavailable",
+            "bad_arguments",
+            "unknown_tool",
+        ] {
+            assert!(
+                GUIDE.contains(&format!("`{code}`")),
+                "the guide does not mention {code}"
+            );
         }
     }
 
@@ -658,16 +810,26 @@ mod tests {
 
         assert_eq!(prompt_list()[0]["name"], "rune_start");
         let with_task = get_prompt("rune_start", &json!({ "task": "open Notepad" })).unwrap();
-        let text = with_task["messages"][0]["content"]["text"].as_str().unwrap();
+        let text = with_task["messages"][0]["content"]["text"]
+            .as_str()
+            .unwrap();
         assert!(text.contains("open Notepad") && text.contains("rune_begin"));
         let without = get_prompt("rune_start", &Value::Null).unwrap();
-        assert!(without["messages"][0]["content"]["text"].as_str().unwrap().starts_with("Use Rune Studio to work"));
+        assert!(
+            without["messages"][0]["content"]["text"]
+                .as_str()
+                .unwrap()
+                .starts_with("Use Rune Studio to work")
+        );
         assert!(get_prompt("other", &Value::Null).is_none());
     }
 
     #[test]
     fn regions_must_be_four_numbers_in_range() {
-        assert!(matches!(parse_region(&json!([0, 0, 500, 500])), Ok(Some(_))));
+        assert!(matches!(
+            parse_region(&json!([0, 0, 500, 500])),
+            Ok(Some(_))
+        ));
         assert!(matches!(parse_region(&Value::Null), Ok(None)));
         assert!(parse_region(&json!([0, 0, 500])).is_err());
         assert!(parse_region(&json!([0, 0, 500, 1200])).is_err());

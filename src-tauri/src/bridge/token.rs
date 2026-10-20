@@ -40,7 +40,10 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;
     }
-    a.iter().zip(b).fold(0_u8, |difference, (x, y)| difference | (x ^ y)) == 0
+    a.iter()
+        .zip(b)
+        .fold(0_u8, |difference, (x, y)| difference | (x ^ y))
+        == 0
 }
 
 #[cfg(test)]

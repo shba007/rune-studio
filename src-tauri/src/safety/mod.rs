@@ -52,7 +52,10 @@ pub struct Assessment {
 
 impl Assessment {
     pub fn low() -> Self {
-        Self { risk: Risk::Low, reasons: Vec::new() }
+        Self {
+            risk: Risk::Low,
+            reasons: Vec::new(),
+        }
     }
 
     /// Records a finding. The risk only ever goes up.

@@ -137,18 +137,32 @@ pub fn tools() -> Value {
 /// The user's question, or the default one when there is none. Trimmed and cut.
 pub fn question_or_default(question: &str) -> String {
     let question = question.split_whitespace().collect::<Vec<_>>().join(" ");
-    if question.is_empty() { DEFAULT_QUESTION.to_string() } else { trace::cap(&question, QUESTION_CAP) }
+    if question.is_empty() {
+        DEFAULT_QUESTION.to_string()
+    } else {
+        trace::cap(&question, QUESTION_CAP)
+    }
 }
 
 /// The request for one analysis: the screenshot, the question, the `report` tool, no thinking, and
 /// room for eight findings.
 pub fn request<'a>(question: &'a str, screenshot: &'a str, tools: &'a Value) -> Request<'a> {
-    Request { system: SYSTEM, user_text: question, screenshot: Some(screenshot), audio: None, tools, think: false, max_tokens: Some(MAX_OUTPUT_TOKENS) }
+    Request {
+        system: SYSTEM,
+        user_text: question,
+        screenshot: Some(screenshot),
+        audio: None,
+        tools,
+        think: false,
+        max_tokens: Some(MAX_OUTPUT_TOKENS),
+    }
 }
 
 /// A number from a JSON value; numeric strings count, nothing else does.
 fn number(value: &Value) -> Option<f32> {
-    let n = value.as_f64().or_else(|| value.as_str().and_then(|text| text.trim().parse().ok()))?;
+    let n = value
+        .as_f64()
+        .or_else(|| value.as_str().and_then(|text| text.trim().parse().ok()))?;
     n.is_finite().then_some(n as f32)
 }
 
@@ -164,12 +178,20 @@ pub fn normalise_box(value: &Value) -> Option<[f32; 4]> {
         *slot = number(item)?;
     }
     let clamp = |v: f32| v.clamp(0.0, 1000.0);
-    let rect = [clamp(numbers[0].min(numbers[2])), clamp(numbers[1].min(numbers[3])), clamp(numbers[0].max(numbers[2])), clamp(numbers[1].max(numbers[3]))];
+    let rect = [
+        clamp(numbers[0].min(numbers[2])),
+        clamp(numbers[1].min(numbers[3])),
+        clamp(numbers[0].max(numbers[2])),
+        clamp(numbers[1].max(numbers[3])),
+    ];
     (rect[2] - rect[0] >= MIN_BOX_SIDE && rect[3] - rect[1] >= MIN_BOX_SIDE).then_some(rect)
 }
 
 fn text(value: &Value, cap: usize) -> String {
-    value.as_str().map(|text| trace::cap(&text.split_whitespace().collect::<Vec<_>>().join(" "), cap)).unwrap_or_default()
+    value
+        .as_str()
+        .map(|text| trace::cap(&text.split_whitespace().collect::<Vec<_>>().join(" "), cap))
+        .unwrap_or_default()
 }
 
 /// Reads the arguments of a `report` call. Forgiving: texts are cut to their limits, at most
@@ -178,9 +200,20 @@ fn text(value: &Value, cap: usize) -> String {
 pub fn parse(arguments: &Value) -> ParsedReport {
     let findings = arguments["findings"]
         .as_array()
-        .map(|items| items.iter().filter(|item| item.is_object()).take(MAX_FINDINGS).enumerate().map(|(index, item)| finding(index, item)).collect())
+        .map(|items| {
+            items
+                .iter()
+                .filter(|item| item.is_object())
+                .take(MAX_FINDINGS)
+                .enumerate()
+                .map(|(index, item)| finding(index, item))
+                .collect()
+        })
         .unwrap_or_default();
-    ParsedReport { answer: text(&arguments["answer"], ANSWER_CAP), findings }
+    ParsedReport {
+        answer: text(&arguments["answer"], ANSWER_CAP),
+        findings,
+    }
 }
 
 fn finding(index: usize, item: &Value) -> Finding {
@@ -188,7 +221,11 @@ fn finding(index: usize, item: &Value) -> Finding {
     let label = text(&item["label"], LABEL_CAP);
     Finding {
         n,
-        label: if label.is_empty() { format!("Item {n}") } else { label },
+        label: if label.is_empty() {
+            format!("Item {n}")
+        } else {
+            label
+        },
         kind: Kind::from_word(item["kind"].as_str().unwrap_or("")),
         bbox: normalise_box(&item["box"]),
         description: text(&item["description"], DESCRIPTION_CAP),
@@ -218,9 +255,20 @@ mod tests {
         assert_eq!(report.findings.len(), 2);
         assert_eq!(
             report.findings[0],
-            Finding { n: 1, label: "Save button".into(), kind: Kind::Control, bbox: Some([700.0, 800.0, 800.0, 850.0]), description: "Saves the changes.".into(), evidence: "The button says Save.".into() }
+            Finding {
+                n: 1,
+                label: "Save button".into(),
+                kind: Kind::Control,
+                bbox: Some([700.0, 800.0, 800.0, 850.0]),
+                description: "Saves the changes.".into(),
+                evidence: "The button says Save.".into()
+            }
         );
-        assert_eq!((report.findings[1].n, report.findings[1].bbox), (2, None), "no box given, so none drawn");
+        assert_eq!(
+            (report.findings[1].n, report.findings[1].bbox),
+            (2, None),
+            "no box given, so none drawn"
+        );
     }
 
     #[test]
@@ -231,7 +279,14 @@ mod tests {
         }));
         assert_eq!(report.answer.chars().count(), ANSWER_CAP);
         let f = &report.findings[0];
-        assert_eq!((f.label.chars().count(), f.description.chars().count(), f.evidence.chars().count()), (LABEL_CAP, DESCRIPTION_CAP, EVIDENCE_CAP));
+        assert_eq!(
+            (
+                f.label.chars().count(),
+                f.description.chars().count(),
+                f.evidence.chars().count()
+            ),
+            (LABEL_CAP, DESCRIPTION_CAP, EVIDENCE_CAP)
+        );
         assert!(f.label.ends_with('…'), "a cut text says so");
     }
 
@@ -240,68 +295,164 @@ mod tests {
         let items: Vec<Value> = (1..=12).map(|n| json!({ "label": format!("Item {n}"), "kind": "region", "description": "d", "evidence": "e" })).collect();
         let report = found(json!({ "answer": "x", "findings": items }));
         assert_eq!(report.findings.len(), 8);
-        assert_eq!(report.findings.iter().map(|f| f.n).collect::<Vec<_>>(), [1, 2, 3, 4, 5, 6, 7, 8]);
-        assert_eq!(report.findings[7].label, "Item 8", "the first eight, in order");
+        assert_eq!(
+            report.findings.iter().map(|f| f.n).collect::<Vec<_>>(),
+            [1, 2, 3, 4, 5, 6, 7, 8]
+        );
+        assert_eq!(
+            report.findings[7].label, "Item 8",
+            "the first eight, in order"
+        );
         // Items that are not objects do not take a number.
-        let mixed = found(json!({ "answer": "x", "findings": ["junk", null, { "label": "Real", "kind": "text", "description": "d", "evidence": "e" }, 7] }));
-        assert_eq!((mixed.findings.len(), mixed.findings[0].n, mixed.findings[0].label.as_str()), (1, 1, "Real"));
+        let mixed = found(
+            json!({ "answer": "x", "findings": ["junk", null, { "label": "Real", "kind": "text", "description": "d", "evidence": "e" }, 7] }),
+        );
+        assert_eq!(
+            (
+                mixed.findings.len(),
+                mixed.findings[0].n,
+                mixed.findings[0].label.as_str()
+            ),
+            (1, 1, "Real")
+        );
     }
 
     #[test]
     fn a_box_with_its_corners_the_wrong_way_round_is_put_right() {
-        assert_eq!(normalise_box(&json!([300, 400, 100, 200])), Some([100.0, 200.0, 300.0, 400.0]));
-        assert_eq!(normalise_box(&json!([300, 200, 100, 400])), Some([100.0, 200.0, 300.0, 400.0]), "one axis reversed");
+        assert_eq!(
+            normalise_box(&json!([300, 400, 100, 200])),
+            Some([100.0, 200.0, 300.0, 400.0])
+        );
+        assert_eq!(
+            normalise_box(&json!([300, 200, 100, 400])),
+            Some([100.0, 200.0, 300.0, 400.0]),
+            "one axis reversed"
+        );
     }
 
     #[test]
     fn a_box_outside_the_picture_is_clamped_into_it() {
-        assert_eq!(normalise_box(&json!([-50, -20, 1200, 400])), Some([0.0, 0.0, 1000.0, 400.0]));
-        assert_eq!(normalise_box(&json!([900, 900, 5000, 5000])), Some([900.0, 900.0, 1000.0, 1000.0]));
-        assert_eq!(normalise_box(&json!([-50, -50, 4, 4])), None, "clamped to 4 by 4, below the minimum");
+        assert_eq!(
+            normalise_box(&json!([-50, -20, 1200, 400])),
+            Some([0.0, 0.0, 1000.0, 400.0])
+        );
+        assert_eq!(
+            normalise_box(&json!([900, 900, 5000, 5000])),
+            Some([900.0, 900.0, 1000.0, 1000.0])
+        );
+        assert_eq!(
+            normalise_box(&json!([-50, -50, 4, 4])),
+            None,
+            "clamped to 4 by 4, below the minimum"
+        );
     }
 
     #[test]
     fn a_tiny_box_is_dropped_but_its_finding_stays() {
         assert_eq!(normalise_box(&json!([100, 100, 107, 200])), None, "7 wide");
-        assert_eq!(normalise_box(&json!([100, 100, 108, 108])), Some([100.0, 100.0, 108.0, 108.0]), "exactly 8 is allowed");
+        assert_eq!(
+            normalise_box(&json!([100, 100, 108, 108])),
+            Some([100.0, 100.0, 108.0, 108.0]),
+            "exactly 8 is allowed"
+        );
         assert_eq!(normalise_box(&json!([100, 100, 200, 107.9])), None);
-        let report = found(json!({ "answer": "x", "findings": [{ "label": "Dot", "kind": "control", "box": [10, 10, 12, 12], "description": "d", "evidence": "e" }] }));
+        let report = found(
+            json!({ "answer": "x", "findings": [{ "label": "Dot", "kind": "control", "box": [10, 10, 12, 12], "description": "d", "evidence": "e" }] }),
+        );
         assert_eq!(report.findings.len(), 1);
         assert_eq!(report.findings[0].bbox, None);
     }
 
     #[test]
     fn a_box_that_is_not_four_numbers_is_no_box() {
-        for bad in [json!("10,20,30,40"), json!([1, 2, 3]), json!([1, 2, 3, 4, 5]), json!([1, 2, "x", 4]), json!([1, 2, null, 4]), json!({ "x0": 1, "y0": 2, "x1": 3, "y1": 4 }), json!(null), json!(7)] {
+        for bad in [
+            json!("10,20,30,40"),
+            json!([1, 2, 3]),
+            json!([1, 2, 3, 4, 5]),
+            json!([1, 2, "x", 4]),
+            json!([1, 2, null, 4]),
+            json!({ "x0": 1, "y0": 2, "x1": 3, "y1": 4 }),
+            json!(null),
+            json!(7),
+        ] {
             assert_eq!(normalise_box(&bad), None, "{bad}");
         }
-        assert_eq!(normalise_box(&json!(["100", " 200 ", "300", "400"])), Some([100.0, 200.0, 300.0, 400.0]), "numbers written as strings are accepted");
+        assert_eq!(
+            normalise_box(&json!(["100", " 200 ", "300", "400"])),
+            Some([100.0, 200.0, 300.0, 400.0]),
+            "numbers written as strings are accepted"
+        );
         assert_eq!(normalise_box(&json!([f64::NAN, 1, 2, 3])), None);
     }
 
     #[test]
     fn missing_fields_and_odd_input_never_panic() {
-        assert_eq!(found(json!({})), ParsedReport { answer: String::new(), findings: vec![] });
-        for odd in [json!(null), json!("report"), json!([1, 2]), json!(7), json!({ "answer": 5, "findings": "none" }), json!({ "findings": {} })] {
+        assert_eq!(
+            found(json!({})),
+            ParsedReport {
+                answer: String::new(),
+                findings: vec![]
+            }
+        );
+        for odd in [
+            json!(null),
+            json!("report"),
+            json!([1, 2]),
+            json!(7),
+            json!({ "answer": 5, "findings": "none" }),
+            json!({ "findings": {} }),
+        ] {
             let report = found(odd.clone());
-            assert!(report.answer.is_empty() && report.findings.is_empty(), "{odd}");
+            assert!(
+                report.answer.is_empty() && report.findings.is_empty(),
+                "{odd}"
+            );
         }
         let bare = found(json!({ "answer": "x", "findings": [{}] }));
-        assert_eq!((bare.findings[0].label.as_str(), bare.findings[0].kind, bare.findings[0].description.as_str()), ("Item 1", Kind::Other, ""));
+        assert_eq!(
+            (
+                bare.findings[0].label.as_str(),
+                bare.findings[0].kind,
+                bare.findings[0].description.as_str()
+            ),
+            ("Item 1", Kind::Other, "")
+        );
     }
 
     #[test]
     fn unknown_kinds_are_other_and_known_ones_ignore_case() {
-        for (word, kind) in [("text", Kind::Text), ("Control", Kind::Control), (" IMAGE ", Kind::Image), ("region", Kind::Region), ("issue", Kind::Issue), ("other", Kind::Other), ("button", Kind::Other), ("", Kind::Other)] {
+        for (word, kind) in [
+            ("text", Kind::Text),
+            ("Control", Kind::Control),
+            (" IMAGE ", Kind::Image),
+            ("region", Kind::Region),
+            ("issue", Kind::Issue),
+            ("other", Kind::Other),
+            ("button", Kind::Other),
+            ("", Kind::Other),
+        ] {
             assert_eq!(Kind::from_word(word), kind, "{word:?}");
         }
-        assert_eq!(serde_json::to_string(&Kind::Control).unwrap(), "\"control\"");
+        assert_eq!(
+            serde_json::to_string(&Kind::Control).unwrap(),
+            "\"control\""
+        );
     }
 
     #[test]
     fn a_finding_is_written_for_the_ui_with_box_and_camel_case() {
-        let f = Finding { n: 2, label: "L".into(), kind: Kind::Issue, bbox: Some([1.0, 2.0, 30.0, 40.0]), description: "d".into(), evidence: "e".into() };
-        assert_eq!(serde_json::to_value(&f).unwrap(), json!({ "n": 2, "label": "L", "kind": "issue", "box": [1.0, 2.0, 30.0, 40.0], "description": "d", "evidence": "e" }));
+        let f = Finding {
+            n: 2,
+            label: "L".into(),
+            kind: Kind::Issue,
+            bbox: Some([1.0, 2.0, 30.0, 40.0]),
+            description: "d".into(),
+            evidence: "e".into(),
+        };
+        assert_eq!(
+            serde_json::to_value(&f).unwrap(),
+            json!({ "n": 2, "label": "L", "kind": "issue", "box": [1.0, 2.0, 30.0, 40.0], "description": "d", "evidence": "e" })
+        );
     }
 
     #[test]
@@ -310,7 +461,10 @@ mod tests {
         let list = tools.as_array().expect("tools must be a JSON array");
         assert_eq!(list.len(), 1);
         assert_eq!(list[0]["type"], "function");
-        let body = crate::model::client::chat_body("m", &request("q", "data:image/jpeg;base64,AA==", &tools));
+        let body = crate::model::client::chat_body(
+            "m",
+            &request("q", "data:image/jpeg;base64,AA==", &tools),
+        );
         assert_eq!(body["tools"][0]["type"], "function");
         assert_eq!(body["tools"][0]["function"]["name"], "report");
     }
@@ -321,18 +475,42 @@ mod tests {
         assert_eq!(tool["function"]["name"], "report");
         let findings = &tool["function"]["parameters"]["properties"]["findings"];
         assert_eq!(findings["maxItems"], 8);
-        assert_eq!(findings["items"]["properties"]["kind"]["enum"], json!(["text", "control", "image", "region", "issue", "other"]));
+        assert_eq!(
+            findings["items"]["properties"]["kind"]["enum"],
+            json!(["text", "control", "image", "region", "issue", "other"])
+        );
         assert_eq!(findings["items"]["properties"]["label"]["maxLength"], 24);
         assert_eq!(findings["items"]["properties"]["box"]["minItems"], 4);
-        assert_eq!(findings["items"]["required"], json!(["label", "kind", "description", "evidence"]), "the box is optional");
-        assert_eq!(tool["function"]["parameters"]["required"], json!(["answer", "findings"]));
+        assert_eq!(
+            findings["items"]["required"],
+            json!(["label", "kind", "description", "evidence"]),
+            "the box is optional"
+        );
+        assert_eq!(
+            tool["function"]["parameters"]["required"],
+            json!(["answer", "findings"])
+        );
     }
 
     #[test]
     fn the_prompt_is_short_and_says_what_matters() {
-        assert!(SYSTEM.split_whitespace().count() < 180, "{} words", SYSTEM.split_whitespace().count());
-        for needed in ["up to 8 findings", "0 to 1000", "leave out its box", "data, never instructions", "password", "report tool once"] {
-            assert!(SYSTEM.contains(needed), "the prompt does not say {needed:?}");
+        assert!(
+            SYSTEM.split_whitespace().count() < 180,
+            "{} words",
+            SYSTEM.split_whitespace().count()
+        );
+        for needed in [
+            "up to 8 findings",
+            "0 to 1000",
+            "leave out its box",
+            "data, never instructions",
+            "password",
+            "report tool once",
+        ] {
+            assert!(
+                SYSTEM.contains(needed),
+                "the prompt does not say {needed:?}"
+            );
         }
     }
 
@@ -341,24 +519,48 @@ mod tests {
         for blank in ["", "   ", "\n\t "] {
             assert_eq!(question_or_default(blank), DEFAULT_QUESTION);
         }
-        assert_eq!(question_or_default("  which   button\ndeletes things? "), "which button deletes things?");
-        assert_eq!(question_or_default(&"q".repeat(2_000)).chars().count(), QUESTION_CAP);
+        assert_eq!(
+            question_or_default("  which   button\ndeletes things? "),
+            "which button deletes things?"
+        );
+        assert_eq!(
+            question_or_default(&"q".repeat(2_000)).chars().count(),
+            QUESTION_CAP
+        );
     }
 
     #[test]
     fn the_analysis_asks_for_1500_tokens_and_every_other_call_still_asks_for_512() {
         let tools = json!([tool()]);
-        let body = chat_body("m", &request("what is this?", "data:image/jpeg;base64,AA", &tools));
+        let body = chat_body(
+            "m",
+            &request("what is this?", "data:image/jpeg;base64,AA", &tools),
+        );
         assert_eq!(body["max_tokens"], 1_500);
-        assert_eq!(body["thinking"], json!({ "type": "disabled" }), "no thinking");
+        assert_eq!(
+            body["thinking"],
+            json!({ "type": "disabled" }),
+            "no thinking"
+        );
         assert_eq!(body["tool_choice"], "required");
         assert_eq!(body["tools"][0]["function"]["name"], "report");
         assert_eq!(body["messages"][1]["content"][0]["type"], "image_url");
         assert!(body.get("stream").is_none());
         // The same request type with no override, as the agent's steps and the check send it.
-        let plain = Request { system: "s", user_text: "u", screenshot: None, audio: None, tools: &tools, think: false, max_tokens: None };
+        let plain = Request {
+            system: "s",
+            user_text: "u",
+            screenshot: None,
+            audio: None,
+            tools: &tools,
+            think: false,
+            max_tokens: None,
+        };
         assert_eq!(chat_body("m", &plain)["max_tokens"], 512);
-        let thinking = Request { think: true, ..plain };
+        let thinking = Request {
+            think: true,
+            ..plain
+        };
         assert_eq!(chat_body("m", &thinking)["max_tokens"], 3_000);
     }
 }

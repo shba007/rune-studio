@@ -10,10 +10,14 @@ mod imp {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     use windows::Win32::{
-        Graphics::Gdi::{BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateBitmap, CreateDIBSection, DIB_RGB_COLORS, DeleteObject, GetDC, ReleaseDC},
+        Graphics::Gdi::{
+            BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateBitmap, CreateDIBSection, DIB_RGB_COLORS,
+            DeleteObject, GetDC, ReleaseDC,
+        },
         UI::WindowsAndMessaging::{
-            CreateIconIndirect, HCURSOR, ICONINFO, OCR_IBEAM, OCR_NORMAL, SPI_SETCURSORS, SYSTEM_CURSOR_ID, SetSystemCursor, SystemParametersInfoW,
-            SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
+            CreateIconIndirect, HCURSOR, ICONINFO, OCR_IBEAM, OCR_NORMAL, SPI_SETCURSORS,
+            SYSTEM_CURSOR_ID, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SetSystemCursor,
+            SystemParametersInfoW,
         },
     };
 
@@ -35,8 +39,13 @@ mod imp {
         let mut dots = vec![(MIDDLE, MIDDLE, true)];
         for (radius, count) in [(3.6_f32, 6), (7.2, 12)] {
             for index in 0..count {
-                let angle = (index as f32 / count as f32) * std::f32::consts::TAU - std::f32::consts::FRAC_PI_2;
-                dots.push((MIDDLE + radius * angle.cos(), MIDDLE + radius * angle.sin(), false));
+                let angle = (index as f32 / count as f32) * std::f32::consts::TAU
+                    - std::f32::consts::FRAC_PI_2;
+                dots.push((
+                    MIDDLE + radius * angle.cos(),
+                    MIDDLE + radius * angle.sin(),
+                    false,
+                ));
             }
         }
         dots
@@ -44,7 +53,9 @@ mod imp {
 
     /// The text cursor is a line of five dots with a red one in the middle, where the text lands.
     fn beam() -> Vec<Dot> {
-        (-2..=2).map(|index| (MIDDLE, MIDDLE + index as f32 * 4.5, index == 0)).collect()
+        (-2..=2)
+            .map(|index| (MIDDLE, MIDDLE + index as f32 * 4.5, index == 0))
+            .collect()
     }
 
     /// How much of the pixel at (px, py) a dot of `radius` centred at (cx, cy) covers.
@@ -74,7 +85,9 @@ mod imp {
                         let source = if red { RED } else { WHITE };
                         let out = dot + alpha * (1.0 - dot);
                         for (index, channel) in colour.iter_mut().enumerate() {
-                            *channel = (f32::from(source[index]) * dot + *channel * alpha * (1.0 - dot)) / out.max(f32::EPSILON);
+                            *channel = (f32::from(source[index]) * dot
+                                + *channel * alpha * (1.0 - dot))
+                                / out.max(f32::EPSILON);
                         }
                         alpha = out;
                     }
@@ -159,7 +172,12 @@ mod imp {
             return;
         }
         unsafe {
-            if let Err(err) = SystemParametersInfoW(SPI_SETCURSORS, 0, None, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0)) {
+            if let Err(err) = SystemParametersInfoW(
+                SPI_SETCURSORS,
+                0,
+                None,
+                SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+            ) {
                 log::warn!("could not restore the cursors: {err}");
             }
         }
@@ -195,8 +213,14 @@ mod tests {
     fn the_arrow_has_a_red_tip_and_the_beam_a_red_middle() {
         let (arrow_pixels, beam_pixels) = (arrow_pixels(), beam_pixels());
         for pixels in [arrow_pixels, beam_pixels] {
-            let red = pixels.chunks(4).filter(|p| p[3] > 200 && p[2] > 180 && p[1] < 60).count();
-            let white = pixels.chunks(4).filter(|p| p[3] > 200 && p[0] > 200 && p[1] > 200).count();
+            let red = pixels
+                .chunks(4)
+                .filter(|p| p[3] > 200 && p[2] > 180 && p[1] < 60)
+                .count();
+            let white = pixels
+                .chunks(4)
+                .filter(|p| p[3] > 200 && p[0] > 200 && p[1] > 200)
+                .count();
             assert!(red >= 4, "a red dot");
             assert!(white >= 12, "white dots");
         }

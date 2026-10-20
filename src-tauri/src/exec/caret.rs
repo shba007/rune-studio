@@ -23,16 +23,24 @@ fn from_gui_thread() -> Option<(i32, i32)> {
         UI::WindowsAndMessaging::{GUITHREADINFO, GetGUIThreadInfo},
     };
 
-    let mut info = GUITHREADINFO { cbSize: std::mem::size_of::<GUITHREADINFO>() as u32, ..Default::default() };
+    let mut info = GUITHREADINFO {
+        cbSize: std::mem::size_of::<GUITHREADINFO>() as u32,
+        ..Default::default()
+    };
     // SAFETY: `info` is a valid GUITHREADINFO with its size set; 0 asks about the foreground thread.
     unsafe { GetGUIThreadInfo(0, &mut info) }.ok()?;
     if info.hwndCaret.is_invalid() {
         return None;
     }
     let caret = info.rcCaret;
-    let mut point = POINT { x: (caret.left + caret.right) / 2, y: (caret.top + caret.bottom) / 2 };
+    let mut point = POINT {
+        x: (caret.left + caret.right) / 2,
+        y: (caret.top + caret.bottom) / 2,
+    };
     // SAFETY: the window handle comes from the system and `point` is writable.
-    unsafe { ClientToScreen(info.hwndCaret, &mut point) }.as_bool().then_some((point.x, point.y))
+    unsafe { ClientToScreen(info.hwndCaret, &mut point) }
+        .as_bool()
+        .then_some((point.x, point.y))
 }
 
 #[cfg(windows)]
@@ -40,14 +48,14 @@ fn from_ui_automation() -> Option<(i32, i32)> {
     use std::ffi::c_void;
 
     use windows::{
-        core::BOOL,
         Win32::System::{
             Com::{CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx},
             Ole::{SafeArrayDestroy, SafeArrayGetElement, SafeArrayGetLBound, SafeArrayGetUBound},
         },
-        Win32::{
-            UI::Accessibility::{CUIAutomation, IUIAutomation, IUIAutomationTextPattern2, UIA_TextPattern2Id},
+        Win32::UI::Accessibility::{
+            CUIAutomation, IUIAutomation, IUIAutomationTextPattern2, UIA_TextPattern2Id,
         },
+        core::BOOL,
         core::Interface,
     };
 
@@ -56,9 +64,14 @@ fn from_ui_automation() -> Option<(i32, i32)> {
     unsafe {
         // Already initialised on this thread is fine (S_FALSE) and a different mode is too.
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-        let automation: IUIAutomation = CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER).ok()?;
+        let automation: IUIAutomation =
+            CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER).ok()?;
         let focused = automation.GetFocusedElement().ok()?;
-        let pattern: IUIAutomationTextPattern2 = focused.GetCurrentPattern(UIA_TextPattern2Id).ok()?.cast().ok()?;
+        let pattern: IUIAutomationTextPattern2 = focused
+            .GetCurrentPattern(UIA_TextPattern2Id)
+            .ok()?
+            .cast()
+            .ok()?;
         let mut active = BOOL(0);
         let range = pattern.GetCaretRange(&mut active).ok()?;
         let rectangles = range.GetBoundingRectangles().ok()?;
@@ -71,13 +84,21 @@ fn from_ui_automation() -> Option<(i32, i32)> {
         let mut values = Vec::new();
         for index in low..=high {
             let mut value = 0.0_f64;
-            SafeArrayGetElement(rectangles, &index, (&mut value as *mut f64).cast::<c_void>()).ok()?;
+            SafeArrayGetElement(
+                rectangles,
+                &index,
+                (&mut value as *mut f64).cast::<c_void>(),
+            )
+            .ok()?;
             values.push(value);
         }
         let _ = SafeArrayDestroy(rectangles);
         let [left, top, width, height, ..] = values[..] else {
             return None;
         };
-        Some(((left + width / 2.0).round() as i32, (top + height / 2.0).round() as i32))
+        Some((
+            (left + width / 2.0).round() as i32,
+            (top + height / 2.0).round() as i32,
+        ))
     }
 }

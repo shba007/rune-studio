@@ -32,9 +32,15 @@ impl Machine for Unsupported {
 
 /// The text of a file, whatever Notepad saved it as: UTF-8 (with or without a byte order mark) or UTF-16.
 pub fn read_text(path: &Path) -> Result<String, String> {
-    let bytes = std::fs::read(path).map_err(|err| format!("could not read {}: {err}", path.display()))?;
+    let bytes =
+        std::fs::read(path).map_err(|err| format!("could not read {}: {err}", path.display()))?;
     if let Some(rest) = bytes.strip_prefix(&[0xFF, 0xFE]) {
-        let units: Vec<u16> = rest.as_chunks::<2>().0.iter().map(|pair| u16::from_le_bytes(*pair)).collect();
+        let units: Vec<u16> = rest
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|pair| u16::from_le_bytes(*pair))
+            .collect();
         return Ok(String::from_utf16_lossy(&units));
     }
     let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&bytes);
@@ -52,8 +58,14 @@ pub fn evaluate(check: &Check, machine: &dyn Machine) -> Result<bool, String> {
             let path = Path::new(path);
             path.is_file() && read_text(path)?.contains(text.as_str())
         }
-        Check::AnyWindowTitleContains { text } => machine.window_titles()?.iter().any(|title| title.contains(text.as_str())),
-        Check::ProcessRunning { name } => machine.process_names()?.iter().any(|running| running.eq_ignore_ascii_case(name)),
+        Check::AnyWindowTitleContains { text } => machine
+            .window_titles()?
+            .iter()
+            .any(|title| title.contains(text.as_str())),
+        Check::ProcessRunning { name } => machine
+            .process_names()?
+            .iter()
+            .any(|running| running.eq_ignore_ascii_case(name)),
         Check::All { checks } => {
             for check in checks {
                 if !evaluate(check, machine)? {
@@ -87,6 +99,12 @@ pub fn evaluate(check: &Check, machine: &dyn Machine) -> Result<bool, String> {
 pub fn passed(task: &Task, check_passed: bool, outcome: &str) -> bool {
     match task.expect {
         Expect::Success => check_passed,
-        Expect::Failure => check_passed && task.accepted_outcomes().iter().any(|accepted| accepted == outcome),
+        Expect::Failure => {
+            check_passed
+                && task
+                    .accepted_outcomes()
+                    .iter()
+                    .any(|accepted| accepted == outcome)
+        }
     }
 }

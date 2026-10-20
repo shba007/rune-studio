@@ -46,11 +46,21 @@ pub fn history_lines(history: &[Entry]) -> Vec<String> {
     let mut lines = Vec::new();
     let skipped = history.len().saturating_sub(HISTORY_WINDOW);
     if skipped > 0 {
-        let failed = history[..skipped].iter().filter(|entry| entry.outcome != "done").count();
-        lines.push(format!("(... {skipped} earlier steps omitted, {failed} of them did not work)"));
+        let failed = history[..skipped]
+            .iter()
+            .filter(|entry| entry.outcome != "done")
+            .count();
+        lines.push(format!(
+            "(... {skipped} earlier steps omitted, {failed} of them did not work)"
+        ));
     }
     for (index, entry) in history.iter().enumerate().skip(skipped) {
-        lines.push(format!("{}. {} -> {}", index + 1, entry.action, entry.outcome));
+        lines.push(format!(
+            "{}. {} -> {}",
+            index + 1,
+            entry.action,
+            entry.outcome
+        ));
     }
     lines
 }
@@ -60,7 +70,16 @@ pub fn history_lines(history: &[Entry]) -> Vec<String> {
 /// `elements` is the listing of the front window's controls (may be empty) and `warning` a note
 /// about the run going nowhere (see `stuck`).
 #[allow(clippy::too_many_arguments)] // one line of prompt per input; a struct would only rename them
-pub fn user_message(task: &str, plan: &[String], current: usize, history: &[Entry], elements: &str, warning: Option<&str>, step: u32, max_steps: u32) -> String {
+pub fn user_message(
+    task: &str,
+    plan: &[String],
+    current: usize,
+    history: &[Entry],
+    elements: &str,
+    warning: Option<&str>,
+    step: u32,
+    max_steps: u32,
+) -> String {
     let mut text = format!("Task: {task}\n\n");
     if !plan.is_empty() {
         text.push_str("Plan:\n");
@@ -84,12 +103,17 @@ pub fn user_message(task: &str, plan: &[String], current: usize, history: &[Entr
         }
     }
     if !elements.trim().is_empty() {
-        text.push_str(&format!("\nControls in the front window (ids for click_element):\n{}\n", elements.trim()));
+        text.push_str(&format!(
+            "\nControls in the front window (ids for click_element):\n{}\n",
+            elements.trim()
+        ));
     }
     if let Some(warning) = warning {
         text.push_str(&format!("\nWARNING: {warning}\n"));
     }
-    text.push_str(&format!("\nStep {step} of at most {max_steps}. The screenshot is the screen now. Call one tool."));
+    text.push_str(&format!(
+        "\nStep {step} of at most {max_steps}. The screenshot is the screen now. Call one tool."
+    ));
     text
 }
 
@@ -98,7 +122,10 @@ mod tests {
     use super::*;
 
     fn entry(n: usize) -> Entry {
-        Entry { action: format!("click {n}"), outcome: "ok".into() }
+        Entry {
+            action: format!("click {n}"),
+            outcome: "ok".into(),
+        }
     }
 
     #[test]
@@ -112,7 +139,16 @@ mod tests {
 
     #[test]
     fn controls_and_warnings_are_added_only_when_there_are_some() {
-        let text = user_message("t", &[], 0, &[], "e1 button \"Save\"\ne2 edit \"Name\"", Some("stuck"), 3, 30);
+        let text = user_message(
+            "t",
+            &[],
+            0,
+            &[],
+            "e1 button \"Save\"\ne2 edit \"Name\"",
+            Some("stuck"),
+            3,
+            30,
+        );
         assert!(text.contains("e1 button \"Save\""));
         assert!(text.contains("WARNING: stuck"));
         let plain = user_message("t", &[], 0, &[], "  ", None, 3, 30);
@@ -122,7 +158,11 @@ mod tests {
 
     #[test]
     fn the_plan_marks_done_now_and_later() {
-        let plan = vec!["Open Notepad".to_string(), "Type hello".to_string(), "Save".to_string()];
+        let plan = vec![
+            "Open Notepad".to_string(),
+            "Type hello".to_string(),
+            "Save".to_string(),
+        ];
         let text = user_message("t", &plan, 1, &[], "", None, 2, 30);
         assert!(text.contains("1. Open Notepad (done)"));
         assert!(text.contains("2. Type hello (now)"));

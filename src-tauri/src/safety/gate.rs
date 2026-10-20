@@ -81,7 +81,9 @@ pub enum VoiceAnswer {
 pub fn answer_by_voice(app: &AppHandle, approved: bool) -> VoiceAnswer {
     let state = app.state::<AppState>();
     let mut slot = state.confirm.locked();
-    let Some(pending) = slot.take() else { return VoiceAnswer::NothingWaiting };
+    let Some(pending) = slot.take() else {
+        return VoiceAnswer::NothingWaiting;
+    };
     if approved && pending.kind == "approval" {
         *slot = Some(pending);
         return VoiceAnswer::NeedsClick;
@@ -111,7 +113,11 @@ pub fn answer(app: &AppHandle, id: &str, approved: bool) -> bool {
 /// its text. It only looks; nothing about asking or answering changes.
 #[cfg(feature = "eval")]
 pub fn pending_question(app: &AppHandle) -> Option<(String, &'static str, String)> {
-    app.state::<AppState>().confirm.locked().as_ref().map(|pending| (pending.id.clone(), pending.kind, pending.text.clone()))
+    app.state::<AppState>()
+        .confirm
+        .locked()
+        .as_ref()
+        .map(|pending| (pending.id.clone(), pending.kind, pending.text.clone()))
 }
 
 fn new_id() -> String {
@@ -134,18 +140,37 @@ pub struct CheckResult {
 /// Weighs an action and, if it needs a yes, asks for one. `source` is who chose the action.
 /// `stated` is the risk the agent itself declared, if any.
 #[allow(dead_code)] // both drivers use `check_detailed` now; this is the same decision without the details
-pub async fn check(app: &AppHandle, cancel: &CancelToken, source: &str, action: &Action, reason: &str, stated: Option<Risk>) -> Verdict {
-    check_detailed(app, cancel, source, action, reason, stated).await.verdict
+pub async fn check(
+    app: &AppHandle,
+    cancel: &CancelToken,
+    source: &str,
+    action: &Action,
+    reason: &str,
+    stated: Option<Risk>,
+) -> Verdict {
+    check_detailed(app, cancel, source, action, reason, stated)
+        .await
+        .verdict
 }
 
 /// `check`, with the risk and reasons it worked out and a label for what was decided.
-pub async fn check_detailed(app: &AppHandle, cancel: &CancelToken, source: &str, action: &Action, reason: &str, stated: Option<Risk>) -> CheckResult {
+pub async fn check_detailed(
+    app: &AppHandle,
+    cancel: &CancelToken,
+    source: &str,
+    action: &Action,
+    reason: &str,
+    stated: Option<Risk>,
+) -> CheckResult {
     let (ask_every_action, assessment) = {
         let state = app.state::<AppState>();
         let ask = state.settings.locked().ask_every_action;
         (ask, rules::assess(action, reason, &foreground::current()))
     };
-    let Assessment { risk: found, mut reasons } = assessment;
+    let Assessment {
+        risk: found,
+        mut reasons,
+    } = assessment;
     let mut risk = found.max(stated.unwrap_or_default());
     if stated == Some(Risk::High) && found != Risk::High {
         reasons.push("The agent marked it as high risk".into());
@@ -167,7 +192,14 @@ pub async fn check_detailed(app: &AppHandle, cancel: &CancelToken, source: &str,
     }
     let ask = needs_confirmation(risk, ask_every_action, rules::is_harmless(action));
 
-    let verdict = if ask { ask_user(app, cancel, source, &text, reason, risk, &reasons, "approval").await } else { Verdict::Allow };
+    let verdict = if ask {
+        ask_user(
+            app, cancel, source, &text, reason, risk, &reasons, "approval",
+        )
+        .await
+    } else {
+        Verdict::Allow
+    };
 
     let decision = match (&verdict, ask) {
         (Verdict::Allow, false) => "allowed",
@@ -176,11 +208,23 @@ pub async fn check_detailed(app: &AppHandle, cancel: &CancelToken, source: &str,
         (Verdict::Stopped, _) => "stopped",
     };
     if !rules::is_harmless(action) {
-        audit::record(app, json!({ "source": source, "action": text, "reason": reason, "risk": risk, "why": reasons, "decision": decision }));
+        audit::record(
+            app,
+            json!({ "source": source, "action": text, "reason": reason, "risk": risk, "why": reasons, "decision": decision }),
+        );
     }
     // A harmless action is never weighed in the log; the recorder says so with `none`.
-    let decision = if rules::is_harmless(action) && decision == "allowed" { "none" } else { decision };
-    CheckResult { verdict, risk_final: risk, reasons, decision }
+    let decision = if rules::is_harmless(action) && decision == "allowed" {
+        "none"
+    } else {
+        decision
+    };
+    CheckResult {
+        verdict,
+        risk_final: risk,
+        reasons,
+        decision,
+    }
 }
 
 /// Resolves when the user presses Stop.
@@ -192,12 +236,36 @@ async fn until_stopped(cancel: &CancelToken) {
 
 /// The agent asks the user a yes/no question. Yes comes back as `Allow`, no and no answer as
 /// `Denied`. It is not an action, so it is neither assessed nor written to the audit log.
-pub async fn ask_question(app: &AppHandle, cancel: &CancelToken, source: &str, question: &str) -> Verdict {
-    ask_user(app, cancel, source, question, "", Risk::Low, &[], "question").await
+pub async fn ask_question(
+    app: &AppHandle,
+    cancel: &CancelToken,
+    source: &str,
+    question: &str,
+) -> Verdict {
+    ask_user(
+        app,
+        cancel,
+        source,
+        question,
+        "",
+        Risk::Low,
+        &[],
+        "question",
+    )
+    .await
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn ask_user(app: &AppHandle, cancel: &CancelToken, source: &str, text: &str, reason: &str, risk: Risk, reasons: &[String], kind: &'static str) -> Verdict {
+async fn ask_user(
+    app: &AppHandle,
+    cancel: &CancelToken,
+    source: &str,
+    text: &str,
+    reason: &str,
+    risk: Risk,
+    reasons: &[String],
+    kind: &'static str,
+) -> Verdict {
     let id = new_id();
     // The window the action is meant for: answering in the pill makes the pill the front window, and
     // an approved key press or typing would otherwise land in Rune instead of the target.
@@ -248,7 +316,13 @@ async fn ask_user(app: &AppHandle, cancel: &CancelToken, source: &str, text: &st
         },
         other => other,
     };
-    let _ = app.emit(CONFIRM_RESOLVED, ConfirmResolved { id, approved: outcome == Verdict::Allow });
+    let _ = app.emit(
+        CONFIRM_RESOLVED,
+        ConfirmResolved {
+            id,
+            approved: outcome == Verdict::Allow,
+        },
+    );
     outcome
 }
 
@@ -258,9 +332,21 @@ mod wire_tests {
 
     #[test]
     fn the_confirm_request_is_sent_with_the_camel_case_names_the_card_reads() {
-        let request = ConfirmRequest { id: "a".into(), source: "Rune".into(), text: "t".into(), reason: String::new(), risk: Risk::High, reasons: vec![], timeout_secs: 60, kind: "approval" };
+        let request = ConfirmRequest {
+            id: "a".into(),
+            source: "Rune".into(),
+            text: "t".into(),
+            reason: String::new(),
+            risk: Risk::High,
+            reasons: vec![],
+            timeout_secs: 60,
+            kind: "approval",
+        };
         let json = serde_json::to_value(request).unwrap();
-        assert_eq!(json["timeoutSecs"], 60, "the card's countdown reads timeoutSecs (it showed 0:00 when this was timeout_secs)");
+        assert_eq!(
+            json["timeoutSecs"], 60,
+            "the card's countdown reads timeoutSecs (it showed 0:00 when this was timeout_secs)"
+        );
         assert!(json.get("timeout_secs").is_none());
     }
 }

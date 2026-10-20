@@ -83,7 +83,12 @@ impl AnalysisState {
             latency_ms: self.latency_ms,
             error: self.error.clone(),
             created_utc: self.created_utc.clone(),
-            image: self.frame.as_ref().map(|frame| format!("data:image/jpeg;base64,{}", BASE64.encode(frame.jpeg.as_slice()))),
+            image: self.frame.as_ref().map(|frame| {
+                format!(
+                    "data:image/jpeg;base64,{}",
+                    BASE64.encode(frame.jpeg.as_slice())
+                )
+            }),
             width: self.frame.as_ref().map_or(0, |frame| frame.width),
             height: self.frame.as_ref().map_or(0, |frame| frame.height),
         }
@@ -92,7 +97,11 @@ impl AnalysisState {
     /// Starts an analysis: clears the last result and gives the new call its own cancel token.
     /// `fresh` takes a new capture first; otherwise the stored frame is asked about again.
     pub fn begin(&mut self, question: &str, fresh: bool) {
-        self.status = if fresh { Status::Capturing } else { Status::Asking };
+        self.status = if fresh {
+            Status::Capturing
+        } else {
+            Status::Asking
+        };
         self.question = question.to_string();
         self.answer.clear();
         self.findings.clear();
@@ -130,7 +139,9 @@ pub fn may_follow(from: Status, to: Status) -> bool {
     use Status::*;
     matches!(
         (from, to),
-        (Idle | Done | Error | Cancelled, Capturing | Asking) | (Capturing, Asking | Error | Cancelled) | (Asking, Done | Error | Cancelled)
+        (Idle | Done | Error | Cancelled, Capturing | Asking)
+            | (Capturing, Asking | Error | Cancelled)
+            | (Asking, Done | Error | Cancelled)
     )
 }
 
@@ -150,8 +161,14 @@ mod tests {
         }
         assert!(may_follow(Capturing, Error) && may_follow(Capturing, Cancelled));
         assert!(!may_follow(Idle, Done));
-        assert!(!may_follow(Capturing, Done), "a result needs a model call first");
-        assert!(!may_follow(Asking, Capturing), "a capture cannot start in the middle of a call");
+        assert!(
+            !may_follow(Capturing, Done),
+            "a result needs a model call first"
+        );
+        assert!(
+            !may_follow(Asking, Capturing),
+            "a capture cannot start in the middle of a call"
+        );
         assert!(!may_follow(Done, Error));
     }
 
@@ -160,23 +177,62 @@ mod tests {
         assert_eq!(refusal(Idle, false, false), None);
         assert_eq!(refusal(Done, false, false), None);
         assert_eq!(refusal(Cancelled, false, false), None);
-        assert!(refusal(Idle, true, false).unwrap().starts_with("A task is running"));
-        assert!(refusal(Idle, false, true).unwrap().starts_with("An outside agent"));
-        assert!(refusal(Capturing, false, false).unwrap().starts_with("Another analysis"));
-        assert!(refusal(Asking, false, false).unwrap().starts_with("Another analysis"));
-        assert!(refusal(Asking, true, true).unwrap().starts_with("A task is running"), "the task is named first");
+        assert!(
+            refusal(Idle, true, false)
+                .unwrap()
+                .starts_with("A task is running")
+        );
+        assert!(
+            refusal(Idle, false, true)
+                .unwrap()
+                .starts_with("An outside agent")
+        );
+        assert!(
+            refusal(Capturing, false, false)
+                .unwrap()
+                .starts_with("Another analysis")
+        );
+        assert!(
+            refusal(Asking, false, false)
+                .unwrap()
+                .starts_with("Another analysis")
+        );
+        assert!(
+            refusal(Asking, true, true)
+                .unwrap()
+                .starts_with("A task is running"),
+            "the task is named first"
+        );
     }
 
     #[test]
     fn beginning_clears_the_last_result_and_uses_a_fresh_token() {
-        let mut state = AnalysisState { answer: "old".into(), error: Some("old".into()), status: Done, ..AnalysisState::default() };
-        state.findings.push(Finding { n: 1, label: "x".into(), kind: super::super::report::Kind::Other, bbox: None, description: String::new(), evidence: String::new() });
+        let mut state = AnalysisState {
+            answer: "old".into(),
+            error: Some("old".into()),
+            status: Done,
+            ..AnalysisState::default()
+        };
+        state.findings.push(Finding {
+            n: 1,
+            label: "x".into(),
+            kind: super::super::report::Kind::Other,
+            bbox: None,
+            description: String::new(),
+            evidence: String::new(),
+        });
         let old = state.cancel.clone();
         old.cancel();
         state.begin("what?", true);
-        assert_eq!((state.status, state.question.as_str(), state.answer.as_str()), (Capturing, "what?", ""));
+        assert_eq!(
+            (state.status, state.question.as_str(), state.answer.as_str()),
+            (Capturing, "what?", "")
+        );
         assert!(state.findings.is_empty() && state.error.is_none());
-        assert!(!state.cancel.is_cancelled(), "the earlier cancel does not reach the new call");
+        assert!(
+            !state.cancel.is_cancelled(),
+            "the earlier cancel does not reach the new call"
+        );
         state.begin("again", false);
         assert_eq!(state.status, Asking);
     }
@@ -192,10 +248,21 @@ mod tests {
             jpeg: Arc::new(vec![0xFF, 0xD8]),
             width: 640,
             height: 360,
-            monitor: Monitor { id: 0, x: 0, y: 0, width: 1920, height: 1080, scale_factor: 1.0, primary: true },
+            monitor: Monitor {
+                id: 0,
+                x: 0,
+                y: 0,
+                width: 1920,
+                height: 1080,
+                scale_factor: 1.0,
+                primary: true,
+            },
         });
         let snapshot = state.snapshot();
-        assert_eq!(snapshot.image.as_deref(), Some("data:image/jpeg;base64,/9g="));
+        assert_eq!(
+            snapshot.image.as_deref(),
+            Some("data:image/jpeg;base64,/9g=")
+        );
         assert_eq!((snapshot.width, snapshot.height), (640, 360));
     }
 }
