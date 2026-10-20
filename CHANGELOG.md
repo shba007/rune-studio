@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.0.18
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.0.17...v0.0.18)
+
+### 🚀 Enhancements
+
+- **ui:** Light app logo and icons, custom title bar for the Flight Player, tidier analysis header ([f3b59ec](https://github.com/shba007/rune-studio/commit/f3b59ec))
+- **ui:** Blue continuous progress ring, live time left in the task panel, fix blank review window ([f95d17d](https://github.com/shba007/rune-studio/commit/f95d17d))
+- **ui:** Redesign the preview window, sharper recordings, artifacts page, clearer step details ([21044ad](https://github.com/shba007/rune-studio/commit/21044ad))
+- **ui:** Ask if the task was completed and why not, defaults on for recording and self reflect ([dbe400a](https://github.com/shba007/rune-studio/commit/dbe400a))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+
 ## v0.0.17
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.0.16...v0.0.17)
