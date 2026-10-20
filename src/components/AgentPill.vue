@@ -11,6 +11,7 @@ import ConfirmCard from './ConfirmCard.vue'
 import { useExternalAgent } from '@/composables/useExternalAgent'
 
 import GlyphOrb from './GlyphOrb.vue'
+import ReflectionCard from './ReflectionCard.vue'
 import HealthDots from './HealthDots.vue'
 import ProgressRing from './ProgressRing.vue'
 import SettingsPanel from './SettingsPanel.vue'
@@ -42,6 +43,20 @@ watch(promptVisible, (visible) => {
 
 const { orbAccent, darkAccent, mark: agentMark } = useExternalAgent()
 
+/** The ring shows the plan of a task or the progress of the idle review, never both. */
+const reflecting = computed(() => agent.state.value === 'reflecting' && agent.reflection.value)
+const ringGoals = computed(() =>
+  reflecting.value ? reflecting.value.total : (agent.plan.value?.goals.length ?? 0),
+)
+const ringCurrent = computed(() =>
+  reflecting.value ? reflecting.value.done : (agent.plan.value?.current ?? 0),
+)
+const ringFinished = computed(() =>
+  reflecting.value
+    ? reflecting.value.done >= reflecting.value.total
+    : (agent.plan.value?.finished ?? false),
+)
+
 const isAmbient = computed(() => agent.mode.value === 'ambient')
 
 // Dev only: lets a plain browser preview set the plan, thinking and steps by hand.
@@ -67,7 +82,11 @@ function onOrb() {
 </script>
 
 <template>
-  <div class="flex h-full w-full items-end justify-end">
+  <div
+    class="flex h-full w-full items-end justify-end"
+    @pointerdown="agent.noteActivity()"
+    @keydown="agent.noteActivity()"
+  >
     <div
       data-tauri-drag-region
       class="relative flex size-16 shrink-0 items-center justify-center rounded-full bg-[#141414]"
@@ -108,10 +127,10 @@ function onOrb() {
       </svg>
       <ProgressRing
         v-else
-        :goals="agent.plan.value?.goals.length ?? 0"
-        :current="agent.plan.value?.current ?? 0"
-        :finished="agent.plan.value?.finished ?? false"
-        :running="agent.isRunning.value"
+        :goals="ringGoals"
+        :current="ringCurrent"
+        :finished="ringFinished"
+        :running="agent.isRunning.value || agent.state.value === 'reflecting'"
         :failed="agent.state.value === 'failed'"
         :accent="darkAccent"
       />
@@ -183,6 +202,10 @@ function onOrb() {
                   </button>
                 </div>
               </section>
+              <ReflectionCard
+                v-if="agent.reflectionPrompt.value && !agent.question.value"
+                :agent="agent"
+              />
               <ConfirmCard
                 v-if="agent.question.value"
                 :key="agent.question.value.id"

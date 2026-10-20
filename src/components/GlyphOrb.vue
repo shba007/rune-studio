@@ -14,12 +14,20 @@ const props = defineProps<{
   mark?: string | null
 }>()
 
-type Kind = 'idle' | 'listening' | 'thinking' | 'acting' | 'attention' | 'done' | 'failed'
+type Kind =
+  | 'idle'
+  | 'listening'
+  | 'thinking'
+  | 'reflecting'
+  | 'acting'
+  | 'attention'
+  | 'done'
+  | 'failed'
 
 const KIND: Record<AgentState, Kind> = {
   idle: 'idle',
   stopped: 'idle',
-  reflecting: 'idle',
+  reflecting: 'reflecting',
   listening: 'listening',
   planning: 'thinking',
   observing: 'thinking',
@@ -88,6 +96,17 @@ function paint(kind: Kind, t: number, since: number, light: Light) {
           }
           if (r < 0.6) light(x, y, 0.3 + 0.5 * wave(t * 4))
           break
+        case 'reflecting': {
+          // A slow arc of dots turning on the ring, with a faint centre: calmer than thinking, and
+          // always neutral (an outside agent's colour never applies to Rune's own reflection).
+          if (r > 3.2 && r < 4.8) {
+            const head = (t * 0.7) % (Math.PI * 2)
+            const behind = (angle - head + Math.PI * 4) % (Math.PI * 2)
+            light(x, y, Math.max(0.05, 0.9 - behind / (Math.PI * 0.9)))
+          }
+          if (r < 0.6) light(x, y, 0.2 + 0.2 * wave(t * 1.2))
+          break
+        }
         case 'acting': {
           if (Math.abs(r - 4.4) < 0.6) light(x, y, 0.14)
           const cursorX = 3 * Math.sin(t * 1.3)
@@ -152,7 +171,7 @@ function draw(now: number) {
         ctx.arc(px, py, (1.25 + 0.95 * b) * SCALE, 0, Math.PI * 2)
         ctx.fillStyle = red
           ? `rgba(215, 25, 33, ${b})`
-          : props.accent
+          : props.accent && kind !== 'reflecting'
             ? rgba(props.accent, b * (props.mark ? 0.45 : 1))
             : `rgba(17, 17, 17, ${b})`
         ctx.fill()
@@ -164,7 +183,7 @@ function draw(now: number) {
 
 /** The outside agent's mark: one flat vector over the dimmed dot field, about 14 px. No glow, no gradient. */
 function drawMark(ctx: CanvasRenderingContext2D, kind: Kind) {
-  if (!props.mark || kind === 'attention' || kind === 'failed') return
+  if (!props.mark || kind === 'attention' || kind === 'failed' || kind === 'reflecting') return
   const size = 14 * SCALE
   const path = new Path2D(props.mark)
   ctx.save()

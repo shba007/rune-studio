@@ -133,6 +133,18 @@ async function save() {
         <SettingsToggle v-model="draft.analysisBoxes" label="Show boxes (unreliable)" icon="scan" />
       </SettingsGroup>
 
+      <SettingsGroup title="Idle review">
+        <SettingsToggle
+          v-model="draft.reflectionEnabled"
+          label="Offer to review tasks"
+          icon="thinking"
+        />
+        <p v-if="draft.reflectionEnabled" class="m-0 px-1 text-label opacity-70">
+          After {{ draft.idleMinutes }} idle minutes Rune asks first; no answer in 30 seconds starts
+          it. Right now it only rehearses: it does not read anything yet.
+        </p>
+      </SettingsGroup>
+
       <SettingsGroup title="Recording">
         <SettingsToggle
           v-model="draft.demoMode"

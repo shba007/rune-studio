@@ -10,6 +10,9 @@ import {
   CONFIRM_REQUEST,
   CONFIRM_RESOLVED,
   PLAN_UPDATED,
+  REFLECTION_PROGRESS,
+  REFLECTION_PROMPT,
+  REFLECTION_RESOLVED,
   STATE_CHANGED,
   STEP_STARTED,
   SUMMON,
@@ -25,6 +28,8 @@ import {
   type VoiceHeardPayload,
   type PillMode,
   type PlanUpdatedPayload,
+  type ReflectionProgressPayload,
+  type ReflectionPromptPayload,
   type Settings,
   type StateChangedPayload,
   type StepStartedPayload,
@@ -110,6 +115,11 @@ export function useAgent() {
       return resultText.value
     return STATE_LABELS[state.value]
   })
+
+  /** The idle review offer, while it is up; `endsAt` is when the countdown runs out on this window's clock. */
+  const reflectionPrompt = ref<{ endsAt: number } | null>(null)
+  /** How far the idle review is (null when none is running). */
+  const reflection = ref<ReflectionProgressPayload | null>(null)
 
   const unlisten: UnlistenFn[] = []
   let modeToken = 0
@@ -212,6 +222,19 @@ export function useAgent() {
   }
 
   const stop = () => call('stop')
+  /** Start (true) or Deny (false) the idle review. */
+  async function answerReflection(start: boolean) {
+    reflectionPrompt.value = null
+    await call('reflection_answer', { start })
+  }
+  /** Tells the backend the pill is being used, so the idle clock restarts (at most every 5 s). */
+  let lastActivity = 0
+  function noteActivity() {
+    const now = Date.now()
+    if (now - lastActivity < 5000) return
+    lastActivity = now
+    void call('pill_activity')
+  }
   /** Looks at the screen and shows the answer in the analysis window (a refusal shows as a notice). */
   const analyzeScreen = () => call('analyze_screen', { question: null })
   const toggleListening = () => call('toggle_listening')
@@ -286,6 +309,17 @@ export function useAgent() {
         if (event.payload.result === 'contradicted')
           showNotice(`Check: the screen may not show the task as done: ${event.payload.evidence}`)
       }),
+      await listen<ReflectionPromptPayload>(REFLECTION_PROMPT, (event) => {
+        reflectionPrompt.value = { endsAt: Date.now() + event.payload.endsInMs }
+        // The offer needs room: open the card by itself, as an update prompt does.
+        if (mode.value === 'ambient') void setMode('open')
+      }),
+      await listen(REFLECTION_RESOLVED, () => (reflectionPrompt.value = null)),
+      await listen<ReflectionProgressPayload>(REFLECTION_PROGRESS, (event) => {
+        // The ring shows the plan or the review, never both: a review has no plan.
+        reflection.value = event.payload.total > 0 ? event.payload : null
+        if (event.payload.total > 0) plan.value = null
+      }),
       await listen<PlanUpdatedPayload>(PLAN_UPDATED, (event) => (plan.value = event.payload)),
       await listen<ConfirmRequestPayload>(CONFIRM_REQUEST, (event) => {
         question.value = event.payload
@@ -343,6 +377,10 @@ export function useAgent() {
     saveApiKey,
     startTask,
     stop,
+    reflectionPrompt,
+    reflection,
+    answerReflection,
+    noteActivity,
     analyzeScreen,
     toggleListening,
     confirm,

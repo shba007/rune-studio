@@ -127,6 +127,8 @@ export function installTauriMock() {
             verifyMode: 'background',
             analysisBoxes: false,
             demoMode: false,
+            reflectionEnabled: false,
+            idleMinutes: 10,
           }
         case 'bridge_info':
           return {

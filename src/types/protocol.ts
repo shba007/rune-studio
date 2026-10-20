@@ -19,6 +19,10 @@ export interface Settings {
   analysisBoxes: boolean
   /** Let screen recorders capture Rune's windows; the model still never sees them. */
   demoMode: boolean
+  /** Offer an idle review of recent tasks. Off until the job does something real. */
+  reflectionEnabled: boolean
+  /** Minutes with no activity before the review prompt (1 to 120). */
+  idleMinutes: number
   /** Delete session folders older than this many days at startup; 0 keeps everything. No UI yet. */
   archiveKeepDays: number
   baseUrl: string
@@ -236,4 +240,20 @@ export interface AnalysisSnapshot {
   image: string | null
   width: number
   height: number
+}
+export const REFLECTION_PROMPT = 'reflection_prompt'
+export const REFLECTION_RESOLVED = 'reflection_resolved'
+export const REFLECTION_PROGRESS = 'reflection_progress'
+
+/** The idle review is offered; the window counts down on its own clock from `endsInMs`. */
+export interface ReflectionPromptPayload {
+  timeoutSecs: number
+  endsInMs: number
+}
+
+/** How far the review is; `total` 0 means it ended. */
+export interface ReflectionProgressPayload {
+  stage: string
+  done: number
+  total: number
 }
