@@ -669,7 +669,7 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, canc
         row.rec.decide_ms = millis(started);
         let reply = match reply {
             Ok(reply) => reply,
-            Err(err @ ModelError::NoToolCall(_)) => {
+            Err(err @ (ModelError::NoToolCall(_) | ModelError::BadArguments(_))) => {
                 invalid_in_a_row += 1;
                 trace.event(run_id, "invalid_answer", &serde_json::json!({ "error": err.to_string() }).to_string());
                 if invalid_in_a_row >= MAX_INVALID_IN_A_ROW {
@@ -680,7 +680,11 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, canc
                 row.rec.error = Some(err.to_string());
                 history.push(Entry {
                     action: "(no action)".into(),
-                    outcome: "you must call a tool".into(),
+                    outcome: if matches!(err, ModelError::BadArguments(_)) {
+                        "your last tool call was not valid JSON: call the tool again with valid arguments".into()
+                    } else {
+                        "you must call a tool".into()
+                    },
                 });
                 continue;
             }

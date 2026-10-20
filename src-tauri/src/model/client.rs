@@ -30,6 +30,9 @@ pub enum ModelError {
     Reply(String),
     #[error("the model did not call a tool: {0}")]
     NoToolCall(String),
+    /// The tool call's arguments were not JSON, even after the one conservative repair.
+    #[error("the model's tool arguments were not valid JSON: {0}")]
+    BadArguments(String),
 }
 
 /// A tool call as the model wrote it, before it is checked against the protocol.
@@ -76,7 +79,7 @@ pub fn is_retryable(error: &ModelError) -> bool {
     match error {
         ModelError::Request(_) => true,
         ModelError::Status { status, .. } => matches!(status, 429 | 502 | 503 | 504),
-        ModelError::Reply(_) | ModelError::NoToolCall(_) => false,
+        ModelError::Reply(_) | ModelError::NoToolCall(_) | ModelError::BadArguments(_) => false,
     }
 }
 
@@ -207,9 +210,44 @@ pub fn parse_reply(value: &Value) -> Result<Reply, ModelError> {
 /// Arguments arrive as a JSON string; a few servers send an object instead.
 fn parse_arguments(arguments: &Value) -> Result<Value, ModelError> {
     match arguments {
-        Value::String(text) => serde_json::from_str(text).map_err(|err| ModelError::Reply(format!("arguments were not JSON: {err}"))),
+        Value::String(text) => match serde_json::from_str(text) {
+            Ok(value) => Ok(value),
+            Err(err) => repair_arguments(text).ok_or_else(|| ModelError::BadArguments(err.to_string())),
+        },
         other => Ok(other.clone()),
     }
+}
+
+/// The one repair tried on arguments that are not JSON: take the first `{ ... }` object that closes
+/// properly and drop whatever follows it (a stray quote, a second copy, prose). Nothing inside the
+/// object is changed or guessed, and anything that still does not parse is left as an error.
+pub(crate) fn repair_arguments(text: &str) -> Option<Value> {
+    let start = text.find('{')?;
+    let (mut depth, mut in_string, mut escaped) = (0_u32, false, false);
+    for (offset, c) in text[start..].char_indices() {
+        if in_string {
+            match (escaped, c) {
+                (true, _) => escaped = false,
+                (false, '\\') => escaped = true,
+                (false, '"') => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
+        match c {
+            '"' => in_string = true,
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    let object = &text[start..start + offset + 1];
+                    return serde_json::from_str(object).ok().filter(Value::is_object);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 /// A streamed reply being assembled from server-sent events.
@@ -306,9 +344,29 @@ mod tests {
     }
 
     #[test]
-    fn broken_argument_json_is_an_error() {
+    fn broken_argument_json_is_an_error_the_agent_can_answer() {
         let value = json!({ "choices": [{ "message": { "tool_calls": [{ "function": { "name": "click", "arguments": "{x:" } }] } }] });
-        assert!(matches!(parse_reply(&value), Err(ModelError::Reply(_))));
+        assert!(matches!(parse_reply(&value), Err(ModelError::BadArguments(_))));
+    }
+
+    fn arguments_of(text: &str) -> Result<Value, ModelError> {
+        parse_arguments(&Value::String(text.to_string()))
+    }
+
+    #[test]
+    fn junk_after_the_closing_brace_is_dropped_and_nothing_inside_is_touched() {
+        assert_eq!(arguments_of(r#"{"x": 1, "y": 2}"#).unwrap(), json!({ "x": 1, "y": 2 }));
+        assert_eq!(arguments_of(r#"{"name":"calc","risk":"low"}"}"#).unwrap(), json!({ "name": "calc", "risk": "low" }));
+        assert_eq!(arguments_of(r#"{"text":"a } b \" {"} trailing"#).unwrap(), json!({ "text": "a } b \" {" }), "braces inside strings do not count");
+        assert_eq!(arguments_of("Sure! {\"x\": 1} hope that helps").unwrap(), json!({ "x": 1 }), "prose around it is dropped");
+        assert_eq!(arguments_of(r#"{"a":{"b":2}} {"a":3}"#).unwrap(), json!({ "a": { "b": 2 } }), "the first object wins");
+    }
+
+    #[test]
+    fn what_cannot_be_repaired_stays_an_error_and_values_are_never_guessed() {
+        for broken in ["{x:", r#"{"a": 1"#, r#"{"a": }"#, "no braces at all", r#"{"name":"calc\",reason:","#, ""] {
+            assert!(matches!(arguments_of(broken), Err(ModelError::BadArguments(_))), "{broken:?}");
+        }
     }
 
     fn event(delta: Value) -> String {
