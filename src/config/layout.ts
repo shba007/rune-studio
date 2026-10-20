@@ -8,7 +8,7 @@ export const PAGE_GAP = 8
 
 /** The capsule with Settings and Analyse the screen, to the left of the orb (only while open). */
 export const DOCK_WIDTH = 32
-export const DOCK_GAP = 8
+export const DOCK_GAP = 0
 
 /** Every page that sits beside the orb (composer, settings, future task views) is this wide. */
 export const PAGE_WIDTH = 272

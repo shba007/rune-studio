@@ -4,17 +4,17 @@ import type { Agent } from '@/composables/useAgent'
 import AppIcon from './AppIcon.vue'
 
 defineProps<{ agent: Agent }>()
+
+const tool =
+  'absolute left-1 grid size-7 cursor-pointer place-items-center rounded-full bg-[#141414] text-zinc-300 shadow-[inset_0_0_0_1px_rgb(255_255_255/0.08)] transition hover:bg-[#222] hover:text-white disabled:cursor-default disabled:opacity-40 disabled:hover:bg-[#141414]'
 </script>
 
 <template>
-  <!-- A capsule as tall as the orb (64 px) with its two tools stacked: settings above, screen analysis below. -->
-  <div
-    data-tauri-drag-region
-    class="flex h-16 w-8 shrink-0 flex-col items-center justify-center rounded-full bg-[#141414] shadow-[inset_0_0_0_1px_rgb(255_255_255/0.08)]"
-  >
+  <!-- Two separate round tools hugging the orb's left side, one above the other's mirror image. -->
+  <div class="relative h-16 w-8 shrink-0">
     <button
       type="button"
-      class="grid size-8 cursor-pointer place-items-center rounded-full text-zinc-300 transition hover:bg-white/10 hover:text-white"
+      :class="[tool, 'top-0']"
       aria-label="Settings"
       title="Settings"
       @click="agent.setMode('settings')"
@@ -23,7 +23,7 @@ defineProps<{ agent: Agent }>()
     </button>
     <button
       type="button"
-      class="grid size-8 cursor-pointer place-items-center rounded-full text-zinc-300 transition hover:bg-white/10 hover:text-white disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
+      :class="[tool, 'bottom-0']"
       aria-label="Analyse the screen"
       title="Analyse the screen"
       :disabled="agent.isRunning.value"

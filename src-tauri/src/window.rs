@@ -10,7 +10,7 @@ pub const MAIN: &str = "main";
 const EDGE_MARGIN: f64 = 16.0;
 
 /// The pill's discrete window sizes. The UI animates inside the window; the window itself
-/// only ever jumps between these. Widths are DOCK_WIDTH + DOCK_GAP + ORB_SIZE + PAGE_GAP + PAGE_WIDTH (32 + 8 + 64 + 8 + 272) from
+/// only ever jumps between these. Widths are DOCK_WIDTH + DOCK_GAP + ORB_SIZE + PAGE_GAP + PAGE_WIDTH (32 + 0 + 64 + 8 + 272) from
 /// `src/config/layout.ts`; keep the two in sync.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -29,10 +29,10 @@ impl Mode {
         match self {
             Mode::Ambient => (64.0, 64.0),
             // Open and Task start from these and then fit their content (see `fit_height`).
-            Mode::Open => (384.0, 64.0),
-            Mode::Task => (384.0, 336.0),
-            Mode::Analysis => (384.0, 336.0),
-            Mode::Settings => (384.0, 592.0),
+            Mode::Open => (376.0, 64.0),
+            Mode::Task => (376.0, 336.0),
+            Mode::Analysis => (376.0, 336.0),
+            Mode::Settings => (376.0, 592.0),
         }
     }
 }
