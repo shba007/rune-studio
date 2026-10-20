@@ -24,6 +24,7 @@ pub const TIMEOUT: Duration = Duration::from_secs(30);
 const TASK_CAP: usize = 500;
 const GOAL_CAP: usize = 200;
 const CLAIM_CAP: usize = 400;
+const FRONT_CAP: usize = 200;
 
 pub const SYSTEM: &str = "\
 You are an independent checker. You are shown a task that an agent was asked to do on a Windows PC, its plan, the steps it took and what it claims it achieved, together with a screenshot of the screen right now. \
@@ -89,11 +90,23 @@ pub struct VerifyInput<'a> {
     pub claim_summary: &'a str,
     /// The screen now, as a data URI: the frame the agent already holds.
     pub screenshot: &'a str,
+    /// What the system says is in front (see `front_line`); empty when unknown.
+    pub front: &'a str,
+}
+
+/// The window in front and its program, from the system, as a fact for the checker. Without it the
+/// model named the program from the look of a window ("a VS Code editor" for Notepad).
+pub fn front_line() -> String {
+    let window = crate::safety::foreground::current();
+    if window.title.is_empty() && window.process.is_empty() {
+        return String::new();
+    }
+    format!("Window in front (from the system, not from the screenshot): \"{}\", program {}.", trace::cap(window.title.trim(), 120), if window.process.is_empty() { "unknown" } else { &window.process })
 }
 
 /// The text part of the request: the task, the plan, the last steps (formatted exactly as the
 /// agent's own prompt shows them) and the claim.
-pub fn user_message(task: &str, goals: &[String], history: &[Entry], claim_summary: &str) -> String {
+pub fn user_message(task: &str, goals: &[String], history: &[Entry], claim_summary: &str, front: &str) -> String {
     let mut text = format!("Task: {}\n\n", trace::cap(task.trim(), TASK_CAP));
     if !goals.is_empty() {
         text.push_str("Plan:\n");
@@ -113,6 +126,9 @@ pub fn user_message(task: &str, goals: &[String], history: &[Entry], claim_summa
         }
     }
     text.push_str(&format!("\nThe agent says: {}\n", trace::cap(claim_summary.trim(), CLAIM_CAP)));
+    if !front.trim().is_empty() {
+        text.push_str(&format!("{}\n", trace::cap(front.trim(), FRONT_CAP)));
+    }
     text.push_str("\nThe screenshot is the screen right now. Does it show the task is done? Call verdict.");
     text
 }
@@ -137,7 +153,7 @@ pub async fn verify(client: &ChatClient<'_>, input: VerifyInput<'_>) -> Result<V
 
 async fn verify_within(client: &ChatClient<'_>, input: VerifyInput<'_>, limit: Duration) -> Result<Verdict, String> {
     let tools = json!([tool()]);
-    let text = user_message(input.task, input.goals, input.history, input.claim_summary);
+    let text = user_message(input.task, input.goals, input.history, input.claim_summary, input.front);
     let request = Request { system: SYSTEM, user_text: &text, screenshot: Some(input.screenshot), audio: None, tools: &tools, think: false, max_tokens: None };
     let mut ignore_thinking = |_: &str| {};
     match tokio::time::timeout(limit, client.call(&request, &mut ignore_thinking)).await {
@@ -216,7 +232,7 @@ mod tests {
     fn the_message_has_the_task_the_goals_the_claim_and_at_most_twelve_steps() {
         let goals = vec!["Open Notepad".to_string(), "Type hello".to_string()];
         let history: Vec<Entry> = (1..=20).map(entry).collect();
-        let text = user_message("write hello in Notepad", &goals, &history, "Typed hello and saved it.");
+        let text = user_message("write hello in Notepad", &goals, &history, "Typed hello and saved it.", "");
         assert!(text.starts_with("Task: write hello in Notepad\n"));
         assert!(text.contains("1. Open Notepad\n2. Type hello\n"));
         assert!(text.contains("The agent says: Typed hello and saved it."));
@@ -228,10 +244,20 @@ mod tests {
     }
 
     #[test]
+    fn the_window_in_front_is_given_as_a_fact_when_known() {
+        let front = "Window in front (from the system, not from the screenshot): \"hello - Notepad\", program notepad.";
+        let text = user_message("t", &[], &[], "done", front);
+        assert!(text.contains("\"hello - Notepad\", program notepad."));
+        assert!(text.find("The agent says").unwrap() < text.find("Window in front").unwrap());
+        assert!(text.ends_with("Call verdict."));
+        assert!(!user_message("t", &[], &[], "done", "  ").contains("Window in front"));
+    }
+
+    #[test]
     fn the_message_copes_with_nothing_to_show_and_long_parts() {
-        let bare = user_message("t", &[], &[], "");
+        let bare = user_message("t", &[], &[], "", "");
         assert!(bare.contains("The agent took no steps.") && !bare.contains("Plan:"));
-        let long = user_message(&"t".repeat(2_000), &["g".repeat(900)], &[], &"c".repeat(2_000));
+        let long = user_message(&"t".repeat(2_000), &["g".repeat(900)], &[], &"c".repeat(2_000), &"f".repeat(2_000));
         assert!(long.len() < 1_800, "each part is capped: {} bytes", long.len());
     }
 
@@ -297,7 +323,7 @@ mod tests {
     }
 
     fn input<'a>() -> VerifyInput<'a> {
-        VerifyInput { task: "write hello", goals: &[], history: &[], claim_summary: "done", screenshot: "data:image/jpeg;base64,AA" }
+        VerifyInput { task: "write hello", goals: &[], history: &[], claim_summary: "done", screenshot: "data:image/jpeg;base64,AA", front: "" }
     }
 
     fn client<'a>(http: &'a reqwest::Client, url: &'a str) -> ChatClient<'a> {

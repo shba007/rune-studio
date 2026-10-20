@@ -133,11 +133,13 @@ struct Evidence {
     claim_summary: String,
     /// The screen at the end, as a data URI. `None` when there was no frame to keep.
     screenshot: Option<String>,
+    /// The window in front when the run ended, as the system reports it.
+    front: String,
 }
 
 impl Evidence {
     fn new(task: &str, goals: &[String], history: &[Entry], claim_summary: &str, screenshot: Option<&str>) -> Self {
-        Self { task: task.to_string(), goals: goals.to_vec(), history: history.to_vec(), claim_summary: claim_summary.to_string(), screenshot: screenshot.map(str::to_string) }
+        Self { task: task.to_string(), goals: goals.to_vec(), history: history.to_vec(), claim_summary: claim_summary.to_string(), screenshot: screenshot.map(str::to_string), front: verify::front_line() }
     }
 }
 
@@ -257,8 +259,8 @@ fn spawn_background_check(app: &AppHandle, run_id: String, evidence: Option<Evid
         let client = ChatClient { http: &state.http, base_url: &settings.base_url, api_key: api_key.as_deref(), model: &settings.model };
         let started = Instant::now();
         let checked: Result<verify::Verdict, String> = match &evidence {
-            Some(Evidence { task, goals, history, claim_summary, screenshot: Some(screenshot) }) => {
-                let input = VerifyInput { task, goals, history, claim_summary, screenshot };
+            Some(Evidence { task, goals, history, claim_summary, screenshot: Some(screenshot), front }) => {
+                let input = VerifyInput { task, goals, history, claim_summary, screenshot, front };
                 tokio::select! {
                     checked = verify::verify(&client, input) => checked,
                     () = until_the_user_needs_the_screen(&app, &token) => Err("cancelled: the screen was needed for something else".into()),
@@ -627,7 +629,7 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, canc
                 row.rec.result = Some("skipped".into());
                 let summary = format!("Done: {}", task.trim());
                 if mode == VerifyMode::Blocking && !challenged {
-                    let input = VerifyInput { task, goals: &plan, history: &history, claim_summary: &summary, screenshot: &screenshot };
+                    let input = VerifyInput { task, goals: &plan, history: &history, claim_summary: &summary, screenshot: &screenshot, front: &verify::front_line() };
                     match blocking_check(&client, &cancel, &trace, run_id, &handoff, challenged, input).await {
                         Blocking::Stopped => return Outcome::Stopped,
                         Blocking::Challenge(line) => {
@@ -748,7 +750,7 @@ async fn run(app: &AppHandle, task: &str, preset_plan: Option<Vec<String>>, canc
             row.rec.gate = Some("none".into());
             row.rec.result = Some("ok".into());
             if success && mode == VerifyMode::Blocking && !challenged {
-                let input = VerifyInput { task, goals: &plan, history: &history, claim_summary: &summary, screenshot: &screenshot };
+                let input = VerifyInput { task, goals: &plan, history: &history, claim_summary: &summary, screenshot: &screenshot, front: &verify::front_line() };
                 match blocking_check(&client, &cancel, &trace, run_id, &handoff, challenged, input).await {
                     Blocking::Stopped => return Outcome::Stopped,
                     Blocking::Challenge(line) => {
@@ -970,7 +972,7 @@ mod tests {
         assert_eq!(evidence.screenshot.as_deref(), Some("data:image/jpeg;base64,AA"));
         assert_eq!(Evidence::new("t", &[], &[], "", None).screenshot, None);
         // What the check shows of those 20 steps is capped at twelve (plus the note that older ones were left out).
-        let shown = verify::user_message(&evidence.task, &evidence.goals, &evidence.history, &evidence.claim_summary);
+        let shown = verify::user_message(&evidence.task, &evidence.goals, &evidence.history, &evidence.claim_summary, &evidence.front);
         assert_eq!(shown.lines().filter(|line| line.contains(" -> ")).count(), 12);
         assert!(shown.contains("8 earlier steps omitted"));
     }
