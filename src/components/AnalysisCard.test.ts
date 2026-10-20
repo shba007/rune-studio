@@ -103,7 +103,7 @@ describe('AnalysisCard states', () => {
   it('says SCREEN CHANGED in the header once the boxes are gone, and keeps the findings', () => {
     const { analysis } = fake({ status: 'done', stale: true, answer: 'x', findings: [finding(1)] })
     const wrapper = mount(AnalysisCard, { props: { analysis } })
-    expect(wrapper.text()).toContain('Screen changed')
+    expect(wrapper.text()).toContain('Changed')
     expect(wrapper.findAllComponents(AnalysisFindingRow)).toHaveLength(1)
   })
 

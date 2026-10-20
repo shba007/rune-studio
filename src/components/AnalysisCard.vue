@@ -70,12 +70,15 @@ onKeyStroke('Escape', (event) => {
     >
       <header class="flex h-6 items-center gap-2">
         <AppIcon name="scan" size="sm" />
-        <span class="text-caption text-zinc-300 uppercase">Screen analysis</span>
-        <span v-if="stage" class="text-caption text-zinc-500 uppercase">{{ stage }}</span>
+        <span class="text-caption whitespace-nowrap text-zinc-300 uppercase">Screen analysis</span>
+        <span v-if="stage" class="text-caption whitespace-nowrap text-zinc-500 uppercase">{{
+          stage
+        }}</span>
         <span
           v-if="snapshot.stale"
-          class="rounded-full border border-white/25 px-2 text-caption text-zinc-300 uppercase"
-          >Screen changed</span
+          class="rounded-full border border-white/25 px-2 text-caption whitespace-nowrap text-zinc-300 uppercase"
+          title="The screen has changed since this analysis"
+          >Changed</span
         >
         <button
           type="button"

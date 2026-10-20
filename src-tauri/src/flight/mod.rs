@@ -290,6 +290,8 @@ pub fn open(app: &tauri::AppHandle, run: Option<&str>) -> tauri::Result<()> {
         .inner_size(1180.0, 760.0)
         .min_inner_size(880.0, 560.0)
         .resizable(true)
+        // The page draws its own title bar (components/TitleBar.vue), in the look of the app.
+        .decorations(false)
         .center()
         .build()?;
     // It shows the user's screens, so the agent must never see it.

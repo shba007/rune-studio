@@ -26,6 +26,8 @@ import IconSidebar from '~icons/ph/sidebar-simple-fill'
 import IconArrowsOut from '~icons/ph/arrows-out-simple-fill'
 import IconEyeSlash from '~icons/ph/eye-slash-fill'
 import IconX from '~icons/ph/x-fill'
+import IconMinus from '~icons/ph/minus-fill'
+import IconArrowsIn from '~icons/ph/arrows-in-simple-fill'
 import IconCopy from '~icons/ph/copy-fill'
 import IconHeadphones from '~icons/ph/headphones-fill'
 import IconHourglass from '~icons/ph/hourglass-medium-fill'
@@ -48,6 +50,9 @@ export const icons = {
   back: IconArrowLeft,
   chevron: IconCaretDown,
   close: IconX,
+  minimize: IconMinus,
+  maximize: IconArrowsOut,
+  restore: IconArrowsIn,
   copy: IconCopy,
   plug: IconPlugs,
   keyboard: IconKeyboard,

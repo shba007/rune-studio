@@ -4,6 +4,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import AppIcon from '@/components/AppIcon.vue'
+import TitleBar from '@/components/TitleBar.vue'
 import FlightDrawer from '@/components/FlightDrawer.vue'
 import FlightStage from '@/components/FlightStage.vue'
 import FlightTimeline from '@/components/FlightTimeline.vue'
@@ -270,6 +271,7 @@ function runDate(text: string | null): string {
     class="flex h-screen flex-col overflow-hidden bg-[#141414] text-zinc-100"
     data-testid="flight"
   >
+    <TitleBar title="Rune Studio · Flight Player" />
     <!-- The picker: no run chosen yet, or the record could not be read. -->
     <section v-if="!header" class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-6">
       <h1 class="m-0 text-title uppercase">Flight Player</h1>
