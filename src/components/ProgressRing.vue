@@ -2,9 +2,10 @@
 import { computed } from 'vue'
 
 /**
- * The orb's outer ring, as the progress of the task: one large dotted arc per goal. Finished goals
- * are lit, the current one pulses, the rest are dim, and a small arrow marks the goal being worked
- * on. While the plan is still being written the arrow circles an empty ring.
+ * The orb's outer ring, as the progress of the task: one continuous blue arc per goal, with a small
+ * gap between them. Finished goals are solid, the current one pulses, the rest are dim, and a small
+ * arrow marks the goal being worked on. While the plan is still being written the arrow circles an
+ * empty ring.
  */
 const props = defineProps<{
   /** Number of goals in the plan (0 while there is none). */
@@ -15,7 +16,7 @@ const props = defineProps<{
   /** A task is running, so a ring with no plan yet means "planning". */
   running: boolean
   failed: boolean
-  /** An outside agent's colour for the lit arcs (on the dark rim); null is the usual light grey. */
+  /** An outside agent's colour for the lit arcs (on the dark rim); null is Rune's blue. */
   accent?: string | null
 }>()
 
@@ -72,7 +73,7 @@ const arrowTurn = computed(() => {
     v-if="visible"
     :viewBox="`0 0 ${SIZE} ${SIZE}`"
     class="ring"
-    :style="{ '--lit': accent ?? '#f1f1ef' }"
+    :style="{ '--lit': accent ?? '#2d71c3' }"
     aria-hidden="true"
   >
     <template v-if="goals > 0">
@@ -111,24 +112,23 @@ const arrowTurn = computed(() => {
   pointer-events: none;
 }
 
-/* Round caps on zero-length dashes make dots, in keeping with the dot-matrix orb. */
+/* One solid stroke per goal; the round caps keep the gaps between goals tidy. */
 .dots {
   stroke-width: 3;
   stroke-linecap: round;
-  stroke-dasharray: 0 4.4;
   transition: stroke 300ms ease;
 }
 
 .done {
-  stroke: var(--lit, #f1f1ef);
+  stroke: var(--lit, #2d71c3);
 }
 
 .pending {
-  stroke: rgb(241 241 239 / 0.2);
+  stroke: rgb(255 255 255 / 0.16);
 }
 
 .current {
-  stroke: var(--lit, #f1f1ef);
+  stroke: var(--lit, #2d71c3);
   animation: pulse 1.4s ease-in-out infinite;
 }
 
@@ -143,7 +143,7 @@ const arrowTurn = computed(() => {
 }
 
 .arrow {
-  fill: var(--lit, #f1f1ef);
+  fill: var(--lit, #2d71c3);
 }
 
 .arrow.failed {

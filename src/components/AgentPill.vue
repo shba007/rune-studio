@@ -277,7 +277,7 @@ function onOrb() {
 }
 
 .update-fill {
-  stroke: #f1f1ef;
+  stroke: #2d71c3;
   stroke-width: 2.5;
   stroke-linecap: round;
   transition: stroke-dasharray 250ms ease-out;

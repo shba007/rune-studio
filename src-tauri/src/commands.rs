@@ -454,7 +454,8 @@ pub fn flight_file(app: AppHandle, id: String, relative: String) -> AppResult<St
 
 /// Opens the Flight Player on a run (or on its picker when no id is given).
 #[tauri::command]
-pub fn open_flight(app: AppHandle, run_id: Option<String>) -> AppResult<()> {
+// Async on purpose: a window built from a synchronous command runs on the main thread and opens blank.
+pub async fn open_flight(app: AppHandle, run_id: Option<String>) -> AppResult<()> {
     crate::flight::open(&app, run_id.as_deref())
         .map_err(|err| AppError::Invalid(format!("Could not open the Flight Player: {err}")))
 }

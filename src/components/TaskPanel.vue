@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import { useNow } from '@vueuse/core'
 import { computed } from 'vue'
 
 import type { Agent } from '@/composables/useAgent'
+import { etaText, remainingMs } from '@/config/eta'
 import { KIND_ICON, TOOL_LABEL, kindOf } from '@/config/actions'
 
 import AppIcon from './AppIcon.vue'
@@ -16,6 +18,16 @@ const finished = computed(() => agent.plan.value?.finished ?? false)
 const done = computed(() =>
   finished.value ? goals.value.length : Math.min(current.value, goals.value.length),
 )
+
+/** Time left, counting down once a goal has been finished (nothing to go on before that). */
+const now = useNow({ interval: 1000 })
+const eta = computed(() => {
+  if (!agent.isRunning.value || !agent.timing.value) return null
+  const left = remainingMs(agent.timing.value, goals.value.length, done.value, now.value.getTime())
+  if (left === null) return goals.value.length > 1 && done.value === 0 ? 'estimating…' : null
+  const text = etaText(left)
+  return text === 'any moment' ? 'any moment now' : `${text} left`
+})
 
 const last = computed(() => agent.steps.value.at(-1) ?? null)
 const lastLabel = computed(() =>
@@ -53,6 +65,12 @@ function statusOf(index: number): 'done' | 'current' | 'pending' {
       <span v-if="agent.steps.value.length" class="text-caption text-zinc-500 uppercase">
         · {{ agent.steps.value.length }} {{ agent.steps.value.length === 1 ? 'step' : 'steps' }}
       </span>
+      <span
+        v-if="eta"
+        class="min-w-0 truncate text-caption text-zinc-400 uppercase tabular-nums"
+        data-testid="eta"
+        >· {{ eta }}</span
+      >
       <button
         v-if="!agent.isRunning.value"
         type="button"

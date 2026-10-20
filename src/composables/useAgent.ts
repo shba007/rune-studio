@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { useTimeoutFn } from '@vueuse/core'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
+import type { TaskTiming } from '@/config/eta'
 import { REVIEW_SECONDS, readOffer, type ReviewOffer } from '@/config/review'
 import {
   AUDIO_LEVEL,
@@ -83,6 +84,8 @@ export function useAgent() {
   const mode = ref<PillMode>('ambient')
   /** The task's goals and the one being worked on. Null until a plan arrives. */
   const plan = ref<PlanUpdatedPayload | null>(null)
+  /** When the task and its current goal started, for the time left. Null when there is no task. */
+  const timing = ref<TaskTiming | null>(null)
   /** What the model is thinking right now (only with Show thinking on). */
   const thinking = ref<ThinkingPayload | null>(null)
   /** What the agent last said: its reason for the current action, or the final summary. */
@@ -236,6 +239,7 @@ export function useAgent() {
       stepText.value = null
       resultText.value = null
       plan.value = null
+      timing.value = null
       thinking.value = null
       response.value = null
       steps.value = []
@@ -284,12 +288,26 @@ export function useAgent() {
 
   // A task starts while the card is open: show its progress above the composer.
   watch(isRunning, (running) => {
+    if (running && !timing.value) {
+      const now = Date.now()
+      timing.value = { startedAt: now, goalStartedAt: now, doneGoals: 0 }
+    }
     if (running && mode.value === 'open') void setMode('task')
   })
+
+  // A finished goal restarts the goal clock, which is what the time left is worked out from.
+  watch(
+    () => (plan.value ? (plan.value.finished ? plan.value.goals.length : plan.value.current) : 0),
+    (done) => {
+      if (timing.value && done !== timing.value.doneGoals)
+        timing.value = { ...timing.value, goalStartedAt: Date.now(), doneGoals: done }
+    },
+  )
 
   /** Put the progress panel away and go back to the plain composer. */
   function clearTask() {
     plan.value = null
+    timing.value = null
     thinking.value = null
     response.value = null
     steps.value = []
@@ -399,6 +417,7 @@ export function useAgent() {
     fitHeight,
     mode,
     plan,
+    timing,
     question,
     answer,
     thinking,
