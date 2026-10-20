@@ -201,6 +201,11 @@ pub fn capture_region(
     let mut rgba = xmonitor
         .capture_image()
         .map_err(|err| ObserveError::Capture(err.to_string()))?;
+    // Demo mode: Rune's own windows are visible to recorders, so they are painted over for the model.
+    let masked = super::mask::current();
+    if !masked.is_empty() {
+        super::mask::apply(&mut rgba, &masked, monitor.x, monitor.y);
+    }
     if let Some([x0, y0, x1, y1]) = region {
         let (w, h) = (f64::from(rgba.width()), f64::from(rgba.height()));
         let to_px =

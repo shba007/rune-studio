@@ -147,3 +147,7 @@ Actions already wait a moment for the screen to settle. If something is slow (an
 - See more than the main monitor.
 - Hear or speak. The user talks to you in your own chat.
 - Touch the user's files except through apps you open on screen.
+
+## How the user sees who you are
+
+While you hold control the user's orb and top bar show a label: your declared `agent` name from `rune_begin`, matched exactly (case and punctuation aside) against a few known names (Claude, Antigravity, OpenCode, ChatGPT, Codex, Gemini, Cursor, Cline, Copilot, Windsurf); anything else is shown neutral under the name you gave. `rune-studio-cli connect claude|antigravity` registers the server as `mcp --agent <id>`, and that registration's id wins over the declared name. **The label is a courtesy, not a security boundary**: nothing authenticates it, and the safety gate treats every outside agent alike. When you register Rune yourself, start it as `rune-studio-cli mcp --agent <id>` to be shown correctly.

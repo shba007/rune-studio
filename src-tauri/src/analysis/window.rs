@@ -29,7 +29,7 @@ pub fn open(app: &AppHandle) -> tauri::Result<()> {
     .visible(false)
     .build()?;
     // Excluded before it is ever shown.
-    crate::window::exclude_from_capture(&window)?;
+    crate::window::protect(&window)?;
     let handle = app.clone();
     window.on_window_event(move |event| {
         // Closing the window ends the call in flight.

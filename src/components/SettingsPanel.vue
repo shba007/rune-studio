@@ -133,6 +133,18 @@ async function save() {
         <SettingsToggle v-model="draft.analysisBoxes" label="Show boxes (unreliable)" icon="scan" />
       </SettingsGroup>
 
+      <SettingsGroup title="Recording">
+        <SettingsToggle
+          v-model="draft.demoMode"
+          label="Show Rune in screen recordings"
+          icon="video"
+        />
+        <p v-if="draft.demoMode" class="m-0 px-1 text-label opacity-70">
+          OBS, Game Bar and the Snipping Tool can now capture Rune's windows. Rune hides itself from
+          its own model either way.
+        </p>
+      </SettingsGroup>
+
       <SettingsGroup title="Safety">
         <SettingsToggle
           v-model="draft.askEveryAction"

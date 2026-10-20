@@ -1,3 +1,4 @@
+use crate::sync::LockExt;
 use serde::Deserialize;
 use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, WebviewWindow};
 
@@ -37,9 +38,63 @@ fn main_window(app: &AppHandle) -> Option<WebviewWindow> {
     app.get_webview_window(MAIN)
 }
 
-/// Keeps the pill out of screenshots so the model never sees (or reads) its own UI.
-pub fn exclude_from_capture(window: &WebviewWindow) -> tauri::Result<()> {
-    window.set_content_protected(true)
+/// Whether "Show Rune in screen recordings" is on.
+pub fn demo_mode(app: &AppHandle) -> bool {
+    app.state::<crate::events::AppState>()
+        .settings
+        .locked()
+        .demo_mode
+}
+
+/// **The one place Rune's windows are excluded from (or opened to) screen capture.** By default every
+/// window is excluded, so recorders and the model never see Rune. In demo mode the exclusion is lifted
+/// so OBS, Game Bar and the Snipping Tool can record Rune; the model is kept from seeing it by
+/// painting the windows' rectangles over its screenshots instead (`observe::mask`).
+pub fn protect(window: &WebviewWindow) -> tauri::Result<()> {
+    window.set_content_protected(!demo_mode(window.app_handle()))
+}
+
+/// Applies the setting to every window that is open (new windows call `protect` as they are made).
+pub fn apply_demo_mode(app: &AppHandle) {
+    for window in app.webview_windows().values() {
+        if let Err(err) = protect(window) {
+            log::warn!(
+                "could not change screen capture protection of {}: {err}",
+                window.label()
+            );
+        }
+    }
+}
+
+/// What the model's screenshots must not show while demo mode is on: the visible Rune windows (the
+/// pill, the analysis window) and the pieces of the full-screen overlay. Empty when demo mode is off.
+pub fn masked_rects(app: &AppHandle) -> Vec<crate::observe::mask::Rect> {
+    use crate::observe::mask::{Rect, overlay_rects};
+
+    if !demo_mode(app) {
+        return Vec::new();
+    }
+    let mut rects = Vec::new();
+    for (label, window) in app.webview_windows() {
+        if !window.is_visible().unwrap_or(false) {
+            continue;
+        }
+        let (Ok(position), Ok(size)) = (window.outer_position(), window.outer_size()) else {
+            continue;
+        };
+        let rect = Rect {
+            x: position.x,
+            y: position.y,
+            w: size.width,
+            h: size.height,
+        };
+        if label.starts_with("overlay-") {
+            rects.extend(overlay_rects(rect, window.scale_factor().unwrap_or(1.0)));
+        } else {
+            rects.push(rect);
+        }
+    }
+    rects
 }
 
 /// Puts the window in the bottom-right corner of the primary monitor's work area, so it

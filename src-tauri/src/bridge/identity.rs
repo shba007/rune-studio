@@ -47,6 +47,7 @@ const KNOWN: [(&str, &str, &[&str]); 10] = [
 ];
 
 /// Every id the UI's brand registry must have an entry for.
+#[cfg(test)]
 pub fn all_ids() -> Vec<&'static str> {
     KNOWN
         .iter()

@@ -17,6 +17,8 @@ export interface Settings {
   verifyMode: 'off' | 'background' | 'blocking'
   /** Draw the numbered boxes in the screen analysis window. Off by default (the boxes were mostly wrong). */
   analysisBoxes: boolean
+  /** Let screen recorders capture Rune's windows; the model still never sees them. */
+  demoMode: boolean
   /** Delete session folders older than this many days at startup; 0 keeps everything. No UI yet. */
   archiveKeepDays: number
   baseUrl: string

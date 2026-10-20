@@ -16,7 +16,7 @@ use axum::{
     routing::post,
 };
 use serde_json::{Value, json};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 use crate::events::{self, AgentState, AppState};
 

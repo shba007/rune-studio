@@ -46,6 +46,9 @@ pub struct Settings {
     /// Draw the numbered boxes on the screen analysis picture. Off by default: the chat model's boxes
     /// were right 1 time in 8 in the field test, so the findings list and its evidence are shown alone.
     pub analysis_boxes: bool,
+    /// Let screen recorders (OBS, Game Bar, the Snipping Tool) capture Rune's windows. The model still
+    /// never sees them: they are painted over in its screenshots (`observe::mask`).
+    pub demo_mode: bool,
 }
 
 /// What happens with the independent check of a finished task (`agent::verify`).
@@ -82,6 +85,7 @@ impl Default for Settings {
             archive_keep_days: 0,
             verify_mode: VerifyMode::default(),
             analysis_boxes: false,
+            demo_mode: false,
         }
     }
 }
@@ -166,6 +170,17 @@ pub fn set_api_key(key: &str) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn demo_mode_is_off_by_default_and_a_file_without_it_loads() {
+        assert!(!Settings::default().demo_mode);
+        assert!(!serde_json::from_str::<Settings>("{}").unwrap().demo_mode);
+        assert!(
+            serde_json::from_str::<Settings>(r#"{ "demoMode": true }"#)
+                .unwrap()
+                .demo_mode
+        );
+    }
 
     #[test]
     fn analysis_boxes_are_off_by_default_and_a_file_without_the_setting_loads() {

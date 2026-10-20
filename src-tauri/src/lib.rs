@@ -136,8 +136,12 @@ pub fn run() {
                 http: reqwest::Client::new(),
             });
 
+            {
+                let handle = app.handle().clone();
+                observe::mask::set_source(move || window::masked_rects(&handle));
+            }
             if let Some(pill) = app.get_webview_window(window::MAIN) {
-                window::exclude_from_capture(&pill)?;
+                window::protect(&pill)?;
                 // Windows clamps the configured size to its minimum window width; an explicit
                 // resize is exact.
                 window::set_mode(app.handle(), window::Mode::Ambient)?;

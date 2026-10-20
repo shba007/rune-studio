@@ -36,7 +36,11 @@ pub fn save_settings(
     if settings.external_agent && !was_on {
         state.lease.locked().rearm();
     }
+    let demo_changed = state.settings.locked().demo_mode != settings.demo_mode;
     *state.settings.locked() = settings;
+    if demo_changed {
+        crate::window::apply_demo_mode(&app);
+    }
     let previous = std::mem::replace(&mut *state.hotkeys.locked(), next.clone());
     if previous != next {
         hotkeys::apply(&app, Some(&previous), &next).map_err(AppError::Invalid)?;

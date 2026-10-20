@@ -120,7 +120,7 @@ fn build(app: &AppHandle, label: &str) -> tauri::Result<tauri::WebviewWindow> {
     .visible(false)
     .build()?;
     window.set_ignore_cursor_events(true)?;
-    crate::window::exclude_from_capture(&window)?;
+    crate::window::protect(&window)?;
     Ok(window)
 }
 

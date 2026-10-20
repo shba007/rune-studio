@@ -109,6 +109,10 @@ Launching Rune Studio a second time shows the existing pill instead of starting 
 
 The window is a frameless, always-on-top, capture-excluded pill anchored to the bottom-right of the primary monitor. While the agent acts it is click-through, so it can never block a click meant for another app.
 
+### Recording a demo
+
+Rune's windows are excluded from screen capture, so Windows' Snipping Tool, Game Bar and OBS cannot record them. To record a demo, turn on **Settings > Recording > Show Rune in screen recordings** (`demoMode`, default off). Rune's windows can then be captured; **the model still never sees them**, because their rectangles (the pill, the analysis window, and the overlay's top bar and screen-edge frame) are painted grey in every screenshot before it is downscaled, so the frame keeps its size and no coordinate moves. There is no built-in recorder: use OBS with **Display Capture** (Window Capture does not see the click-through overlay), or Game Bar when no program is in exclusive full screen. **Untested:** all of this needs a Windows desktop and was not run; the overlay's masked areas are estimates from the stylesheet, and how much the model's behaviour changes with the setting on is unmeasured (run `scripts/eval/run.ps1` with it off and on).
+
 ### Voice words
 
 | Said (whole utterance)                 | Agent idle       | Agent working           | A question is on screen                                                                   |
