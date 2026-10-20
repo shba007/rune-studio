@@ -264,7 +264,7 @@ A feature separate from the agent loop: the **scan button in the pill** captures
 
 **What it does not do.** No file input or drag and drop, no MCP tool, no hotkey, no voice trigger, one monitor only (the primary one), no idle or background analysis. rune-infer's `/v1/images/grounding`, `/detections`, `/captions` and `/v1/ocr` are **not used** (the chat path is): they are the option if the chat boxes turn out poor.
 
-**Status: built; unit tested; not run end to end. Box accuracy of the chat path is unmeasured** until the maintainer runs the probe (`pwsh scripts/m15/run-probe.ps1 -Modes "gemma-4-12b-it:box"`, see `docs/handoff/R4-report.md`).
+**Status: built; unit tested; not run end to end. Box accuracy of the chat path is unmeasured** until the maintainer runs the probe (`pwsh scripts/m15/run-probe.ps1 -Modes "gemma-4-12b-it:box"`).
 
 ## 7. Safety gate
 
