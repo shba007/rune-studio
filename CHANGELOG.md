@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.0.14
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.0.13...v0.0.14)
+
+### 🚀 Enhancements
+
+- **analysis:** The box quality guard, screen-change watcher, overlay owner and record column ([c3f0aee](https://github.com/shba007/rune-studio/commit/c3f0aee))
+- **ui:** Screen analysis as an overlay with cards above the orb ([13c24f1](https://github.com/shba007/rune-studio/commit/13c24f1))
+- **probe:** Measure the app's own report prompt, box only and box plus point ([fa4eacc](https://github.com/shba007/rune-studio/commit/fa4eacc))
+
+### 📖 Documentation
+
+- Add the overlay analysis report, document it, remove finished handoff files ([9171b31](https://github.com/shba007/rune-studio/commit/9171b31))
+
+### ❤️ Contributors
+
+- Claude <noreply@anthropic.com>
+
 ## v0.0.13
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.0.12...v0.0.13)
