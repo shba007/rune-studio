@@ -1,30 +1,37 @@
-# 02 System settings and calculator
+# System settings and calculator
 
 **Status:** Works.
 
 ## What it is
-Rune opens built-in Windows apps and operates them, such as Settings and Calculator.
+Rune opens a built-in Windows app, such as Settings or Calculator, and operates it for you.
 
-## Try it
-- **Open Settings**
-- **Open the calculator and compute 12 times 13**
+## How to use
+1. Start Rune Studio and make sure the model server (rune-infer) is running.
+2. Click the orb to open the pill.
+3. Type one task in the box. Two examples: `Open Settings`, or `Open the calculator and compute 12 times 13`.
+4. Press Enter, and take your hands off the mouse and keyboard.
+5. To stop at any moment, press Ctrl+Alt+Esc.
 
 ## What happens
-The same loop as [01](01-open-app-and-type.md). For native apps Rune reads the list of controls on the screen and clicks a control by its id, which is exact, instead of guessing a position.
+1. Rune makes a short plan.
+2. It opens the app by name ("settings" is turned into the Windows Settings address, "calculator" into Calculator).
+3. It takes a screenshot and reads the list of controls in the front window.
+4. It clicks a control by its id from that list, which is exact, instead of guessing a position on the picture. It also uses key presses.
+5. The safety gate checks each action, and Rune repeats from step 3 until the task is done.
 
 ## What you will see
-The app opens, buttons are pressed one by one, captions name each action.
+The app opens and its buttons are pressed one by one, with a caption for each action and a frame around the screen.
 
 ## How well it works
-Measured: both tasks passed, and the checker that looks at the final screen said "verified" with correct evidence.
+Measured: both examples passed, and the end-of-task check said "verified" with correct evidence.
 
 ## Limits
-- Before F1, "settings" and "Calculator" could not be opened by name (error 2). Fixed in F1, not yet seen working on Windows.
-- A UAC (admin permission) prompt cannot be seen or answered by Rune.
-- A locked or sleeping PC stops the task ("screen unavailable").
+- Before the F1 fixes, `Open Settings` and `Calculator` could not be opened by name (error 2). Fixed since, not yet seen working on Windows.
+- A Windows admin-permission (UAC) prompt cannot be seen or answered by Rune.
+- A locked or sleeping PC stops the task with "screen unavailable".
 
 ## Where it can grow
-A list of known apps with their shortcuts, and direct tools through rune-kit that change a setting without clicking.
+A list of known apps with their shortcuts, and direct tools (through rune-kit) that change a setting without clicking.
 
 ## Features used
-App opening with aliases, control ids, key presses, the verifier.
+App opening with aliases, control ids, key presses, the safety gate, the end-of-task check.

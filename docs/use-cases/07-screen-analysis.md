@@ -1,30 +1,36 @@
-# 07 Ask about your screen
+# Ask about your screen
 
 **Status:** Partly works. Pointing at things is unreliable, so it is off by default.
 
 ## What it is
 Rune looks at your screen once and answers a question about it, with a list of findings and the evidence for each.
 
-## Try it
-Press the analysis button on the pill and ask: **Summarise what is on the screen and point out anything unusual.**
+## How to use
+1. Start Rune Studio and make sure the model server (rune-infer) is running. No task may be running.
+2. Click the orb to open the pill.
+3. Click the analysis button on the pill. A separate window opens.
+4. Type a question, for example `Summarise what is on the screen and point out anything unusual`, and send it.
+5. Read the findings and their evidence. To cancel, close the window or press Ctrl+Alt+Esc.
+6. Optional: in Settings turn on "analysisBoxes" to draw boxes on the picture. They are often wrong (see Limits).
+7. To read a saved result later, run `rune-studio-cli analyses`, then `rune-studio-cli analysis <id>`.
 
 ## What happens
-1. Rune takes one picture of the screen.
+1. Rune takes one screenshot.
 2. One model call returns up to 8 findings, each with a label, a description and evidence.
-3. A separate analysis window shows them. The window is hidden from screenshots.
-4. The result is saved (`rune-studio-cli analyses`).
+3. The analysis window shows them. This window is hidden from screenshots.
+4. The result is saved in the record.
 
 ## What you will see
-A window that opens in about half a second, then the answer after 15 to 49 seconds.
+The window opens in about half a second, and the answer arrives after 15 to 49 seconds.
 
 ## How well it works
-Measured: 14.5 s for 1 finding, 44 to 49 s for 8 (limit 60 s). A file with a fake key and password did not leak either value into the answer. It refuses to start while a task is running; Stop or closing the window cancels it.
-**Problem found:** only 1 of 8 boxes was in the right place, so boxes are off by default (a setting turns them on). Before F1 the feature failed every time (fixed).
+Measured: 14.5 s for 1 finding and 44 to 49 s for 8 (the limit is 60 s). A file with a fake key and password did not leak either value into the answer. It refuses to start while a task is running. Closing the window or pressing Stop cancels it cleanly.
+Problem found: only 1 of 8 boxes was in the right place. Before the F1 fixes the whole feature failed every time (fixed since).
 
 ## Limits
 - Current screen only. No files, no drag and drop, no voice or outside-agent trigger.
 - After a cancel the server may keep working for a while (a rune-infer issue).
-- Box accuracy was never measured with the probe.
+- Box accuracy was never measured with the probe script.
 
 ## Where it can grow
 Better boxes by combining the server's grounding and text-reading tools, comparing two screens, files as input.

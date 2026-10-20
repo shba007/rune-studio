@@ -1,6 +1,6 @@
 # What you can do with Rune Studio
 
-One page per use case. Each page answers the same questions in the same order: what it is, how to try it, what happens step by step, how well it works, what does not work yet, and where it can grow.
+One page per use case. Each page stands alone and has the same sections in the same order: What it is, How to use (always numbered steps), What happens, What you will see, How well it works, Limits, Where it can grow, Features used.
 
 | Page | What you do | Status |
 | --- | --- | --- |

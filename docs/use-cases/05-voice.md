@@ -1,31 +1,34 @@
-# 05 Talk to it
+# Talk to it
 
 **Status:** Partly works. The model often mishears.
 
 ## What it is
-Click the microphone once, then speak. Rune listens hands-free.
+You speak a task instead of typing it. Rune listens hands-free once you click the microphone.
 
-## Try it
-Say: **Open Notepad and write hello**
+## How to use
+1. Start Rune Studio and make sure the model server (rune-infer) is running and a microphone is connected.
+2. Click the orb to open the pill, then click the microphone once.
+3. Say the task, for example "Open Notepad and write hello".
+4. Read your words on the pill. The task starts after 2 seconds. To cancel it in that time, press Ctrl+Alt+Esc.
+5. While a task runs you can say a control word: "stop", "yes" or "no". These act at once.
 
 ## What happens
-1. A detector cuts your speech into utterances.
-2. The same model that looks at the screen hears the audio (there is no separate speech-to-text model).
-3. Short control words (stop, yes, no) act immediately.
-4. A spoken task is shown on the pill and starts after **2 seconds**. Press Stop in that time to cancel.
+1. A detector cuts your speech into separate utterances.
+2. The same model that reads the screen hears the audio (there is no separate speech-to-text model) and writes down the words.
+3. A control word acts immediately. A task is shown on the pill and then starts like a typed task.
 
 ## What you will see
 The orb follows your voice level, then your words appear on the pill.
 
 ## How well it works
-Measured: the audio is accepted and heard. Understanding is poor: of 5 recordings a speech model got 5 right, this model returned "Open PowerPoint", "Open terminal" and nonsense, and "Open Notepad and write hello" once started a Calculator task. F1 added a "transcribe only" instruction, a length cap, rejection of repeated words, logging of every ignored result and the 2-second window (all not yet seen working).
+Measured: the audio is accepted and heard, but understanding is poor. Out of 5 recordings a speech model got all 5 right, while this model returned "Open PowerPoint", "Open terminal" and nonsense. "Open Notepad and write hello" once started a Calculator task. Since then the F1 fixes added a "transcribe only" instruction, a length cap, rejection of repeated words, logging of every ignored result and the 2-second window (none seen working yet).
 
 ## Limits
-- Tested only with speakers into the microphone. Stop, yes and no with a real voice: **not tested**.
-- There is no Cancel button; use the Stop hotkey or the tray.
+- Only tested with speakers into the microphone. "Stop", "yes" and "no" with a real voice have not been tested.
+- There is no Cancel button. Use the Stop hotkey or the tray menu.
 
 ## Where it can grow
 A real speech-to-text endpoint on rune-infer (the biggest gain), a Cancel button, a wake word.
 
 ## Features used
-Voice detector, audio to the model, 2 s delay, control words.
+Voice detector, audio sent to the model, the 2-second delay, control words.
