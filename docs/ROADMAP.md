@@ -194,7 +194,9 @@ Original plan:
 - Risk: box accuracy never measured (M1.5 measured points only).
   Exit: probe reports box hit rate per path; the view renders findings with working evidence links.
 
-### R5 Idle detection + reflection shell — M / high
+### R5 Agent identity, demo mode, idle detection + reflection shell — M-H / high
+
+Handoff: `docs/handoff/R5-reflection-shell-agent-identity-demo.md`. Added scope: (a) outside agents get their own accent colour and mark in the orb, ring and top bar (brand values supplied by the maintainer: **NOT CERTAIN** until then; the agent name is self-declared, `connect` can attest it, neither is a security boundary); (b) a demo mode lets external recorders (OBS, Game Bar) see Rune's windows while the model still does not (method **NOT CERTAIN** until measured); no built-in recorder. (c) is the original idle shell below.
 
 - 10-min idle timer (patterns: `resume_listening_soon`, `bridge::server::watch_for_idle`); prompt on the pill card (not the click-through overlay bubble) with **Deny**; auto-start on timeout (**length NOT CERTAIN, proposing 30 s**); Deny skips this cycle (**re-prompt policy NOT CERTAIN**).
 - `Reflecting` state: new orb motion; ring shows a new `reflection_progress {stage, done, total}` event. Orb colour **NOT CERTAIN** (design allows red only for attention).
