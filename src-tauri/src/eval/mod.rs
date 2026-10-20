@@ -98,10 +98,27 @@ pub fn file_url(path: &Path) -> String {
     if encoded.starts_with('/') { format!("file://{encoded}") } else { format!("file:///{encoded}") }
 }
 
+/// The server's `usage.completion_tokens` has read 1 for every step with thinking off (62 of 62 in the
+/// field test), so a number below this is not believed.
+const USAGE_BELIEVED_FROM: i64 = 2;
+
+/// The completion tokens of one step and whether the number is an estimate. The server's count is
+/// used when it is plausible; otherwise the characters of what the model produced (the tool
+/// arguments and the thinking) divided by 4. `None` when the step has neither.
+pub fn tokens_of(step: &StepRecord) -> Option<(i64, bool)> {
+    match step.completion_tokens {
+        Some(tokens) if tokens >= USAGE_BELIEVED_FROM => Some((tokens, false)),
+        reported => {
+            let chars = step.args_json.as_ref().map_or(0, |args| args.chars().count() as i64) + step.thinking_chars.unwrap_or(0);
+            if chars > 0 { Some(((chars + 3) / 4, true)) } else { reported.map(|tokens| (tokens, false)) }
+        }
+    }
+}
+
 /// Sums over a run's steps: decide, observe and act milliseconds, and completion tokens.
 pub fn totals(steps: &[StepRecord]) -> (i64, i64, i64, i64) {
     let sum = |pick: fn(&StepRecord) -> Option<i64>| steps.iter().filter_map(pick).sum::<i64>();
-    (sum(|step| step.decide_ms), sum(|step| step.observe_ms), sum(|step| step.act_ms), sum(|step| step.completion_tokens))
+    (sum(|step| step.decide_ms), sum(|step| step.observe_ms), sum(|step| step.act_ms), steps.iter().filter_map(tokens_of).map(|(tokens, _)| tokens).sum())
 }
 
 /// What the independent check said about a run, for `results.jsonl`.
@@ -165,6 +182,8 @@ pub struct RunResult {
     pub observe_ms_total: i64,
     pub act_ms_total: i64,
     pub completion_tokens_total: i64,
+    /// Some step's count is an estimate (characters / 4) because the server's `usage` was not believable.
+    pub tokens_estimated: bool,
     pub denied_prompts: u32,
     /// The mode of the independent check, its verdict (`verified`, `contradicted`, `unsure`, `error`,
     /// `skipped`, or `timeout`), how long it took, and whether blocking mode challenged the agent.
@@ -202,6 +221,7 @@ pub fn build_result(task: &Task, repeat: u32, run_id: &str, outcome: &str, check
         observe_ms_total,
         act_ms_total,
         completion_tokens_total,
+        tokens_estimated: steps.iter().filter_map(tokens_of).any(|(_, estimated)| estimated),
         denied_prompts,
         verify_mode: verification.mode,
         verdict: verification.verdict,

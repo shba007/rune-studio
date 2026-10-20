@@ -413,6 +413,22 @@ fn totals_add_up_what_ran_and_skip_what_did_not() {
     assert_eq!(totals(&[step(Some(800), Some(300), Some(40), Some(55)), step(Some(900), None, None, None), step(None, Some(250), Some(60), Some(12))]), (1700, 550, 100, 67));
 }
 
+#[test]
+fn an_unbelievable_usage_count_is_replaced_by_characters_over_four_and_marked() {
+    // The server said 1 token; the arguments were 400 characters and the thinking 40.
+    let guessed = StepRecord { completion_tokens: Some(1), args_json: Some("x".repeat(400)), thinking_chars: Some(40), ..StepRecord::new("r", 1) };
+    use crate::eval::tokens_of;
+    assert_eq!(tokens_of(&guessed), Some((110, true)));
+    let believed = StepRecord { completion_tokens: Some(188), args_json: Some("x".repeat(400)), ..StepRecord::new("r", 1) };
+    assert_eq!(tokens_of(&believed), Some((188, false)));
+    assert_eq!(tokens_of(&StepRecord::new("r", 1)), None);
+    assert_eq!(tokens_of(&StepRecord { completion_tokens: Some(1), ..StepRecord::new("r", 1) }), Some((1, false)), "nothing to estimate from: the reported number stays");
+    assert_eq!(totals(&[guessed, believed]).3, 298);
+    let result = build_result(&sample_task(Expect::Success), 1, "r", "succeeded", true, &[StepRecord { completion_tokens: Some(1), args_json: Some("x".repeat(80)), ..StepRecord::new("r", 1) }], Duration::from_millis(1), 0, None, Verification::off());
+    assert!(result.tokens_estimated);
+    assert_eq!(result.completion_tokens_total, 20);
+}
+
 fn sample_task(expect: Expect) -> Task {
     Task { id: "notepad-write-save".into(), expect, ..task(expect, None) }
 }
@@ -421,7 +437,7 @@ fn sample_task(expect: Expect) -> Task {
 fn a_result_line_has_exactly_the_documented_fields() {
     let steps = [step(Some(800), Some(300), Some(40), Some(55)), step(Some(900), Some(310), Some(60), Some(45))];
     let result = build_result(&sample_task(Expect::Success), 2, "120000-1-open-notepad", "reported_failure", true, &steps, Duration::from_millis(18_250), 0, None, Verification::off());
-    let expected = r#"{"task":"notepad-write-save","repeat":2,"run_id":"120000-1-open-notepad","outcome":"reported_failure","self_reported_success":false,"check_passed":true,"expect":"success","passed":true,"steps":2,"duration_ms":18250,"decide_ms_total":1700,"observe_ms_total":610,"act_ms_total":100,"completion_tokens_total":100,"denied_prompts":0,"verify_mode":"off","verdict":null,"verify_ms":null,"challenged":false,"error":null}"#;
+    let expected = r#"{"task":"notepad-write-save","repeat":2,"run_id":"120000-1-open-notepad","outcome":"reported_failure","self_reported_success":false,"check_passed":true,"expect":"success","passed":true,"steps":2,"duration_ms":18250,"decide_ms_total":1700,"observe_ms_total":610,"act_ms_total":100,"completion_tokens_total":100,"tokens_estimated":false,"denied_prompts":0,"verify_mode":"off","verdict":null,"verify_ms":null,"challenged":false,"error":null}"#;
     assert_eq!(result.to_line(), expected);
     assert!(result.passed, "the model said it failed but the file is there: passed");
 }
