@@ -84,7 +84,9 @@ pub async fn run(app: &AppHandle, question: &str, fresh: bool) -> AppResult<()> 
         analysis.begin(&question, fresh);
         analysis.cancel.clone()
     };
-    if let Err(err) = window::open(app) {
+    // A fresh capture comes first and the window opens after it: the window is excluded from capture,
+    // but nothing about the first frame should depend on that. A follow-up question has its frame.
+    if !fresh && let Err(err) = window::open(app) {
         // The analysis is useless without its window.
         let mut analysis = state.analysis.locked();
         analysis.status = Status::Error;
@@ -161,6 +163,12 @@ async fn work(
             height: frame.height,
             monitor: frame.monitor,
         });
+    }
+    if fresh && let Err(err) = window::open(app) {
+        return (
+            Ended::Failed(format!("could not open the analysis window: {err}")),
+            path,
+        );
     }
     let Some(frame) = state.analysis.locked().frame.clone() else {
         return (

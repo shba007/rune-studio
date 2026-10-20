@@ -154,6 +154,12 @@ pub fn begin_task_planned(
     if state.lease.locked().is_held() {
         return Err(AppError::Invalid("An outside agent is in control".into()));
     }
+    // One thing looks at the screen at a time: a task would act while the analysis is still reading it.
+    if crate::analysis::state::in_flight(state.analysis.locked().status) {
+        return Err(AppError::Invalid(
+            "A screen analysis is still running".into(),
+        ));
+    }
     // Starting a task ends listening: the microphone must not stay open behind it.
     if !keep_mic {
         drop(state.mic.locked().take());
