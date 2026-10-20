@@ -1,6 +1,6 @@
 # Handoff: Milestone R6b, session video, review prompt and the Flight Player
 
-For an AI coding agent. Read all of it first. Plan it comes from: `docs/ROADMAP.md` (R6b). Current behaviour: `docs/ARCHITECTURE.md`, `docs/use-cases/08-review-what-happened.md`. Where this file and the code disagree about a fact, the code wins: say so in the report. R6a (analysis overlay) should be merged first (same pill and window code); R6c (post-mortems and notes) comes after this and will link into the player.
+For an AI coding agent. Read all of it first. Plan it comes from: `docs/ROADMAP.md` (R6b). Current behaviour: `docs/ARCHITECTURE.md`, `docs/use-cases/08-review-what-happened.md`. Where this file and the code disagree about a fact, the code wins: say so in the report. R6a (analysis overlay) is already merged (see `docs/handoff/R6a-report.md`); R6c (post-mortems and notes) comes after this and will link into the player.
 
 ## 1. Goal
 
@@ -30,7 +30,7 @@ When a task ends (success or failure, own agent or outside agent), the pill offe
 ## 3. Preconditions and rules
 
 1. **No branch.** Work on `develop`: `git switch develop && git pull --ff-only origin develop`; one commit per work package; `git pull --rebase origin develop`, then `git push origin develop`.
-2. Check R6a is merged: `ls src/components/AnalysisCard.vue`. If not, stop and say so.
+2. R6a is merged (`src/components/AnalysisCard.vue` exists); read `docs/handoff/R6a-report.md` for its card and window patterns before you start.
 3. Toolchain: Rust 1.98.1+, Bun 1.4.x, Node 22+. Record baseline numbers first (all test commands, clippy, fmt).
 4. Trace schema is at `VERSION = 5`. Add migration **v6** (never edit v1 to v5); a database from a newer build is left untouched as today.
 5. Recording must never slow or break a task: writes stay on the existing writer thread with `try_send` (drop under pressure, count drops), the video is made **after** the task ends, and any failure in recording or encoding is logged and never changes the task outcome.
