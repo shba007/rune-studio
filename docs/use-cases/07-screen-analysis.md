@@ -6,13 +6,12 @@
 Rune looks at your screen once and answers a question about it, with a list of findings and the evidence for each.
 
 ## How to use
-1. Start Rune Studio and make sure the model server (rune-infer) is running. No task may be running.
-2. Click the orb to open the pill.
-3. Click the analysis button on the pill. A separate window opens.
-4. Type a question, for example `Summarise what is on the screen and point out anything unusual`, and send it.
-5. Read the findings and their evidence. To cancel, close the window or press Ctrl+Alt+Esc.
-6. Optional: in Settings turn on "analysisBoxes" to draw boxes on the picture. They are often wrong (see Limits).
-7. To read a saved result later, run `rune-studio-cli analyses`, then `rune-studio-cli analysis <id>`.
+1. Make sure no task is running, then click the orb to open the pill.
+2. Click the analysis button on the pill. A separate window opens.
+3. Type a question, for example `Summarise what is on the screen and point out anything unusual`, and send it.
+4. Read the findings and their evidence. To cancel, close the window or press Ctrl+Alt+Esc.
+5. Optional: in Settings turn on "analysisBoxes" to draw boxes on the picture. They are often wrong (see Limits).
+6. To read a saved result later, run `rune-studio-cli analyses`, then `rune-studio-cli analysis <id>`.
 
 ## What happens
 1. Rune takes one screenshot.

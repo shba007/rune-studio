@@ -6,11 +6,10 @@
 You give Rune a task in words. Rune opens the app, clicks where needed and types the text for you.
 
 ## How to use
-1. Start Rune Studio and make sure the model server (rune-infer) is running. The pill shows a green health dot when it is reachable.
-2. Click the orb to open the pill.
-3. Type a task in the box, for example `Open Notepad and write hello`.
-4. Press Enter, and take your hands off the mouse and keyboard.
-5. To stop at any moment, press Ctrl+Alt+Esc (the default Stop hotkey).
+1. Click the orb to open the pill.
+2. Type a task in the box, for example `Open Notepad and write hello`.
+3. Press Enter, and take your hands off the mouse and keyboard.
+4. To stop at any moment, press Ctrl+Alt+Esc (the default Stop hotkey).
 
 ## What happens
 Rune repeats a loop until the task is done:

@@ -6,12 +6,11 @@
 Rune opens a web page in your default browser and works on it: closes a popup, clicks a small button, scrolls.
 
 ## How to use
-1. Start Rune Studio and make sure the model server (rune-infer) is running.
-2. Click the orb to open the pill.
-3. Type a task that names the page, for example `Open example.com and close the cookie banner`.
-4. Press Enter, and take your hands off the mouse and keyboard.
-5. To stop at any moment, press Ctrl+Alt+Esc.
-6. Optional: in Settings you can switch on "fast checks". Leave them off on a server that holds only one model (see Limits).
+1. Click the orb to open the pill.
+2. Type a task that names the page, for example `Open example.com and close the cookie banner`.
+3. Press Enter, and take your hands off the mouse and keyboard.
+4. To stop at any moment, press Ctrl+Alt+Esc.
+5. Optional: in Settings you can switch on "fast checks". Leave them off on a server that holds only one model (see Limits).
 
 ## What happens
 1. Rune opens the address in the browser.

@@ -6,11 +6,10 @@
 You speak a task instead of typing it. Rune listens hands-free once you click the microphone.
 
 ## How to use
-1. Start Rune Studio and make sure the model server (rune-infer) is running and a microphone is connected.
-2. Click the orb to open the pill, then click the microphone once.
-3. Say the task, for example "Open Notepad and write hello".
-4. Read your words on the pill. The task starts after 2 seconds. To cancel it in that time, press Ctrl+Alt+Esc.
-5. While a task runs you can say a control word: "stop", "yes" or "no". These act at once.
+1. Connect a microphone, click the orb to open the pill, then click the microphone once.
+2. Say the task, for example "Open Notepad and write hello".
+3. Read your words on the pill. The task starts after 2 seconds. To cancel it in that time, press Ctrl+Alt+Esc.
+4. While a task runs you can say a control word: "stop", "yes" or "no". These act at once.
 
 ## What happens
 1. A detector cuts your speech into separate utterances.

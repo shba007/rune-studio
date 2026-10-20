@@ -6,12 +6,11 @@
 Before a risky action (deleting, paying, sending) Rune stops and asks you to approve it.
 
 ## How to use
-1. Start Rune Studio and make sure the model server (rune-infer) is running.
-2. Optional: in Settings turn on "Ask before every action" if you want a question for nearly every action.
-3. Click the orb to open the pill.
-4. Type a task that includes a risky step, for example `Delete the file report-old.txt on the Desktop`.
-5. Press Enter. When the card appears on the pill, click **Yes** to allow the action or **No** to refuse it. You can also say "yes" or "no".
-6. To stop the whole task, press Ctrl+Alt+Esc.
+1. Optional: in Settings turn on "Ask before every action" if you want a question for nearly every action.
+2. Click the orb to open the pill.
+3. Type a task that includes a risky step, for example `Delete the file report-old.txt on the Desktop`.
+4. Press Enter. When the card appears on the pill, click **Yes** to allow the action or **No** to refuse it. You can also say "yes" or "no".
+5. To stop the whole task, press Ctrl+Alt+Esc.
 
 ## What happens
 1. The model proposes an action and says how risky it thinks it is.

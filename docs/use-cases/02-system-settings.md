@@ -6,11 +6,10 @@
 Rune opens a built-in Windows app, such as Settings or Calculator, and operates it for you.
 
 ## How to use
-1. Start Rune Studio and make sure the model server (rune-infer) is running.
-2. Click the orb to open the pill.
-3. Type one task in the box. Two examples: `Open Settings`, or `Open the calculator and compute 12 times 13`.
-4. Press Enter, and take your hands off the mouse and keyboard.
-5. To stop at any moment, press Ctrl+Alt+Esc.
+1. Click the orb to open the pill.
+2. Type one task in the box. Two examples: `Open Settings`, or `Open the calculator and compute 12 times 13`.
+3. Press Enter, and take your hands off the mouse and keyboard.
+4. To stop at any moment, press Ctrl+Alt+Esc.
 
 ## What happens
 1. Rune makes a short plan.
