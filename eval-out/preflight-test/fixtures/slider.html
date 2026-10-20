@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Rune eval: slider</title>
+    <style>
+      body {
+        font:
+          16px/1.4 system-ui,
+          sans-serif;
+        margin: 2rem;
+      }
+      button {
+        font: inherit;
+        padding: 0.5rem 1rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Slider test</h1>
+    <p>Drag the handle to the right end.</p>
+    <input id="s" type="range" min="0" max="100" value="0" style="width: 80%" />
+    <script>
+      const run = new URLSearchParams(location.search).get('run') || 'norun'
+      const ok = (what) => {
+        document.title = 'RUNE-OK ' + run + ' ' + what
+      }
+      const s = document.getElementById('s')
+      s.addEventListener('input', () => {
+        if (Number(s.value) === 100) ok('slider 100')
+      })
+    </script>
+  </body>
+</html>

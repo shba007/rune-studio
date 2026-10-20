@@ -82,6 +82,12 @@ pub fn start_planned(app: &AppHandle, task: String, plan: Option<Vec<String>>) {
     // Read once: a change to the setting in the middle of a task does not change how this one ends.
     let mode = state.settings.locked().verify_mode;
     let handoff: Shared = Shared::default();
+    // One lock for both reads: the guards of two `locked()` calls inside one statement would both live
+    // until its end, and the second one waits for the first forever.
+    let (model, settings_json) = {
+        let settings = state.settings.locked();
+        (settings.model.clone(), trace::settings_snapshot(&settings))
+    };
     trace.begin_run(RunInfo {
         id: run_id.clone(),
         scope_id: i64::try_from(scope.id).ok(),
@@ -89,9 +95,9 @@ pub fn start_planned(app: &AppHandle, task: String, plan: Option<Vec<String>>) {
         source: "built-in".into(),
         started_utc: trace::now_utc(),
         plan_json: plan.as_ref().and_then(|goals| serde_json::to_string(goals).ok()),
-        model: Some(state.settings.locked().model.clone()),
+        model: Some(model),
         app_version: Some(env!("CARGO_PKG_VERSION").into()),
-        settings_json: Some(trace::settings_snapshot(&state.settings.locked())),
+        settings_json: Some(settings_json),
         session_dir: crate::archive::session_dir(&session).map(|dir| dir.display().to_string()),
     });
     let app = app.clone();

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Rune eval: form</title>
+    <style>
+      body {
+        font:
+          16px/1.4 system-ui,
+          sans-serif;
+        margin: 2rem;
+      }
+      button {
+        font: inherit;
+        padding: 0.5rem 1rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Form test</h1>
+    <form id="f">
+      <label>Name <input id="name" autocomplete="off" /></label>
+      <button type="submit">Submit</button>
+    </form>
+    <script>
+      const run = new URLSearchParams(location.search).get('run') || 'norun'
+      const ok = (what) => {
+        document.title = 'RUNE-OK ' + run + ' ' + what
+      }
+      document.getElementById('f').addEventListener('submit', (e) => {
+        e.preventDefault()
+        const v = document.getElementById('name').value.trim()
+        if (v) ok('form ' + v)
+      })
+    </script>
+  </body>
+</html>

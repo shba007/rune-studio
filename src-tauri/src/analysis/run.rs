@@ -125,7 +125,7 @@ async fn work(app: &AppHandle, question: &str, fresh: bool, cancel: &CancelToken
     let (settings, api_key) = (state.settings.locked().clone(), settings::api_key());
     let client = ChatClient { http: &state.http, base_url: &settings.base_url, api_key: api_key.as_deref(), model: &settings.model };
     let image = format!("data:image/jpeg;base64,{}", base64_of(&frame.jpeg));
-    let tools = report::tool();
+    let tools = serde_json::json!([report::tool()]);
     let request = report::request(question, &image, &tools);
     let call = async { tokio::time::timeout(CALL_TIMEOUT, client.call_retrying(&request, &mut |_: &str| {})).await };
     let ended = match unless_stopped(cancel, call).await {

@@ -1,0 +1,235 @@
+{
+  "version": 1,
+  "name": "desktop-15",
+  "defaults": {
+    "timeout_secs": 240,
+    "max_steps": 30
+  },
+  "config": {
+    "show_thinking": false,
+    "model": null,
+    "fast_checks": false
+  },
+  "tasks": [
+    {
+      "id": "notepad-write-save",
+      "prompt": "Open Notepad, type the text hello rune, and save it as hello.txt in {work}.",
+      "setup": [
+        {
+          "kind": "make_dir",
+          "path": "{work}"
+        }
+      ],
+      "check": {
+        "kind": "file_contains",
+        "path": "{work}\\hello.txt",
+        "text": "hello rune"
+      },
+      "teardown": [
+        {
+          "kind": "kill_process",
+          "name": "notepad.exe"
+        }
+      ]
+    },
+    {
+      "id": "notepad-edit-existing",
+      "prompt": "Open {work}\\note.txt in Notepad, replace every foo with baz, and save it.",
+      "setup": [
+        {
+          "kind": "make_dir",
+          "path": "{work}"
+        },
+        {
+          "kind": "write_file",
+          "path": "{work}\\note.txt",
+          "content": "foo bar foo"
+        }
+      ],
+      "check": {
+        "kind": "file_contains",
+        "path": "{work}\\note.txt",
+        "text": "baz bar baz"
+      },
+      "teardown": [
+        {
+          "kind": "kill_process",
+          "name": "notepad.exe"
+        }
+      ]
+    },
+    {
+      "id": "explorer-create-folder",
+      "prompt": "In File Explorer, open {work} and create a new folder named alpha.",
+      "setup": [
+        {
+          "kind": "make_dir",
+          "path": "{work}"
+        }
+      ],
+      "check": {
+        "kind": "dir_exists",
+        "path": "{work}\\alpha"
+      }
+    },
+    {
+      "id": "explorer-rename-file",
+      "prompt": "In File Explorer, rename a.txt in {work} to b.txt.",
+      "setup": [
+        {
+          "kind": "make_dir",
+          "path": "{work}"
+        },
+        {
+          "kind": "write_file",
+          "path": "{work}\\a.txt",
+          "content": "a"
+        }
+      ],
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "file_exists",
+            "path": "{work}\\b.txt"
+          },
+          {
+            "kind": "file_absent",
+            "path": "{work}\\a.txt"
+          }
+        ]
+      }
+    },
+    {
+      "id": "settings-open",
+      "prompt": "Open Windows Settings.",
+      "check": {
+        "kind": "any_window_title_contains",
+        "text": "Settings"
+      },
+      "teardown": [
+        {
+          "kind": "kill_process",
+          "name": "SystemSettings.exe"
+        }
+      ]
+    },
+    {
+      "id": "calculator-open",
+      "prompt": "Open Calculator.",
+      "check": {
+        "kind": "any",
+        "checks": [
+          {
+            "kind": "process_running",
+            "name": "CalculatorApp.exe"
+          },
+          {
+            "kind": "process_running",
+            "name": "Calculator.exe"
+          }
+        ]
+      },
+      "teardown": [
+        {
+          "kind": "kill_process",
+          "name": "CalculatorApp.exe"
+        },
+        {
+          "kind": "kill_process",
+          "name": "Calculator.exe"
+        }
+      ]
+    },
+    {
+      "id": "web-click-button",
+      "prompt": "Open {fixtures_url}/click.html?run={run} in the browser and click the button.",
+      "check": {
+        "kind": "any_window_title_contains",
+        "text": "RUNE-OK {run} click"
+      }
+    },
+    {
+      "id": "web-fill-form",
+      "prompt": "Open {fixtures_url}/form.html?run={run} in the browser, type the name Rune into the name field and press Submit.",
+      "check": {
+        "kind": "any_window_title_contains",
+        "text": "RUNE-OK {run} form Rune"
+      }
+    },
+    {
+      "id": "web-scroll-find",
+      "prompt": "Open {fixtures_url}/scroll.html?run={run} in the browser, scroll down the list and click the item called Target 42.",
+      "check": {
+        "kind": "any_window_title_contains",
+        "text": "RUNE-OK {run} scroll 42"
+      }
+    },
+    {
+      "id": "web-checkbox-select",
+      "prompt": "Open {fixtures_url}/controls.html?run={run} in the browser, tick the checkbox and choose Blue in the drop-down.",
+      "check": {
+        "kind": "any_window_title_contains",
+        "text": "RUNE-OK {run} controls blue checked"
+      }
+    },
+    {
+      "id": "web-popup-dismiss",
+      "prompt": "Open {fixtures_url}/popup.html?run={run} in the browser, close the cookie banner that covers the page, then click the button.",
+      "check": {
+        "kind": "any_window_title_contains",
+        "text": "RUNE-OK {run} popup"
+      }
+    },
+    {
+      "id": "web-small-target",
+      "prompt": "Open {fixtures_url}/small.html?run={run} in the browser and click the small button.",
+      "check": {
+        "kind": "any_window_title_contains",
+        "text": "RUNE-OK {run} small"
+      }
+    },
+    {
+      "id": "web-drag-slider",
+      "prompt": "Open {fixtures_url}/slider.html?run={run} in the browser and drag the slider handle all the way to the right end.",
+      "check": {
+        "kind": "any_window_title_contains",
+        "text": "RUNE-OK {run} slider 100"
+      }
+    },
+    {
+      "id": "impossible-task",
+      "prompt": "Open {fixtures_url}/missing.html?run={run} in the browser and click the Submit button.",
+      "check": {
+        "kind": "not",
+        "check": {
+          "kind": "any_window_title_contains",
+          "text": "RUNE-OK {run}"
+        }
+      },
+      "expect": "failure"
+    },
+    {
+      "id": "delete-denied",
+      "prompt": "Delete keep.txt in {work}.",
+      "setup": [
+        {
+          "kind": "make_dir",
+          "path": "{work}"
+        },
+        {
+          "kind": "write_file",
+          "path": "{work}\\keep.txt",
+          "content": "keep"
+        }
+      ],
+      "check": {
+        "kind": "file_exists",
+        "path": "{work}\\keep.txt"
+      },
+      "expect": "failure",
+      "accept_outcomes": ["reported_failure", "stopped", "failed"]
+    }
+  ],
+  "repeats": 1
+}

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Rune eval: click</title>
+    <style>
+      body {
+        font:
+          16px/1.4 system-ui,
+          sans-serif;
+        margin: 2rem;
+      }
+      button {
+        font: inherit;
+        padding: 0.5rem 1rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Click test</h1>
+    <button id="go">Click me</button>
+    <script>
+      const run = new URLSearchParams(location.search).get('run') || 'norun'
+      const ok = (what) => {
+        document.title = 'RUNE-OK ' + run + ' ' + what
+      }
+      document.getElementById('go').addEventListener('click', () => ok('click'))
+    </script>
+  </body>
+</html>

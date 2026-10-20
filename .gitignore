@@ -46,3 +46,6 @@ __screenshots__/
 
 temp
 .vitest/
+
+# Local evaluation output
+eval-out/
