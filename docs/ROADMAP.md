@@ -207,7 +207,7 @@ Scope: (a) outside agents get their own accent colour and mark in the orb, ring 
 
 ### R6 Screen analysis overlay + post-mortems and notes — H / medium
 
-**R6a status (2026-10-20): built, unit tested, never seen on a real screen; box accuracy unmeasured.** Details and live checks: `docs/handoff/R6a-report.md`.
+**R6a status (2026-10-20): built, unit tested, never seen on a real screen; box accuracy unmeasured.** The R6a report was removed once R6b was done; the open checks are the **NOT CERTAIN** items below.
 
 **R6a Screen analysis as an overlay** (decided: no separate window). The analysis window is removed. A top status bar in the style of the control bar (stage, timer, cancel), a scan line at capture, and compact cards that grow upward from the orb (answer, findings accordion with evidence) replace it. Bounding boxes with numbered badges are drawn on the real screen **by default and cannot be turned off** (maintainer decision); they are hidden only when the screen has changed, and boxes that are plainly unusable (off-screen, tiny, huge, tiling the screen) are dropped by a guard. Boxes were 1 of 8 right in the field test, so their quality is the main risk; a box + point request variant and a probe measure it. Whether either is reliable is **NOT CERTAIN** until the maintainer runs the probe. The pill-above-orb growth on multi-monitor and the final look are **NOT CERTAIN** until seen on a real screen.
 
