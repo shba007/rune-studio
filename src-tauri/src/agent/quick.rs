@@ -18,8 +18,9 @@ const SIMPLE_TASK: f64 = 0.9;
 /// because stopping early is the one mistake here the user would notice.
 const FINISHED: f64 = 0.97;
 /// How sure it must be that an action is high risk before the user is asked. Asking too often
-/// costs a click; not asking costs more, so this is lower than the others.
-const RISKY: f64 = 0.8;
+/// costs a click; not asking costs more, so this is lower than the others. The picked probability of a
+/// real purchase click was 0.59 and of Shift+Delete 0.95 (field test), so 0.8 missed the purchase.
+const RISKY: f64 = 0.5;
 
 /// Can this task be done as one goal? Then the planning call (one full chat completion) is skipped.
 /// A wrong yes only means the progress ring has one arc instead of several.

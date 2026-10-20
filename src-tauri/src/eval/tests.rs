@@ -252,7 +252,12 @@ fn the_path_jail_lets_in_only_the_work_and_output_folders() {
     );
     assert!(jail("D:\\evil\\file.txt", &roots).is_err(), "another drive");
     assert!(jail("C:\\Windows\\system32\\config", &roots).is_err());
-    assert!(jail("/etc/passwd", &roots).unwrap_err().contains("outside"));
+    // A Unix path is outside the folders; on Windows it has no drive, so it is not absolute. Either way it is refused.
+    let unix = jail("/etc/passwd", &roots).unwrap_err();
+    assert!(
+        unix.contains("outside") || unix.contains("absolute"),
+        "{unix}"
+    );
     let sibling = format!("{}-other/x", work.0.display());
     assert!(
         jail(&sibling, &roots).is_err(),
@@ -334,11 +339,10 @@ fn confine_checks_every_path_and_every_kill_of_a_resolved_task() {
         path: "/etc/cron.d/evil".into(),
         content: "x".into(),
     });
+    let refused = escaping_setup.confine(&roots).unwrap_err();
     assert!(
-        escaping_setup
-            .confine(&roots)
-            .unwrap_err()
-            .contains("outside")
+        refused.contains("outside") || refused.contains("absolute"),
+        "{refused}"
     );
     let mut escaping_teardown = good.clone();
     escaping_teardown.teardown.push(Step::DeletePath {
