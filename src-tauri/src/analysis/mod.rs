@@ -3,7 +3,8 @@
 //! screenshot, each with an evidence line. It is separate from the agent loop and never acts on the
 //! desktop. See `docs/ARCHITECTURE.md`, "Visual analysis".
 
+pub mod boxes;
 pub mod report;
 pub mod run;
+pub mod stale;
 pub mod state;
-pub mod window;

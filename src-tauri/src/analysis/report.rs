@@ -15,8 +15,6 @@ pub const EVIDENCE_CAP: usize = 200;
 pub const ANSWER_CAP: usize = 2_000;
 /// Longest question sent.
 pub const QUESTION_CAP: usize = 500;
-/// A box narrower or shorter than this (in 0..1000 units) is not drawn.
-pub const MIN_BOX_SIDE: f32 = 8.0;
 /// The analysis asks for more output than the agent's steps, which stop at 512 tokens: eight findings need room.
 pub const MAX_OUTPUT_TOKENS: u32 = 1_500;
 /// What is asked when the user gives no question.
@@ -166,8 +164,9 @@ fn number(value: &Value) -> Option<f32> {
     n.is_finite().then_some(n as f32)
 }
 
-/// A box the UI can draw: four numbers, the corners in order, inside 0..1000, and at least
-/// `MIN_BOX_SIDE` wide and tall. Anything else is no box (the finding itself stays).
+/// A box the UI can draw: four numbers (numeric strings count), put through `boxes::usable_box`
+/// (corners in order, a small overrun clamped, a big one, a tiny one or a huge one rejected).
+/// Anything else is no box (the finding itself stays).
 pub fn normalise_box(value: &Value) -> Option<[f32; 4]> {
     let list = value.as_array()?;
     if list.len() != 4 {
@@ -177,14 +176,7 @@ pub fn normalise_box(value: &Value) -> Option<[f32; 4]> {
     for (slot, item) in numbers.iter_mut().zip(list) {
         *slot = number(item)?;
     }
-    let clamp = |v: f32| v.clamp(0.0, 1000.0);
-    let rect = [
-        clamp(numbers[0].min(numbers[2])),
-        clamp(numbers[1].min(numbers[3])),
-        clamp(numbers[0].max(numbers[2])),
-        clamp(numbers[1].max(numbers[3])),
-    ];
-    (rect[2] - rect[0] >= MIN_BOX_SIDE && rect[3] - rect[1] >= MIN_BOX_SIDE).then_some(rect)
+    super::boxes::usable_box(numbers).ok()
 }
 
 fn text(value: &Value, cap: usize) -> String {
@@ -333,15 +325,21 @@ mod tests {
     #[test]
     fn a_box_outside_the_picture_is_clamped_into_it() {
         assert_eq!(
-            normalise_box(&json!([-50, -20, 1200, 400])),
-            Some([0.0, 0.0, 1000.0, 400.0])
+            normalise_box(&json!([-30, -20, 700, 400])),
+            Some([0.0, 0.0, 700.0, 400.0])
         );
         assert_eq!(
-            normalise_box(&json!([900, 900, 5000, 5000])),
+            normalise_box(&json!([900, 900, 1030, 1030])),
             Some([900.0, 900.0, 1000.0, 1000.0])
         );
         assert_eq!(
-            normalise_box(&json!([-50, -50, 4, 4])),
+            normalise_box(&json!([-50, -20, 1200, 400])),
+            None,
+            "far outside: rejected"
+        );
+        assert_eq!(normalise_box(&json!([900, 900, 5000, 5000])), None);
+        assert_eq!(
+            normalise_box(&json!([-30, -30, 4, 4])),
             None,
             "clamped to 4 by 4, below the minimum"
         );

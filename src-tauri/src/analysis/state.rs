@@ -1,22 +1,23 @@
-//! What the analysis window shows: the latest screenshot, the question, where the call is and the
-//! parsed result. The rules (when an analysis may start, which status may follow which) are pure
+//! What the analysis cards and the screen markers show: the latest screenshot (kept for follow-up
+//! questions, never sent to the webview), the question, where the call is and the parsed result. The rules (when an analysis may start, which status may follow which) are pure
 //! functions; nothing here touches Tauri.
 
 use std::sync::Arc;
 
-use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use serde::Serialize;
 
 use super::report::{Finding, Status};
-use crate::{exec::CancelToken, model::coords::Monitor};
+use crate::{exec::CancelToken, model::coords::Monitor, safety::foreground::WindowId};
 
 /// The screenshot an analysis is about, kept so a follow-up question can use it again.
 #[derive(Debug, Clone)]
 pub struct StoredFrame {
     pub jpeg: Arc<Vec<u8>>,
-    pub width: u32,
-    pub height: u32,
     pub monitor: Monitor,
+    /// The small grey picture taken with it, to tell later whether the screen has moved (`stale`).
+    pub signature: Vec<u8>,
+    /// The foreground window then (`None`: Rune's own, or unknown).
+    pub front: Option<WindowId>,
 }
 
 pub struct AnalysisState {
@@ -31,7 +32,11 @@ pub struct AnalysisState {
     pub error: Option<String>,
     pub created_utc: String,
     pub frame: Option<StoredFrame>,
-    /// Cancels the call in flight (Stop, Cancel, closing the window).
+    /// The screen changed after the capture: the boxes are gone and never come back for this analysis.
+    pub stale: bool,
+    /// How many boxes the quality guard dropped (`analysis::boxes`).
+    pub boxes_rejected: u32,
+    /// Cancels the call in flight (Stop, Cancel, closing the cards).
     pub cancel: CancelToken,
 }
 
@@ -48,12 +53,14 @@ impl Default for AnalysisState {
             error: None,
             created_utc: String::new(),
             frame: None,
+            stale: false,
+            boxes_rejected: 0,
             cancel: CancelToken::default(),
         }
     }
 }
 
-/// What the UI gets: everything it needs to draw, with the screenshot as a data URI.
+/// What the UI gets: everything it needs to draw. The screenshot itself never goes to the webview.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
@@ -66,9 +73,11 @@ pub struct Snapshot {
     pub latency_ms: u64,
     pub error: Option<String>,
     pub created_utc: String,
-    pub image: Option<String>,
-    pub width: u32,
-    pub height: u32,
+    /// The monitor that was captured (its box coordinates are relative to it); `None` before a capture.
+    pub monitor: Option<Monitor>,
+    /// The screen changed since the capture: no boxes are drawn.
+    pub stale: bool,
+    pub boxes_rejected: u32,
 }
 
 impl AnalysisState {
@@ -83,15 +92,22 @@ impl AnalysisState {
             latency_ms: self.latency_ms,
             error: self.error.clone(),
             created_utc: self.created_utc.clone(),
-            image: self.frame.as_ref().map(|frame| {
-                format!(
-                    "data:image/jpeg;base64,{}",
-                    BASE64.encode(frame.jpeg.as_slice())
-                )
-            }),
-            width: self.frame.as_ref().map_or(0, |frame| frame.width),
-            height: self.frame.as_ref().map_or(0, |frame| frame.height),
+            monitor: self.frame.as_ref().map(|frame| frame.monitor),
+            stale: self.stale,
+            boxes_rejected: self.boxes_rejected,
         }
+    }
+
+    /// Closes the cards: whatever runs is cancelled and the findings, and with them the boxes on the
+    /// screen, are cleared. The captured frame stays, so a follow-up question still works.
+    pub fn close(&mut self) {
+        self.cancel.cancel();
+        self.status = Status::Idle;
+        self.answer.clear();
+        self.findings.clear();
+        self.error = None;
+        self.stale = false;
+        self.boxes_rejected = 0;
     }
 
     /// Starts an analysis: clears the last result and gives the new call its own cancel token.
@@ -110,8 +126,16 @@ impl AnalysisState {
         self.error = None;
         self.id.clear();
         self.created_utc.clear();
+        self.stale = false;
+        self.boxes_rejected = 0;
         self.cancel = CancelToken::default();
     }
+}
+
+/// Whether the screen overlay should be up for an analysis: while it works, and while its boxes are on
+/// the screen (a finished analysis with at least one box that has not gone stale).
+pub fn wants_overlay(status: Status, boxes_on_screen: bool, stale: bool) -> bool {
+    in_flight(status) || (status == Status::Done && boxes_on_screen && !stale)
 }
 
 /// Whether an analysis is under way (the screen is being captured or the model is answering).
@@ -238,31 +262,88 @@ mod tests {
     }
 
     #[test]
-    fn the_snapshot_is_camel_case_and_carries_the_screenshot_as_a_data_uri() {
+    fn the_snapshot_is_camel_case_and_never_carries_the_screenshot() {
         let mut state = AnalysisState::default();
         let json = serde_json::to_value(state.snapshot()).unwrap();
         assert_eq!(json["status"], "idle");
-        assert!(json["image"].is_null());
+        assert!(
+            json.get("image").is_none(),
+            "the screenshot does not go to the webview"
+        );
+        assert!(json["monitor"].is_null());
         assert!(json.get("latencyMs").is_some() && json.get("createdUtc").is_some());
+        assert_eq!(json["stale"], false);
+        assert_eq!(json["boxesRejected"], 0);
         state.frame = Some(StoredFrame {
             jpeg: Arc::new(vec![0xFF, 0xD8]),
-            width: 640,
-            height: 360,
             monitor: Monitor {
                 id: 0,
                 x: 0,
                 y: 0,
                 width: 1920,
                 height: 1080,
+                scale_factor: 1.25,
+                primary: true,
+            },
+            signature: vec![0; 4],
+            front: Some(5),
+        });
+        let json = serde_json::to_value(state.snapshot()).unwrap();
+        assert_eq!(json["monitor"]["width"], 1920);
+        assert_eq!(json["monitor"]["scaleFactor"], 1.25);
+        assert_eq!(json["monitor"]["primary"], true);
+    }
+
+    #[test]
+    fn closing_clears_the_findings_and_cancels_but_keeps_the_frame() {
+        let mut state = AnalysisState {
+            status: Done,
+            answer: "a".into(),
+            stale: true,
+            boxes_rejected: 2,
+            ..AnalysisState::default()
+        };
+        state.frame = Some(StoredFrame {
+            jpeg: Arc::new(vec![1]),
+            monitor: Monitor {
+                id: 0,
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1,
                 scale_factor: 1.0,
                 primary: true,
             },
+            signature: vec![],
+            front: None,
         });
-        let snapshot = state.snapshot();
+        let token = state.cancel.clone();
+        state.close();
+        assert!(token.is_cancelled());
         assert_eq!(
-            snapshot.image.as_deref(),
-            Some("data:image/jpeg;base64,/9g=")
+            (
+                state.status,
+                state.answer.as_str(),
+                state.stale,
+                state.boxes_rejected
+            ),
+            (Idle, "", false, 0)
         );
-        assert_eq!((snapshot.width, snapshot.height), (640, 360));
+        assert!(
+            state.frame.is_some(),
+            "a follow-up question can still use the frame"
+        );
+    }
+
+    #[test]
+    fn the_overlay_is_wanted_while_working_and_while_boxes_are_on_the_screen() {
+        assert!(wants_overlay(Capturing, false, false));
+        assert!(wants_overlay(Asking, false, false));
+        assert!(wants_overlay(Done, true, false), "boxes stay on the screen");
+        assert!(!wants_overlay(Done, true, true), "stale boxes are gone");
+        assert!(!wants_overlay(Done, false, false), "nothing to draw");
+        for ended in [Idle, Error, Cancelled] {
+            assert!(!wants_overlay(ended, true, false), "{ended:?}");
+        }
     }
 }

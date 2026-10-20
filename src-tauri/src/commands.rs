@@ -337,6 +337,18 @@ pub fn cancel_analysis(app: AppHandle) {
     crate::analysis::run::cancel(&app);
 }
 
+/// Closes the analysis cards: cancels what runs and clears the findings and the boxes on the screen.
+#[tauri::command]
+pub fn close_analysis(app: AppHandle) {
+    crate::analysis::run::close(&app);
+}
+
+/// What an overlay page needs: who owns the overlay, and whether this window is on the primary monitor.
+#[tauri::command]
+pub fn overlay_info(window: tauri::WebviewWindow) -> crate::overlay::OverlayInfo {
+    crate::overlay::info(&window)
+}
+
 /// Who is in control from outside right now, so a window that opens late shows the right identity.
 #[tauri::command]
 pub fn external_agent(state: State<'_, AppState>) -> events::ExternalAgent {

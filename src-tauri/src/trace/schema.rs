@@ -3,7 +3,7 @@
 use rusqlite::Connection;
 
 /// The version this code writes. `PRAGMA user_version` holds the version of a database file.
-pub const VERSION: i64 = 4;
+pub const VERSION: i64 = 5;
 
 /// Version 1.
 pub const CREATE_V1: &str = "
@@ -111,6 +111,11 @@ CREATE TABLE reflections (
 );
 ";
 
+/// Version 5: how many boxes the quality guard dropped from an analysis (see `analysis::boxes`).
+pub const CREATE_V5: &str = "
+ALTER TABLE analyses ADD COLUMN boxes_rejected INTEGER;
+";
+
 /// How opening a database went.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Opened {
@@ -137,6 +142,7 @@ pub fn open(db: &Connection) -> rusqlite::Result<Opened> {
         (2, CREATE_V2),
         (3, CREATE_V3),
         (4, CREATE_V4),
+        (5, CREATE_V5),
     ] {
         if found < version {
             batch.push_str(ddl);

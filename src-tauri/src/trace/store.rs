@@ -126,12 +126,12 @@ fn apply(db: &Connection, message: &Msg) -> rusqlite::Result<()> {
         }
         Msg::Analysis(record) => {
             db.execute(
-                "INSERT INTO analyses (id, created_utc, question, answer, findings_json, model, latency_ms, status, error, screenshot_path, monitor_json)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                "INSERT INTO analyses (id, created_utc, question, answer, findings_json, model, latency_ms, status, error, screenshot_path, monitor_json, boxes_rejected)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
                  ON CONFLICT(id) DO UPDATE SET created_utc = excluded.created_utc, question = excluded.question, answer = excluded.answer,
                     findings_json = excluded.findings_json, model = excluded.model, latency_ms = excluded.latency_ms, status = excluded.status,
-                    error = excluded.error, screenshot_path = excluded.screenshot_path, monitor_json = excluded.monitor_json",
-                params![record.id, record.created_utc, record.question, record.answer, record.findings_json, record.model, record.latency_ms, record.status, record.error, record.screenshot_path, record.monitor_json],
+                    error = excluded.error, screenshot_path = excluded.screenshot_path, monitor_json = excluded.monitor_json, boxes_rejected = excluded.boxes_rejected",
+                params![record.id, record.created_utc, record.question, record.answer, record.findings_json, record.model, record.latency_ms, record.status, record.error, record.screenshot_path, record.monitor_json, record.boxes_rejected],
             )?;
         }
         Msg::Reflection(record) => {
@@ -347,7 +347,8 @@ pub fn list_analyses(path: &Path, limit: usize) -> Result<Vec<AnalysisRecord>, S
         return Ok(Vec::new());
     }
     let mut statement = db.prepare(&format!(
-        "SELECT {ANALYSIS_COLUMNS} FROM analyses ORDER BY created_utc DESC, rowid DESC LIMIT ?1"
+        "SELECT {} FROM analyses ORDER BY created_utc DESC, rowid DESC LIMIT ?1",
+        analysis_columns(&db)?
     ))?;
     let rows = statement.query_map(
         [i64::try_from(limit).unwrap_or(i64::MAX)],
@@ -385,7 +386,10 @@ pub fn get_analysis(path: &Path, id: &str) -> Result<Option<AnalysisRecord>, Sto
         return Ok(None);
     }
     match db.query_row(
-        &format!("SELECT {ANALYSIS_COLUMNS} FROM analyses WHERE id = ?1"),
+        &format!(
+            "SELECT {} FROM analyses WHERE id = ?1",
+            analysis_columns(&db)?
+        ),
         [id],
         analysis_from_row,
     ) {
@@ -396,6 +400,15 @@ pub fn get_analysis(path: &Path, id: &str) -> Result<Option<AnalysisRecord>, Sto
 }
 
 const ANALYSIS_COLUMNS: &str = "id, created_utc, question, answer, findings_json, model, latency_ms, status, error, screenshot_path, monitor_json";
+
+/// The columns to read: version 5 added `boxes_rejected`; an older file reads as 0.
+fn analysis_columns(db: &Connection) -> Result<String, StoreError> {
+    let version: i64 = db.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    Ok(format!(
+        "{ANALYSIS_COLUMNS}, {}",
+        if version >= 5 { "boxes_rejected" } else { "0" }
+    ))
+}
 
 fn has_analyses(db: &Connection) -> Result<bool, StoreError> {
     let version: i64 = db.query_row("PRAGMA user_version", [], |row| row.get(0))?;
@@ -419,6 +432,7 @@ fn analysis_from_row(row: &Row<'_>) -> rusqlite::Result<AnalysisRecord> {
         error: row.get(8)?,
         screenshot_path: row.get(9)?,
         monitor_json: row.get(10)?,
+        boxes_rejected: row.get::<_, Option<i64>>(11)?.unwrap_or_default(),
     })
 }
 

@@ -205,6 +205,8 @@ pub fn run() {
             commands::analyze_again,
             commands::analysis_state,
             commands::cancel_analysis,
+            commands::close_analysis,
+            commands::overlay_info,
             commands::external_agent,
             commands::reflection_answer,
             commands::pill_activity,

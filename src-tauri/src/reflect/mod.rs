@@ -104,10 +104,8 @@ fn busy(app: &AppHandle) -> bool {
     let state = app.state::<AppState>();
     events::agent_state(app).is_running()
         || state.lease.locked().is_held()
-        || crate::analysis::state::in_flight(state.analysis.locked().status)
-        || app
-            .get_webview_window(crate::analysis::window::LABEL)
-            .is_some()
+        // The analysis cards are on screen (working, or showing an answer until they are closed).
+        || state.analysis.locked().status != crate::analysis::report::Status::Idle
         || state.mic.locked().is_some()
 }
 

@@ -135,6 +135,8 @@ pub struct AnalysisRecord {
     pub error: Option<String>,
     pub screenshot_path: Option<String>,
     pub monitor_json: Option<String>,
+    /// How many boxes the quality guard dropped.
+    pub boxes_rejected: i64,
 }
 
 /// Longest findings JSON kept in an analysis row.

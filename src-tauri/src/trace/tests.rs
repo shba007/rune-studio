@@ -68,7 +68,7 @@ fn a_new_database_is_created_at_the_current_version() {
     let dir = TempDir::new();
     let recorder = Recorder::start(&dir.db());
     recorder.flush();
-    assert_eq!(version_of(&dir.db()), 4);
+    assert_eq!(version_of(&dir.db()), 5);
     assert_eq!(
         tables_of(&dir.db()),
         [
@@ -90,7 +90,7 @@ fn opening_twice_is_idempotent() {
     first.flush();
     let second = Recorder::start(&dir.db());
     second.flush();
-    assert_eq!(version_of(&dir.db()), 4);
+    assert_eq!(version_of(&dir.db()), 5);
     assert_eq!(
         list_runs(&dir.db(), 10).unwrap().len(),
         1,
@@ -103,7 +103,7 @@ fn a_newer_database_is_left_untouched_and_nothing_is_recorded() {
     let dir = TempDir::new();
     {
         let db = Connection::open(dir.db()).unwrap();
-        db.execute_batch("CREATE TABLE future (x INTEGER); PRAGMA user_version = 5;")
+        db.execute_batch("CREATE TABLE future (x INTEGER); PRAGMA user_version = 6;")
             .unwrap();
     }
     let recorder = Recorder::start(&dir.db());
@@ -112,9 +112,9 @@ fn a_newer_database_is_left_untouched_and_nothing_is_recorded() {
         recorder.tx.is_none(),
         "a newer schema means a no-op recorder"
     );
-    assert_eq!(version_of(&dir.db()), 5);
+    assert_eq!(version_of(&dir.db()), 6);
     assert_eq!(tables_of(&dir.db()), ["future"]);
-    assert_eq!(list_runs(&dir.db(), 10), Err(StoreError::Newer(5)));
+    assert_eq!(list_runs(&dir.db(), 10), Err(StoreError::Newer(6)));
 }
 
 #[test]
@@ -499,7 +499,7 @@ fn a_version_1_database_is_migrated_without_losing_a_run() {
 
     let recorder = Recorder::start(&dir.db());
     recorder.flush();
-    assert_eq!(version_of(&dir.db()), 4);
+    assert_eq!(version_of(&dir.db()), 5);
     assert!(tables_of(&dir.db()).contains(&"verdicts".to_string()));
     let after = get_run(&dir.db(), "old").unwrap().expect("and still reads");
     assert_eq!(
@@ -631,6 +631,7 @@ fn analysis(id: &str, created: &str) -> AnalysisRecord {
         status: "ok".into(),
         screenshot_path: Some("a/b.jpg".into()),
         monitor_json: Some("{\"w\":1920}".into()),
+        boxes_rejected: 2,
         ..AnalysisRecord::default()
     }
 }
@@ -653,7 +654,7 @@ fn a_version_2_database_is_migrated_and_reads_as_having_no_analyses() {
     assert_eq!(get_analysis(&dir.db(), "any").unwrap(), None);
     let recorder = Recorder::start(&dir.db());
     recorder.flush();
-    assert_eq!(version_of(&dir.db()), 4);
+    assert_eq!(version_of(&dir.db()), 5);
     assert!(tables_of(&dir.db()).contains(&"analyses".to_string()));
     assert_eq!(
         list_runs(&dir.db(), 5).unwrap().len(),
@@ -763,7 +764,7 @@ fn a_version_3_database_is_migrated_to_4_and_reads_as_having_no_reflections() {
     assert_eq!(list_reflections(&dir.db(), 5).unwrap(), vec![]);
     let recorder = Recorder::start(&dir.db());
     recorder.flush();
-    assert_eq!(version_of(&dir.db()), 4);
+    assert_eq!(version_of(&dir.db()), 5);
     assert!(tables_of(&dir.db()).contains(&"reflections".to_string()));
     assert_eq!(
         list_runs(&dir.db(), 5).unwrap().len(),
@@ -790,4 +791,51 @@ fn reflections_round_trip_replace_by_id_and_list_newest_first() {
         .collect();
     assert_eq!(shown, [("b", "preempted"), ("a", "preempted")]);
     assert_eq!(list_reflections(&dir.db(), 1).unwrap().len(), 1);
+}
+
+#[test]
+fn a_version_4_database_gains_boxes_rejected_and_old_rows_read_as_zero() {
+    let dir = TempDir::new();
+    {
+        let db = Connection::open(dir.db()).unwrap();
+        db.execute_batch(&format!(
+            "{} {} {} {} PRAGMA user_version = 4;",
+            schema::CREATE_V1,
+            schema::CREATE_V2,
+            schema::CREATE_V3,
+            schema::CREATE_V4
+        ))
+        .unwrap();
+        db.execute("INSERT INTO analyses (id, created_utc, question, status) VALUES ('old', '2026-10-01T00:00:00Z', 'q', 'ok')", []).unwrap();
+    }
+    assert_eq!(
+        get_analysis(&dir.db(), "old")
+            .unwrap()
+            .unwrap()
+            .boxes_rejected,
+        0,
+        "an unmigrated file reads as 0"
+    );
+    let recorder = Recorder::start(&dir.db());
+    recorder.flush();
+    assert_eq!(version_of(&dir.db()), 5);
+    assert_eq!(
+        get_analysis(&dir.db(), "old")
+            .unwrap()
+            .unwrap()
+            .boxes_rejected,
+        0
+    );
+    recorder.analysis(AnalysisRecord {
+        boxes_rejected: 3,
+        ..analysis("new", "2026-10-19T10:00:00Z")
+    });
+    recorder.flush();
+    assert_eq!(
+        get_analysis(&dir.db(), "new")
+            .unwrap()
+            .unwrap()
+            .boxes_rejected,
+        3
+    );
 }

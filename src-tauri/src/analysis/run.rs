@@ -1,6 +1,6 @@
 //! One analysis from the button to the stored row: claim the slot, capture (or reuse the stored
 //! frame), ask the model for the `report`, show it, record it. Cancelling (Stop, the Cancel button,
-//! closing the window) drops the model call the same way the agent loop does.
+//! closing the cards) drops the model call the same way the agent loop does.
 
 use std::{
     sync::Arc,
@@ -11,8 +11,8 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use super::{
     report::{self, Finding, Status},
-    state::{StoredFrame, may_follow, refusal},
-    window,
+    stale::{self, Staleness},
+    state::{StoredFrame, may_follow, refusal, wants_overlay},
 };
 use crate::{
     agent::unless_stopped,
@@ -40,8 +40,21 @@ enum Ended {
     Cancelled,
 }
 
+/// Tells the cards and the screen overlay, and brings the overlay up or down for the new state.
 fn publish(app: &AppHandle) {
-    let snapshot = app.state::<AppState>().analysis.locked().snapshot();
+    let (snapshot, wanted) = {
+        let state = app.state::<AppState>();
+        let analysis = state.analysis.locked();
+        let boxes_on_screen = analysis
+            .findings
+            .iter()
+            .any(|finding| finding.bbox.is_some());
+        (
+            analysis.snapshot(),
+            wants_overlay(analysis.status, boxes_on_screen, analysis.stale),
+        )
+    };
+    crate::overlay::sync_analysis(app, wanted);
     let _ = app.emit(events::ANALYSIS_UPDATED, snapshot);
 }
 
@@ -85,17 +98,6 @@ pub async fn run(app: &AppHandle, question: &str, fresh: bool) -> AppResult<()> 
         analysis.begin(&question, fresh);
         analysis.cancel.clone()
     };
-    // A fresh capture comes first and the window opens after it: the window is excluded from capture,
-    // but nothing about the first frame should depend on that. A follow-up question has its frame.
-    if !fresh && let Err(err) = window::open(app) {
-        // The analysis is useless without its window.
-        let mut analysis = state.analysis.locked();
-        analysis.status = Status::Error;
-        analysis.error = Some(format!("could not open the analysis window: {err}"));
-        return Err(AppError::Invalid(format!(
-            "could not open the analysis window: {err}"
-        )));
-    }
     publish(app);
 
     let started = Instant::now();
@@ -158,18 +160,15 @@ async fn work(
             Some(Err(err)) => return (Ended::Failed(err.to_string()), None),
         };
         path = Some(frame.path.display().to_string()).filter(|path| !path.is_empty());
+        // For the screen-changed watcher: a small grey picture now, and the window in front now (if it is not Rune's).
+        let signature = frame.signature();
+        let front = crate::safety::foreground::remember();
         state.analysis.locked().frame = Some(StoredFrame {
             jpeg: Arc::new(frame.jpeg),
-            width: frame.width,
-            height: frame.height,
             monitor: frame.monitor,
+            signature,
+            front,
         });
-    }
-    if fresh && let Err(err) = window::open(app) {
-        return (
-            Ended::Failed(format!("could not open the analysis window: {err}")),
-            path,
-        );
     }
     let Some(frame) = state.analysis.locked().frame.clone() else {
         return (
@@ -251,7 +250,12 @@ fn finish(
         analysis.model = model.clone();
         analysis.latency_ms = latency_ms;
         match ended {
-            Ended::Done { answer, findings } => {
+            Ended::Done {
+                answer,
+                mut findings,
+            } => {
+                // Boxes cannot be hidden, so a box that is plainly unusable never reaches the screen.
+                analysis.boxes_rejected = super::boxes::guard(&mut findings);
                 analysis.answer = answer;
                 analysis.findings = findings;
                 analysis.status = Status::Done;
@@ -285,6 +289,7 @@ fn finish(
                 .frame
                 .as_ref()
                 .and_then(|frame| serde_json::to_string(&frame.monitor).ok()),
+            boxes_rejected: i64::from(analysis.boxes_rejected),
         }
     };
     if !id.is_empty() {
@@ -292,9 +297,71 @@ fn finish(
         archive::end_session(Some(id), label, "");
     }
     publish(app);
+    watch_for_change(app, id.to_string());
 }
 
 /// Cancels the analysis in flight, if any.
 pub fn cancel(app: &AppHandle) {
     app.state::<AppState>().analysis.locked().cancel.cancel();
+}
+
+/// Closes the cards: cancels what runs, clears the findings and with them the boxes on the screen.
+pub fn close(app: &AppHandle) {
+    app.state::<AppState>().analysis.locked().close();
+    publish(app);
+}
+
+/// While boxes are on the real screen, looks every 1.5 s at whether the screen is still the one that
+/// was analysed (`stale::decide`). The first change makes the boxes disappear for good; the findings
+/// text stays. Ends when the analysis is replaced or closed.
+fn watch_for_change(app: &AppHandle, id: String) {
+    let has_boxes = {
+        let state = app.state::<AppState>();
+        let analysis = state.analysis.locked();
+        analysis.status == Status::Done
+            && analysis
+                .findings
+                .iter()
+                .any(|finding| finding.bbox.is_some())
+    };
+    if !has_boxes || id.is_empty() {
+        return;
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_millis(stale::EVERY_MS)).await;
+            let (thumbnail, then) = {
+                let state = app.state::<AppState>();
+                let analysis = state.analysis.locked();
+                // Replaced, closed or already stale: this watcher is done.
+                if analysis.id != id || analysis.status != Status::Done || analysis.stale {
+                    return;
+                }
+                match &analysis.frame {
+                    Some(frame) => (frame.signature.clone(), frame.front),
+                    None => return,
+                }
+            };
+            let Ok(Ok(live)) =
+                tauri::async_runtime::spawn_blocking(screenshot::live_signature).await
+            else {
+                continue;
+            };
+            let now = crate::safety::foreground::remember();
+            let verdict = stale::decide(&thumbnail, &live, then, now);
+            if verdict != Staleness::Fresh {
+                log::info!("analysis {id}: the screen changed ({verdict:?}), the boxes are gone");
+                {
+                    let state = app.state::<AppState>();
+                    let mut analysis = state.analysis.locked();
+                    if analysis.id == id {
+                        analysis.stale = true;
+                    }
+                }
+                publish(&app);
+                return;
+            }
+        }
+    });
 }

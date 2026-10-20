@@ -90,16 +90,22 @@ impl ElevatedWatch {
     }
 }
 
-fn same(a: &[u8], b: &[u8]) -> bool {
+/// The share of pixels (0 to 1) that differ by more than `PIXEL_DELTA` between two comparison
+/// pictures; 1.0 when they cannot be compared (different sizes, empty).
+pub fn changed_fraction(a: &[u8], b: &[u8]) -> f64 {
     if a.len() != b.len() || a.is_empty() {
-        return false;
+        return 1.0;
     }
     let changed = a
         .iter()
         .zip(b)
         .filter(|(x, y)| x.abs_diff(**y) > PIXEL_DELTA)
         .count();
-    (changed as f64 / a.len() as f64) < CHANGED_FRACTION
+    changed as f64 / a.len() as f64
+}
+
+fn same(a: &[u8], b: &[u8]) -> bool {
+    changed_fraction(a, b) < CHANGED_FRACTION
 }
 
 /// What the model is told once it has been stuck for a while.

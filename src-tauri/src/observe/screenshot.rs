@@ -65,19 +65,7 @@ impl Frame {
     /// A small grey copy (128 by 72, see `stuck::SIGNATURE_SIZE`), to tell whether the screen changed
     /// between two looks. Fine enough to see a menu or a few words, coarse enough to ignore a caret.
     pub fn signature(&self) -> Vec<u8> {
-        let small = image::imageops::resize(
-            &self.image,
-            crate::agent::stuck::SIGNATURE_SIZE.0,
-            crate::agent::stuck::SIGNATURE_SIZE.1,
-            FilterType::Triangle,
-        );
-        small
-            .pixels()
-            .map(|pixel| {
-                ((u32::from(pixel[0]) * 3 + u32::from(pixel[1]) * 6 + u32::from(pixel[2])) / 10)
-                    as u8
-            })
-            .collect()
+        signature_of(&self.image)
     }
 
     /// The colour of the downscaled image at a model-space point (0..=1000 on both axes).
@@ -88,6 +76,37 @@ impl Frame {
         let py = ((y / 1000.0 * f64::from(self.height)) as u32).min(self.height - 1);
         *self.image.get_pixel(px, py)
     }
+}
+
+/// The grey comparison picture (`stuck::SIGNATURE_SIZE`) of any RGB image.
+pub fn signature_of(image: &RgbImage) -> Vec<u8> {
+    let small = image::imageops::resize(
+        image,
+        crate::agent::stuck::SIGNATURE_SIZE.0,
+        crate::agent::stuck::SIGNATURE_SIZE.1,
+        FilterType::Triangle,
+    );
+    small
+        .pixels()
+        .map(|pixel| {
+            ((u32::from(pixel[0]) * 3 + u32::from(pixel[1]) * 6 + u32::from(pixel[2])) / 10) as u8
+        })
+        .collect()
+}
+
+/// The comparison picture of the primary monitor right now, **without** storing anything in the
+/// archive (the screen-changed watcher looks every second or two; only real captures are archived).
+/// Rune's own windows are masked in demo mode exactly as in a real capture.
+pub fn live_signature() -> Result<Vec<u8>, ObserveError> {
+    let (xmonitor, monitor) = resolve(None)?;
+    let mut rgba = xmonitor
+        .capture_image()
+        .map_err(|err| ObserveError::Capture(err.to_string()))?;
+    let masked = super::mask::current();
+    if !masked.is_empty() {
+        super::mask::apply(&mut rgba, &masked, monitor.x, monitor.y);
+    }
+    Ok(signature_of(&DynamicImage::ImageRgba8(rgba).into_rgb8()))
 }
 
 fn describe(monitor: &XMonitor) -> Result<Monitor, ObserveError> {
