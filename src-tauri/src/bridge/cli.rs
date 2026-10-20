@@ -57,8 +57,8 @@ pub enum Command {
     Disconnect(String),
     /// `runs [--limit N]`: the newest runs recorded in the trace database.
     Runs(usize),
-    /// `run <id>`: one run, its steps and events.
-    Run(String),
+    /// `run <id> [--calls]`: one run, its steps and events; with `--calls`, every model attempt too.
+    Run(String, bool),
     /// `analyses [--limit N]`: the newest visual analyses.
     Analyses(usize),
     /// `analysis <id>`: one visual analysis with its findings.
@@ -97,7 +97,22 @@ pub fn parse(args: &[String]) -> Command {
             },
             Some(other) => Command::Unknown(format!("runs {other}")),
         },
-        "run" => Command::Run(args.get(1).cloned().unwrap_or_default()),
+        "run" => {
+            let rest = &args[1.min(args.len())..];
+            let calls = rest.iter().any(|word| word == "--calls");
+            let id = rest
+                .iter()
+                .find(|word| !word.starts_with("--"))
+                .cloned()
+                .unwrap_or_default();
+            match rest
+                .iter()
+                .find(|word| word.starts_with("--") && *word != "--calls")
+            {
+                Some(other) => Command::Unknown(format!("run {other}")),
+                None => Command::Run(id, calls),
+            }
+        }
         "analyses" => match args.get(1).map(String::as_str) {
             None => Command::Analyses(DEFAULT_RUNS),
             Some("--limit") => match args.get(2).and_then(|number| number.parse::<usize>().ok()) {
@@ -136,7 +151,7 @@ Rune Studio
   rune-studio-cli status           Show whether Rune Studio is running and what is allowed.
   rune-studio-cli guide            Print the guide an agent reads.
   rune-studio-cli runs [--limit N]  List the newest recorded runs (default 20).
-  rune-studio-cli run <id>         Show one recorded run: its steps and events.
+  rune-studio-cli run <id> [--calls]  Show one recorded run: its steps and events (--calls: every model attempt).
   rune-studio-cli analyses [--limit N]  List the newest screen analyses (default 20).
   rune-studio-cli reflections [--limit N]  List the newest idle reflection runs (default 20).
   rune-studio-cli analysis <id>    Show one screen analysis: question, answer and findings.
@@ -158,7 +173,7 @@ pub fn run() -> i32 {
         Command::Skill(option) => skill_command(&option),
         Command::Disconnect(target) => disconnect(&target),
         Command::Runs(limit) => runs_command(limit),
-        Command::Run(id) => run_command(&id),
+        Command::Run(id, calls) => run_command(&id, calls),
         Command::Analyses(limit) => analyses_command(limit),
         Command::Analysis(id) => analysis_command(&id),
         Command::Reflections(limit) => reflections_command(limit),
@@ -200,7 +215,7 @@ fn runs_command(limit: usize) -> i32 {
 }
 
 /// `rune-studio-cli run <id>`: one run with its steps and events.
-fn run_command(id: &str) -> i32 {
+fn run_command(id: &str, calls: bool) -> i32 {
     if id.is_empty() {
         say("Say which run: rune-studio-cli run <id>   (see rune-studio-cli runs for the ids)");
         return 2;
@@ -213,8 +228,44 @@ fn run_command(id: &str) -> i32 {
             trace::store::get_run(path, id).map(|found| found.map(|detail| run_report(&detail))),
         );
         say(&text);
+        if calls && code == 0 {
+            match crate::flight::calls(path, id, None) {
+                Ok(list) => say(&calls_report(&list)),
+                Err(err) => say(&format!("Could not read the model attempts: {err}")),
+            }
+        }
         code
     })
+}
+
+/// The model attempts of a run, one line each: `run <id> --calls`.
+fn calls_report(list: &[crate::flight::FlightCall]) -> String {
+    if list.is_empty() {
+        return "\nModel attempts: none recorded (this run is older than the attempt record)."
+            .into();
+    }
+    let mut out = format!(
+        "\nModel attempts ({})\n  STEP  KIND      TRY  WAIT_MS  DUR_MS  STATUS  OUTCOME    TOKENS\n",
+        list.len()
+    );
+    for call in list {
+        out.push_str(&format!(
+            "  {:>4}  {:<8}  {:>3}  {:>7}  {:>6}  {:>6}  {:<9}  {}{}\n",
+            number(call.step),
+            call.kind,
+            call.attempt,
+            call.wait_before_ms,
+            call.duration_ms,
+            number(call.status),
+            call.outcome,
+            number(call.prompt_tokens),
+            call.error
+                .as_deref()
+                .map(|error| format!("  {}", one_line(error, 70)))
+                .unwrap_or_default(),
+        ));
+    }
+    out
 }
 
 /// `rune-studio-cli analyses`: a table of the newest screen analyses.
@@ -1191,10 +1242,22 @@ mod tests {
         assert!(matches!(parse(&args(&["runs", "5"])), Command::Unknown(_)));
         assert_eq!(
             parse(&args(&["run", "120000-1-open-notepad"])),
-            Command::Run("120000-1-open-notepad".into())
+            Command::Run("120000-1-open-notepad".into(), false)
         );
-        assert_eq!(parse(&args(&["run"])), Command::Run(String::new()));
-        for word in ["runs", "run <id>"] {
+        assert_eq!(parse(&args(&["run"])), Command::Run(String::new(), false));
+        assert_eq!(
+            parse(&args(&["run", "r1", "--calls"])),
+            Command::Run("r1".into(), true)
+        );
+        assert_eq!(
+            parse(&args(&["run", "--calls", "r1"])),
+            Command::Run("r1".into(), true)
+        );
+        assert!(matches!(
+            parse(&args(&["run", "r1", "--bogus"])),
+            Command::Unknown(_)
+        ));
+        for word in ["runs", "run <id>", "--calls"] {
             assert!(HELP.contains(word), "help does not mention {word}");
         }
     }

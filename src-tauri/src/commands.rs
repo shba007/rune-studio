@@ -376,3 +376,75 @@ pub fn reflection_answer(app: AppHandle, start: bool) {
 pub fn pill_activity(app: AppHandle) {
     crate::reflect::touch(&app, crate::reflect::idle::Input::Pill);
 }
+
+// ------------------------------------------------------------ the Flight Player's read-only data
+
+fn trace_db(app: &AppHandle) -> AppResult<std::path::PathBuf> {
+    app.state::<AppState>()
+        .trace
+        .db_path()
+        .map(std::path::Path::to_path_buf)
+        .ok_or_else(|| AppError::Invalid("The flight record is not available.".into()))
+}
+
+fn read_error(err: impl std::fmt::Display) -> AppError {
+    AppError::Invalid(format!("Could not read the flight record: {err}"))
+}
+
+#[tauri::command]
+pub fn flight_runs(
+    app: AppHandle,
+    limit: Option<usize>,
+    before: Option<String>,
+) -> AppResult<Vec<crate::flight::FlightRun>> {
+    crate::flight::runs(
+        &trace_db(&app)?,
+        limit.unwrap_or(30).min(200),
+        before.as_deref(),
+    )
+    .map_err(read_error)
+}
+
+#[tauri::command]
+pub fn flight_run(app: AppHandle, id: String) -> AppResult<Option<crate::flight::FlightHeader>> {
+    crate::flight::header(&trace_db(&app)?, &id).map_err(read_error)
+}
+
+#[tauri::command]
+pub fn flight_steps(app: AppHandle, id: String) -> AppResult<Vec<serde_json::Value>> {
+    crate::flight::steps(&trace_db(&app)?, &id).map_err(read_error)
+}
+
+#[tauri::command]
+pub fn flight_events(app: AppHandle, id: String) -> AppResult<Vec<serde_json::Value>> {
+    crate::flight::events(&trace_db(&app)?, &id).map_err(read_error)
+}
+
+#[tauri::command]
+pub fn flight_calls(
+    app: AppHandle,
+    id: String,
+    step: Option<i64>,
+) -> AppResult<Vec<crate::flight::FlightCall>> {
+    crate::flight::calls(&trace_db(&app)?, &id, step).map_err(read_error)
+}
+
+/// One attempt's request and response as `[request, response]` (redacted and capped when stored).
+#[tauri::command]
+pub fn flight_call_body(app: AppHandle, call_id: i64) -> AppResult<Option<(String, String)>> {
+    crate::flight::call_bodies(&trace_db(&app)?, call_id).map_err(read_error)
+}
+
+/// A file of the run's own session folder (a screenshot, the video) as an absolute path the player
+/// can load. Absolute paths, `..` and links leading out of the folder are refused.
+#[tauri::command]
+pub fn flight_file(app: AppHandle, id: String, relative: String) -> AppResult<String> {
+    let dir = crate::flight::session_dir(&trace_db(&app)?, &id)
+        .map_err(read_error)?
+        .ok_or_else(|| AppError::Invalid("This run has no session folder.".into()))?;
+    crate::flight::files::resolve(&dir, &relative)
+        .map(|path| path.to_string_lossy().into_owned())
+        .map_err(|refused| {
+            AppError::Invalid(format!("That file cannot be opened: {}.", refused.why()))
+        })
+}

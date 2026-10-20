@@ -15,6 +15,7 @@ mod error;
 mod eval;
 mod events;
 mod exec;
+mod flight;
 mod hotkeys;
 mod model;
 mod observe;
@@ -218,6 +219,13 @@ pub fn run() {
             commands::pill_activity,
             commands::bridge_info,
             commands::get_control_label,
+            commands::flight_runs,
+            commands::flight_run,
+            commands::flight_steps,
+            commands::flight_events,
+            commands::flight_calls,
+            commands::flight_call_body,
+            commands::flight_file,
             #[cfg(debug_assertions)]
             commands::debug_set_state,
             #[cfg(debug_assertions)]
