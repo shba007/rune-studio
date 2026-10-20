@@ -511,6 +511,40 @@ mod tests {
         assert_eq!(served.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 
+    #[tokio::test]
+    async fn a_cancelled_call_closes_its_connection_instead_of_leaving_it_open() {
+        use std::io::Read;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let (closed, wait) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
+            let mut chunk = [0_u8; 4096];
+            // The request arrives, and the server never answers (a model that keeps generating).
+            let _ = stream.read(&mut chunk);
+            // Then read until the client hangs up: Ok(0) or a reset is "closed"; a timeout is "left open".
+            let outcome = loop {
+                match stream.read(&mut chunk) {
+                    Ok(0) => break "closed",
+                    Ok(_) => continue,
+                    Err(err) if matches!(err.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => break "left open",
+                    Err(_) => break "closed",
+                }
+            };
+            let _ = closed.send(outcome);
+        });
+        let http = reqwest::Client::builder().no_proxy().build().unwrap();
+        let client = ChatClient { http: &http, base_url: &url, api_key: None, model: "m" };
+        let tools = json!([]);
+        // What Stop and closing the analysis window do: drop the future (see `agent::unless_stopped`).
+        let cancelled = tokio::time::timeout(std::time::Duration::from_millis(300), client.call(&a_click_request(&tools), &mut |_| {})).await;
+        assert!(cancelled.is_err(), "the server never answers, so the call is still pending when it is dropped");
+        // Wait off the runtime's thread: it must stay free to close the connection.
+        let outcome = tokio::task::spawn_blocking(move || wait.recv_timeout(std::time::Duration::from_secs(8)).unwrap()).await.unwrap();
+        assert_eq!(outcome, "closed", "the connection must be closed, not left for the server to keep generating into");
+    }
+
     #[test]
     fn the_audio_part_is_input_audio_with_the_whole_wav_and_comes_first() {
         let tools = json!([]);
