@@ -1,5 +1,35 @@
 # Changelog
 
+## v0.0.17
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.0.16...v0.0.17)
+
+### 🚀 Enhancements
+
+- **ui:** Move settings and analyse into a dock left of the orb, so the text field is wider ([ff06050](https://github.com/shba007/rune-studio/commit/ff06050))
+- **trace:** Record every model attempt, with retries, and run counters (schema v6) ([094e8ce](https://github.com/shba007/rune-studio/commit/094e8ce))
+- **video:** A storyboard session.mp4 built after the task from the step screenshots ([e76e1c5](https://github.com/shba007/rune-studio/commit/e76e1c5))
+- **video:** An opt-in full-motion mode and the review and video settings ([ad1ef18](https://github.com/shba007/rune-studio/commit/ad1ef18))
+- **review:** Offer to review a session when it ends ([2e11f77](https://github.com/shba007/rune-studio/commit/2e11f77))
+- **flight:** Read-only data access for the player and run --calls ([ac5a59c](https://github.com/shba007/rune-studio/commit/ac5a59c))
+- **flight:** The Flight Player window with Video.js v10 ([c54c8e9](https://github.com/shba007/rune-studio/commit/c54c8e9))
+
+### 🩹 Fixes
+
+- **ui:** Make settings and analyse two separate round buttons hugging the orb ([1ecab16](https://github.com/shba007/rune-studio/commit/1ecab16))
+
+### 📖 Documentation
+
+- Handoff R6b, session video, review prompt and the Flight Player ([f481375](https://github.com/shba007/rune-studio/commit/f481375))
+- R6b, R6a is merged ([9739d63](https://github.com/shba007/rune-studio/commit/9739d63))
+- **flight:** Document the session video, the review prompt and the Flight Player ([8df1577](https://github.com/shba007/rune-studio/commit/8df1577))
+- **flight:** Add the milestone report and remove finished handoffs ([0377043](https://github.com/shba007/rune-studio/commit/0377043))
+
+### ❤️ Contributors
+
+- Claude <noreply@anthropic.com>
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+
 ## v0.0.16
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.0.15...v0.0.16)
