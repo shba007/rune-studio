@@ -2,19 +2,20 @@
 
 One page per use case. Each page stands alone and has the same sections in the same order: What it is, How to use (always numbered steps), What happens, What you will see, How well it works, Limits, Where it can grow, Features used.
 
-| Page | What you do | Status |
-| --- | --- | --- |
-| [01 Open an app and type](01-open-app-and-type.md) | "Open Notepad and write hello" | Works |
-| [02 System settings and calculator](02-system-settings.md) | "Open Settings", "12 times 13" | Works |
-| [03 Browse the web](03-browse-the-web.md) | "Close the cookie banner" | Partly works |
-| [04 Risky actions need your Yes](04-risky-actions.md) | "Delete that file" | Partly works |
-| [05 Talk to it](05-voice.md) | Say the task out loud | Partly works |
-| [06 Let another AI drive](06-outside-agents.md) | Claude Code or Antigravity uses your PC | Works |
-| [07 Ask about your screen](07-screen-analysis.md) | "What is on my screen?" | Partly works |
-| [08 See what it did](08-review-what-happened.md) | "Why did that fail?" | Works |
-| [09 Measure its quality](09-measure-quality.md) | "Did my change make it worse?" | Partly works |
-| [10 Record a demo](10-record-a-demo.md) | Make a screen video | Planned (R5) |
-| [11 Idle self-review](11-idle-reflection.md) | It reviews its own work when idle | Planned (R5, R6) |
+| Page                                                       | What you do                             | Status                     |
+| ---------------------------------------------------------- | --------------------------------------- | -------------------------- |
+| [01 Open an app and type](01-open-app-and-type.md)         | "Open Notepad and write hello"          | Works                      |
+| [02 System settings and calculator](02-system-settings.md) | "Open Settings", "12 times 13"          | Works                      |
+| [03 Browse the web](03-browse-the-web.md)                  | "Close the cookie banner"               | Partly works               |
+| [04 Risky actions need your Yes](04-risky-actions.md)      | "Delete that file"                      | Partly works               |
+| [05 Talk to it](05-voice.md)                               | Say the task out loud                   | Partly works               |
+| [06 Let another AI drive](06-outside-agents.md)            | Claude Code or Antigravity uses your PC | Works                      |
+| [07 Ask about your screen](07-screen-analysis.md)          | "What is on my screen?"                 | Partly works               |
+| [08 See what it did](08-review-what-happened.md)           | "Why did that fail?"                    | Works                      |
+| [09 Measure its quality](09-measure-quality.md)            | "Did my change make it worse?"          | Partly works               |
+| [10 Record a demo](10-record-a-demo.md)                    | Make a screen video                     | Planned (R5)               |
+| [11 Idle self-review](11-idle-reflection.md)               | It reviews its own work when idle       | Planned (R5, R6)           |
+| [12 Review a session](12-review-a-session.md)              | Watch what it did, step by step         | Built, not seen on Windows |
 
 ## How to read the evidence
 
