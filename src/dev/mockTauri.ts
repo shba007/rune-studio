@@ -121,7 +121,7 @@ export function installTauriMock() {
             showThinking: false,
             askEveryAction: false,
             fastChecks: false,
-            decisionModel: 'd1-3b-q8-0',
+            decisionModel: 'liquid-d1-3b',
             decisionUrl: '',
             archiveKeepDays: 0,
             verifyMode: 'background',

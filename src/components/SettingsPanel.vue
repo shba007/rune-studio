@@ -110,6 +110,10 @@ async function save() {
       <SettingsGroup title="Models">
         <SettingsRow v-model="draft.model" label="Model" icon="eye" />
         <SettingsToggle v-model="draft.fastChecks" label="Fast checks" icon="fast" />
+        <p v-if="draft.fastChecks" class="m-0 px-1 text-label opacity-70">
+          A server that loads one model at a time swaps models for every fast check, which can add
+          10 seconds or more. Leave this off there.
+        </p>
         <SettingsRow
           v-if="draft.fastChecks"
           v-model="draft.decisionModel"

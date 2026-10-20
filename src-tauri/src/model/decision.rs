@@ -135,11 +135,16 @@ impl Answers {
         answer["probabilities"][answer["decision"].as_str()?].as_f64()
     }
 
-    /// The option picked for a `choice` question and how confident the model is.
+    /// The option picked for a `choice` question and how sure the model is of it.
+    ///
+    /// For the server's own shape the number is the probability of the picked option
+    /// (`probabilities[decision]`), because `confidence` is not that: "click Pay now" came back
+    /// high with probability 0.587 and confidence 0.38. A reply without `probabilities` falls back
+    /// to `confidence`.
     pub fn choice(&self, name: &str) -> Option<(String, f64)> {
         let answer = self.0.get(name)?;
         match shape_of(answer) {
-            Shape::Source => Some((answer["decision"].as_str()?.to_string(), answer["confidence"].as_f64()?)),
+            Shape::Source => Some((answer["decision"].as_str()?.to_string(), self.picked_probability(name).or_else(|| answer["confidence"].as_f64())?)),
             Shape::Spec if answer["type"] == "choice" => Some((answer["value"].as_str()?.to_string(), answer["confidence"].as_f64()?)),
             Shape::Spec => None,
         }
@@ -149,6 +154,12 @@ impl Answers {
 fn request_body(model: &str, text: &str, images: &[String], questions: &[Question]) -> Value {
     let state = if images.is_empty() { json!(text) } else { json!({ "text": text, "images": images }) };
     json!({ "model": model, "state": state, "questions": questions.iter().map(Question::to_json).collect::<Vec<_>>() })
+}
+
+/// The decision endpoint: the Decision URL, or the chat server's when it is empty (one server is the usual setup).
+fn endpoint(decision_url: &str, base_url: &str) -> String {
+    let url = if decision_url.trim().is_empty() { base_url } else { decision_url };
+    format!("{}/v1/decisions", url.trim().trim_end_matches('/'))
 }
 
 fn cooling_down() -> bool {
@@ -165,18 +176,18 @@ fn note_failure() {
 /// the model is cooling down after a failure, or the call failed.
 pub async fn ask(app: &AppHandle, text: &str, images: &[String], questions: &[Question]) -> Option<Answers> {
     let state = app.state::<AppState>();
-    let (enabled, base_url, model) = {
+    let (enabled, url, model) = {
         let settings = state.settings.locked();
-        (settings.fast_checks, settings.decision_url.clone(), settings.decision_model.clone())
+        (settings.fast_checks, endpoint(&settings.decision_url, &settings.base_url), settings.decision_model.clone())
     };
-    if !enabled || base_url.trim().is_empty() || model.trim().is_empty() || cooling_down() {
+    if !enabled || url.starts_with("/v1") || model.trim().is_empty() || cooling_down() {
         return None;
     }
 
     let started = Instant::now();
     let mut request = state
         .http
-        .post(format!("{}/v1/decisions", base_url.trim_end_matches('/')))
+        .post(url)
         .timeout(if images.is_empty() { TEXT_TIMEOUT } else { IMAGE_TIMEOUT })
         .json(&request_body(&model, text, images, questions));
     if let Some(key) = settings::api_key() {
@@ -301,12 +312,32 @@ mod tests {
     }
 
     #[test]
+    fn a_choice_is_as_sure_as_its_picked_probability_not_its_confidence() {
+        // The field test's "click Pay now": high, probability 0.587, confidence 0.38.
+        let pay = answers_of(json!({"decision":"high","confidence":0.38,"probabilities":{"low":0.2,"medium":0.213,"high":0.587}}));
+        assert_eq!(pay.choice("q"), Some(("high".to_string(), 0.587)));
+        // Shift+Delete: 0.92.
+        let delete = answers_of(json!({"decision":"high","confidence":0.8,"probabilities":{"low":0.02,"medium":0.06,"high":0.92}}));
+        assert_eq!(delete.choice("q"), Some(("high".to_string(), 0.92)));
+        // No probabilities in the reply: confidence is all there is.
+        let bare = answers_of(json!({"decision":"low","confidence":0.7}));
+        assert_eq!(bare.choice("q"), Some(("low".to_string(), 0.7)));
+    }
+
+    #[test]
+    fn an_empty_decision_url_means_the_same_server_as_the_chat_model() {
+        assert_eq!(endpoint("", "http://127.0.0.1:8080/"), "http://127.0.0.1:8080/v1/decisions");
+        assert_eq!(endpoint("  ", "http://a:1"), "http://a:1/v1/decisions");
+        assert_eq!(endpoint("http://b:2/", "http://a:1"), "http://b:2/v1/decisions");
+    }
+
+    #[test]
     fn the_pasted_server_answer_reads_as_documented() {
         let answers = Answers::from_response(&json!({ "answers": {
             "routing": { "decision": "blue_green", "confidence": 0.1374, "probabilities": { "immediate_switch": 0.2555, "canary_rollout": 0.3196, "blue_green": 0.4249 } },
             "requires_approval": { "decision": true, "probability": 0.6816 }
         } }));
-        assert_eq!(answers.choice("routing"), Some(("blue_green".to_string(), 0.1374)));
+        assert_eq!(answers.choice("routing"), Some(("blue_green".to_string(), 0.4249)), "the picked probability, not confidence");
         assert_eq!(answers.picked_probability("routing"), Some(0.4249), "confidence is not the picked probability");
         assert_eq!(answers.picked_probability("requires_approval"), None, "a yes/no answer has no picked option");
         assert_eq!(answers.picked_probability("missing"), None);

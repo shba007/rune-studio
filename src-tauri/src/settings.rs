@@ -74,7 +74,7 @@ impl Default for Settings {
             show_thinking: false,
             ask_every_action: false,
             fast_checks: false,
-            decision_model: "d1-3b-q8-0".into(),
+            decision_model: "liquid-d1-3b".into(),
             decision_url: String::new(),
             archive_keep_days: 0,
             verify_mode: VerifyMode::default(),
