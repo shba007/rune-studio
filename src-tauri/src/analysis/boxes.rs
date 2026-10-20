@@ -302,6 +302,7 @@ mod tests {
             bbox,
             description: String::new(),
             evidence: String::new(),
+            point: None,
         }
     }
 

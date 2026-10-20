@@ -71,6 +71,9 @@ pub struct Finding {
     pub description: String,
     /// What on the screen supports it.
     pub evidence: String,
+    /// `[x, y]` in 0..1000, only when the `box + point` request variant is on (`REQUEST_POINTS`).
+    #[serde(default)]
+    pub point: Option<[f32; 2]>,
 }
 
 /// Where an analysis is.
@@ -93,8 +96,24 @@ pub struct ParsedReport {
 }
 
 /// The one tool the model must call.
+/// The `box + point` request variant: each finding may also carry `point: [x, y]`. **Off.** It exists so
+/// the probe can compare it with box-only (`probe_m15` modes `analysis` and `analysis-point`); the
+/// maintainer switches it on after reading that comparison, never a user setting. When it is on and a
+/// box is rejected but a point exists, a badge may be drawn at the point (that path is not drawn yet).
+pub const REQUEST_POINTS: bool = false;
+
+/// The sentence added to `SYSTEM` by the point variant.
+#[allow(dead_code)] // used by the probe (`probe_m15`) and by the point variant when it is switched on
+pub const POINT_SENTENCE: &str =
+    " Also give a point [x, y], each 0 to 1000, at the middle of what the finding points at.";
+
 pub fn tool() -> Value {
-    json!({
+    tool_with(REQUEST_POINTS)
+}
+
+/// The `report` tool, with the optional `point` property when `points` is set.
+pub fn tool_with(points: bool) -> Value {
+    let mut tool = json!({
         "type": "function",
         "function": {
             "name": "report",
@@ -123,7 +142,14 @@ pub fn tool() -> Value {
                 "required": ["answer", "findings"]
             }
         }
-    })
+    });
+    if points {
+        tool["function"]["parameters"]["properties"]["findings"]["items"]["properties"]["point"] = json!({
+            "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "number" },
+            "description": "[x, y], each 0 to 1000: the middle of the thing."
+        });
+    }
+    tool
 }
 
 /// The `tools` array of the request: the `report` tool wrapped in a list (the server rejects a bare
@@ -179,6 +205,16 @@ pub fn normalise_box(value: &Value) -> Option<[f32; 4]> {
     super::boxes::usable_box(numbers).ok()
 }
 
+/// A point `[x, y]`: two numbers (numeric strings count), clamped into 0..1000. Anything else is no point.
+pub fn normalise_point(value: &Value) -> Option<[f32; 2]> {
+    let list = value.as_array()?;
+    if list.len() != 2 {
+        return None;
+    }
+    let (x, y) = (number(&list[0])?, number(&list[1])?);
+    Some([x.clamp(0.0, 1000.0), y.clamp(0.0, 1000.0)])
+}
+
 fn text(value: &Value, cap: usize) -> String {
     value
         .as_str()
@@ -222,6 +258,7 @@ fn finding(index: usize, item: &Value) -> Finding {
         bbox: normalise_box(&item["box"]),
         description: text(&item["description"], DESCRIPTION_CAP),
         evidence: text(&item["evidence"], EVIDENCE_CAP),
+        point: normalise_point(&item["point"]),
     }
 }
 
@@ -253,7 +290,8 @@ mod tests {
                 kind: Kind::Control,
                 bbox: Some([700.0, 800.0, 800.0, 850.0]),
                 description: "Saves the changes.".into(),
-                evidence: "The button says Save.".into()
+                evidence: "The button says Save.".into(),
+                point: None,
             }
         );
         assert_eq!(
@@ -446,11 +484,62 @@ mod tests {
             bbox: Some([1.0, 2.0, 30.0, 40.0]),
             description: "d".into(),
             evidence: "e".into(),
+            point: None,
         };
         assert_eq!(
             serde_json::to_value(&f).unwrap(),
-            json!({ "n": 2, "label": "L", "kind": "issue", "box": [1.0, 2.0, 30.0, 40.0], "description": "d", "evidence": "e" })
+            json!({ "n": 2, "label": "L", "kind": "issue", "box": [1.0, 2.0, 30.0, 40.0], "description": "d", "evidence": "e", "point": null })
         );
+    }
+
+    #[test]
+    fn the_point_variant_is_off_and_adds_only_an_optional_point() {
+        const _: () = assert!(
+            !REQUEST_POINTS,
+            "box + point is not the default; the maintainer switches it on after the probe"
+        );
+        assert!(
+            tool()["function"]["parameters"]["properties"]["findings"]["items"]["properties"]
+                .get("point")
+                .is_none()
+        );
+        let with = tool_with(true);
+        let props =
+            &with["function"]["parameters"]["properties"]["findings"]["items"]["properties"];
+        assert_eq!(props["point"]["minItems"], 2);
+        assert_eq!(
+            with["function"]["parameters"]["properties"]["findings"]["items"]["required"],
+            json!(["label", "kind", "description", "evidence"]),
+            "point stays optional"
+        );
+    }
+
+    #[test]
+    fn a_point_is_read_tolerantly() {
+        assert_eq!(normalise_point(&json!([100, 200])), Some([100.0, 200.0]));
+        assert_eq!(
+            normalise_point(&json!(["100", "2e2"])),
+            Some([100.0, 200.0])
+        );
+        assert_eq!(
+            normalise_point(&json!([-5, 2000])),
+            Some([0.0, 1000.0]),
+            "clamped"
+        );
+        for bad in [
+            json!([1]),
+            json!([1, 2, 3]),
+            json!("1,2"),
+            json!(null),
+            json!([1, "x"]),
+        ] {
+            assert_eq!(normalise_point(&bad), None, "{bad}");
+        }
+        let report = parse(
+            &json!({ "answer": "x", "findings": [{ "label": "A", "kind": "control", "box": [10, 10, 100, 100], "point": [50, 50], "description": "d", "evidence": "e" }, { "label": "B", "kind": "control", "point": [1] }] }),
+        );
+        assert_eq!(report.findings[0].point, Some([50.0, 50.0]));
+        assert_eq!(report.findings[1].point, None);
     }
 
     #[test]

@@ -19,6 +19,7 @@ const finding = (n: number, over: Partial<Finding> = {}): Finding => ({
   box: [10 * n, 10, 10 * n + 50, 60],
   description: `Description ${n}`,
   evidence: `Evidence ${n}`,
+  point: null,
   ...over,
 })
 

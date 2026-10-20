@@ -221,6 +221,8 @@ export interface Finding {
   box: Box | null
   description: string
   evidence: string
+  /** `[x, y]` in 0..1000; only with the box + point request variant, which is off. */
+  point: [number, number] | null
 }
 
 /** The screen analysis as the cards and the screen markers show it (analysis/state.rs `Snapshot`). */

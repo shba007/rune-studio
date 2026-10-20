@@ -59,6 +59,11 @@ enum Convention {
     /// The bounding box `[x0, y0, x1, y1]` of the named element, 0..1000, through a `locate` tool.
     /// This is what visual analysis (R4) depends on; the others only ever measured points.
     Box,
+    /// The app's own `report` request (its system prompt and tool), asked about one named element;
+    /// the finding that names it (else the first with a box) is scored like a `box` answer. Box only.
+    Analysis,
+    /// As `Analysis`, with the optional `point` per finding (`report::tool_with(true)`).
+    AnalysisPoint,
 }
 
 #[derive(Clone)]
@@ -105,6 +110,8 @@ fn parse_modes(spec: &str) -> Vec<Mode> {
                 "px" | "pixels" => Convention::Pixels,
                 "ground" => Convention::Ground,
                 "box" => Convention::Box,
+                "analysis" => Convention::Analysis,
+                "analysis-point" => Convention::AnalysisPoint,
                 other => panic!("unknown convention '{other}' in RUNE_PROBE_MODES"),
             };
             Mode {
@@ -220,6 +227,8 @@ struct Reply {
     reasoning_chars: usize,
     finish: String,
     note: String,
+    /// Findings whose box the app's guard dropped (`Analysis` modes only).
+    rejected: Option<u32>,
 }
 
 fn number(value: &Value) -> Option<f64> {
@@ -267,9 +276,79 @@ async fn ask(
             rect: None,
             completion_tokens: None,
             reasoning_chars: 0,
+            rejected: None,
             finish: "grounding".into(),
             note: if point.is_none() {
                 value.to_string().chars().take(300).collect()
+            } else {
+                String::new()
+            },
+        });
+    }
+
+    if matches!(
+        mode.convention,
+        Convention::Analysis | Convention::AnalysisPoint
+    ) {
+        use crate::analysis::report;
+        let points = mode.convention == Convention::AnalysisPoint;
+        let system = if points {
+            format!("{}{}", report::SYSTEM, report::POINT_SENTENCE)
+        } else {
+            report::SYSTEM.to_string()
+        };
+        let tools = json!([report::tool_with(points)]);
+        let question = format!("Where is {description}?");
+        let request = crate::model::client::Request {
+            system: &system,
+            user_text: &question,
+            screenshot: Some(data_uri),
+            audio: None,
+            tools: &tools,
+            think: !mode.no_think && false,
+            max_tokens: Some(1500),
+        };
+        let body = crate::model::client::chat_body(&mode.model, &request);
+        let value = post(client, &format!("{base}/v1/chat/completions"), key, &body).await?;
+        let message = &value["choices"][0]["message"];
+        let arguments = message["tool_calls"][0]["function"]["arguments"]
+            .as_str()
+            .unwrap_or("");
+        let parsed: Value = serde_json::from_str(arguments).unwrap_or(Value::Null);
+        let findings = report::parse(&parsed).findings;
+        // Boxes the guard would drop: a raw four-number box that did not survive parsing.
+        let raw = parsed["findings"].as_array().cloned().unwrap_or_default();
+        let rejected = raw
+            .iter()
+            .zip(&findings)
+            .filter(|(item, finding)| {
+                item["box"].as_array().is_some_and(|b| b.len() == 4) && finding.bbox.is_none()
+            })
+            .count() as u32;
+        let wanted = target.name.to_lowercase();
+        let chosen = findings
+            .iter()
+            .find(|f| f.bbox.is_some() && f.label.to_lowercase().contains(&wanted))
+            .or_else(|| findings.iter().find(|f| f.bbox.is_some()));
+        let rect = chosen.and_then(|f| f.bbox).map(|b| b.map(f64::from));
+        let point = chosen
+            .and_then(|f| f.point)
+            .map(|p| (f64::from(p[0]), f64::from(p[1])));
+        return Ok(Reply {
+            point: if rect.is_none() { point } else { None },
+            rect,
+            completion_tokens: value["usage"]["completion_tokens"].as_u64(),
+            reasoning_chars: 0,
+            rejected: Some(rejected),
+            finish: value["choices"][0]["finish_reason"]
+                .as_str()
+                .unwrap_or("")
+                .to_string(),
+            note: if chosen.is_none() {
+                format!(
+                    "no finding with a usable box; arguments: {}",
+                    arguments.chars().take(200).collect::<String>()
+                )
             } else {
                 String::new()
             },
@@ -317,6 +396,7 @@ async fn ask(
                 .as_str()
                 .or(message["reasoning_content"].as_str())
                 .map_or(0, |text| text.chars().count()),
+            rejected: None,
             finish: value["choices"][0]["finish_reason"]
                 .as_str()
                 .unwrap_or("")
@@ -374,6 +454,7 @@ async fn ask(
     Ok(Reply {
         point,
         rect: None,
+        rejected: None,
         completion_tokens: value["usage"]["completion_tokens"].as_u64(),
         reasoning_chars: message["reasoning"]
             .as_str()
@@ -578,6 +659,9 @@ fn m15_probe() {
                                 let ((px, py), (tx, ty)) = (middle(rect), middle(truth));
                                 record["dist_px"] =
                                     json!(((px - tx).powi(2) + (py - ty).powi(2)).sqrt().round());
+                            }
+                            if let Some(rejected) = reply.rejected {
+                                record["boxes_rejected"] = json!(rejected);
                             }
                             record["completion_tokens"] = json!(reply.completion_tokens);
                             record["reasoning_chars"] = json!(reply.reasoning_chars);

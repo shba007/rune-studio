@@ -1,8 +1,11 @@
 // Box accuracy for the `box` convention of the M1.5 probe: how well the boxes a model draws
 // match the real element, by IoU. Used by report.mjs; kept apart so it can be tested.
 
-/** Whether a mode label is a `box` run (`model:box`, optionally with `@edge` and `+nothink`). */
-export const isBoxMode = (mode) => /:box(@\d+)?(\+nothink)?$/.test(mode)
+/**
+ * Whether a mode label is a box run: `model:box`, or the app's own report prompt (`model:analysis`,
+ * `model:analysis-point`), optionally with `@edge` and `+nothink`.
+ */
+export const isBoxMode = (mode) => /:(box|analysis|analysis-point)(@\d+)?(\+nothink)?$/.test(mode)
 
 const sorted = (values) => [...values].sort((a, b) => a - b)
 
@@ -30,6 +33,12 @@ function summarize(rows) {
     medianIou: median(answered.map((row) => row.iou)),
     iou50: rows.filter((row) => row.iou50 === true).length,
     centreInside: rows.filter((row) => row.centre_inside === true).length,
+    // Findings whose box the app's quality guard (`usable_box`) would drop; only analysis modes report it.
+    rejected: rows.reduce(
+      (total, row) => total + (typeof row.boxes_rejected === 'number' ? row.boxes_rejected : 0),
+      0,
+    ),
+    hasRejected: rows.some((row) => typeof row.boxes_rejected === 'number'),
   }
 }
 
@@ -75,6 +84,13 @@ export function boxReport(rows) {
     out.push(
       `| ${mode} | ${String(overall.asked)} | ${pct(overall.answered, overall.asked)} | ${iouText(overall.meanIou)} | ${iouText(overall.medianIou)} | ${pct(overall.iou50, overall.asked)} (${String(overall.iou50)}/${String(overall.asked)}) | ${pct(overall.centreInside, overall.asked)} |`,
     )
+  }
+  const guarded = stats.filter(({ overall }) => overall.hasRejected)
+  if (guarded.length > 0) {
+    out.push('', '### Boxes the quality guard drops', '')
+    out.push('| Mode | Rejected boxes | Asked |', '| --- | --- | --- |')
+    for (const { mode, overall } of guarded)
+      out.push(`| ${mode} | ${String(overall.rejected)} | ${String(overall.asked)} |`)
   }
   out.push(
     '',

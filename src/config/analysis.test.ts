@@ -78,6 +78,7 @@ describe('what is drawn on the screen', () => {
     box,
     description: '',
     evidence: '',
+    point: null,
   })
   const snapshot = (over: Partial<AnalysisSnapshot>): AnalysisSnapshot => ({
     ...EMPTY_SNAPSHOT,

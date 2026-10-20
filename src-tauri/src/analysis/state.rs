@@ -253,6 +253,7 @@ mod tests {
             bbox: None,
             description: String::new(),
             evidence: String::new(),
+            point: None,
         });
         let old = state.cancel.clone();
         old.cancel();

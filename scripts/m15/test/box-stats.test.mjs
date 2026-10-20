@@ -99,3 +99,35 @@ test('the report text carries the table and the size table', () => {
     'small, medium (none), large',
   )
 })
+
+test('the app report prompt modes are box modes too, and rejected boxes are counted', () => {
+  assert.ok(isBoxMode('m:analysis'))
+  assert.ok(isBoxMode('m:analysis-point@1280+nothink'))
+  assert.ok(!isBoxMode('m:analysisx'))
+  const rows = [
+    {
+      mode: 'm:analysis',
+      size: 'small',
+      iou: 0.6,
+      iou50: true,
+      centre_inside: true,
+      boxes_rejected: 1,
+    },
+    {
+      mode: 'm:analysis',
+      size: 'large',
+      iou: 0.1,
+      iou50: false,
+      centre_inside: false,
+      boxes_rejected: 0,
+    },
+  ]
+  const [stat] = boxStats(rows)
+  assert.equal(stat.overall.rejected, 1)
+  assert.ok(boxReport(rows).some((line) => line.includes('quality guard')))
+  assert.ok(
+    !boxReport([{ mode: 'm:box', size: 'small', iou: 1, iou50: true, centre_inside: true }]).some(
+      (line) => line.includes('quality guard'),
+    ),
+  )
+})

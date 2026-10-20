@@ -35,6 +35,12 @@ function readBox(value: unknown): Box | null {
   return value as Box
 }
 
+function readPoint(value: unknown): [number, number] | null {
+  if (!Array.isArray(value) || value.length !== 2) return null
+  if (!value.every((n) => typeof n === 'number' && Number.isFinite(n))) return null
+  return value as [number, number]
+}
+
 function readFinding(value: unknown, index: number): Finding {
   const raw = (typeof value === 'object' && value !== null ? value : {}) as Record<string, unknown>
   const kind = KINDS.find((known) => known === raw.kind) ?? 'other'
@@ -45,6 +51,7 @@ function readFinding(value: unknown, index: number): Finding {
     box: readBox(raw.box),
     description: text(raw.description),
     evidence: text(raw.evidence),
+    point: readPoint(raw.point),
   }
 }
 
