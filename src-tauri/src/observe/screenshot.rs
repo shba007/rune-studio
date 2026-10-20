@@ -67,6 +67,14 @@ impl Frame {
         small.pixels().map(|pixel| ((u32::from(pixel[0]) * 3 + u32::from(pixel[1]) * 6 + u32::from(pixel[2])) / 10) as u8).collect()
     }
 
+    /// The colour of the downscaled image at a model-space point (0..=1000 on both axes).
+    /// Lets the Windows desktop tests check what the model would actually see at a point.
+    #[cfg(all(test, windows))]
+    pub fn pixel_at_model(&self, x: f64, y: f64) -> Rgb<u8> {
+        let px = ((x / 1000.0 * f64::from(self.width)) as u32).min(self.width - 1);
+        let py = ((y / 1000.0 * f64::from(self.height)) as u32).min(self.height - 1);
+        *self.image.get_pixel(px, py)
+    }
 }
 
 fn describe(monitor: &XMonitor) -> Result<Monitor, ObserveError> {
