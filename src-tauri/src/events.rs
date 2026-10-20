@@ -76,6 +76,7 @@ impl AppState {
 
     /// Cancels the current run, whatever the agent state (even Idle: typing from debug commands relies on it).
     pub fn stop_current(&self) {
+        crate::voice::note_stop();
         self.verifier.locked().cancel();
         self.analysis.locked().cancel.cancel();
         exec::stop_current(&self.run);

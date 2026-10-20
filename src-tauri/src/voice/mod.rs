@@ -55,6 +55,19 @@ pub fn resume_listening_soon(app: &AppHandle) {
     });
 }
 
+/// How many times Stop has been pressed (any way). A task heard by voice waits `START_DELAY` before it
+/// starts, and a Stop in that time cancels it.
+static STOPS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// How long the words of a spoken task stay on the pill before the task starts. The model sometimes
+/// mishears; this is the time to see it and press Stop. Control words (stop, yes, no) act at once.
+const START_DELAY: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Called by Stop: cancels a spoken task that has not started yet.
+pub fn note_stop() {
+    STOPS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+}
+
 /// One utterance, start to finish: the omni model hears it, then the app acts on what it was.
 pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
     let state = app.state::<AppState>();
@@ -133,6 +146,26 @@ fn apply(app: &AppHandle, intent: Intent, goals: Option<Vec<String>>, text: &str
                 if crate::commands::push_steer(app, &said) {
                     heard(app, &said, "Passed to the agent");
                 }
+            } else if let Some(recording) = recording {
+                // Heard, not typed: show the words first, so a mishearing can be stopped before it acts.
+                heard(app, &said, "Starting in 2 s. Press Stop to cancel");
+                let (app, said, recording) = (app.clone(), said, recording.to_path_buf());
+                let stops = STOPS.load(std::sync::atomic::Ordering::SeqCst);
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(START_DELAY).await;
+                    if STOPS.load(std::sync::atomic::Ordering::SeqCst) != stops {
+                        log::info!("voice task cancelled before it started: {said}");
+                        heard(&app, &said, "Cancelled");
+                        return;
+                    }
+                    match crate::commands::begin_task_planned(&app, &said, true, goals) {
+                        Ok(()) => {
+                            crate::archive::adopt(&recording);
+                            heard(&app, &said, "Starting");
+                        }
+                        Err(err) => heard(&app, &said, err.to_string()),
+                    }
+                });
             } else {
                 match crate::commands::begin_task_planned(app, &said, true, goals) {
                     Ok(()) => {
