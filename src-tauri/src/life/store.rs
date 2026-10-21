@@ -61,7 +61,7 @@ impl LifeStore {
         }
 
         // Delete old keyring credential
-        let _ = LifeCrypto::delete_keyring_key();
+        LifeCrypto::delete_keyring_key()?;
 
         // Remove old database files
         if path.exists() {
@@ -1047,12 +1047,37 @@ mod tests {
         let temp_dir = TestDir::new();
         let db_path = temp_dir.path().join("recovery_life.sqlite3");
 
-        // Fails without confirmation
+        LifeCrypto::delete_keyring_key().unwrap();
+        let crypto = LifeCrypto::from_keyring_or_create().unwrap();
+        let ciphertext = crypto.encrypt("old private record").unwrap();
+        let store = LifeStore::open(&db_path, crypto).unwrap();
+        store.set_consent(DataClass::Health, true, "test").unwrap();
+        drop(store);
+
+        // Refusing confirmation preserves the key and existing store.
         let fail = LifeStore::reset_start_fresh(&db_path, "no");
         assert!(fail.is_err());
+        assert_eq!(
+            LifeCrypto::from_keyring_existing()
+                .unwrap()
+                .decrypt(&ciphertext)
+                .unwrap(),
+            "old private record"
+        );
+        assert!(db_path.exists());
+
+        // Simulate actual key loss in the in-memory test keyring.
+        LifeCrypto::delete_keyring_key().unwrap();
+        assert!(matches!(
+            LifeCrypto::from_keyring_existing(),
+            Err(super::super::crypto::CryptoError::KeyUnavailable(_))
+        ));
 
         // With explicit confirmation, succeeds
         let fresh_store = LifeStore::reset_start_fresh(&db_path, "START FRESH").unwrap();
         assert_eq!(fresh_store.list_records(None, false).unwrap().len(), 0);
+        assert!(!fresh_store.get_consent(DataClass::Health).unwrap());
+        assert!(fresh_store.crypto().decrypt(&ciphertext).is_err());
+        LifeCrypto::delete_keyring_key().unwrap();
     }
 }

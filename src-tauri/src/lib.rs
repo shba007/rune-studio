@@ -6,6 +6,7 @@ mod archive;
 mod backend;
 mod bridge;
 mod commands;
+mod credentials;
 mod cursor;
 #[cfg(debug_assertions)]
 mod debug;

@@ -2,8 +2,8 @@ use crate::settings::KEYRING_SERVICE;
 
 const KEYRING_USER: &str = "agent-bridge-token";
 
-fn entry() -> Result<keyring::Entry, String> {
-    keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER).map_err(|err| err.to_string())
+fn entry() -> Result<crate::credentials::Entry, String> {
+    crate::credentials::Entry::new(KEYRING_SERVICE, KEYRING_USER).map_err(|err| err.to_string())
 }
 
 fn hex(bytes: &[u8]) -> String {

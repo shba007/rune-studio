@@ -1,5 +1,5 @@
-use std::net::IpAddr;
 use reqwest::Url;
+use std::net::IpAddr;
 
 use super::record::DataClass;
 
@@ -70,18 +70,50 @@ pub fn may_send(
     }
 }
 
+/// Tagged non-chat routes lack authoritative response attribution today.
+/// They require a loopback endpoint as well as the normal model-locality check.
+pub fn may_send_to_route(
+    class: Option<DataClass>,
+    endpoint: &str,
+    model_locality: Option<&str>,
+    chat: bool,
+) -> PolicyDecision {
+    if class.is_some() && !chat && !parse_and_validate_loopback_host(endpoint).unwrap_or(false) {
+        return PolicyDecision::Deny("Tagged non-chat requests require a loopback endpoint until attribution headers are available".into());
+    }
+    may_send(class, endpoint, model_locality)
+}
+
+/// The canonical header wins over any legacy aliases, including for a local reply.
+pub fn response_is_cloud(headers: &reqwest::header::HeaderMap) -> bool {
+    for name in ["x-model-locality", "x-rune-locality", "x-infer-locality"] {
+        if let Some(value) = headers.get(name) {
+            return value
+                .to_str()
+                .map(|s| {
+                    s.trim().eq_ignore_ascii_case("cloud") || s.trim().eq_ignore_ascii_case("lan")
+                })
+                .unwrap_or(true);
+        }
+    }
+    false
+}
+
 /// Robust URL host parser that strictly prevents substring attacks, userinfo injection,
 /// port tricks, and non-loopback domains.
 pub fn parse_and_validate_loopback_host(endpoint: &str) -> Result<bool, String> {
     let url = Url::parse(endpoint).map_err(|e| e.to_string())?;
 
+    if !matches!(url.scheme(), "http" | "https") {
+        return Ok(false);
+    }
     let Some(host_str) = url.host_str() else {
         return Ok(false);
     };
 
     // 1. Check localhost domain (RFC 6761)
     let host_lower = host_str.to_ascii_lowercase();
-    if host_lower == "localhost" || host_lower.ends_with(".localhost") {
+    if host_lower == "localhost" {
         return Ok(true);
     }
 
@@ -122,7 +154,11 @@ mod tests {
     #[test]
     fn general_class_can_send_anywhere() {
         assert_eq!(
-            may_send(Some(DataClass::General), "https://api.openai.com/v1", Some("cloud")),
+            may_send(
+                Some(DataClass::General),
+                "https://api.openai.com/v1",
+                Some("cloud")
+            ),
             PolicyDecision::Allow
         );
         assert_eq!(
@@ -139,12 +175,20 @@ mod tests {
     fn sensitive_class_honors_model_locality() {
         // Local allows
         assert_eq!(
-            may_send(Some(DataClass::Finance), "http://127.0.0.1:8080", Some("local")),
+            may_send(
+                Some(DataClass::Finance),
+                "http://127.0.0.1:8080",
+                Some("local")
+            ),
             PolicyDecision::Allow
         );
         // Cloud denies
         assert!(matches!(
-            may_send(Some(DataClass::Health), "http://127.0.0.1:8080", Some("cloud")),
+            may_send(
+                Some(DataClass::Health),
+                "http://127.0.0.1:8080",
+                Some("cloud")
+            ),
             PolicyDecision::Deny(_)
         ));
         // Lan denies
@@ -154,7 +198,11 @@ mod tests {
         ));
         // Unknown denies
         assert!(matches!(
-            may_send(Some(DataClass::Finance), "http://127.0.0.1:8080", Some("unknown")),
+            may_send(
+                Some(DataClass::Finance),
+                "http://127.0.0.1:8080",
+                Some("unknown")
+            ),
             PolicyDecision::Deny(_)
         ));
     }
@@ -168,7 +216,6 @@ mod tests {
             "http://127.255.255.254:9999",
             "http://localhost:8080",
             "http://localhost",
-            "http://test.localhost:8080",
             "http://[::1]:8080",
             "http://[::1]",
             "http://[::ffff:127.0.0.1]:8080",
@@ -186,6 +233,8 @@ mod tests {
     #[test]
     fn sensitive_class_address_fallback_attacks_and_non_loopback_denied() {
         let denied_endpoints = [
+            "http://test.localhost:8080",
+            "ftp://localhost",
             // Substring attacks
             "http://127.0.0.1.evil.com",
             "http://127.0.0.1.attacker.net:8080",
@@ -215,9 +264,36 @@ mod tests {
 
         for ep in denied_endpoints {
             assert!(
-                matches!(may_send(Some(DataClass::Finance), ep, None), PolicyDecision::Deny(_)),
+                matches!(
+                    may_send(Some(DataClass::Finance), ep, None),
+                    PolicyDecision::Deny(_)
+                ),
                 "Endpoint {ep} must be DENIED for sensitive classes"
             );
         }
+    }
+    #[test]
+    fn tagged_non_chat_routes_require_loopback_even_for_local_models() {
+        for class in [DataClass::General, DataClass::Health] {
+            assert!(
+                !may_send_to_route(Some(class), "https://remote.example", Some("local"), false)
+                    .is_allowed()
+            );
+            assert!(
+                may_send_to_route(Some(class), "http://127.0.0.1:8080", Some("local"), false)
+                    .is_allowed()
+            );
+        }
+    }
+
+    #[test]
+    fn canonical_response_locality_wins() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("x-model-locality", "cloud".parse().unwrap());
+        headers.insert("x-rune-locality", "local".parse().unwrap());
+        assert!(response_is_cloud(&headers));
+        headers.insert("x-model-locality", "local".parse().unwrap());
+        headers.insert("x-rune-locality", "cloud".parse().unwrap());
+        assert!(!response_is_cloud(&headers));
     }
 }

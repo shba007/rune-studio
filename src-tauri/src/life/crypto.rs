@@ -52,7 +52,7 @@ impl LifeCrypto {
 
     /// Load or create the life encryption key in the OS keyring.
     pub fn from_keyring_or_create() -> Result<Self, CryptoError> {
-        let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_LIFE_USER)
+        let entry = crate::credentials::Entry::new(KEYRING_SERVICE, KEYRING_LIFE_USER)
             .map_err(|e| CryptoError::Keyring(e.to_string()))?;
 
         match entry.get_password() {
@@ -76,7 +76,7 @@ impl LifeCrypto {
 
     /// Attempt to load the key without creating a new one (detecting key loss).
     pub fn from_keyring_existing() -> Result<Self, CryptoError> {
-        let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_LIFE_USER)
+        let entry = crate::credentials::Entry::new(KEYRING_SERVICE, KEYRING_LIFE_USER)
             .map_err(|e| CryptoError::Keyring(e.to_string()))?;
 
         match entry.get_password() {
@@ -93,7 +93,7 @@ impl LifeCrypto {
 
     /// Delete the key from the OS keyring (for fresh resets).
     pub fn delete_keyring_key() -> Result<(), CryptoError> {
-        let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_LIFE_USER)
+        let entry = crate::credentials::Entry::new(KEYRING_SERVICE, KEYRING_LIFE_USER)
             .map_err(|e| CryptoError::Keyring(e.to_string()))?;
         match entry.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
@@ -168,7 +168,7 @@ fn key_to_hex(bytes: &[u8]) -> String {
 }
 
 fn hex_to_key32(hex_str: &str) -> Result<[u8; 32], CryptoError> {
-    if hex_str.len() != 64 {
+    if hex_str.len() != 64 || !hex_str.is_ascii() {
         return Err(CryptoError::InvalidFormat);
     }
     let mut key = [0u8; 32];
@@ -213,5 +213,32 @@ mod tests {
         let plain = "just a general note";
         let decrypted = crypto.decrypt(plain).unwrap();
         assert_eq!(decrypted, plain);
+    }
+    #[test]
+    fn keyring_lifecycle_uses_memory_in_tests() {
+        LifeCrypto::delete_keyring_key().unwrap();
+        assert!(matches!(
+            LifeCrypto::from_keyring_existing(),
+            Err(CryptoError::KeyUnavailable(_))
+        ));
+        let first = LifeCrypto::from_keyring_or_create().unwrap();
+        let encrypted = first.encrypt("private").unwrap();
+        let loaded = LifeCrypto::from_keyring_existing().unwrap();
+        assert_eq!(loaded.decrypt(&encrypted).unwrap(), "private");
+        LifeCrypto::delete_keyring_key().unwrap();
+        let replacement = LifeCrypto::from_keyring_or_create().unwrap();
+        assert_eq!(
+            replacement.decrypt(&encrypted),
+            Err(CryptoError::DecryptionFailed)
+        );
+        LifeCrypto::delete_keyring_key().unwrap();
+    }
+
+    #[test]
+    fn malformed_unicode_key_is_an_error_not_a_panic() {
+        assert_eq!(
+            hex_to_key32(&"aéa".repeat(16)),
+            Err(CryptoError::InvalidFormat)
+        );
     }
 }

@@ -411,8 +411,8 @@ pub fn save(app: &AppHandle, settings: &Settings) -> AppResult<()> {
     Ok(())
 }
 
-fn key_entry() -> keyring::Result<keyring::Entry> {
-    keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
+fn key_entry() -> keyring::Result<crate::credentials::Entry> {
+    crate::credentials::Entry::new(KEYRING_SERVICE, KEYRING_USER)
 }
 
 pub fn api_key() -> Option<String> {

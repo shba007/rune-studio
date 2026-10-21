@@ -90,3 +90,7 @@ Recovered the actual 2026-10-19 output from `9748ca1:docs/wire-audit-2026-10-19.
 - The installed vue-tsc/TypeScript compatibility issue prevents a standalone typecheck. Production bundling and component tests pass, but do not replace that check.
 - L0 policy formatting and existing clippy warnings remain outside C1's scope. The full working tree includes uncommitted L0 changes; commit/pull/rebase/push must preserve that work.
 - Kit annotation/rules forwarding and real read-only behavior remain unconfirmed and are not exercised by C1. Draft A2UI blueprints were not read or rendered.
+
+## Subsequent follow-up
+
+The staged C1 and L0 changes were committed together on user request (current history: `944985b`); no push was performed by this chat. The historical working-tree and formatting notes above describe the C1 run. The [L0 follow-up](L0-report.md) replaces test OS-keyring access with memory, reviews the local-only policy integration and formats the entire crate.

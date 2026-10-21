@@ -204,23 +204,6 @@ struct Exchange {
     swap_ms: Option<u64>,
 }
 
-pub const LOCALITY_HEADER_NAMES: &[&str] =
-    &["x-rune-locality", "x-model-locality", "x-infer-locality"];
-
-pub fn detect_echoed_cloud_locality(headers: &reqwest::header::HeaderMap) -> Option<String> {
-    for name in LOCALITY_HEADER_NAMES {
-        if let Some(val) = headers.get(*name) {
-            if let Ok(s) = val.to_str() {
-                let trimmed = s.trim().to_ascii_lowercase();
-                if trimmed == "cloud" || trimmed == "lan" {
-                    return Some(trimmed);
-                }
-            }
-        }
-    }
-    None
-}
-
 impl ChatClient<'_> {
     pub async fn call_retrying(
         &self,
@@ -314,8 +297,8 @@ impl ChatClient<'_> {
         };
 
         if let Some(dc) = request.data_class {
-            let locality = Some(profile.locality.as_str());
-            match crate::life::policy::may_send(Some(dc), self.base_url, locality) {
+            let locality = self.profile.map(|p| p.locality.as_str());
+            match crate::life::policy::may_send_to_route(Some(dc), self.base_url, locality, true) {
                 crate::life::policy::PolicyDecision::Allow => {}
                 crate::life::policy::PolicyDecision::Deny(reason) => {
                     log::warn!("Rejected request before network send: data class '{dc}': {reason}");
@@ -405,8 +388,31 @@ impl ChatClient<'_> {
         body: &Value,
         on_thinking: &mut (dyn FnMut(&str) + Send),
     ) -> Exchange {
-        let mut http = self
-            .http
+        let sensitive_http;
+        let transport = if request.data_class.is_some_and(|dc| dc.is_sensitive()) {
+            sensitive_http = match reqwest::Client::builder()
+                .no_proxy()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+            {
+                Ok(client) => client,
+                Err(error) => {
+                    return Exchange {
+                        result: Err(ModelError::Request(error.to_string())),
+                        status: None,
+                        response: Value::Null,
+                        signal: crate::model::swap::SwapSignal::None,
+                        locality: None,
+                        served_model: None,
+                        swap_ms: None,
+                    };
+                }
+            };
+            &sensitive_http
+        } else {
+            self.http
+        };
+        let mut http = transport
             .post(format!(
                 "{}/v1/chat/completions",
                 self.base_url.trim_end_matches('/')
@@ -437,6 +443,22 @@ impl ChatClient<'_> {
             }
         };
         let headers = response.headers().clone();
+        if request.data_class.is_some_and(|dc| dc.is_sensitive())
+            && crate::life::policy::response_is_cloud(&headers)
+        {
+            return Exchange {
+                result: Err(ModelError::Reply(
+                    "Local-only policy violation: response reported cloud locality; discarded"
+                        .into(),
+                )),
+                status: Some(response.status().as_u16()),
+                response: Value::Null,
+                signal: crate::model::swap::SwapSignal::None,
+                locality: Some("cloud".into()),
+                served_model: None,
+                swap_ms: None,
+            };
+        }
         let status = response.status();
         let code = Some(status.as_u16());
         if !status.is_success() {
@@ -501,27 +523,6 @@ impl ChatClient<'_> {
                 crate::model::swap::SwapSignal::Swapped { swap_ms } => swap_ms,
                 _ => None,
             });
-
-        if let Some(dc) = request.data_class {
-            if dc.is_sensitive() {
-                if let Some(echoed) = detect_echoed_cloud_locality(&headers) {
-                    log::error!(
-                        "Locality violation: response echoed '{echoed}' locality for sensitive data class {dc}"
-                    );
-                    return Exchange {
-                        result: Err(ModelError::Reply(format!(
-                            "Local-only policy violation: response echoed '{echoed}' locality for sensitive data class '{dc}'"
-                        ))),
-                        status: code,
-                        response: Value::Null,
-                        signal: header_signal,
-                        locality: None,
-                        served_model: None,
-                        swap_ms: header_swap_ms,
-                    };
-                }
-            }
-        }
 
         if !request.think {
             let text = match response.text().await {
@@ -1722,5 +1723,100 @@ mod tests {
         let body = chat_body("gemma-4-12b-it", &profile, &a_click_request(&tools));
         assert!(body.get("thinking").is_none());
         assert!(body.get("chat_template_kwargs").is_none());
+    }
+    #[tokio::test]
+    async fn sensitive_cloud_profile_is_blocked_before_network_send() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let http = reqwest::Client::new();
+        let mut profile = ModelProfile::conservative("test");
+        profile.locality = crate::model::capabilities::Locality::Cloud;
+        let client = ChatClient {
+            http: &http,
+            base_url: &url,
+            api_key: None,
+            model: "test",
+            profile: Some(&profile),
+            sink: None,
+            no_swap: false,
+            on_loading: None,
+        };
+        let request = Request::simple("private").with_data_class(crate::life::DataClass::Health);
+        assert!(
+            client
+                .call(&request, &mut |_| {})
+                .await
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("Local-only")
+        );
+        assert!(matches!(listener.accept(), Err(e) if e.kind() == std::io::ErrorKind::WouldBlock));
+    }
+
+    #[tokio::test]
+    async fn sensitive_cloud_responses_are_discarded_for_errors_and_streams() {
+        for (status, think) in [
+            ("200 OK", false),
+            ("500 Internal Server Error", false),
+            ("200 OK", true),
+        ] {
+            let (url, _) = serve_with_headers(vec![(
+                status,
+                vec![("x-model-locality", "cloud"), ("x-rune-locality", "local")],
+                r#"{"private":"must never enter trace"}"#.into(),
+            )]);
+            let http = reqwest::Client::new();
+            let sink = crate::model::attempts::Collect::default();
+            let client = ChatClient {
+                http: &http,
+                base_url: &url,
+                api_key: None,
+                model: "test",
+                profile: None,
+                sink: Some(&sink),
+                no_swap: false,
+                on_loading: None,
+            };
+            let mut request =
+                Request::simple("private").with_data_class(crate::life::DataClass::Finance);
+            request.think = think;
+            let error = client.call(&request, &mut |_| {}).await.err().unwrap();
+            assert!(error.to_string().contains("discarded"));
+            let attempts = sink.0.lock().unwrap();
+            assert_eq!(attempts.len(), 1);
+            assert_eq!(attempts[0].response, Value::Null);
+        }
+    }
+
+    #[tokio::test]
+    async fn sensitive_requests_never_follow_redirects() {
+        let target = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        target.set_nonblocking(true).unwrap();
+        let destination: &'static str =
+            Box::leak(format!("http://{}/leak", target.local_addr().unwrap()).into_boxed_str());
+        let (url, _) = serve_with_headers(vec![(
+            "302 Found",
+            vec![("location", destination)],
+            String::new(),
+        )]);
+        let http = reqwest::Client::new();
+        let client = ChatClient {
+            http: &http,
+            base_url: &url,
+            api_key: None,
+            model: "test",
+            profile: None,
+            sink: None,
+            no_swap: false,
+            on_loading: None,
+        };
+        let request = Request::simple("private").with_data_class(crate::life::DataClass::Mind);
+        assert!(matches!(
+            client.call(&request, &mut |_| {}).await,
+            Err(ModelError::Status { status: 302, .. })
+        ));
+        assert!(matches!(target.accept(), Err(e) if e.kind() == std::io::ErrorKind::WouldBlock));
     }
 }
