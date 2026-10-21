@@ -51,6 +51,36 @@ impl LifeStore {
         }
     }
 
+    /// Recovery action when encryption key is lost:
+    /// Re-initializes the life store from scratch ONLY if explicit confirmation "START FRESH" is provided.
+    pub fn reset_start_fresh(path: &Path, confirmation: &str) -> Result<Self, LifeError> {
+        if confirmation != "START FRESH" {
+            return Err(LifeError::Crypto(
+                "Reset refused: requires confirmation 'START FRESH'".to_string(),
+            ));
+        }
+
+        // Delete old keyring credential
+        let _ = LifeCrypto::delete_keyring_key();
+
+        // Remove old database files
+        if path.exists() {
+            fs::remove_file(path)?;
+        }
+        let wal = path.with_extension("sqlite3-wal");
+        if wal.exists() {
+            let _ = fs::remove_file(wal);
+        }
+        let shm = path.with_extension("sqlite3-shm");
+        if shm.exists() {
+            let _ = fs::remove_file(shm);
+        }
+
+        // Create fresh crypto and fresh store
+        let crypto = LifeCrypto::from_keyring_or_create()?;
+        Self::open(path, crypto)
+    }
+
     /// Open an in-memory life database with the provided crypto.
     pub fn in_memory(crypto: LifeCrypto) -> Result<Self, LifeError> {
         let mut conn = Connection::open_in_memory()?;
@@ -967,5 +997,62 @@ mod tests {
             "Spike benchmark 10,000 records AES-256-GCM + SQLite: Write: {:?}, Read (decrypted): {:?}",
             write_duration, read_duration
         );
+    }
+
+    #[test]
+    fn backup_file_without_key_is_useless() {
+        let temp_dir = TestDir::new();
+        let db_path = temp_dir.path().join("original_life.sqlite3");
+        let crypto1 = LifeCrypto::in_memory_random();
+        let store = LifeStore::open(&db_path, crypto1).unwrap();
+
+        store.set_consent(DataClass::Health, true, "test").unwrap();
+        store
+            .write_record(
+                NewRecord {
+                    id: Some("health-1".into()),
+                    class: DataClass::Health,
+                    kind: RecordKind::Fact,
+                    body: "confidential patient diagnosis".into(),
+                    source: RecordSource::Tool,
+                    grade: 2,
+                    occurred_utc: None,
+                    supports_json: None,
+                },
+                "test",
+            )
+            .unwrap();
+
+        store.checkpoint_and_vacuum().unwrap();
+        drop(store);
+
+        // Copy database to backup location
+        let backup_path = temp_dir.path().join("backup_life.sqlite3");
+        fs::copy(&db_path, &backup_path).unwrap();
+
+        // Attempt to open backup with DIFFERENT crypto key (simulating thief or missing keyring)
+        let crypto_other = LifeCrypto::in_memory_random();
+        let backup_store = LifeStore::open(&backup_path, crypto_other).unwrap();
+
+        // Attempting to list/read records fails to decrypt
+        let result = backup_store.list_records(Some(DataClass::Health), false);
+        assert!(
+            result.is_err(),
+            "Decryption must fail without the original key!"
+        );
+    }
+
+    #[test]
+    fn key_loss_and_start_fresh_recovery() {
+        let temp_dir = TestDir::new();
+        let db_path = temp_dir.path().join("recovery_life.sqlite3");
+
+        // Fails without confirmation
+        let fail = LifeStore::reset_start_fresh(&db_path, "no");
+        assert!(fail.is_err());
+
+        // With explicit confirmation, succeeds
+        let fresh_store = LifeStore::reset_start_fresh(&db_path, "START FRESH").unwrap();
+        assert_eq!(fresh_store.list_records(None, false).unwrap().len(), 0);
     }
 }
