@@ -49,7 +49,7 @@ const button =
     class="flex h-10 shrink-0 select-none items-center justify-between border-b border-white/8 bg-black"
   >
     <div data-tauri-drag-region class="pointer-events-none flex items-center gap-2 pl-4">
-      <AppIcon name="logo" class="text-zinc-200" />
+      <img src="/logo.svg" alt="" class="size-5" />
       <span class="text-caption text-zinc-300 uppercase">{{ title }}</span>
     </div>
     <div class="flex h-full">

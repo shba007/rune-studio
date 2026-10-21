@@ -57,15 +57,7 @@ const segments = computed(() => {
   })
 })
 
-const planning = computed(() => props.goals === 0 && props.running)
 const visible = computed(() => props.goals > 0 || props.running)
-
-/** The arrow sits in the middle of the goal being worked on, and at the end once all are done. */
-const arrowTurn = computed(() => {
-  if (props.goals <= 0) return '0deg'
-  if (props.finished) return `${360 - 360 / props.goals / 2}deg`
-  return `${((props.current + 0.5) * 360) / props.goals}deg`
-})
 </script>
 
 <template>
@@ -87,19 +79,7 @@ const arrowTurn = computed(() => {
       />
     </template>
     <!-- Planning: a dim ring; the arrow below circles it. -->
-    <path v-else :d="arc(0, 359.9)" fill="none" class="dots pending" />
-
-    <g
-      class="arrow-turn"
-      :class="{ planning }"
-      :style="{ transform: planning ? undefined : `rotate(${arrowTurn})` }"
-    >
-      <polygon
-        points="35.4,0.7 30.6,-1.6 30.6,3"
-        class="arrow"
-        :class="{ failed: failed && !finished }"
-      />
-    </g>
+    <path v-else :d="arc(0, 359.9)" fill="none" class="dots pending planning-ring" />
   </svg>
 </template>
 
@@ -137,22 +117,8 @@ const arrowTurn = computed(() => {
   animation: none;
 }
 
-.arrow-turn {
-  transform-origin: 32px 32px;
-  transition: transform 600ms cubic-bezier(0.3, 0, 0.2, 1);
-}
-
-.arrow {
-  fill: var(--lit, #2d71c3);
-}
-
-.arrow.failed {
-  fill: #d71921;
-}
-
-.planning {
-  animation: spin 2.2s linear infinite;
-  transition: none;
+.planning-ring {
+  animation: pulse 1.4s ease-in-out infinite;
 }
 
 @keyframes pulse {
@@ -161,15 +127,9 @@ const arrowTurn = computed(() => {
   }
 }
 
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .current,
-  .planning {
+  .planning-ring {
     animation: none;
   }
 }
