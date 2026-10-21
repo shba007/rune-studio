@@ -437,7 +437,7 @@ An observation from 2026-10-19 against one server build: text questions answered
 
 An outside agent can use Rune Studio's eyes and hands directly, skipping the local model. Everything an agent needs sits behind `observe::screenshot` and `agent::body`; the bridge takes the place of the model between them. The overlay, step captions, click ripple, Stop, the state machine and the safety gate are unchanged. The agent-facing contract is `docs/AGENT-GUIDE.md`.
 
-**Switch.** A Cargo feature, off by default (`bun run tauri:dev -- --features agent-bridge`). Without it the build has no server and no way in. All release builds enable it. Even in a bridge build the user must turn on Settings > External agent (or run `rune-studio-cli enable`).
+**Switch.** A Cargo feature, off by default (`bun run tauri:dev` already passes it; plain `tauri dev` does not). Without it the build has no server and no way in. All release builds enable it. Even in a bridge build the user must turn on Settings > External agent (or run `rune-studio-cli enable`).
 
 **Transport.** An MCP server over plain HTTP JSON-RPC at `http://127.0.0.1:47600/mcp` (`POST` only; `initialize`, `ping`, `tools/list`, `tools/call`, `resources/list|read`, `prompts/list|get`). Rejected: stdio for the app itself (it is a long-running GUI) and exposing Tauri commands. For stdio-only clients, `rune-studio-cli mcp` forwards stdin/stdout to the local door and starts the app if needed (waits up to 30 s).
 
