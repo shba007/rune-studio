@@ -111,7 +111,7 @@ pub async fn handle(app: &AppHandle, request: Value) -> Option<Value> {
                     "protocolVersion": version,
                     "capabilities": { "tools": { "listChanged": false }, "resources": {}, "prompts": {} },
                     "serverInfo": { "name": "rune-studio", "version": crate::VERSION },
-                    "instructions": "Rune Studio lets you see the user's screen and use their mouse and keyboard. Call rune_guide first for how to use it, then rune_begin. Take one small step at a time and look at every screenshot.",
+                    "instructions": "Rune Studio lets you see the user's screen and use their mouse and keyboard. Call rune_guide first for how to use it, then rune_begin. Take one small step at a time and look at every screenshot. Ordinary friction (slow pages, pop-ups, a missed click, busy) is yours to work through by trying something different. If Rune Studio cannot be reached or is blocked, stop and tell the user what you saw and what to do: never read or change Rune Studio's files or settings, never run its command line, and never use another tool to do the task behind its back.",
                 }),
             )
         }

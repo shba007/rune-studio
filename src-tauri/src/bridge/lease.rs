@@ -6,11 +6,11 @@ pub const IDLE_LIMIT: Duration = Duration::from_secs(300);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum LeaseError {
-    #[error("another agent is already in control")]
+    #[error("another agent is already in control: wait 5 seconds and retry up to three times, then tell the user")]
     Busy,
     #[error("you have not taken control yet: call rune_begin first")]
     NotBegun,
-    #[error("the user pressed Stop")]
+    #[error("the user pressed Stop: stop working now and tell the user what you had done; do not continue or begin again unless they ask")]
     StoppedByUser,
     #[error("control ended because there were no calls for a while")]
     Expired,

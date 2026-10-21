@@ -8,7 +8,7 @@ pub const GUIDE: &str = include_str!("../../../docs/AGENT-GUIDE.md");
 const NAME: &str = "rune-studio";
 const DESCRIPTION: &str = "Use when the user asks you to do something on their Windows PC with the screen, mouse or keyboard: open apps, click, type, press keys, or read what is on screen. Works through the rune_ tools from Rune Studio.";
 
-const SKILL_SECTIONS: [u32; 4] = [1, 2, 3, 9];
+const SKILL_SECTIONS: [u32; 5] = [1, 2, 3, 9, 14];
 const TOOLS_SECTIONS: [u32; 5] = [4, 5, 6, 7, 8];
 const RECIPES_SECTIONS: [u32; 2] = [11, 12];
 const ERRORS_SECTIONS: [u32; 2] = [10, 13];

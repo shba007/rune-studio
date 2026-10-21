@@ -22,6 +22,7 @@ pub fn agent_system() -> &'static str {
             &[
                 ("controls", prompt!("skills/controls.md")),
                 ("typing", prompt!("skills/typing.md")),
+                ("persistence", prompt!("skills/persistence.md")),
             ],
         )
     })

@@ -13,7 +13,7 @@ The user is watching. They see a frame around the screen, a short caption for ea
 
 ## 2. If you cannot use it
 
-Tell the user, in plain words, what to do. You never need to run these yourself.
+Tell the user, in plain words, what to do, and stop there. You never need to run these yourself, and you must not work around the problem (see "When to stop and when to keep trying").
 
 | You see                 | Tell the user                                                                                                                                                                                                |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -93,21 +93,21 @@ Actions already wait a moment for the screen to settle. If something is slow (an
 
 ## 10. Errors and what to do
 
-| Error                | Meaning                                                | Do this                                                        |
-| -------------------- | ------------------------------------------------------ | -------------------------------------------------------------- |
-| `not_enabled`        | The user has not allowed outside agents.               | See "If you cannot use it" above.                              |
-| `unauthorized`       | The connection is not set up right.                    | See "If you cannot use it" above.                              |
-| `busy`               | Another agent, or Rune Studio's own agent, is working. | Wait, or tell the user.                                        |
-| `not_begun`          | You acted before `rune_begin`.                         | Call `rune_begin`.                                             |
-| `stopped_by_user`    | The user pressed Stop.                                 | Stop. Report. Do not continue.                                 |
-| `declined_by_user`   | The user said no to a risky action.                    | Do not retry. Ask what they want.                              |
-| `lease_expired`      | You were silent too long.                              | Ask the user, then `rune_begin` again.                         |
-| `bad_arguments`      | A required argument is missing or the wrong shape.     | Fix the call using the tool table.                             |
-| `unknown_tool`       | There is no tool with that name.                       | Check the tool table under Tools.                              |
-| `out_of_range`       | A coordinate or region was outside 0 to 1000.          | Fix the numbers.                                               |
-| `unknown_key`        | A key name was not recognised.                         | Use the key names under Typing and keys.                       |
-| `action_failed`      | The click, typing or launch failed.                    | Read the message, look at the screen, try something different. |
-| `screen_unavailable` | The screenshot failed (for example the PC is locked).  | Tell the user.                                                 |
+| Error                | Meaning                                                | Do this                                                         |
+| -------------------- | ------------------------------------------------------ | --------------------------------------------------------------- |
+| `not_enabled`        | The user has not allowed outside agents.               | See "If you cannot use it" above.                               |
+| `unauthorized`       | The connection is not set up right.                    | See "If you cannot use it" above.                               |
+| `busy`               | Another agent, or Rune Studio's own agent, is working. | Wait 5 seconds and retry up to three times, then tell the user. |
+| `not_begun`          | You acted before `rune_begin`.                         | Call `rune_begin`.                                              |
+| `stopped_by_user`    | The user pressed Stop.                                 | Stop. Report. Do not continue.                                  |
+| `declined_by_user`   | The user said no to a risky action.                    | Do not retry. Ask what they want.                               |
+| `lease_expired`      | You were silent too long.                              | Ask the user, then `rune_begin` again.                          |
+| `bad_arguments`      | A required argument is missing or the wrong shape.     | Fix the call using the tool table.                              |
+| `unknown_tool`       | There is no tool with that name.                       | Check the tool table under Tools.                               |
+| `out_of_range`       | A coordinate or region was outside 0 to 1000.          | Fix the numbers.                                                |
+| `unknown_key`        | A key name was not recognised.                         | Use the key names under Typing and keys.                        |
+| `action_failed`      | The click, typing or launch failed.                    | Read the message, look at the screen, try something different.  |
+| `screen_unavailable` | The screenshot failed (for example the PC is locked).  | Stop and tell the user.                                         |
 
 ## 11. Recipes
 
@@ -151,3 +151,37 @@ Actions already wait a moment for the screen to settle. If something is slow (an
 ## How the user sees who you are
 
 While you hold control the user's orb and top bar show a label: your declared `agent` name from `rune_begin`, matched exactly (case and punctuation aside) against a few known names (Claude, Antigravity, OpenCode, ChatGPT, Codex, Gemini, Cursor, Cline, Copilot, Windsurf); anything else is shown neutral under the name you gave. `rune-studio-cli connect claude|antigravity` registers the server as `mcp --agent <id>`, and that registration's id wins over the declared name. **The label is a courtesy, not a security boundary**: nothing authenticates it, and the safety gate treats every outside agent alike. When you register Rune yourself, start it as `rune-studio-cli mcp --agent <id>` to be shown correctly.
+
+## 14. When to stop and when to keep trying
+
+**Stop and tell the user** when the way in is closed or only the user can open it. Say what you saw, what you already tried, and what they should do. Then end with `rune_done` (`success: false`) or wait for their answer. Do not look for a way around it. The cases:
+
+- You cannot reach Rune Studio: no `rune_` tools, a refused or timed-out connection, `not_enabled`, `unauthorized`, or the app does not answer. Give the fix from "If you cannot use it".
+- `stopped_by_user` or `declined_by_user`.
+- The task needs something that is the user's alone: a password or code you were not given, a login, a CAPTCHA, two-factor approval, a payment, or a decision between options you cannot judge.
+- The front window runs as administrator, so clicks and typing are ignored there.
+- `screen_unavailable` (for example the PC is locked).
+- The task is unclear or would go outside what was asked.
+- You have tried three genuinely different approaches for the same goal and the screen still does not change. Report what you tried.
+
+**Never do these to get past a blocked connection or a blocked task:**
+
+- Do not read, search or edit Rune Studio's source, settings, token store, logs or database.
+- Do not run `rune-studio-cli`, change its configuration, start or restart the app, or scan ports. Tell the user to do it.
+- Do not use another way to control the PC (scripts, shell commands, automation libraries, other computer-control tools) to do the task behind Rune's back. The user chose to watch you through Rune.
+- Do not switch to an unrelated task or change the goal to something easier without asking.
+- Do not try to solve a CAPTCHA or enter credentials.
+
+**Keep trying** (do not stop and do not complain) when the problem is ordinary friction. Change the approach each time:
+
+- The action had no visible effect, or missed a small target: call `rune_elements` and click by id, zoom with `rune_observe` and a `region`, or use a keyboard route.
+- The page or app is still loading: `rune_wait` 1000 to 3000 ms and look again, up to five times.
+- A pop-up, cookie banner or dialog is in the way: answer or close it first (decline non-essential cookies).
+- The control is off screen: scroll, enlarge or switch to the right window or tab; check the right field has focus before typing.
+- An app or page did not open: try the short program name, the other spelling, reload, or go back.
+- `busy`: wait 5 seconds and retry up to three times before telling the user.
+- `bad_arguments`, `out_of_range`, `unknown_key`: the mistake is yours, so fix the call and retry.
+- `action_failed`: read the message, look at the screen, try something different.
+- `lease_expired` after a pause you caused: `rune_begin` again once, and say so to the user.
+
+Never repeat the same action more than twice. Count a try only when it was really different. If a risky step is needed to continue, mark it `risk: "high"` and let Rune ask; do not avoid the step by a side route.

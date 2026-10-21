@@ -141,14 +141,14 @@ async fn post_mcp(State(app): State<AppHandle>, headers: HeaderMap, body: Bytes)
         return refuse(
             StatusCode::UNAUTHORIZED,
             "unauthorized",
-            "Missing or wrong token. Ask the user for the token in Settings > External agent.",
+            "Missing or wrong token. Stop and ask the user to run rune-studio-cli connect for your agent again. Do not look for the token or work around this.",
         );
     }
     if !switch_is_on(&app) {
         return refuse(
             StatusCode::FORBIDDEN,
             "not_enabled",
-            "The user has not switched External agent on in Settings.",
+            "The user has not switched External agent on in Settings. Stop and ask them to switch it on (or run rune-studio-cli enable). Do not work around this.",
         );
     }
     let mut request: Value = match serde_json::from_slice(&body) {
