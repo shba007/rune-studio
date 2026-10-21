@@ -1,10 +1,10 @@
 pub mod capture;
 pub mod direct;
 pub mod intent;
+pub mod seam;
 pub mod vad;
 
 use crate::sync::LockExt;
-use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -82,6 +82,13 @@ pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
         }
     };
     let profile = crate::model::profile::resolve_profile(&voice_model, None, None);
+    if let Some(reason) = seam::voice_disabled_reason(&voice_model, &profile) {
+        log::warn!("voice disabled: {reason}");
+        heard(app, "", reason);
+        crate::commands::close_microphone(app);
+        return;
+    }
+
     let client = ChatClient {
         http: &state.http,
         base_url: &base_url,
@@ -91,8 +98,9 @@ pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
         sink: None,
         on_loading: None,
     };
-    let audio = BASE64.encode(&wav);
-    match direct::listen(&client, &audio, events::agent_state(app)).await {
+    use seam::Transcriber;
+    let transcriber = seam::ChatModelAudio { client: &client };
+    match transcriber.transcribe(&wav, events::agent_state(app)).await {
         Ok(Some(listened)) => {
             log::info!("heard: {:?}", listened.intent);
             apply(

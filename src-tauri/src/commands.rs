@@ -218,6 +218,11 @@ pub async fn toggle_listening(app: AppHandle, state: State<'_, AppState>) -> App
     }
 
     let (settings, http) = (state.settings.locked().clone(), state.http.clone());
+    let voice_model = settings.model_for_role(crate::model::role::ModelRole::Voice);
+    let profile = crate::model::profile::resolve_profile(voice_model, None, None);
+    if let Some(reason) = crate::voice::seam::voice_disabled_reason(voice_model, &profile) {
+        return Err(AppError::Invalid(reason));
+    }
     tauri::async_runtime::spawn(async move {
         let status = backend::check(&http, &settings, settings::api_key().as_deref()).await;
         if backend::lacks_audio(&status.model_capabilities) {

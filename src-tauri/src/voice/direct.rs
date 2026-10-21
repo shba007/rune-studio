@@ -28,6 +28,7 @@ pub fn wav(samples: &[i16]) -> Vec<u8> {
     out
 }
 
+#[derive(Clone, Debug, PartialEq)]
 pub struct Listened {
     pub intent: Intent,
     pub goals: Option<Vec<String>>,
