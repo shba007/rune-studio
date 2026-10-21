@@ -17,6 +17,7 @@ mod exec;
 mod flight;
 mod hotkeys;
 mod hub;
+pub mod life;
 mod model;
 mod observe;
 mod overlay;
