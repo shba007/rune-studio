@@ -190,6 +190,8 @@ pub struct RunSummary {
     pub steps: i64,
     /// The result of the independent check (`verified`, `contradicted`, ...), if there is one.
     pub verdict: Option<String>,
+    pub session_dir: Option<String>,
+    pub last_shot: Option<String>,
 }
 
 /// A whole run row.
@@ -253,7 +255,8 @@ pub fn list_runs_in(db: &Connection, limit: usize) -> Result<Vec<RunSummary>, St
         "NULL"
     };
     let mut statement = db.prepare(&format!(
-        "SELECT r.id, r.started_utc, r.ended_utc, r.source, r.outcome, r.task, (SELECT COUNT(*) FROM steps s WHERE s.run_id = r.id), {verdict}
+        "SELECT r.id, r.started_utc, r.ended_utc, r.source, r.outcome, r.task, (SELECT COUNT(*) FROM steps s WHERE s.run_id = r.id), {verdict}, r.session_dir,
+                (SELECT s.observation_path FROM steps s WHERE s.run_id = r.id AND s.observation_path IS NOT NULL ORDER BY s.step DESC LIMIT 1)
          FROM runs r ORDER BY r.started_utc DESC, r.rowid DESC LIMIT ?1"
     ))?;
     let rows = statement.query_map([i64::try_from(limit).unwrap_or(i64::MAX)], |row| {
@@ -266,6 +269,8 @@ pub fn list_runs_in(db: &Connection, limit: usize) -> Result<Vec<RunSummary>, St
             task: row.get(5)?,
             steps: row.get(6)?,
             verdict: row.get(7)?,
+            session_dir: row.get(8)?,
+            last_shot: row.get(9)?,
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)

@@ -27,6 +27,7 @@ const RUN = {
   endedUtc: '2026-10-20T10:00:30Z',
   steps: 3,
   verdict: null,
+  thumb: null,
 }
 
 interface World {

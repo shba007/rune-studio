@@ -84,6 +84,7 @@ export const flightRuns = [
     endedUtc: at(55),
     steps: 6,
     verdict: 'verified',
+    thumb: 'screenshots/3.jpg',
   },
   {
     id: '090000-1-old',
@@ -94,6 +95,7 @@ export const flightRuns = [
     endedUtc: '2026-10-19T09:00:30Z',
     steps: 3,
     verdict: null,
+    thumb: null,
   },
 ]
 

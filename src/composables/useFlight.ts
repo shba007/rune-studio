@@ -120,10 +120,13 @@ export function useFlight() {
   }
 
   /** The path of a file in the run's own folder as a url, or null when it is missing or refused. */
-  async function fileOf(relative: string | null | undefined): Promise<string | null> {
-    if (!relative || !runId.value) return null
+  async function fileOf(
+    relative: string | null | undefined,
+    id: string | null = runId.value,
+  ): Promise<string | null> {
+    if (!relative || !id) return null
     try {
-      return fileUrl(await invoke<string>('flight_file', { id: runId.value, relative }))
+      return fileUrl(await invoke<string>('flight_file', { id, relative }))
     } catch {
       return null
     }

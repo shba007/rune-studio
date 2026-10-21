@@ -1438,6 +1438,8 @@ mod tests {
             task: Some(task.into()),
             steps,
             verdict: None,
+            session_dir: None,
+            last_shot: None,
         }
     }
 
