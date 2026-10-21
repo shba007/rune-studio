@@ -1,5 +1,44 @@
 # Changelog
 
+## v0.0.19
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.0.18...v0.0.19)
+
+### 🚀 Enhancements
+
+- **ui:** Friendly dates, header order, developer mode, mask secrets, no timeline footer ([3bd06af](https://github.com/shba007/rune-studio/commit/3bd06af))
+- **ui:** Live countdown and goal duration in the task panel ([34f6ed3](https://github.com/shba007/rune-studio/commit/34f6ed3))
+- **ui:** Artifacts as cards with a screenshot preview ([3edbf42](https://github.com/shba007/rune-studio/commit/3edbf42))
+- **ui:** Any outside agent gets its logo or letter and accent colour on the orb and pill ([a1b738a](https://github.com/shba007/rune-studio/commit/a1b738a))
+- **agents:** Say when to stop and when to keep trying, and never work around a block ([74b5c91](https://github.com/shba007/rune-studio/commit/74b5c91))
+- **ui:** Settings, artifacts and about in their own window with auto save ([f234160](https://github.com/shba007/rune-studio/commit/f234160))
+
+### 🩹 Fixes
+
+- **ui:** Light title bar logo, bold glyph icons, no arrow on the ring ([e7660f6](https://github.com/shba007/rune-studio/commit/e7660f6))
+- Keep the prompt files exactly as written, out of the formatter ([8b4b26c](https://github.com/shba007/rune-studio/commit/8b4b26c))
+- **ui:** Artifact cards keep their thumbnail height ([e111a08](https://github.com/shba007/rune-studio/commit/e111a08))
+- **ui:** Open the settings window from an async command, keep long backend text in its row ([e4fce59](https://github.com/shba007/rune-studio/commit/e4fce59))
+- **preview:** Back goes to Sessions, a visible cursor, steps keep the screen they acted on ([0ed9dd4](https://github.com/shba007/rune-studio/commit/0ed9dd4))
+
+### 💅 Refactors
+
+- Move every model prompt and skill into src-tauri/prompts/*.md ([13b7cec](https://github.com/shba007/rune-studio/commit/13b7cec))
+
+### 🏡 Chore
+
+- Remove all code comments; document prompts folder and icon weights ([c501ffb](https://github.com/shba007/rune-studio/commit/c501ffb))
+- Tauri:dev builds the app with agent support ([160513e](https://github.com/shba007/rune-studio/commit/160513e))
+- **ui:** Call the artifacts tab Sessions ([811350c](https://github.com/shba007/rune-studio/commit/811350c))
+
+### ✅ Tests
+
+- Header duration in words ([5cf41c3](https://github.com/shba007/rune-studio/commit/5cf41c3))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+
 ## v0.0.18
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.0.17...v0.0.18)
