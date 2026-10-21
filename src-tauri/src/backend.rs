@@ -1,8 +1,11 @@
 use std::time::{Duration, Instant};
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
-use crate::settings::Settings;
+use crate::{
+    model::capabilities::{ModelCapabilities, parse_models_response},
+    settings::Settings,
+};
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(4);
 
@@ -15,6 +18,8 @@ pub struct BackendStatus {
     pub model_capabilities: Vec<String>,
     pub latency_ms: Option<u64>,
     pub error: Option<String>,
+    #[serde(default)]
+    pub models: Vec<ModelCapabilities>,
 }
 
 impl BackendStatus {
@@ -26,20 +31,9 @@ impl BackendStatus {
             model_capabilities: Vec::new(),
             latency_ms: None,
             error: Some(error),
+            models: Vec::new(),
         }
     }
-}
-
-#[derive(Deserialize)]
-struct ModelList {
-    data: Vec<ModelEntry>,
-}
-
-#[derive(Deserialize)]
-struct ModelEntry {
-    id: String,
-    #[serde(default)]
-    capabilities: Vec<String>,
 }
 
 pub fn lacks_audio(capabilities: &[String]) -> bool {
@@ -94,6 +88,7 @@ pub async fn check(
             model_capabilities: Vec::new(),
             latency_ms: Some(latency_ms),
             error: Some("API key rejected".into()),
+            models: Vec::new(),
         };
     }
     if !status.is_success() {
@@ -104,39 +99,34 @@ pub async fn check(
             model_capabilities: Vec::new(),
             latency_ms: Some(latency_ms),
             error: Some(format!("model list returned {status}")),
+            models: Vec::new(),
         };
     }
 
-    match response.json::<ModelList>().await {
-        Ok(list) => {
-            let missing_models = [&settings.model]
-                .into_iter()
-                .filter(|wanted| !list.data.iter().any(|model| &model.id == *wanted))
-                .cloned()
-                .collect();
-            let model_capabilities = list
-                .data
-                .iter()
-                .find(|model| model.id == settings.model)
-                .map(|model| model.capabilities.clone())
-                .unwrap_or_default();
-            BackendStatus {
-                reachable: true,
-                auth_ok: true,
-                missing_models,
-                model_capabilities,
-                latency_ms: Some(latency_ms),
-                error: None,
-            }
-        }
-        Err(err) => BackendStatus {
-            reachable: true,
-            auth_ok: true,
-            missing_models: Vec::new(),
-            model_capabilities: Vec::new(),
-            latency_ms: Some(latency_ms),
-            error: Some(format!("unexpected model list format: {err}")),
-        },
+    let body = response.text().await.unwrap_or_default();
+    let models = parse_models_response(&body);
+
+    let configured_model = &settings.model;
+    let missing_models = [configured_model]
+        .into_iter()
+        .filter(|wanted| !models.iter().any(|m| &m.id == *wanted))
+        .cloned()
+        .collect();
+
+    let model_capabilities = models
+        .iter()
+        .find(|m| &m.id == configured_model)
+        .map(|m| m.raw_capabilities.clone())
+        .unwrap_or_default();
+
+    BackendStatus {
+        reachable: true,
+        auth_ok: true,
+        missing_models,
+        model_capabilities,
+        latency_ms: Some(latency_ms),
+        error: None,
+        models,
     }
 }
 
@@ -145,11 +135,11 @@ mod tests {
     use super::*;
 
     fn capabilities_of(json: &str, model: &str) -> Vec<String> {
-        let list: ModelList = serde_json::from_str(json).unwrap();
-        list.data
-            .iter()
+        let models = parse_models_response(json);
+        models
+            .into_iter()
             .find(|entry| entry.id == model)
-            .map(|entry| entry.capabilities.clone())
+            .map(|entry| entry.raw_capabilities)
             .unwrap_or_default()
     }
 
