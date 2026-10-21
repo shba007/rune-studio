@@ -121,9 +121,7 @@ pub fn score_tool_choice(observations: &[ToolCallObservation]) -> TriState {
         .filter(|o| o.called && !o.valid_arguments)
         .count();
 
-    if valid_count == total {
-        TriState::Yes
-    } else if valid_count * 2 >= total && malformed_count == 0 {
+    if valid_count == total || (valid_count * 2 >= total && malformed_count == 0) {
         TriState::Yes
     } else if valid_count == 0 || malformed_count > total / 2 {
         TriState::No

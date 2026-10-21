@@ -293,13 +293,13 @@ impl ChatClient<'_> {
                     .map(ToString::to_string)
             });
             report.swap_ms = exchange.swap_ms;
-            if let Some(ref served) = report.served_model {
-                if served != self.model {
-                    log::warn!(
-                        "served model '{served}' differs from requested model '{}'",
-                        self.model
-                    );
-                }
+            if let Some(ref served) = report.served_model
+                && served != self.model
+            {
+                log::warn!(
+                    "served model '{served}' differs from requested model '{}'",
+                    self.model
+                );
             }
             match &exchange.result {
                 Ok(_) => report.outcome = "ok",

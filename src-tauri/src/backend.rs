@@ -115,7 +115,7 @@ pub async fn check(
     ];
     let missing_models = configured_roles
         .into_iter()
-        .filter(|wanted| !wanted.is_empty() && !models.iter().any(|m| &m.id == *wanted))
+        .filter(|wanted| !wanted.is_empty() && !models.iter().any(|m| m.id == *wanted))
         .map(|s| s.to_string())
         .collect::<std::collections::BTreeSet<_>>()
         .into_iter()

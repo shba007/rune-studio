@@ -320,10 +320,10 @@ impl CapabilityCache {
 
     pub fn get(&self) -> Option<HashMap<String, ModelCapabilities>> {
         let guard = self.entries.lock().ok()?;
-        if let Some((instant, ref map)) = *guard {
-            if instant.elapsed() < self.ttl {
-                return Some(map.clone());
-            }
+        if let Some((instant, ref map)) = *guard
+            && instant.elapsed() < self.ttl
+        {
+            return Some(map.clone());
         }
         None
     }

@@ -13,7 +13,7 @@ pub enum SwapSignal {
     Swapped { swap_ms: Option<u64> },
 }
 
-pub fn detect_swap_signal(headers: &HeaderMap, status: u16, body: Option<&Value>) -> SwapSignal {
+pub fn detect_swap_signal(headers: &HeaderMap, _status: u16, body: Option<&Value>) -> SwapSignal {
     for key in [
         "x-rune-infer-loading",
         "x-rune-model-loading",

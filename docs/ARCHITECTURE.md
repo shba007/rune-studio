@@ -45,25 +45,65 @@ UI shell (pill + overlay) <-events/commands-> Agent core (agent::run: plan, hist
 6. **Executor:** performs actions in physical pixels. `model/coords.rs` owns coordinate mapping.
 7. **Safety gate:** decides allow / confirm, writes the audit log, and answers the Stop token.
 
-## 4. Model server integration
+## 4. Models, profiles, roles, and swaps
 
-**One omni model, one chat endpoint.** Everything (hearing the user, planning, choosing actions) is a call to `POST {base_url}/v1/chat/completions` with the single `model` setting. There is no separate speech-to-text, vision or voice model. The optional decision model (`fast_checks`, default **off**) is the only other endpoint, `POST {decision_url}/v1/decisions`.
+Studio supports interchangeable models with hot-swapping via rune-infer. Rather than hard-coding model quirks, Studio decouples model capabilities into **profiles** and model assignments into **roles**.
+
+### Roles
+
+A user assigns a model per role (`settings.models`):
+
+- `agent`: The primary loop model that plans and executes desktop actions.
+- `verifier`: The model running independent checks of finished tasks.
+- `analysis`: The model performing detailed screen inspection and UI element localization.
+- `voice`: The model transcribing speech and reading intent from microphone audio.
+- `decision`: The fast, lightweight model for speculative fast checks (`/v1/decisions`).
+- `advisor`: Reserved for life-track background guidance.
+
+If an optional role is empty, it falls back to the `agent` model.
+
+### Model profiles
+
+A `ModelProfile` describes what a model can do and how Studio should communicate with it:
+
+- `thinking`: How to control reasoning tokens (`none` or a list of styles: `thinking_type`, `chat_template_kwargs`, `budget_tokens`).
+- `audio_in`: Whether audio input is supported (`yes`, `no`, `unknown`) and preferred format (default `wav`).
+- `images`: Maximum useful edge in pixels (`max_edge_px`) and whether screenshots at app size are supported.
+- `pointing`: How the model expresses coordinates: `norm1000` (Studio's native 0..1000), `pixels` (relative to downscaled image), `norm1` (0..1 normalized), or `unknown`.
+- `tool_choice_required`: Tri-state (`yes`, `no`, `unknown`) indicating whether forced tool calling is reliable.
+- `max_tokens`: Default token limits per role (`agent`, `agent_thinking`, `verifier`, `analysis`, `voice`, `decision`, `advisor`).
+- `locality`: Whether the model is `local`, `cloud`, or `unknown`.
+
+**Precedence:** User settings override > measured bundled defaults (`profiles.json`) > server capabilities (`/v1/models`) > conservative defaults.
+Unknown models start with a conservative profile: thinking off sent with every known style, pointing treated as unknown, and tool choice unforced.
+
+### Coordinate adapters
+
+Studio internally works in `0..1000` normalized coordinates. The pure adapter module in `model/coords.rs` (`adapt_point_to_norm1000`, `adapt_box_to_norm1000`) converts from the model's reported `pointing` convention into Studio's `0..1000` system, handling non-square displays and arbitrary OS scale factors (100%, 125%, 150%).
+
+### Swap-aware calls and model loading
+
+When switching models on a single-GPU server, a hot swap occurs. Studio handles this as an expected, visible, non-failing state:
+
+- **Detection:** Swap signals are isolated behind `model::swap::detect_swap_signal`, inspecting response headers (`x-rune-infer-loading`, `x-rune-infer-swapped`) and HTTP 503 retry responses.
+- **Calm UI:** While a model is loading, the agent enters `AgentState::LoadingModel`, displaying a calm dot-arc animation in the pill without error states.
+- **Trace separation:** The trace database records `swap_ms` separately from `decide_ms`, alongside the actual `served_model` reported by the server.
+- **Idle allowance:** The first call after idle uses a generous configurable allowance (`first_call_idle_allowance_secs`, default 30s) to prevent premature timeouts during initial model loads.
+- **Optional role skipping:** If `skip_swap_for_optional_roles` is enabled (default on), non-resident models for optional roles (like `decision` or `verifier`) are skipped to avoid costly swap overhead.
+
+### Model calibration probe
+
+New models can be calibrated using the built-in probe (`scripts/m15/run-probe.ps1 -Profile -Model <name>`). The probe runs small synthetic test scenes, scores candidate pointing conventions, tests thinking switch styles, verifies tool calling reliability, determines safe resolution limits, and outputs a suggested `ModelProfile` JSON.
+
+### Model server integration
 
 Request shape (`model/client.rs`):
 
-- `messages`: a system message and one user message whose content is text, or parts in the order `input_audio` (`{data: <base64 WAV file>, format: "wav"}`), `image_url`, `text`.
-- `tools` and `tool_choice: "required"`; `temperature: 0`.
-- `max_tokens`: 512, or 3000 when thinking is on. Request timeout 300 s (whole request).
-- `thinking: {"type": "enabled" | "disabled"}` and `chat_template_kwargs: {"enable_thinking": <show_thinking>}` (the first is what rune-infer honours; the second is kept for servers that read it). With thinking on, `stream: true` and the SSE deltas (`reasoning` or `reasoning_content`, tool-call fragments by index) are assembled; thinking is forwarded to the UI at most every 150 ms.
-- `Authorization: Bearer <key>` when a key exists.
-
-Errors are `ModelError::{Request, Status, Reply, NoToolCall}`. A reply with no tool call or unparsable arguments counts as an invalid answer (3 in a row fail the run); transient errors (transport, HTTP 429, 502, 503, 504) are retried up to 3 times for the planning and decide calls (500 ms then 1500 ms plus up to 20% jitter); other errors fail the run.
-
-Health: `backend::check` calls `GET /health` (no auth), then `GET /v1/models` (authenticated), each with a 4 s timeout, and reports reachable / key rejected / configured model missing / latency.
-
-**Against rune-infer specifically** (resolved 2026-10-19 from the rune-infer developer's answers and the raw replies they pasted; nothing was run by us). Two things were wrong: Studio sent audio as `audio_url`, which rune-infer does not deserialise, so the audio was silently ignored; and it switched thinking only with `chat_template_kwargs.enable_thinking`, which rune-infer does not read, so the "off" switch did nothing. Studio now sends audio as `input_audio {data, format: "wav"}` (the whole base64 WAV file; rune-infer accepts wav or mp3, 50 MB decoded, no resampling, no duration limit; the part is in rune-infer commit `9a34e50`, unreleased at the time of writing) and `thinking: {"type": "disabled" | "enabled"}`, keeping `enable_thinking`. Still **NOT CERTAIN**: whether thinking is on by default when no parameter is sent (a pasted reply with none contained `reasoning_content`), whether `thinking: {"type":"enabled"}` needs `budget_tokens`, and whether `data` should contain the WAV header or raw PCM. `usage` in pasted replies was unreliable (prompt 1, completion 1 for the reply "Four"); Studio does not use it. Open items are in `docs/ROADMAP.md`.
-
-What the server must support: multimodal content parts (`text`, `image_url` as data-URI JPEG, `input_audio` as base64 WAV 16 kHz mono), tool calls with those inputs, the `thinking` switch (and `enable_thinking` where the chat template reads it), SSE with reasoning and tool-call deltas, `/health`, `/v1/models`, and bearer auth. The 0-1000 click-coordinate convention, the context size and the screenshot token cost were measured on earlier models (see the appendix) and should be re-checked for the current default. `GET /v1/models` items may carry a `capabilities` list; opening the microphone logs a warning when the configured model is listed without `Audio`.
+- `messages`: a system message and user message with `input_audio` (`{data, format}`), `image_url`, and `text`.
+- Profile-driven thinking control, tool choice, and token limits.
+- Bearer auth when an API key is set.
+- Retries transient errors (429, 502, 503, 504) with backoff.
+- Tolerant capability parser reading both free-text and structured INF-7 capabilities from `GET /v1/models`.
 
 ## 5. Action protocol
 

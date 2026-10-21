@@ -170,11 +170,11 @@ pub fn resolve_profile(
         profile = measured.clone();
     }
 
-    if let Some(user) = user_override {
-        if user.id == model_id || user.id.is_empty() {
-            profile = user.clone();
-            profile.id = model_id.to_string();
-        }
+    if let Some(user) = user_override
+        && (user.id == model_id || user.id.is_empty())
+    {
+        profile = user.clone();
+        profile.id = model_id.to_string();
     }
 
     profile

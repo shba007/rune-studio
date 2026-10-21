@@ -194,15 +194,17 @@ impl<'de> Deserialize<'de> for Settings {
     {
         let helper = SettingsDeHelper::deserialize(deserializer)?;
         let mut models = helper.models.unwrap_or_default();
-        if let Some(ref m) = helper.model {
-            if !m.is_empty() && (models.agent.is_empty() || models.agent == "gemma-4-12b-it") {
-                models.agent = m.clone();
-            }
+        if let Some(ref m) = helper.model
+            && !m.is_empty()
+            && (models.agent.is_empty() || models.agent == "gemma-4-12b-it")
+        {
+            models.agent = m.clone();
         }
-        if let Some(ref d) = helper.decision_model {
-            if !d.is_empty() && (models.decision.is_empty() || models.decision == "liquid-d1-3b") {
-                models.decision = d.clone();
-            }
+        if let Some(ref d) = helper.decision_model
+            && !d.is_empty()
+            && (models.decision.is_empty() || models.decision == "liquid-d1-3b")
+        {
+            models.decision = d.clone();
         }
         let synced_model = models.agent.clone();
         let synced_decision = models.decision.clone();
