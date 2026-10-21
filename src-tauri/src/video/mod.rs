@@ -44,6 +44,7 @@ fn idle(app: &AppHandle) -> bool {
 pub fn frames_of(detail: &store::RunDetail) -> (Vec<(String, u64)>, Option<u64>) {
     let start = trace::parse_iso(&detail.run.info.started_utc);
     let at = |text: &str| trace::parse_iso(text);
+    let outside = !matches!(detail.run.info.source.as_str(), "" | "built-in");
     let offset = |step: &trace::StepRecord| -> u64 {
         let begun = step
             .started_utc
@@ -51,7 +52,12 @@ pub fn frames_of(detail: &store::RunDetail) -> (Vec<(String, u64)>, Option<u64>)
             .and_then(at)
             .zip(start)
             .map_or(0, |(t, s)| t.saturating_sub(s) * 1000);
-        begun + u64::try_from(step.observe_ms.unwrap_or(0)).unwrap_or(0)
+        let shown_after = if outside {
+            step.act_ms.unwrap_or(0) + step.settle_ms.unwrap_or(0)
+        } else {
+            step.observe_ms.unwrap_or(0)
+        };
+        begun + u64::try_from(shown_after).unwrap_or(0)
     };
     let frames = detail
         .steps
@@ -335,6 +341,19 @@ mod tests {
             55_000,
             "the video is as long as the session"
         );
+    }
+
+    #[test]
+    fn an_outside_agents_screenshot_is_what_the_action_left_so_it_shows_after_the_action() {
+        let mut run = detail(
+            vec![step(1, "2026-10-20T10:00:01Z", 0, Some("after.jpg"))],
+            Some("2026-10-20T10:00:55Z"),
+        );
+        run.run.info.source = "Claude".into();
+        run.steps[0].act_ms = Some(400);
+        run.steps[0].settle_ms = Some(600);
+        let (frames, _) = frames_of(&run);
+        assert_eq!(frames, vec![("after.jpg".to_string(), 2_000)]);
     }
 
     #[test]

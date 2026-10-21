@@ -564,6 +564,7 @@ async fn act_turn(app: &AppHandle, tool: &'static str, arguments: &Value) -> Rep
     .await
     .unwrap_or_else(|err| (Err(ExecError::Input(err.to_string())), None, None));
     row.rec.act_ms = act_ms;
+    row.rec.args_json = trace::with_pointer(row.rec.args_json.as_deref(), trace::pointer_now());
     row.rec.settle_ms = settle_ms;
 
     if matches!(result, Err(ExecError::Cancelled)) || cancel.is_cancelled() {

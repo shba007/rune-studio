@@ -13,6 +13,7 @@ const props = defineProps<{
   stillMissing: boolean
   layer: ActionLayer
   layerOn: boolean
+  cursor: { x: number; y: number } | null
   badge: string
   note: string | null
 }>()
@@ -177,6 +178,21 @@ defineExpose({
         data-testid="layer"
         aria-hidden="true"
       >
+        <svg
+          v-if="cursor"
+          viewBox="0 0 24 24"
+          class="absolute size-6 drop-shadow transition-[left,top] duration-300 ease-out"
+          :style="{ left: `${cursor.x / 10}%`, top: `${cursor.y / 10}%` }"
+          data-testid="cursor"
+        >
+          <path
+            d="M3 2 L3 18.5 L7.4 14.6 L10.2 21 L13 19.8 L10.2 13.6 L16 13.4 Z"
+            fill="#ffffff"
+            stroke="#000000"
+            stroke-width="1.4"
+            stroke-linejoin="round"
+          />
+        </svg>
         <template v-if="layer.kind === 'click' || layer.kind === 'scroll'">
           <span
             class="absolute size-8 -translate-1/2 rounded-full border-2 border-[#f1f1ef] motion-safe:animate-ping"

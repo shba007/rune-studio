@@ -120,7 +120,7 @@ const inputRows = computed(() => {
   try {
     const args = JSON.parse(argsText(props.step, props.show)) as Record<string, unknown>
     return Object.entries(args)
-      .filter(([key]) => !['reason', 'risk', 'goal'].includes(key))
+      .filter(([key]) => !key.startsWith('_') && !['reason', 'risk', 'goal'].includes(key))
       .map(([key, value]) => ({
         key: key.replaceAll('_', ' '),
         value: typeof value === 'string' ? value : JSON.stringify(value),

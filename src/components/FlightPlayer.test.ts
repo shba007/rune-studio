@@ -78,26 +78,16 @@ beforeEach(() => {
 })
 
 describe('FlightPlayer states', () => {
-  it('says so when nothing has been recorded', async () => {
-    world({ runs: [] })
-    const wrapper = await open(null)
-    expect(wrapper.find('[data-testid="empty"]').exists()).toBe(true)
+  it('goes back to Sessions when no run is asked for', async () => {
+    world({})
+    await open(null)
+    expect(invoke).toHaveBeenCalledWith('open_settings_window', { section: 'artifacts' })
   })
 
   it('shows one line when the record cannot be read, never a crash', async () => {
     world({ fail: 'The flight record is not available.' })
-    const wrapper = await open(null)
+    const wrapper = await open('r1')
     expect(wrapper.find('[data-testid="problem"]').text()).toContain('not available')
-  })
-
-  it('lists the sessions and opens one from the list', async () => {
-    world({})
-    const wrapper = await open(null)
-    const rows = wrapper.findAll('[data-testid="run-row"]')
-    expect(rows).toHaveLength(1)
-    await rows[0]!.trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[data-testid="task"]').text()).toBe('Open notepad')
   })
 
   it('says there is no such run', async () => {

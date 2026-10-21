@@ -20,6 +20,8 @@ import {
   faster,
   isOutsideAgent,
   nextTab,
+  pictureFileOf,
+  pointerAt,
   slower,
   stepAtTime,
   stepBadge,
@@ -85,8 +87,11 @@ watch(tabs, (list) => {
 const layer = computed(() => actionLayer(step.value, showTyped.value))
 const badge = computed(() => stepBadge(index.value, steps.value.length, step.value))
 
+const cursor = computed(() => (index.value >= 0 ? pointerAt(steps.value, index.value) : null))
+const pictureFile = computed(() => pictureFileOf(steps.value, index.value, outside.value))
+
 watch(
-  () => step.value?.observationFile ?? null,
+  pictureFile,
   async (file) => {
     stepFile.value = file
     still.value = null
@@ -167,12 +172,14 @@ async function openRun(id: string) {
   tab.value = 'step'
   await flight.open(id)
 }
-async function backToRuns() {
+async function back() {
   await pause()
-  flight.header.value = null
-  flight.runId.value = null
-  flight.problem.value = null
-  await flight.loadRuns()
+  try {
+    await invoke('open_settings_window', { section: 'artifacts' })
+  } catch {
+    notice.value = null
+  }
+  await closeWindow()
 }
 async function reveal() {
   notice.value = await flight.reveal()
@@ -221,13 +228,13 @@ onMounted(async () => {
   } catch {
     developer.value = false
   }
-  await flight.loadRuns()
   if (asked) await openRun(asked)
+  else await back()
   try {
     unlisten = await listen<{ runId?: string | null }>('flight_open', async (event) => {
       const id = event.payload?.runId
       if (id) await openRun(id)
-      else await backToRuns()
+      else await back()
     })
   } catch {}
 })
@@ -254,18 +261,12 @@ const verdictLine = computed(() => {
   const verdict = header.value?.verdict
   return verdict ? `${verdict.result}${verdict.evidence ? ` · ${verdict.evidence}` : ''}` : ''
 })
-
-function runDate(text: string | null): string {
-  const at = text ? Date.parse(text) : Number.NaN
-  return Number.isFinite(at) ? new Date(at).toLocaleString() : ''
-}
 </script>
 
 <template>
   <main class="flex h-screen flex-col overflow-hidden bg-black text-zinc-100" data-testid="flight">
     <TitleBar title="Rune Preview" />
-    <section v-if="!header" class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-6">
-      <h1 class="m-0 text-title uppercase">Preview</h1>
+    <section v-if="!header" class="flex min-h-0 flex-1 flex-col gap-3 p-6">
       <p v-if="flight.loading.value" class="m-0 text-zinc-400" data-testid="loading">Loading…</p>
       <p
         v-else-if="flight.problem.value"
@@ -275,28 +276,6 @@ function runDate(text: string | null): string {
       >
         {{ flight.problem.value }}
       </p>
-      <p
-        v-else-if="flight.runsLoaded.value && flight.runs.value.length === 0"
-        class="m-0 text-zinc-400"
-        data-testid="empty"
-      >
-        Nothing has been recorded yet. Run a task and it will show up here.
-      </p>
-      <ul v-else class="m-0 flex list-none flex-col gap-1 p-0" aria-label="Recorded sessions">
-        <li v-for="run in flight.runs.value" :key="run.id">
-          <button
-            type="button"
-            class="flex w-full cursor-pointer items-center gap-3 rounded-xl border border-white/10 bg-transparent px-4 py-3 text-left text-zinc-100 hover:bg-white/5"
-            data-testid="run-row"
-            @click="openRun(run.id)"
-          >
-            <span class="min-w-0 flex-1 truncate text-body">{{ run.task }}</span>
-            <span class="text-caption text-zinc-400 uppercase">{{ run.outcome ?? 'open' }}</span>
-            <span class="text-label text-zinc-500">{{ run.steps }} steps</span>
-            <span class="text-label text-zinc-500">{{ runDate(run.startedUtc) }}</span>
-          </button>
-        </li>
-      </ul>
     </section>
 
     <template v-else>
@@ -306,9 +285,9 @@ function runDate(text: string | null): string {
         <button
           type="button"
           class="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full border-0 bg-transparent text-zinc-300 hover:bg-white/10"
-          aria-label="Back to the list of sessions"
+          aria-label="Back to Sessions"
           data-testid="back"
-          @click="backToRuns"
+          @click="back"
         >
           <AppIcon name="back" />
         </button>
@@ -377,6 +356,7 @@ function runDate(text: string | null): string {
             :still-missing="stillMissing"
             :layer="layer"
             :layer-on="true"
+            :cursor="cursor"
             :badge="badge"
             :note="videoFailed ?? flight.videoNote.value"
             @time="timeMs = $event"

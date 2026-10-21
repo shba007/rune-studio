@@ -996,6 +996,7 @@ async fn run(
         })
         .await;
         row.rec.act_ms = millis(acting);
+        row.rec.args_json = trace::with_pointer(row.rec.args_json.as_deref(), trace::pointer_now());
         let result = match executed {
             Ok(result) => result,
             Err(err) => {

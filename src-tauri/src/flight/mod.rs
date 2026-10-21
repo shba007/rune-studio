@@ -258,6 +258,9 @@ pub fn open(app: &tauri::AppHandle, run: Option<&str>) -> tauri::Result<()> {
     use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
     let run = run.filter(|id| !id.is_empty());
+    let Some(run) = run else {
+        return crate::hub::open(app, Some("artifacts"));
+    };
     if let Some(window) = app.get_webview_window(WINDOW) {
         let _ = window.unminimize();
         window.show()?;
@@ -265,10 +268,7 @@ pub fn open(app: &tauri::AppHandle, run: Option<&str>) -> tauri::Result<()> {
         window.emit(OPEN_EVENT, json!({ "runId": run }))?;
         return Ok(());
     }
-    let url = match run {
-        Some(id) => format!("index.html?view=flight&run={}", url_safe(id)),
-        None => "index.html?view=flight".to_string(),
-    };
+    let url = format!("index.html?view=flight&run={}", url_safe(run));
     let window = WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::App(url.into()))
         .title("Rune Preview")
         .inner_size(1180.0, 760.0)

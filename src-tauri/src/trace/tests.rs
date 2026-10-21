@@ -1022,3 +1022,16 @@ fn retention_deletes_a_runs_calls_with_it() {
     assert!(calls_in(&dir.db(), "old").is_empty());
     assert_eq!(calls_in(&dir.db(), "keep").len(), 1);
 }
+
+
+#[test]
+fn the_pointer_is_added_to_the_arguments_and_nothing_else_changes() {
+    let with = with_pointer(Some(r#"{"x":10,"y":20}"#), Some([512.5, 300.0])).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&with).unwrap();
+    assert_eq!(value["x"], 10);
+    assert_eq!(value["_pointer"], serde_json::json!([512.5, 300.0]));
+    assert_eq!(with_pointer(Some("{}"), None).as_deref(), Some("{}"));
+    assert_eq!(with_pointer(None, None), None);
+    let bare = with_pointer(None, Some([1.0, 2.0])).unwrap();
+    assert!(bare.contains("_pointer"));
+}

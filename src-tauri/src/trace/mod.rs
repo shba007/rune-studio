@@ -315,6 +315,26 @@ pub fn now_utc() -> String {
     crate::archive::iso(crate::archive::now())
 }
 
+pub fn pointer_now() -> Option<[f64; 2]> {
+    let (x, y) = crate::exec::input::cursor_position()?;
+    let monitor = crate::observe::screenshot::monitor_at(x, y).ok()?;
+    let (mx, my) = crate::model::coords::pixels_to_model(&monitor, x, y);
+    Some([(mx * 10.0).round() / 10.0, (my * 10.0).round() / 10.0])
+}
+
+pub fn with_pointer(args_json: Option<&str>, pointer: Option<[f64; 2]>) -> Option<String> {
+    let Some(pointer) = pointer else {
+        return args_json.map(str::to_string);
+    };
+    let mut value: serde_json::Value = args_json
+        .and_then(|text| serde_json::from_str(text).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+    if let Some(object) = value.as_object_mut() {
+        object.insert("_pointer".into(), serde_json::json!(pointer));
+    }
+    Some(value.to_string())
+}
+
 pub fn parse_iso(text: &str) -> Option<u64> {
     let bytes = text.as_bytes();
     if bytes.len() != 20

@@ -19,6 +19,8 @@ import {
   stepAtTime,
   stepBadge,
   stepStarts,
+  pictureFileOf,
+  pointerAt,
   tabsFor,
   timeOfStep,
   totalMs,
@@ -61,13 +63,13 @@ function step(n: number, at: string | null, extra: Partial<FlightStep> = {}): Fl
 const START = '2026-10-20T10:00:00Z'
 
 describe('time and step mapping', () => {
-  it('moves the first step to 0 and keeps the others in order', () => {
+  it('puts the first step at 0 and the others at their time since the run began', () => {
     const steps = [
       step(1, '2026-10-20T10:00:02Z'),
       step(2, '2026-10-20T10:00:05Z'),
       step(3, '2026-10-20T10:00:09Z'),
     ]
-    expect(stepStarts(START, steps)).toEqual([0, 3000, 7000])
+    expect(stepStarts(START, steps)).toEqual([0, 5000, 9000])
   })
 
   it('adds the observe time and never goes backwards', () => {
@@ -364,5 +366,47 @@ describe('promptSections and riskLevel', () => {
     expect([riskLevel('low'), riskLevel('Medium'), riskLevel('high'), riskLevel(null)]).toEqual([
       0, 1, 2, -1,
     ])
+  })
+})
+describe('pictureFileOf', () => {
+  const shots = [
+    step(1, START, { tool: 'observe', observationFile: 'a.jpg' }),
+    step(2, START, { tool: 'click', observationFile: 'b.jpg' }),
+    step(3, START, { tool: 'type_text', observationFile: 'c.jpg' }),
+    step(4, START, { tool: 'done', observationFile: null }),
+  ]
+
+  it("shows Rune's own steps with the screen they saw", () => {
+    expect([0, 1, 2, 3].map((at) => pictureFileOf(shots, at, false))).toEqual([
+      'a.jpg',
+      'b.jpg',
+      'c.jpg',
+      null,
+    ])
+  })
+
+  it('shows an outside agent action with the screen it acted on, which is the one before its own', () => {
+    expect([0, 1, 2, 3].map((at) => pictureFileOf(shots, at, true))).toEqual([
+      'a.jpg',
+      'a.jpg',
+      'b.jpg',
+      'c.jpg',
+    ])
+  })
+})
+
+describe('pointerAt', () => {
+  it('follows the recorded pointer, then clicks and drag ends, and stays put otherwise', () => {
+    const steps = [
+      step(1, START, { tool: 'click', argsJson: '{"x":100,"y":200}' }),
+      step(2, START, { tool: 'type_text', argsJson: '{"text":"hi"}' }),
+      step(3, START, { tool: 'click_element', argsJson: '{"id":"e1","_pointer":[640.5,300]}' }),
+      step(4, START, { tool: 'drag', argsJson: '{"x1":1,"y1":2,"x2":700,"y2":800}' }),
+    ]
+    expect(pointerAt(steps, 0)).toEqual({ x: 100, y: 200 })
+    expect(pointerAt(steps, 1)).toEqual({ x: 100, y: 200 })
+    expect(pointerAt(steps, 2)).toEqual({ x: 640.5, y: 300 })
+    expect(pointerAt(steps, 3)).toEqual({ x: 700, y: 800 })
+    expect(pointerAt([], 0)).toBeNull()
   })
 })

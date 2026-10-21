@@ -97,9 +97,7 @@ export function parseIso(text: string | null | undefined): number | null {
 }
 
 export function stepStarts(runStartedUtc: string | null, steps: FlightStep[]): number[] {
-  const absolute = absoluteStarts(runStartedUtc, steps)
-  const shift = absolute[0] ?? 0
-  return absolute.map((start) => start - shift)
+  return absoluteStarts(runStartedUtc, steps).map((start, index) => (index === 0 ? 0 : start))
 }
 
 function absoluteStarts(runStartedUtc: string | null, steps: FlightStep[]): number[] {
@@ -537,4 +535,58 @@ export function promptSections(text: string | null | undefined): PromptSection[]
 export function riskLevel(risk: string | null | undefined): number {
   const index = ['low', 'medium', 'high'].indexOf((risk ?? '').toLowerCase())
   return index
+}
+const ACTION_TOOLS = new Set([
+  'click',
+  'click_element',
+  'scroll',
+  'drag',
+  'type_text',
+  'press_keys',
+  'open_app',
+  'wait',
+])
+
+export function pictureFileOf(
+  steps: FlightStep[],
+  index: number,
+  outsideAgent: boolean,
+): string | null {
+  const step = steps[index]
+  if (!step) return null
+  const own = step.observationFile ?? null
+  if (!outsideAgent) return own
+  const before = () => {
+    for (let at = index - 1; at >= 0; at--) {
+      const file = steps[at]?.observationFile
+      if (file) return file
+    }
+    return null
+  }
+  return ACTION_TOOLS.has(step.tool ?? '') ? (before() ?? own) : (own ?? before())
+}
+
+export function pointerAt(steps: FlightStep[], index: number): { x: number; y: number } | null {
+  const point = (value: unknown): { x: number; y: number } | null =>
+    Array.isArray(value) &&
+    typeof value[0] === 'number' &&
+    typeof value[1] === 'number' &&
+    Number.isFinite(value[0]) &&
+    Number.isFinite(value[1])
+      ? { x: value[0], y: value[1] }
+      : null
+  for (let at = Math.min(index, steps.length - 1); at >= 0; at--) {
+    const step = steps[at]
+    if (!step) continue
+    const args = argsOf(step)
+    const recorded = point(args._pointer)
+    if (recorded) return recorded
+    if (step.tool === 'drag') {
+      const end = point([args.x2, args.y2])
+      if (end) return end
+    }
+    const here = point([args.x, args.y])
+    if (here && (step.tool === 'click' || step.tool === 'scroll')) return here
+  }
+  return null
 }
