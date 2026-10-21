@@ -40,7 +40,7 @@ const SECTIONS: { id: Section; label: string; subtitle: string; icon: IconName }
   },
   {
     id: 'artifacts',
-    label: 'Artifacts',
+    label: 'Sessions',
     subtitle: 'Recorded sessions. Pick one to play it in Rune Preview.',
     icon: 'history',
   },
