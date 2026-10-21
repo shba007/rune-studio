@@ -72,7 +72,7 @@ impl LeaseBook {
         if self.revoked {
             return Err(LeaseError::StoppedByUser);
         }
-        if self.expire_if_idle(now) {}
+        self.expire_if_idle(now);
         if self.current.is_some() {
             return Err(LeaseError::Busy);
         }

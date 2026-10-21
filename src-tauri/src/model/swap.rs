@@ -98,6 +98,7 @@ pub fn record_call_activity() {
     }
 }
 
+#[cfg(test)]
 pub fn reset_call_activity_for_test() {
     if let Ok(mut guard) = LAST_CALL_AT.lock() {
         *guard = None;

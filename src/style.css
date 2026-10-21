@@ -1,6 +1,8 @@
 @import 'tailwindcss';
 
 @theme {
+  --color-attention: #d71921;
+
   --font-sans: 'Oxanium Variable', sans-serif;
   --font-mono: 'Oxanium Variable', sans-serif;
 

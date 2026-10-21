@@ -8,8 +8,6 @@ use crate::model::{
 use serde_json::{Value, json};
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
-const MAX_OUTPUT_TOKENS: u32 = 512;
-const MAX_OUTPUT_TOKENS_THINKING: u32 = 3000;
 const MAX_ATTEMPTS: u32 = 3;
 const RETRY_WAITS: [Duration; 2] = [Duration::from_millis(500), Duration::from_millis(1500)];
 
@@ -86,6 +84,7 @@ impl<'a> Default for Request<'a> {
     }
 }
 
+#[cfg(test)]
 impl<'a> Request<'a> {
     pub fn simple(user_text: &'a str) -> Self {
         Self {
@@ -198,7 +197,6 @@ struct Exchange {
     result: Result<Reply, ModelError>,
     status: Option<u16>,
     response: Value,
-    signal: crate::model::swap::SwapSignal,
     served_model: Option<String>,
     locality: Option<String>,
     swap_ms: Option<u64>,
@@ -401,7 +399,6 @@ impl ChatClient<'_> {
                         result: Err(ModelError::Request(error.to_string())),
                         status: None,
                         response: Value::Null,
-                        signal: crate::model::swap::SwapSignal::None,
                         locality: None,
                         served_model: None,
                         swap_ms: None,
@@ -435,7 +432,6 @@ impl ChatClient<'_> {
                     result: Err(ModelError::Request(err.to_string())),
                     status: None,
                     response: Value::Null,
-                    signal: crate::model::swap::SwapSignal::None,
                     locality: None,
                     served_model: None,
                     swap_ms: None,
@@ -453,7 +449,6 @@ impl ChatClient<'_> {
                 )),
                 status: Some(response.status().as_u16()),
                 response: Value::Null,
-                signal: crate::model::swap::SwapSignal::None,
                 locality: Some("cloud".into()),
                 served_model: None,
                 swap_ms: None,
@@ -499,7 +494,6 @@ impl ChatClient<'_> {
                 response: Value::String(text.chars().take(4_000).collect()),
                 status: code,
                 result: Err(err),
-                signal,
                 locality: None,
                 served_model: None,
                 swap_ms: None,
@@ -510,10 +504,9 @@ impl ChatClient<'_> {
         if matches!(
             header_signal,
             crate::model::swap::SwapSignal::Loading { .. }
-        ) {
-            if let Some(cb) = self.on_loading {
-                cb();
-            }
+        ) && let Some(cb) = self.on_loading
+        {
+            cb();
         }
         let header_swap_ms = headers
             .get("x-model-load-duration-ms")
@@ -532,7 +525,6 @@ impl ChatClient<'_> {
                         result: Err(ModelError::Request(err.to_string())),
                         status: code,
                         response: Value::Null,
-                        signal: header_signal,
                         locality: None,
                         served_model: None,
                         swap_ms: header_swap_ms,
@@ -546,7 +538,6 @@ impl ChatClient<'_> {
                         result: Err(ModelError::Reply(format!("{err}: {}", snippet(&text)))),
                         status: code,
                         response: Value::String(text.chars().take(4_000).collect()),
-                        signal: header_signal,
                         locality: None,
                         served_model: None,
                         swap_ms: header_swap_ms,
@@ -582,11 +573,6 @@ impl ChatClient<'_> {
                 result,
                 status: code,
                 response: value,
-                signal: if header_swap_ms.is_some() {
-                    header_signal
-                } else {
-                    body_signal
-                },
                 locality: headers
                     .get("x-model-locality")
                     .and_then(|v| v.to_str().ok())
@@ -610,7 +596,6 @@ impl ChatClient<'_> {
                         result: Err(ModelError::Request(err.to_string())),
                         status: code,
                         response: stream.summary(),
-                        signal: header_signal,
                         locality: headers
                             .get("x-model-locality")
                             .and_then(|v| v.to_str().ok())
@@ -635,7 +620,6 @@ impl ChatClient<'_> {
             result,
             status: code,
             response: summary,
-            signal: header_signal,
             locality: headers
                 .get("x-model-locality")
                 .and_then(|v| v.to_str().ok())
@@ -1417,35 +1401,33 @@ mod tests {
             background: false,
         };
 
-        // Thinking None
         let mut p_none = ModelProfile::conservative("m");
         p_none.thinking = ThinkingSwitch::None;
         let b_none = chat_body("m", &p_none, &request);
         assert!(b_none.get("thinking").is_none());
         assert!(b_none.get("chat_template_kwargs").is_none());
 
-        // Thinking only ThinkingType
         let mut p_type = ModelProfile::conservative("m");
         p_type.thinking = ThinkingSwitch::Styles(vec![ThinkingStyle::ThinkingType]);
         let b_type = chat_body("m", &p_type, &request);
         assert_eq!(b_type["thinking"], json!({ "type": "enabled" }));
         assert!(b_type.get("chat_template_kwargs").is_none());
 
-        // Tool choice unknown -> auto
         let mut p_auto = ModelProfile::conservative("m");
         p_auto.tool_choice_required = TriState::Unknown;
         let b_auto = chat_body("m", &p_auto, &request);
         assert_eq!(b_auto["tool_choice"], "auto");
 
-        // Tool choice yes -> required
         let mut p_req = ModelProfile::conservative("m");
         p_req.tool_choice_required = TriState::Yes;
         let b_req = chat_body("m", &p_req, &request);
         assert_eq!(b_req["tool_choice"], "required");
     }
 
+    type ServerAnswer = (&'static str, Vec<(&'static str, &'static str)>, String);
+
     fn serve_with_headers(
-        answers: Vec<(&'static str, Vec<(&'static str, &'static str)>, String)>,
+        answers: Vec<ServerAnswer>,
     ) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
         use std::{
             io::{Read, Write},

@@ -55,6 +55,7 @@ pub fn analysis_system() -> &'static str {
     prompt!("analysis/system.md")
 }
 
+#[cfg(test)]
 pub fn analysis_point() -> &'static str {
     prompt!("analysis/point.md")
 }

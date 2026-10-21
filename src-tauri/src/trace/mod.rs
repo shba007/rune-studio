@@ -550,6 +550,7 @@ impl Recorder {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
+    #[cfg(any(feature = "agent-bridge", feature = "eval", test))]
     pub fn open_run_id(&self) -> Option<String> {
         self.open_run().clone()
     }

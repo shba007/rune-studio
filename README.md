@@ -253,12 +253,12 @@ bun install --frozen-lockfile
 | Script                                            | Command                         | Description                                                                                             |
 | ------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | `bun run dev`                                     | `vp dev`                        | Vite-Plus dev server on `http://localhost:5173` (UI renders in a browser using `src/dev/mockTauri.ts`). |
-| `bun run tauri:dev`                               | `tauri dev`                     | Full desktop app in development. Add `-- --features agent-bridge` for the MCP bridge and CLI.           |
+| `bun run tauri:dev`                               | `cargo build … && tauri dev`    | Builds the bridge CLI, then starts the desktop app with `agent-bridge`.                                 |
 | `bun run tauri:build`                             | `tauri build`                   | Production installers. Add `--features agent-bridge` as the release workflow does.                      |
 | `bun run build` / `preview`                       | `vp build` / `vp preview`       | Frontend bundle into `dist/`.                                                                           |
 | `bun run lint`                                    | `vp lint . --fix`               | oxlint (type-aware) with auto-fix.                                                                      |
 | `bun run format`                                  | `vp fmt src/`                   | Formatter for `src/` (no semicolons, single quotes).                                                    |
-| `bun run test:unit`                               | `vp test`                       | Vitest + jsdom (currently `useUpdater.test.ts`).                                                        |
+| `bun run test:unit`                               | `vp test`                       | Vitest + jsdom (component, composable and configuration tests).                                         |
 | `bun run detect`                                  | `gitleaks git --verbose`        | Secret scan of git history.                                                                             |
 | `bun run clean`                                   | `(cd src-tauri && cargo clean)` | Removes Rust build artifacts.                                                                           |
 | `bun run tauri:dev:mobile` / `tauri:build:mobile` | `tauri android dev/build`       | Present in `package.json` but Android is **not** a supported target: the CI job is commented out.       |
@@ -278,23 +278,22 @@ Git hooks (husky): `pre-commit` runs gitleaks (if installed), lint and format on
 ### Tests
 
 ```bash
-cd src-tauri
-cargo test --lib                          # unit tests (pure logic: lease, rules, parsers, VAD, protocol)
-cargo test --lib --features agent-bridge  # also the bridge, CLI, skill and agent tests
-cargo test --lib -- --ignored             # need a Windows desktop or a live rune-infer server
+cargo test --manifest-path src-tauri/Cargo.toml --lib                          # unit tests (pure logic: lease, rules, parsers, VAD, protocol)
+cargo test --manifest-path src-tauri/Cargo.toml --lib --features agent-bridge  # also the bridge, CLI, skill and agent tests
+cargo test --manifest-path src-tauri/Cargo.toml --lib -- --ignored             # need a Windows desktop or a live rune-infer server
 pwsh scripts/m1-system-test.ps1           # end to end: real mouse, keyboard and capture (moves your mouse!)
 pwsh scripts/m15/run-probe.ps1            # grounding probe against a local rune-infer (see ARCHITECTURE.md)
 bun run test:unit                         # frontend
 ```
 
-CI does **not** run `cargo test`, `clippy` or `fmt`; run them locally before pushing.
+CI does **not** run `cargo test`, `clippy` or `fmt`; run them locally before pushing. See the [testing and acceptance guide](docs/TESTING.md) for the full command matrix and verification limits.
 
 ### Evaluating changes
 
 A fixed suite of 15 desktop tasks measures whether a change makes the agent worse: success rate not lower, median task time within +10%. It is a separate build (`--features eval`, never in a release) and needs **Windows 11, a clean desktop, a running rune-infer and Rune Studio closed**. It moves your real mouse and types, so read `scripts/eval/README.md` first.
 
 ```bash
-cd src-tauri && cargo test --lib --features eval,agent-bridge    # the harness's own tests
+cargo test --manifest-path src-tauri/Cargo.toml --lib --features eval,agent-bridge    # the harness's own tests
 bun run test:eval                                                 # the report and the gate
 pwsh scripts/eval/run.ps1 -DryRun                                 # validate the suite, print the plan
 pwsh scripts/eval/run.ps1 -Repeats 3 -FastChecks off              # the run (then again with -FastChecks on)
@@ -329,7 +328,7 @@ src-tauri/src/
   trace/                     the flight recorder: trace.sqlite3 (writer thread, schema, read API)
   settings.rs, hotkeys.rs, backend.rs, events.rs, commands.rs, window.rs, overlay.rs, cursor.rs, error.rs
   debug.rs                   debug builds only
-  system_tests.rs, probe_m15.rs   test-only (#[ignore]d)
+  system_tests.rs, grounding_probe.rs   test-only (#[ignore]d)
   bin/rune-studio-cli.rs     console CLI (feature agent-bridge)
 docs/                        ARCHITECTURE.md, AGENT-GUIDE.md
 scripts/                     m1-system-test.ps1, m15/ (grounding probe), make-logo.mjs
@@ -345,7 +344,7 @@ scripts/                     m1-system-test.ps1, m15/ (grounding probe), make-lo
 | `.github/workflows/release.yml`   | push to `main` whose message contains `ci(release):` | Creates the GitHub release notes with `changelogen gh release`.                                                                                                                                                                                                               |
 | `.github/workflows/deploy.yml`    | release published                                    | Builds the desktop app with `tauri-action` on Windows, Ubuntu and macOS (Apple Silicon and Intel), all with `--features agent-bridge`, signs updater artifacts, and uploads `rune-studio-cli` as its own release asset. The web-container and Android jobs are commented out. |
 
-`Dockerfile` and `nginx.conf` build and serve the Vue bundle as a web page; they are not used by any active workflow and the app is a desktop app, so they are leftovers.
+The active deployment workflow builds desktop bundles. The commented web-container and Android jobs are inactive.
 
 Secrets used: `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (updater signatures), `GITHUB_TOKEN`, `GH_TOKEN` (release notes).
 

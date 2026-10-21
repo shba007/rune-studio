@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub const DEFAULT_CACHE_TTL: Duration = Duration::from_secs(30);
-pub const CAPABILITIES_TIMEOUT: Duration = Duration::from_secs(4);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -19,18 +18,6 @@ pub enum TriState {
 }
 
 impl TriState {
-    pub fn is_yes(&self) -> bool {
-        matches!(self, TriState::Yes)
-    }
-
-    pub fn is_no(&self) -> bool {
-        matches!(self, TriState::No)
-    }
-
-    pub fn is_unknown(&self) -> bool {
-        matches!(self, TriState::Unknown)
-    }
-
     pub fn from_opt_bool(opt: Option<bool>) -> Self {
         match opt {
             Some(true) => TriState::Yes,
@@ -88,6 +75,7 @@ pub struct ModelCapabilities {
     pub aliases: Vec<String>,
 }
 
+#[cfg(test)]
 impl ModelCapabilities {
     pub fn unknown(id: impl Into<String>) -> Self {
         Self {
@@ -383,6 +371,7 @@ impl CapabilityCache {
         self.get().and_then(|map| map.get(model_id).cloned())
     }
 
+    #[cfg(test)]
     pub fn update(&self, list: Vec<ModelCapabilities>) {
         if let Ok(mut guard) = self.entries.lock() {
             let map = list.into_iter().map(|c| (c.id.clone(), c)).collect();
@@ -390,43 +379,10 @@ impl CapabilityCache {
         }
     }
 
+    #[cfg(test)]
     pub fn invalidate(&self) {
         if let Ok(mut guard) = self.entries.lock() {
             *guard = None;
-        }
-    }
-
-    pub async fn fetch_cached(
-        &self,
-        client: &reqwest::Client,
-        base_url: &str,
-        api_key: Option<&str>,
-    ) -> HashMap<String, ModelCapabilities> {
-        if let Some(cached) = self.get() {
-            return cached;
-        }
-
-        let base = base_url.trim_end_matches('/');
-        let mut request = client
-            .get(format!("{base}/v1/models"))
-            .timeout(CAPABILITIES_TIMEOUT);
-        if let Some(key) = api_key {
-            request = request.bearer_auth(key);
-        }
-
-        match request.send().await {
-            Ok(resp) if resp.status().is_success() => {
-                let text = resp.text().await.unwrap_or_default();
-                let list = parse_models_response(&text);
-                self.update(list.clone());
-                list.into_iter().map(|c| (c.id.clone(), c)).collect()
-            }
-            _ => self
-                .entries
-                .lock()
-                .ok()
-                .and_then(|g| g.as_ref().map(|(_, m)| m.clone()))
-                .unwrap_or_default(),
         }
     }
 }

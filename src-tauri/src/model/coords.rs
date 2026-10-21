@@ -1,5 +1,6 @@
 use serde::Serialize;
 
+#[cfg(test)]
 use crate::model::profile::PointingConvention;
 
 pub const MODEL_MAX: f64 = 1000.0;
@@ -66,6 +67,7 @@ pub fn fit_within(width: u32, height: u32, max_edge: u32) -> (u32, u32) {
     (scaled(width), scaled(height))
 }
 
+#[cfg(test)]
 pub fn adapt_point_to_norm1000(
     convention: PointingConvention,
     x: f64,
@@ -104,6 +106,7 @@ pub fn adapt_point_to_norm1000(
     }
 }
 
+#[cfg(test)]
 pub fn adapt_box_to_norm1000(
     convention: PointingConvention,
     b: [f64; 4],
@@ -281,22 +284,18 @@ mod tests {
 
     #[test]
     fn adapt_pixels_on_non_square_screen_at_different_scales() {
-        // 100% scale: 1920x1080 (16:9 non-square)
         let (x100, y100) =
             adapt_point_to_norm1000(PointingConvention::Pixels, 960.0, 540.0, 1920, 1080);
         assert_eq!((x100, y100), (500.0, 500.0));
 
-        // 125% scale: 2560x1440 (physical pixels)
         let (x125, y125) =
             adapt_point_to_norm1000(PointingConvention::Pixels, 1280.0, 720.0, 2560, 1440);
         assert_eq!((x125, y125), (500.0, 500.0));
 
-        // 150% scale: 3840x2160 (physical pixels)
         let (x150, y150) =
             adapt_point_to_norm1000(PointingConvention::Pixels, 1920.0, 1080.0, 3840, 2160);
         assert_eq!((x150, y150), (500.0, 500.0));
 
-        // Non-center arbitrary point on 1920x1080: (480, 270) -> (250, 250)
         let (x_arb, y_arb) =
             adapt_point_to_norm1000(PointingConvention::Pixels, 480.0, 270.0, 1920, 1080);
         assert_eq!((x_arb, y_arb), (250.0, 250.0));
@@ -304,19 +303,16 @@ mod tests {
 
     #[test]
     fn adapt_unknown_heuristic_selects_correct_space() {
-        // 0..1 range
         assert_eq!(
             adapt_point_to_norm1000(PointingConvention::Unknown, 0.4, 0.6, 1920, 1080),
             (400.0, 600.0)
         );
 
-        // 0..1000 range
         assert_eq!(
             adapt_point_to_norm1000(PointingConvention::Unknown, 500.0, 300.0, 1920, 1080),
             (500.0, 300.0)
         );
 
-        // Pixel range > 1000
         assert_eq!(
             adapt_point_to_norm1000(PointingConvention::Unknown, 1440.0, 540.0, 1920, 1080),
             (750.0, 500.0)

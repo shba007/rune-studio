@@ -48,6 +48,7 @@ pub struct DedicatedTranscriber {
     pub endpoint: Option<String>,
 }
 
+#[cfg(test)]
 impl DedicatedTranscriber {
     pub fn new(engine: DedicatedEngine, endpoint: Option<String>) -> Self {
         Self { engine, endpoint }

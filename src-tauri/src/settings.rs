@@ -4,11 +4,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
-use crate::{
-    error::AppResult,
-    hotkeys,
-    model::{attempts::AttemptSink, client::ChatClient, profile::ModelProfile, role::ModelRole},
-};
+use crate::{error::AppResult, hotkeys, model::role::ModelRole};
 
 pub(crate) const KEYRING_SERVICE: &str = "dev.shirsendu-bairagi.rune-studio";
 const KEYRING_USER: &str = "rune-infer-api-key";
@@ -252,27 +248,6 @@ impl Settings {
     pub fn model_for_role(&self, role: ModelRole) -> &str {
         self.models.model_for_role(role)
     }
-
-    pub fn client_for_role<'a>(
-        &'a self,
-        role: ModelRole,
-        http: &'a reqwest::Client,
-        api_key: Option<&'a str>,
-        profile: &'a ModelProfile,
-        sink: Option<&'a dyn AttemptSink>,
-    ) -> ChatClient<'a> {
-        ChatClient {
-            http,
-            base_url: &self.base_url,
-            api_key,
-            model: self.model_for_role(role),
-            profile: Some(profile),
-            sink,
-            no_swap: self.skip_swap_for_optional_roles
-                && matches!(role, ModelRole::Decision | ModelRole::Verifier),
-            on_loading: None,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -353,10 +328,12 @@ impl Default for Settings {
 }
 
 impl Settings {
+    #[cfg(any(feature = "agent-bridge", test))]
     pub fn life_consent(&self, class: &str) -> bool {
         self.life_enabled && self.life_consents.get(class).copied().unwrap_or(false)
     }
 
+    #[cfg(any(feature = "agent-bridge", test))]
     pub fn retention_days_for(&self, class: &str) -> u32 {
         self.retention_days.get(class).copied().unwrap_or(0)
     }
@@ -459,7 +436,6 @@ mod tests {
             settings.model_for_role(ModelRole::Decision),
             "my-custom-decision"
         );
-        // Empty role falls back to agent
         assert_eq!(
             settings.model_for_role(ModelRole::Verifier),
             "my-custom-agent"
@@ -470,7 +446,6 @@ mod tests {
         );
         assert_eq!(settings.model_for_role(ModelRole::Voice), "my-custom-agent");
 
-        // Downgrade serialization check: both old keys are preserved in JSON
         let serialized = serde_json::to_string(&settings).unwrap();
         let json_val: serde_json::Value = serde_json::from_str(&serialized).unwrap();
         assert_eq!(json_val["model"], "my-custom-agent");
@@ -625,7 +600,6 @@ mod tests {
         assert!(!defaults.life_consent("health"));
         assert_eq!(defaults.retention_days_for("health"), 0);
 
-        // Old settings without life fields loads safely
         let old_json = r#"{ "baseUrl": "http://127.0.0.1:8080", "model": "gemma" }"#;
         let loaded: Settings = serde_json::from_str(old_json).unwrap();
         assert!(!loaded.life_enabled);
@@ -633,7 +607,6 @@ mod tests {
         assert!(!loaded.life_consent("finance"));
         assert_eq!(loaded.retention_days_for("general"), 0);
 
-        // With explicit life fields
         let custom_json = r#"{
             "lifeEnabled": true,
             "lifeConsents": { "health": true, "mind": false },

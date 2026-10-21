@@ -34,7 +34,7 @@ mod voice;
 mod window;
 
 #[cfg(test)]
-mod probe_m15;
+mod grounding_probe;
 #[cfg(all(test, windows))]
 mod system_tests;
 

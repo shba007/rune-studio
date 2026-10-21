@@ -171,7 +171,6 @@ mod tests {
 
     #[test]
     fn test_score_pointing_conventions_norm1000() {
-        // Targets in norm1000 space: [100, 100, 200, 200]
         let obs = vec![
             PointObservation {
                 raw_point: (150.0, 150.0), // Norm1000 coordinates
@@ -192,8 +191,6 @@ mod tests {
 
     #[test]
     fn test_score_pointing_conventions_pixels() {
-        // Target at [500, 500, 600, 600] in norm1000 -> in 1280x720 pixels: x=640..768, y=360..432
-        // Centre is roughly (704, 396)
         let obs = vec![
             PointObservation {
                 raw_point: (704.0, 396.0),
@@ -211,7 +208,6 @@ mod tests {
 
     #[test]
     fn test_score_pointing_conventions_norm1() {
-        // Coordinates in 0..1 range
         let obs = vec![
             PointObservation {
                 raw_point: (0.55, 0.55),
@@ -360,7 +356,6 @@ mod tests {
         assert_eq!(profile.tool_choice_required, TriState::Yes);
         assert_eq!(profile.images.max_edge_px, 1920);
 
-        // Valid JSON serialization
         let json_str = serde_json::to_string_pretty(&profile).unwrap();
         assert!(json_str.contains("\"id\": \"custom-calibrated-model\""));
         assert!(json_str.contains("\"chat_template_kwargs\""));

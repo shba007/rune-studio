@@ -54,7 +54,7 @@ describe('ModelRoleRow', () => {
         models: fakeModels,
       },
     })
-    expect(wrapper.text()).toContain('CLOUD')
+    expect(wrapper.text()).toContain('Cloud model')
   })
 
   it('does not show CLOUD tag for a local model', () => {
@@ -67,7 +67,7 @@ describe('ModelRoleRow', () => {
         models: fakeModels,
       },
     })
-    expect(wrapper.text()).not.toContain('CLOUD')
+    expect(wrapper.text()).not.toContain('Cloud model')
   })
 
   it('warns when voice role has a model lacking audio input', () => {
@@ -109,6 +109,40 @@ describe('ModelRoleRow', () => {
     // Since fallback is local-omni (which has imageIn yes), no warning should appear
     expect(wrapper.text()).not.toContain('lacks image input')
     // Caps should show for local-omni
-    expect(wrapper.text()).toContain('Caps:')
+    expect(wrapper.text()).toContain('Model capabilities')
+  })
+})
+
+describe('Model settings clarity', () => {
+  it('names capabilities and distinguishes unsupported from unknown', () => {
+    const wrapper = mount(ModelRoleRow, {
+      props: {
+        roleLabel: 'Agent',
+        roleKey: 'agent',
+        agentModel: '',
+        modelValue: 'cloud-text-only',
+        models: fakeModels,
+      },
+    })
+    expect(wrapper.get('label').attributes('for')).toBe(wrapper.get('input').attributes('id'))
+    expect(wrapper.text()).toContain('See images')
+    expect(wrapper.text()).toContain('Not supported')
+    expect(wrapper.text()).toContain('Unknown')
+    expect(wrapper.text()).not.toContain('Caps:')
+  })
+
+  it('explains an undiscovered model instead of implying support', () => {
+    const wrapper = mount(ModelRoleRow, {
+      props: {
+        roleLabel: 'Voice',
+        roleKey: 'voice',
+        agentModel: 'not-discovered',
+        modelValue: '',
+        models: fakeModels,
+      },
+    })
+    expect(wrapper.text()).toContain('Using agent model · not-discovered')
+    expect(wrapper.text()).toContain('Capabilities unknown')
+    expect(wrapper.find('details').exists()).toBe(false)
   })
 })

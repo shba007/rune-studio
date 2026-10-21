@@ -60,10 +60,8 @@ impl LifeStore {
             ));
         }
 
-        // Delete old keyring credential
         LifeCrypto::delete_keyring_key()?;
 
-        // Remove old database files
         if path.exists() {
             fs::remove_file(path)?;
         }
@@ -76,7 +74,6 @@ impl LifeStore {
             let _ = fs::remove_file(shm);
         }
 
-        // Create fresh crypto and fresh store
         let crypto = LifeCrypto::from_keyring_or_create()?;
         Self::open(path, crypto)
     }
@@ -106,8 +103,6 @@ impl LifeStore {
     pub fn path(&self) -> Option<&Path> {
         self.path.as_deref()
     }
-
-    // --- Consent Management ---
 
     pub fn get_consent(&self, class: DataClass) -> Result<bool, LifeError> {
         let conn = self.conn.lock().unwrap();
@@ -165,8 +160,6 @@ impl LifeStore {
         }
         Ok(map)
     }
-
-    // --- Records ---
 
     pub fn write_record(&self, new_record: NewRecord, actor: &str) -> Result<Record, LifeError> {
         validate_source_grade(&new_record.source, new_record.grade)?;
@@ -322,8 +315,6 @@ impl LifeStore {
         }
     }
 
-    // --- Retention & Hard Deletion ---
-
     /// Delete records older than cutoff_utc for the given class, and prune related audit entries.
     pub fn purge_retention(
         &self,
@@ -336,7 +327,6 @@ impl LifeStore {
 
         let tx = conn.unchecked_transaction()?;
 
-        // Delete audit records pointing to records being purged
         tx.execute(
             "DELETE FROM audit WHERE subject IN (
                 SELECT 'record:' || id FROM records WHERE class = ?1 AND occurred_utc < ?2
@@ -377,7 +367,6 @@ impl LifeStore {
         let tx = conn.unchecked_transaction()?;
         let count = match class {
             Some(c) => {
-                // Delete audit entries about records of this class
                 tx.execute(
                     "DELETE FROM audit WHERE subject IN (
                         SELECT 'record:' || id FROM records WHERE class = ?1
@@ -391,7 +380,6 @@ impl LifeStore {
                 tx.execute("DELETE FROM records WHERE class = ?1", params![c.as_str()])?
             }
             None => {
-                // Delete all records, assumptions, plans, plan_versions, and record audit rows
                 tx.execute("DELETE FROM audit WHERE subject LIKE 'record:%' OR subject LIKE 'assumption:%'", [])?;
                 tx.execute("DELETE FROM assumptions", [])?;
                 tx.execute("DELETE FROM plan_versions", [])?;
@@ -429,8 +417,6 @@ impl LifeStore {
         Ok(())
     }
 
-    // --- Export ---
-
     pub fn export_class(
         &self,
         class: Option<DataClass>,
@@ -443,14 +429,12 @@ impl LifeStore {
 
         let mut files_written = Vec::new();
 
-        // 1. JSON export of records
         let records_json =
             serde_json::to_string_pretty(&records).map_err(|e| LifeError::Io(e.to_string()))?;
         let records_json_path = target_dir.join("records.json");
         fs::write(&records_json_path, records_json)?;
         files_written.push("records.json".to_string());
 
-        // 2. Markdown export per kind
         let mut kinds_map: HashMap<RecordKind, Vec<&Record>> = HashMap::new();
         for r in &records {
             kinds_map.entry(r.kind).or_default().push(r);
@@ -470,7 +454,6 @@ impl LifeStore {
             files_written.push(md_filename);
         }
 
-        // 3. Assumptions export
         if !assumptions.is_empty() {
             let assumptions_json = serde_json::to_string_pretty(&assumptions)
                 .map_err(|e| LifeError::Io(e.to_string()))?;
@@ -494,8 +477,6 @@ impl LifeStore {
             files_written,
         })
     }
-
-    // --- Assumptions ---
 
     pub fn write_assumption(&self, assumption: Assumption, actor: &str) -> Result<(), LifeError> {
         let conn = self.conn.lock().unwrap();
@@ -619,8 +600,6 @@ impl LifeStore {
         Ok(list)
     }
 
-    // --- Audit ---
-
     pub fn list_audit(&self, limit: usize) -> Result<Vec<AuditEntry>, LifeError> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -661,8 +640,6 @@ impl LifeStore {
         )?;
         Ok(())
     }
-
-    // --- Helpers ---
 
     fn row_to_record(&self, row: &Row<'_>) -> Result<Record, LifeError> {
         let class_str: String = row.get(1)?;
@@ -751,7 +728,6 @@ mod tests {
     fn consent_rejection_and_granting() {
         let store = LifeStore::in_memory_random().unwrap();
 
-        // 1. Consent is off by default for Health
         let res = store.write_record(
             NewRecord {
                 id: None,
@@ -770,13 +746,11 @@ mod tests {
             LifeError::ClassConsentDenied(DataClass::Health)
         );
 
-        // 2. Grant consent for Health
         store
             .set_consent(DataClass::Health, true, "test_user")
             .unwrap();
         assert!(store.get_consent(DataClass::Health).unwrap());
 
-        // 3. Now write succeeds
         let rec = store
             .write_record(
                 NewRecord {
@@ -796,7 +770,6 @@ mod tests {
         assert_eq!(rec.body, "Resting heart rate 62 bpm");
         assert_eq!(rec.class, DataClass::Health);
 
-        // 4. Retrieve back
         let fetched = store.get_record(&rec.id).unwrap().unwrap();
         assert_eq!(fetched.body, "Resting heart rate 62 bpm");
     }
@@ -831,11 +804,9 @@ mod tests {
 
         assert_eq!(rec.body, canary);
 
-        // Checkpoint WAL and close DB
         store.checkpoint_and_vacuum().unwrap();
         drop(store);
 
-        // Read raw disk bytes of SQLite file and WAL
         let db_bytes = fs::read(&db_path).unwrap();
         let wal_path = temp_dir.path().join("life.sqlite3-wal");
         let wal_bytes = if wal_path.exists() {
@@ -891,7 +862,6 @@ mod tests {
             )
             .unwrap();
 
-        // Perform hard delete of General class
         let deleted = store
             .hard_delete_class(Some(DataClass::General), "test_user")
             .unwrap();
@@ -1026,7 +996,6 @@ mod tests {
         store.checkpoint_and_vacuum().unwrap();
         drop(store);
 
-        // Copy database to backup location
         let backup_path = temp_dir.path().join("backup_life.sqlite3");
         fs::copy(&db_path, &backup_path).unwrap();
 
@@ -1034,7 +1003,6 @@ mod tests {
         let crypto_other = LifeCrypto::in_memory_random();
         let backup_store = LifeStore::open(&backup_path, crypto_other).unwrap();
 
-        // Attempting to list/read records fails to decrypt
         let result = backup_store.list_records(Some(DataClass::Health), false);
         assert!(
             result.is_err(),
@@ -1073,7 +1041,6 @@ mod tests {
             Err(super::super::crypto::CryptoError::KeyUnavailable(_))
         ));
 
-        // With explicit confirmation, succeeds
         let fresh_store = LifeStore::reset_start_fresh(&db_path, "START FRESH").unwrap();
         assert_eq!(fresh_store.list_records(None, false).unwrap().len(), 0);
         assert!(!fresh_store.get_consent(DataClass::Health).unwrap());

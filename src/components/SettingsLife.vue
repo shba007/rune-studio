@@ -86,7 +86,6 @@ function executeDelete() {
     deleteMessage.value = `Type "${deleteConfirmClass.value}" to confirm deletion.`
     return
   }
-  // Confirmed
   deleteMessage.value = `Data for "${deleteConfirmClass.value}" permanently purged and vacuumed.`
   deleteConfirmClass.value = null
   deleteConfirmInput.value = ''
@@ -102,10 +101,9 @@ function triggerExport(classKey: string) {
 
 <template>
   <div class="flex flex-col gap-6" data-testid="settings-life">
-    <!-- Privacy and Disclaimer Notice (OWNER TO REVIEW) -->
     <div class="rounded-2xl border border-white/8 bg-[#141414] p-5 text-label text-zinc-300">
       <div class="mb-2 flex items-center gap-2 font-mono text-zinc-100 uppercase">
-        <AppIcon name="shield" size="sm" class="text-emerald-400" />
+        <AppIcon name="shield" size="sm" class="text-zinc-200" />
         <span>Privacy & Foundations Notice [OWNER TO REVIEW]</span>
       </div>
       <p class="mt-0 mb-2 leading-relaxed text-zinc-400">
@@ -120,8 +118,6 @@ function triggerExport(classKey: string) {
         financial advice.
       </p>
     </div>
-
-    <!-- Master Switch -->
     <HubGroup>
       <HubToggle
         v-model="draft.lifeEnabled"
@@ -129,8 +125,6 @@ function triggerExport(classKey: string) {
         data-testid="life-enabled-toggle"
       />
     </HubGroup>
-
-    <!-- Per-class Consents and Retention -->
     <template v-if="draft.lifeEnabled">
       <h2 class="mt-4 mb-0 text-title font-normal text-zinc-100">Domain Consents & Retention</h2>
       <p class="mt-0 text-label text-zinc-500">
@@ -151,28 +145,24 @@ function triggerExport(classKey: string) {
                 <span class="text-body font-medium text-zinc-100">{{ item.label }}</span>
                 <span
                   v-if="item.sensitive"
-                  class="rounded-full bg-emerald-500/10 px-2 py-0.5 text-caption font-mono text-emerald-400 uppercase"
+                  class="rounded-full bg-white/5 px-2 py-0.5 text-caption font-mono text-zinc-200 uppercase"
                 >
                   Local-only & Encrypted
                 </span>
               </div>
               <span class="text-label text-zinc-400">{{ item.desc }}</span>
             </div>
-
-            <!-- Consent Toggle -->
             <label class="flex cursor-pointer items-center gap-2 text-label text-zinc-300">
               <input
                 v-if="draft.lifeConsents"
                 v-model="draft.lifeConsents[item.key]"
                 type="checkbox"
-                class="h-4 w-4 rounded accent-emerald-500"
+                class="h-4 w-4 rounded accent-zinc-100"
                 :data-testid="`consent-${item.key}`"
               />
               <span>Consent</span>
             </label>
           </div>
-
-          <!-- Retention and Actions Row -->
           <div class="mt-1 flex flex-wrap items-center justify-between gap-4 pt-2 text-label">
             <div class="flex items-center gap-3 text-zinc-400">
               <span>Retention (days, 0 = forever):</span>
@@ -210,11 +200,9 @@ function triggerExport(classKey: string) {
           </div>
         </div>
       </HubGroup>
-
-      <!-- Feedback notifications -->
       <div
         v-if="exportMessage"
-        class="rounded-xl border border-white/10 bg-white/5 p-3 text-label text-emerald-400"
+        class="rounded-xl border border-white/10 bg-white/5 p-3 text-label text-zinc-200"
       >
         {{ exportMessage }}
       </div>
@@ -224,8 +212,6 @@ function triggerExport(classKey: string) {
       >
         {{ deleteMessage }}
       </div>
-
-      <!-- Delete Confirmation Modal / Prompt -->
       <div
         v-if="deleteConfirmClass"
         class="rounded-2xl border border-[#ff6b72]/40 bg-[#1a0f10] p-5 text-label text-zinc-200"

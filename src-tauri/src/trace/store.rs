@@ -2,9 +2,9 @@ use std::path::Path;
 
 use rusqlite::{Connection, OpenFlags, Row, params, params_from_iter, types::Value};
 
-use super::{
-    AnalysisRecord, Msg, ReflectionRecord, RunInfo, STEP_COLUMNS, StepRecord, VerdictRecord, schema,
-};
+#[cfg(any(feature = "agent-bridge", test))]
+use super::{AnalysisRecord, ReflectionRecord};
+use super::{Msg, RunInfo, STEP_COLUMNS, StepRecord, VerdictRecord, schema};
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum StoreError {
@@ -350,6 +350,7 @@ pub fn get_run_in(db: &Connection, id: &str) -> Result<Option<RunDetail>, StoreE
     }))
 }
 
+#[cfg(any(feature = "agent-bridge", test))]
 pub fn list_analyses(path: &Path, limit: usize) -> Result<Vec<AnalysisRecord>, StoreError> {
     let db = open_read(path)?;
     if !has_analyses(&db)? {
@@ -366,6 +367,7 @@ pub fn list_analyses(path: &Path, limit: usize) -> Result<Vec<AnalysisRecord>, S
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
+#[cfg(any(feature = "agent-bridge", test))]
 pub fn list_reflections(path: &Path, limit: usize) -> Result<Vec<ReflectionRecord>, StoreError> {
     let db = open_read(path)?;
     let version: i64 = db.query_row("PRAGMA user_version", [], |row| row.get(0))?;
@@ -387,6 +389,7 @@ pub fn list_reflections(path: &Path, limit: usize) -> Result<Vec<ReflectionRecor
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
+#[cfg(any(feature = "agent-bridge", test))]
 pub fn get_analysis(path: &Path, id: &str) -> Result<Option<AnalysisRecord>, StoreError> {
     let db = open_read(path)?;
     if !has_analyses(&db)? {
@@ -406,8 +409,10 @@ pub fn get_analysis(path: &Path, id: &str) -> Result<Option<AnalysisRecord>, Sto
     }
 }
 
+#[cfg(any(feature = "agent-bridge", test))]
 const ANALYSIS_COLUMNS: &str = "id, created_utc, question, answer, findings_json, model, latency_ms, status, error, screenshot_path, monitor_json";
 
+#[cfg(any(feature = "agent-bridge", test))]
 fn analysis_columns(db: &Connection) -> Result<String, StoreError> {
     let version: i64 = db.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     Ok(format!(
@@ -416,11 +421,13 @@ fn analysis_columns(db: &Connection) -> Result<String, StoreError> {
     ))
 }
 
+#[cfg(any(feature = "agent-bridge", test))]
 fn has_analyses(db: &Connection) -> Result<bool, StoreError> {
     let version: i64 = db.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     Ok(version >= 3)
 }
 
+#[cfg(any(feature = "agent-bridge", test))]
 fn analysis_from_row(row: &Row<'_>) -> rusqlite::Result<AnalysisRecord> {
     let text = |index: usize| {
         row.get::<_, Option<String>>(index)

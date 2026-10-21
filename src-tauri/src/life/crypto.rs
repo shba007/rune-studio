@@ -61,7 +61,6 @@ impl LifeCrypto {
                 Ok(Self::from_key(key_bytes, "os-keyring-v1"))
             }
             Err(keyring::Error::NoEntry) => {
-                // Generate fresh 256-bit key
                 let mut key_bytes = [0u8; 32];
                 getrandom::fill(&mut key_bytes).map_err(|e| CryptoError::Random(e.to_string()))?;
                 let hex_str = key_to_hex(&key_bytes);

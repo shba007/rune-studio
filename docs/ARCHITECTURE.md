@@ -171,7 +171,7 @@ src-tauri/src/
   bridge/             lease (always compiled); server, mcp, token, cli, agents, skill, path_link (feature agent-bridge)
   bin/rune-studio-cli.rs   console CLI (feature agent-bridge)
   debug.rs            dev-only commands (debug builds)
-  system_tests.rs, probe_m15.rs   #[ignore]d tests against a real desktop / server
+  system_tests.rs, grounding_probe.rs   #[ignore]d tests against a real desktop / server
 ```
 
 | Job           | Crate                               | Notes                                                                    |
@@ -500,7 +500,7 @@ An outside agent can use Rune Studio's eyes and hands directly, skipping the loc
 
 ## 13. Build, test and release
 
-- **Rust tests:** `cd src-tauri && cargo test --lib` (add `--features agent-bridge` for bridge, CLI and skill tests). `#[ignore]`d tests need a Windows desktop (`system_tests.rs`, via `pwsh scripts/m1-system-test.ps1`, which moves the real mouse) or a live rune-infer (`agent::live`, `probe_m15.rs`, via `pwsh scripts/m15/run-probe.ps1`). The dev profile optimises the `image` crate (`opt-level = 3`) and this crate lightly (`opt-level = 1`) because unoptimised image code made dev-build capture about 1 s.
+- **Rust tests:** `cd src-tauri && cargo test --lib` (add `--features agent-bridge` for bridge, CLI and skill tests). `#[ignore]`d tests need a Windows desktop (`system_tests.rs`, via `pwsh scripts/m1-system-test.ps1`, which moves the real mouse) or a live rune-infer (`agent::live`, `grounding_probe.rs`, via `pwsh scripts/m15/run-probe.ps1`). The dev profile optimises the `image` crate (`opt-level = 3`) and this crate lightly (`opt-level = 1`) because unoptimised image code made dev-build capture about 1 s.
 - **Evaluation harness tests:** `cd src-tauri && cargo test --lib --features eval,agent-bridge` (the suite, jail, checkers and run decisions) and `bun run test:eval` (the report and the gate). CI does not run them.
 - **Frontend:** `bun run lint`, `bun run format`, `bun run test:unit` (Vitest, currently `useUpdater.test.ts`), `bun run build`.
 - **CI** (`.github/workflows/`): `integrate.yml` (push to `develop`) builds the frontend, runs lint (failures ignored), formats, auto-commits, bumps the version with changelogen and opens a release PR; it runs **no tests and no Rust checks** (the test step is commented out; a Rust test workflow was tried and removed on 2026-10-19 because its queued runs were not wanted). `release.yml` (push to `main` with a `ci(release):` message) creates the release notes. `deploy.yml` (release published) builds the desktop app on Windows, Ubuntu and macOS (both architectures) with `--features agent-bridge`, signs updater artifacts and uploads the CLI. The web-container and Android jobs are commented out; `Dockerfile` and `nginx.conf` are unused leftovers.
@@ -602,4 +602,4 @@ Live runs (earlier model builds): "Open Notepad and write hello" ran end to end 
 | `ornith-1.5-9b`, thinking off                  | 58%     | 85%         | 1.8 s          | 71%                    |
 | `qwen3.8-27b`, thinking off, 768 px screenshot | 63%     | 90%         | 5.1 s          | 29%                    |
 
-Findings: raw model coordinates are good enough for medium and large targets; small icon buttons are the weak spot for every model (hence UI Automation ids); downscaling to 768 px costs a lot of accuracy, so the screenshot stays at 1280 px; latency on the 27B models is dominated by image prefill; a 1280x720 screenshot is about 880 image tokens; `/v1/images/grounding` returned `[500, 500]` every time and is not used. Tooling: `pwsh scripts/m15/run-probe.ps1` runs `probe_m15.rs` (which encodes through the same `observe::screenshot::prepare` the app uses) and `scripts/m15/report.mjs` summarises hit rate, near-miss rate and latency; modes are `model:convention[@edge]` with conventions `norm`, `brief`, `px` and `ground`.
+Findings: raw model coordinates are good enough for medium and large targets; small icon buttons are the weak spot for every model (hence UI Automation ids); downscaling to 768 px costs a lot of accuracy, so the screenshot stays at 1280 px; latency on the 27B models is dominated by image prefill; a 1280x720 screenshot is about 880 image tokens; `/v1/images/grounding` returned `[500, 500]` every time and is not used. Tooling: `pwsh scripts/m15/run-probe.ps1` runs `grounding_probe.rs` (which encodes through the same `observe::screenshot::prepare` the app uses) and `scripts/m15/report.mjs` summarises hit rate, near-miss rate and latency; modes are `model:convention[@edge]` with conventions `norm`, `brief`, `px` and `ground`.

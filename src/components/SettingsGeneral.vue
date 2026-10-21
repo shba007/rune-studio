@@ -100,6 +100,10 @@ async function revealDeveloper() {
     </HubGroup>
 
     <HubGroup title="Models">
+      <p class="m-0 mb-2 text-label text-zinc-400">
+        Choose a model for each job. Leave a field empty to use the agent model. Open Model
+        capabilities to check what each model supports.
+      </p>
       <datalist id="discovered-models-list">
         <option v-for="m in agent.backend.value?.models ?? []" :key="m.id" :value="m.id" />
       </datalist>
