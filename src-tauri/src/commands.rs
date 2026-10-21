@@ -28,6 +28,7 @@ pub fn save_settings(
 ) -> AppResult<()> {
     Hotkeys::validate(&settings).map_err(AppError::Invalid)?;
     settings::save(&app, &settings)?;
+    crate::hub::changed(&app);
 
     let next = Hotkeys::from_settings(&settings);
     let was_on = state.settings.locked().external_agent;
@@ -52,8 +53,16 @@ pub fn has_api_key() -> bool {
 }
 
 #[tauri::command]
-pub fn set_api_key(key: String) -> AppResult<()> {
-    settings::set_api_key(key.trim())
+pub fn set_api_key(app: AppHandle, key: String) -> AppResult<()> {
+    settings::set_api_key(key.trim())?;
+    crate::hub::changed(&app);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn open_settings_window(app: AppHandle, section: Option<String>) -> AppResult<()> {
+    crate::hub::open(&app, section.as_deref())
+        .map_err(|err| AppError::Invalid(format!("Could not open Settings: {err}")))
 }
 
 #[tauri::command]

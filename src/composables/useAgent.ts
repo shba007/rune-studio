@@ -8,7 +8,6 @@ import { REVIEW_SECONDS, readOffer, type ReviewOffer } from '@/config/review'
 import {
   AUDIO_LEVEL,
   VOICE_HEARD,
-  OPEN_SETTINGS,
   CONFIRM_REQUEST,
   CONFIRM_RESOLVED,
   PLAN_UPDATED,
@@ -61,8 +60,6 @@ const MODE_RANK: Record<PillMode, number> = {
   open: 1,
   task: 2,
   analysis: 2,
-  settings: 3,
-  artifacts: 3,
 }
 
 const COLLAPSE_MS = 340
@@ -261,6 +258,7 @@ export function useAgent() {
     void call('pill_activity')
   }
   const analyzeScreen = () => call('analyze_screen', { question: null })
+  const openSettings = (section = 'general') => call('open_settings_window', { section })
   const toggleListening = () => call('toggle_listening')
   async function answer(approved: boolean) {
     const waiting = question.value
@@ -376,8 +374,10 @@ export function useAgent() {
         showNotice(text ? `${note}: “${text}”` : note)
       }),
       await listen(SUMMON, () => void toggleOpen()),
-      await listen(OPEN_SETTINGS, () => void setMode('settings')),
-      await listen('open_artifacts', () => void setMode('artifacts')),
+      await listen('settings_changed', () => {
+        void refreshSettings()
+        void refreshBackend()
+      }),
     )
     await refreshSettings()
     await refreshBackend()
@@ -429,6 +429,7 @@ export function useAgent() {
     answerReflection,
     noteActivity,
     analyzeScreen,
+    openSettings,
     toggleListening,
     confirm,
     debugSetState,

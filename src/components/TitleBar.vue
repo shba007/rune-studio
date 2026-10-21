@@ -4,7 +4,7 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 
 import AppIcon from './AppIcon.vue'
 
-defineProps<{ title: string }>()
+withDefaults(defineProps<{ title: string; controls?: 'all' | 'close' }>(), { controls: 'all' })
 
 const LOGO = '/logo.svg'
 
@@ -51,10 +51,17 @@ const button =
       <span class="text-caption text-zinc-300 uppercase">{{ title }}</span>
     </div>
     <div class="flex h-full">
-      <button type="button" :class="button" aria-label="Minimise" @click="win()?.minimize()">
+      <button
+        v-if="controls === 'all'"
+        type="button"
+        :class="button"
+        aria-label="Minimise"
+        @click="win()?.minimize()"
+      >
         <AppIcon name="minimize" />
       </button>
       <button
+        v-if="controls === 'all'"
         type="button"
         :class="button"
         :aria-label="maximized ? 'Restore' : 'Maximise'"

@@ -19,8 +19,6 @@ import FeedbackCard from './FeedbackCard.vue'
 import ReviewCard from './ReviewCard.vue'
 import HealthDots from './HealthDots.vue'
 import ProgressRing from './ProgressRing.vue'
-import ArtifactsPanel from './ArtifactsPanel.vue'
-import SettingsPanel from './SettingsPanel.vue'
 import TaskPanel from './TaskPanel.vue'
 
 const agent = useAgent()
@@ -74,9 +72,6 @@ watch(
 )
 
 const isAmbient = computed(() => agent.mode.value === 'ambient')
-const isFullPage = computed(
-  () => agent.mode.value === 'settings' || agent.mode.value === 'artifacts',
-)
 
 if (import.meta.env.DEV) Object.assign(window, { __demoAgent: agent })
 
@@ -88,9 +83,7 @@ watch(contentHeight, (height) => {
 
 onKeyStroke('Escape', () => {
   if (agent.question.value || agent.mode.value === 'analysis') return
-  if (agent.mode.value === 'settings' || agent.mode.value === 'artifacts')
-    void agent.setMode(agent.home())
-  else void agent.dismiss()
+  void agent.dismiss()
 })
 
 function onOrb() {
@@ -187,15 +180,9 @@ function onOrb() {
       :style="{ width: isAmbient ? '0px' : `${PAGE_WIDTH + PAGE_GAP}px` }"
     >
       <div class="ml-2 flex h-full flex-col justify-end" :style="{ width: `${PAGE_WIDTH}px` }">
-        <div ref="content" class="flex flex-col" :class="isFullPage ? 'h-full min-h-0' : ''">
+        <div ref="content" class="flex flex-col">
           <Transition name="page" mode="out-in">
-            <SettingsPanel v-if="agent.mode.value === 'settings'" key="settings" :agent="agent" />
-            <ArtifactsPanel
-              v-else-if="agent.mode.value === 'artifacts'"
-              key="artifacts"
-              :agent="agent"
-            />
-            <div v-else key="main" class="flex flex-col gap-2">
+            <div key="main" class="flex flex-col gap-2">
               <Transition name="page">
                 <TaskPanel v-if="agent.mode.value === 'task'" :agent="agent" />
               </Transition>

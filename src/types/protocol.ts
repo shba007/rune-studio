@@ -69,11 +69,10 @@ export interface ClickReport {
   cursorY: number
 }
 
-export type PillMode = 'ambient' | 'open' | 'task' | 'analysis' | 'settings' | 'artifacts'
+export type PillMode = 'ambient' | 'open' | 'task' | 'analysis'
 
 export const STATE_CHANGED = 'state_changed'
 export const SUMMON = 'summon'
-export const OPEN_SETTINGS = 'open_settings'
 export const AUDIO_LEVEL = 'audio_level'
 export const VOICE_HEARD = 'voice_heard'
 

@@ -19,8 +19,6 @@ pub const STATE_CHANGED: &str = "state_changed";
 pub const TASK_VERIFIED: &str = "task_verified";
 pub const ANALYSIS_UPDATED: &str = "analysis_updated";
 pub const SUMMON: &str = "summon";
-pub const OPEN_SETTINGS: &str = "open_settings";
-pub const OPEN_ARTIFACTS: &str = "open_artifacts";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

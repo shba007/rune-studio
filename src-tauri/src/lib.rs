@@ -16,6 +16,7 @@ mod events;
 mod exec;
 mod flight;
 mod hotkeys;
+mod hub;
 mod model;
 mod observe;
 mod overlay;
@@ -209,6 +210,7 @@ pub fn run() {
             commands::bridge_info,
             commands::get_control_label,
             commands::session_feedback,
+            commands::open_settings_window,
             commands::flight_runs,
             commands::flight_run,
             commands::flight_steps,

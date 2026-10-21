@@ -2,7 +2,7 @@ use crate::sync::LockExt;
 use serde::Deserialize;
 use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, WebviewWindow};
 
-use crate::events::{OPEN_ARTIFACTS, OPEN_SETTINGS, SUMMON};
+use crate::events::SUMMON;
 
 pub const MAIN: &str = "main";
 
@@ -15,8 +15,6 @@ pub enum Mode {
     Open,
     Task,
     Analysis,
-    Settings,
-    Artifacts,
 }
 
 impl Mode {
@@ -26,8 +24,6 @@ impl Mode {
             Mode::Open => (376.0, 64.0),
             Mode::Task => (376.0, 336.0),
             Mode::Analysis => (376.0, 336.0),
-            Mode::Settings => (376.0, 592.0),
-            Mode::Artifacts => (376.0, 592.0),
         }
     }
 }
@@ -170,19 +166,11 @@ pub fn summon(app: &AppHandle) {
 }
 
 pub fn open_settings(app: &AppHandle) {
-    if let Some(window) = main_window(app) {
-        let _ = window.show();
-        let _ = window.set_focus();
-        let _ = app.emit(OPEN_SETTINGS, ());
-    }
+    let _ = crate::hub::open(app, Some("general"));
 }
 
 pub fn open_artifacts(app: &AppHandle) {
-    if let Some(window) = main_window(app) {
-        let _ = window.show();
-        let _ = window.set_focus();
-        let _ = app.emit(OPEN_ARTIFACTS, ());
-    }
+    let _ = crate::hub::open(app, Some("artifacts"));
 }
 
 pub fn toggle_visibility(app: &AppHandle) {

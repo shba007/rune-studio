@@ -16,7 +16,7 @@ const tool =
       :class="[tool, 'top-0']"
       aria-label="Settings"
       title="Settings"
-      @click="agent.setMode('settings')"
+      @click="agent.openSettings()"
     >
       <AppIcon name="tune" />
     </button>
