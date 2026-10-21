@@ -6,7 +6,7 @@ import AppIcon from './AppIcon.vue'
 defineProps<{ agent: Agent }>()
 
 const tool =
-  'absolute left-1 grid size-7 cursor-pointer place-items-center rounded-full bg-[#141414] text-zinc-300 shadow-[inset_0_0_0_1px_rgb(255_255_255/0.08)] transition hover:bg-[#222] hover:text-white disabled:cursor-default disabled:opacity-40 disabled:hover:bg-[#141414]'
+  'absolute left-1 grid size-7 cursor-pointer place-items-center rounded-full bg-[#141414] text-zinc-300 shadow-[inset_0_0_0_1px_rgb(255_255_255/0.08)] transition hover:bg-[#222] hover:text-(--accent) disabled:cursor-default disabled:opacity-40 disabled:hover:bg-[#141414]'
 </script>
 
 <template>

@@ -237,7 +237,7 @@ function setActive(next: boolean) {
 
 /** Name of the outside agent in control, or null when it is Rune Studio's own agent. */
 const agentName = ref<string | null>(null)
-const { identity, darkAccent, mark, hint } = useExternalAgent()
+const { identity, darkAccent, mark, logo, mono, letter, hint } = useExternalAgent()
 /** The mark pulses for the first 600 ms of a hand-over, then holds still (a steady pulse beside a moving action chip is noise). */
 const markPulse = ref(false)
 watch(identity, (who, before) => {
@@ -564,7 +564,13 @@ onBeforeUnmount(() => {
           :style="{ color: identity ? (darkAccent ?? '#f1f1ef') : '#f1f1ef' }"
           :title="hint"
         >
-          <AgentMark :glyph="identity ? mark : null" :own="!identity" />
+          <AgentMark
+            :glyph="identity ? mark : null"
+            :logo="identity ? logo : null"
+            :mono="mono"
+            :letter="identity ? letter : null"
+            :own="!identity"
+          />
         </span>
         <span class="text-caption whitespace-nowrap uppercase" :title="hint"
           >{{ shownName }} is in control</span

@@ -3,7 +3,7 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vite-plus/test'
 
-import { AGENT_BRANDS, NEUTRAL_ON_DARK, accentOnDark, brandFor } from './agents'
+import { AGENT_BRANDS, NEUTRAL_ON_DARK, accentOnDark, brandFor, lookFor } from './agents'
 import { contrast, rgba } from './color'
 
 /** Every id `bridge::identity` can emit (`identity::all_ids`); a test on the Rust side pins its length. */
@@ -88,5 +88,24 @@ describe('colour helpers', () => {
     expect(contrast('#ffffff', '#000000')).toBeCloseTo(21, 0)
     expect(contrast('#141414', '#141414')).toBeCloseTo(1, 5)
     expect(rgba('#D97757', 0.5)).toBe('rgba(217, 119, 87, 0.5)')
+  })
+
+  it('points every logo at a file in public/agents', () => {
+    const missing = Object.values(AGENT_BRANDS)
+      .filter((brand) => brand.logo !== null)
+      .filter((brand) => !readdirSync('public/agents').includes(brand.logo!.split('/').pop()!))
+    expect(missing).toEqual([])
+  })
+
+  it('gives every listed agent a colour, and an unknown one a stable colour and a letter', () => {
+    for (const id of RUST_IDS.filter((item) => item !== 'external')) {
+      expect(lookFor(id, id).accent).not.toBeNull()
+    }
+    const first = lookFor('external', 'Zed Agent')
+    expect(first).toEqual(lookFor('external', 'Zed Agent'))
+    expect(first.letter).toBe('Z')
+    expect(first.accent).toMatch(/^#[0-9A-F]{6}$/)
+    expect(contrast(first.accentOnDark, '#141414')).toBeGreaterThanOrEqual(3)
+    expect(lookFor('external', 'Other').accent).not.toBe(first.accent)
   })
 })

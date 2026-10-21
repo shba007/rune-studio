@@ -47,7 +47,13 @@ watch(promptVisible, (visible) => {
   if (visible && agent.mode.value === 'ambient') void agent.setMode('open')
 })
 
-const { orbAccent, darkAccent, mark: agentMark } = useExternalAgent()
+const {
+  orbAccent,
+  darkAccent,
+  mark: agentMark,
+  logo: agentLogo,
+  letter: agentLetter,
+} = useExternalAgent()
 
 /** The ring shows the plan of a task or the progress of the idle review, never both. */
 const reflecting = computed(() => agent.state.value === 'reflecting' && agent.reflection.value)
@@ -112,6 +118,7 @@ function onOrb() {
 <template>
   <div
     class="flex h-full w-full items-end justify-end"
+    :style="{ '--accent': darkAccent ?? '#2d71c3' }"
     @pointerdown="agent.noteActivity()"
     @keydown="agent.noteActivity()"
   >
@@ -185,6 +192,8 @@ function onOrb() {
           :level="agent.level.value"
           :accent="orbAccent"
           :mark="agentMark"
+          :logo="agentLogo"
+          :letter="agentLetter"
         />
         <HealthDots :tone="agent.health.value.tone" />
       </button>
@@ -296,7 +305,7 @@ function onOrb() {
 }
 
 .update-fill {
-  stroke: #2d71c3;
+  stroke: var(--accent);
   stroke-width: 2.5;
   stroke-linecap: round;
   transition: stroke-dasharray 250ms ease-out;

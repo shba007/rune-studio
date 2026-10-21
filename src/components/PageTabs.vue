@@ -14,7 +14,7 @@ defineProps<{ agent: Agent; current: 'settings' | 'artifacts' }>()
       class="h-6 flex-1 cursor-pointer rounded-full border bg-transparent text-caption uppercase transition"
       :class="
         current === page
-          ? 'border-white/60 bg-white/10 text-zinc-50'
+          ? 'border-(--accent) bg-white/10 text-zinc-50'
           : 'border-white/12 text-zinc-500 hover:text-zinc-200'
       "
       :aria-current="current === page ? 'page' : undefined"

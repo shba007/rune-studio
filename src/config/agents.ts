@@ -18,6 +18,10 @@ export interface AgentBrand {
   accentOnDark: string | null
   /** One 24x24 SVG path (single colour); null draws the neutral plug icon. */
   glyph: string | null
+  /** The brand logo in public/agents (colour); null when the agent is not in the list. */
+  logo: string | null
+  /** The logo is one flat colour (black), so on a dark surface it is inverted. */
+  mono: boolean
   /** Where the values came from. */
   source: string
 }
@@ -28,6 +32,8 @@ export const NEUTRAL_ON_DARK = '#f1f1ef'
 export const AGENT_BRANDS: Record<string, AgentBrand> = {
   claude: {
     name: 'Claude',
+    logo: '/agents/claude.svg',
+    mono: false,
     accent: '#D97757',
     accentOnDark: '#D97757',
     glyph:
@@ -36,13 +42,17 @@ export const AGENT_BRANDS: Record<string, AgentBrand> = {
   },
   antigravity: {
     name: 'Antigravity',
-    accent: null,
-    accentOnDark: null,
+    logo: '/agents/antigravity.svg',
+    mono: false,
+    accent: '#3186FF',
+    accentOnDark: '#3186FF',
     glyph: null,
-    source: 'No official colour or mark found, and none in Simple Icons',
+    source: 'LobeHub icons (MIT), colour logo',
   },
   opencode: {
     name: 'OpenCode',
+    logo: '/agents/opencode.svg',
+    mono: true,
     accent: '#000000',
     accentOnDark: null,
     glyph: 'M22 24H2V0h20zM17 4.8H7v14.4h10z',
@@ -50,21 +60,27 @@ export const AGENT_BRANDS: Record<string, AgentBrand> = {
   },
   chatgpt: {
     name: 'ChatGPT',
-    accent: null,
-    accentOnDark: null,
+    logo: '/agents/chatgpt.svg',
+    mono: true,
+    accent: '#10A37F',
+    accentOnDark: '#10A37F',
     glyph: null,
     source:
       'OpenAI publishes no colour palette and its mark may not be recoloured; not in Simple Icons',
   },
   codex: {
     name: 'Codex',
-    accent: null,
-    accentOnDark: null,
+    logo: '/agents/codex.svg',
+    mono: false,
+    accent: '#3941FF',
+    accentOnDark: '#7A9DFF',
     glyph: null,
-    source: 'Same as ChatGPT: no published palette, not in Simple Icons',
+    source: 'LobeHub icons (MIT), colour logo',
   },
   gemini: {
     name: 'Gemini',
+    logo: '/agents/gemini.svg',
+    mono: false,
     accent: '#8E75B2',
     accentOnDark: '#8E75B2',
     glyph:
@@ -73,6 +89,8 @@ export const AGENT_BRANDS: Record<string, AgentBrand> = {
   },
   cursor: {
     name: 'Cursor',
+    logo: '/agents/cursor.svg',
+    mono: true,
     accent: '#000000',
     accentOnDark: null,
     glyph:
@@ -81,6 +99,8 @@ export const AGENT_BRANDS: Record<string, AgentBrand> = {
   },
   cline: {
     name: 'Cline',
+    logo: '/agents/cline.svg',
+    mono: true,
     accent: '#18181B',
     accentOnDark: null,
     glyph:
@@ -89,6 +109,8 @@ export const AGENT_BRANDS: Record<string, AgentBrand> = {
   },
   copilot: {
     name: 'Copilot',
+    logo: '/agents/copilot.svg',
+    mono: false,
     accent: '#000000',
     accentOnDark: null,
     glyph:
@@ -97,6 +119,8 @@ export const AGENT_BRANDS: Record<string, AgentBrand> = {
   },
   windsurf: {
     name: 'Windsurf',
+    logo: '/agents/windsurf.svg',
+    mono: true,
     accent: '#0B100F',
     accentOnDark: null,
     glyph:
@@ -105,6 +129,8 @@ export const AGENT_BRANDS: Record<string, AgentBrand> = {
   },
   external: {
     name: 'External agent',
+    logo: null,
+    mono: false,
     accent: null,
     accentOnDark: null,
     glyph: null,
@@ -120,4 +146,61 @@ export function brandFor(id: string | null | undefined): AgentBrand {
 /** The accent to draw with on a dark surface: the brand's, or the neutral light colour. */
 export function accentOnDark(id: string | null | undefined): string {
   return brandFor(id).accentOnDark ?? NEUTRAL_ON_DARK
+}
+
+export interface AgentLook {
+  accent: string | null
+  accentOnDark: string
+  logo: string | null
+  mono: boolean
+  glyph: string | null
+  letter: string | null
+}
+
+function hueOf(name: string): number {
+  let hash = 0
+  for (const char of name.toLowerCase()) hash = (hash * 31 + char.codePointAt(0)!) % 360
+  return hash
+}
+
+function hslToHex(hue: number, saturation: number, lightness: number): string {
+  const s = saturation / 100
+  const l = lightness / 100
+  const k = (n: number) => (n + hue / 30) % 12
+  const a = s * Math.min(l, 1 - l)
+  const channel = (n: number) => {
+    const value = l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)))
+    return Math.round(255 * value)
+      .toString(16)
+      .padStart(2, '0')
+  }
+  return `#${channel(0)}${channel(8)}${channel(4)}`.toUpperCase()
+}
+
+/**
+ * How an outside agent looks on the orb: its brand where it is in the list, otherwise a stable colour
+ * made from its name and its first letter, so any agent gets an identity.
+ */
+export function lookFor(id: string | null | undefined, name: string | null | undefined): AgentLook {
+  const brand = brandFor(id)
+  if (id && id !== 'external' && AGENT_BRANDS[id]) {
+    return {
+      accent: brand.accent,
+      accentOnDark: brand.accentOnDark ?? NEUTRAL_ON_DARK,
+      logo: brand.logo,
+      mono: brand.mono,
+      glyph: brand.glyph,
+      letter: null,
+    }
+  }
+  const label = (name ?? '').trim()
+  const hue = hueOf(label || 'external')
+  return {
+    accent: hslToHex(hue, 65, 45),
+    accentOnDark: hslToHex(hue, 75, 65),
+    logo: null,
+    mono: false,
+    glyph: null,
+    letter: label ? label.charAt(0).toUpperCase() : null,
+  }
 }

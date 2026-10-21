@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useDocumentVisibility, usePreferredReducedMotion, useRafFn } from '@vueuse/core'
-import { onMounted, useTemplateRef, watch, watchEffect } from 'vue'
+import { onMounted, ref, useTemplateRef, watch, watchEffect } from 'vue'
 
 import { rgba } from '@/config/color'
 import type { AgentState } from '@/types/protocol'
@@ -12,7 +12,27 @@ const props = defineProps<{
   accent?: string | null
   /** That agent's mark, one 24x24 SVG path, drawn in the middle. */
   mark?: string | null
+  /** That agent's logo (an image in public/agents), drawn in the middle in its own colours. */
+  logo?: string | null
+  /** The first letter of an agent with no logo, drawn in the middle. */
+  letter?: string | null
 }>()
+
+const logoImage = ref<HTMLImageElement | null>(null)
+watch(
+  () => props.logo,
+  (src) => {
+    if (!src) {
+      logoImage.value = null
+      return
+    }
+    const image = new Image()
+    image.onload = () => (logoImage.value = image)
+    image.src = src
+  },
+  { immediate: true },
+)
+const marked = () => Boolean(props.logo || props.letter || props.mark)
 
 type Kind =
   | 'idle'
@@ -172,7 +192,7 @@ function draw(now: number) {
         ctx.fillStyle = red
           ? `rgba(215, 25, 33, ${b})`
           : props.accent && kind !== 'reflecting'
-            ? rgba(props.accent, b * (props.mark ? 0.45 : 1))
+            ? rgba(props.accent, b * (marked() ? 0.45 : 1))
             : `rgba(17, 17, 17, ${b})`
         ctx.fill()
       }
@@ -183,8 +203,23 @@ function draw(now: number) {
 
 /** The outside agent's mark: one flat vector over the dimmed dot field, about 14 px. No glow, no gradient. */
 function drawMark(ctx: CanvasRenderingContext2D, kind: Kind) {
-  if (!props.mark || kind === 'attention' || kind === 'failed' || kind === 'reflecting') return
+  if (!marked() || kind === 'attention' || kind === 'failed' || kind === 'reflecting') return
   const size = 14 * SCALE
+  if (logoImage.value) {
+    ctx.drawImage(logoImage.value, (SIZE - size) / 2, (SIZE - size) / 2, size, size)
+    return
+  }
+  if (props.letter && !props.mark) {
+    ctx.save()
+    ctx.fillStyle = props.accent ?? '#111111'
+    ctx.font = `700 ${12 * SCALE}px Oxanium, sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(props.letter, SIZE / 2, SIZE / 2 + SCALE)
+    ctx.restore()
+    return
+  }
+  if (!props.mark) return
   const path = new Path2D(props.mark)
   ctx.save()
   ctx.translate((SIZE - size) / 2, (SIZE - size) / 2)

@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
-import { accentOnDark, brandFor } from '@/config/agents'
+import { lookFor } from '@/config/agents'
 import { EXTERNAL_AGENT, type ExternalAgentPayload } from '@/types/protocol'
 
 /** A payload where nobody is in control is "no identity". */
@@ -27,11 +27,15 @@ export function useExternalAgent() {
   const identity = ref<ExternalAgentPayload | null>(null)
   let unlisten: UnlistenFn | undefined
 
-  /** The brand's colour on the orb's light disc; null keeps the orb's own dark dots. */
-  const orbAccent = computed(() => (identity.value ? brandFor(identity.value.id).accent : null))
-  /** The brand's colour on dark surfaces (the ring, the top bar). */
-  const darkAccent = computed(() => (identity.value ? accentOnDark(identity.value.id) : null))
-  const mark = computed(() => (identity.value ? brandFor(identity.value.id).glyph : null))
+  const look = computed(() =>
+    identity.value ? lookFor(identity.value.id, identity.value.agent) : null,
+  )
+  const orbAccent = computed(() => look.value?.accent ?? null)
+  const darkAccent = computed(() => look.value?.accentOnDark ?? null)
+  const mark = computed(() => look.value?.glyph ?? null)
+  const logo = computed(() => look.value?.logo ?? null)
+  const mono = computed(() => look.value?.mono ?? false)
+  const letter = computed(() => look.value?.letter ?? null)
   /** "Declared by the agent" unless the registration attested it. */
   const hint = computed(() => {
     const who = identity.value
@@ -54,5 +58,5 @@ export function useExternalAgent() {
   })
   onBeforeUnmount(() => unlisten?.())
 
-  return { identity, orbAccent, darkAccent, mark, hint }
+  return { identity, orbAccent, darkAccent, mark, logo, mono, letter, hint }
 }
