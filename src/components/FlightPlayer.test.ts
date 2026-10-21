@@ -118,7 +118,7 @@ describe('FlightPlayer states', () => {
     const meta = wrapper.find('[data-testid="meta"]').text()
     expect(meta).toMatch(/Stepss*3/)
     expect(meta).toMatch(/Retriess*2/)
-    expect(meta).toMatch(/Durations*0:30/)
+    expect(meta).toMatch(/Durations*30 s/)
   })
 
   it('shows LIVE for a run that has not ended', async () => {
