@@ -3,7 +3,7 @@ import { useNow } from '@vueuse/core'
 import { computed } from 'vue'
 
 import type { Agent } from '@/composables/useAgent'
-import { etaText, remainingMs } from '@/config/eta'
+import { clockText, remainingMs } from '@/config/eta'
 import { KIND_ICON, TOOL_LABEL, kindOf } from '@/config/actions'
 
 import AppIcon from './AppIcon.vue'
@@ -25,8 +25,13 @@ const eta = computed(() => {
   if (!agent.isRunning.value || !agent.timing.value) return null
   const left = remainingMs(agent.timing.value, goals.value.length, done.value, now.value.getTime())
   if (left === null) return goals.value.length > 1 && done.value === 0 ? 'estimating…' : null
-  const text = etaText(left)
-  return text === 'any moment' ? 'any moment now' : `${text} left`
+  return left <= 0 ? 'finishing…' : `${clockText(left)} left`
+})
+const goalElapsed = computed(() => {
+  const timing = agent.timing.value
+  return agent.isRunning.value && timing
+    ? clockText(now.value.getTime() - timing.goalStartedAt)
+    : null
 })
 
 const last = computed(() => agent.steps.value.at(-1) ?? null)
@@ -57,19 +62,19 @@ function statusOf(index: number): 'done' | 'current' | 'pending' {
   <section
     class="flex w-full flex-col gap-2 rounded-[28px] border border-white/8 bg-[#141414] p-4 text-zinc-100"
   >
-    <header class="flex h-6 items-center gap-2">
+    <header class="flex h-6 items-center gap-2 whitespace-nowrap">
       <span class="text-caption text-zinc-500 uppercase">Task</span>
-      <span v-if="goals.length" class="text-caption text-zinc-400 uppercase">
-        {{ done }} / {{ goals.length }}
+      <span v-if="goals.length" class="text-caption text-zinc-300 uppercase tabular-nums">
+        {{ done }}/{{ goals.length }}
       </span>
       <span v-if="agent.steps.value.length" class="text-caption text-zinc-500 uppercase">
         · {{ agent.steps.value.length }} {{ agent.steps.value.length === 1 ? 'step' : 'steps' }}
       </span>
       <span
         v-if="eta"
-        class="min-w-0 truncate text-caption text-zinc-400 uppercase tabular-nums"
+        class="ml-auto text-caption text-(--accent) uppercase tabular-nums"
         data-testid="eta"
-        >· {{ eta }}</span
+        >{{ eta }}</span
       >
       <button
         v-if="!agent.isRunning.value"
@@ -116,6 +121,12 @@ function statusOf(index: number): 'done' | 'current' | 'pending' {
         >
           {{ goal }}
         </span>
+        <span
+          v-if="statusOf(index) === 'current' && goalElapsed"
+          class="shrink-0 text-caption text-zinc-400 tabular-nums"
+          data-testid="goal-elapsed"
+          >{{ goalElapsed }}</span
+        >
       </li>
     </ol>
 

@@ -73,6 +73,7 @@ input {
 /* Scrollbars: slim, rounded and quiet, on every scroll area in the app. The thumb colours are
    variables, so a light surface only has to override them (see the composer field). */
 :root {
+  --accent: #2d71c3;
   --scrollbar-thumb: rgb(255 255 255 / 0.16);
   --scrollbar-thumb-hover: rgb(255 255 255 / 0.32);
 }

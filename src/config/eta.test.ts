@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test'
 
-import { etaText, remainingMs } from './eta'
+import { clockText, remainingMs } from './eta'
 
 const timing = { startedAt: 0, goalStartedAt: 60_000, doneGoals: 1 }
 
@@ -21,13 +21,13 @@ describe('remainingMs', () => {
   })
 })
 
-describe('etaText', () => {
-  it('speaks in seconds, minutes and hours', () => {
-    expect(etaText(0)).toBe('any moment')
-    expect(etaText(3000)).toBe('any moment')
-    expect(etaText(12_000)).toBe('~15 s')
-    expect(etaText(90_000)).toBe('~2 min')
-    expect(etaText(3_900_000)).toBe('~1 h 5 min')
-    expect(etaText(7_200_000)).toBe('~2 h')
+describe('clockText', () => {
+  it('counts in minutes and seconds, with hours when needed', () => {
+    expect(clockText(0)).toBe('0:00')
+    expect(clockText(500)).toBe('0:01')
+    expect(clockText(42_000)).toBe('0:42')
+    expect(clockText(125_000)).toBe('2:05')
+    expect(clockText(3_725_000)).toBe('1:02:05')
+    expect(clockText(-5)).toBe('0:00')
   })
 })

@@ -22,14 +22,11 @@ export function remainingMs(
   return Math.max(0, average * (goals - doneGoals) - (now - timing.goalStartedAt))
 }
 
-/** A short, friendly time: "any moment", "~40 s", "~2 min", "~1 h 5 min". */
-export function etaText(ms: number): string {
-  const seconds = Math.ceil(ms / 1000)
-  if (seconds <= 3) return 'any moment'
-  if (seconds < 60) return `~${Math.ceil(seconds / 5) * 5} s`
-  const minutes = Math.ceil(seconds / 60)
-  if (minutes < 60) return `~${minutes} min`
-  const hours = Math.floor(minutes / 60)
-  const rest = minutes % 60
-  return rest === 0 ? `~${hours} h` : `~${hours} h ${rest} min`
+export function clockText(ms: number): string {
+  const total = Math.max(0, Math.ceil(ms / 1000))
+  const hours = Math.floor(total / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const seconds = total % 60
+  const pair = (n: number) => String(n).padStart(2, '0')
+  return hours > 0 ? `${hours}:${pair(minutes)}:${pair(seconds)}` : `${minutes}:${pair(seconds)}`
 }
