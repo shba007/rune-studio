@@ -110,11 +110,7 @@ fn same(a: &[u8], b: &[u8]) -> bool {
 
 /// What the model is told once it has been stuck for a while.
 pub fn warning(unchanged: u32) -> Option<String> {
-    (unchanged >= WARN_AFTER).then(|| {
-        format!(
-            "The screen has not changed after your last {unchanged} actions, so they are not working. Do not repeat them: try another control, a keyboard shortcut or scrolling, or ask the user."
-        )
-    })
+    (unchanged >= WARN_AFTER).then(|| crate::prompts::agent_stuck(unchanged))
 }
 
 #[cfg(test)]

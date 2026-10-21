@@ -20,6 +20,7 @@ mod hotkeys;
 mod model;
 mod observe;
 mod overlay;
+mod prompts;
 mod reflect;
 mod review;
 mod safety;

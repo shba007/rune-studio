@@ -300,9 +300,8 @@ async fn blocking_check(
     match (challenge, checked) {
         (true, Ok(verdict)) => {
             trace.event(run_id, "note", r#"{"text":"the independent check contradicted the claim; the agent was asked to keep going"}"#);
-            Blocking::Challenge(format!(
-                "an independent check says the screen does not show the task as done: {}. Keep working, or use ask_user if you are stuck",
-                verdict.evidence.trim_end_matches('.')
+            Blocking::Challenge(crate::prompts::agent_contradicted(
+                verdict.evidence.trim_end_matches('.'),
             ))
         }
         _ => Blocking::Finish,
@@ -547,7 +546,7 @@ async fn make_plan(
 ) -> Result<Vec<String>, Outcome> {
     let tools = protocol::plan_tools();
     let request = Request {
-        system: prompt::PLAN_SYSTEM,
+        system: crate::prompts::agent_plan(),
         user_text: &prompt::plan_user_message(task),
         screenshot: None,
         audio: None,
@@ -870,7 +869,7 @@ async fn run(
             settings.max_steps,
         );
         let request = Request {
-            system: prompt::SYSTEM,
+            system: crate::prompts::agent_system(),
             user_text: &text,
             screenshot: Some(&screenshot),
             audio: None,
@@ -1505,7 +1504,7 @@ mod live {
         };
         let tools = protocol::plan_tools();
         let request = Request {
-            system: prompt::PLAN_SYSTEM,
+            system: crate::prompts::agent_plan(),
             user_text: &prompt::plan_user_message("Open Notepad and write hello"),
             screenshot: None,
             audio: None,

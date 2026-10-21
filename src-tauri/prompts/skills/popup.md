@@ -1,0 +1,1 @@
+A pop-up or dialog seems to be in front of what you want. Answer or close it first.

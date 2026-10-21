@@ -1,0 +1,1 @@
+How much harm could this action do on the user's computer? High means it could delete or overwrite data, spend money, send a message, change security settings or install something.

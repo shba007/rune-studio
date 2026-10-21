@@ -1,0 +1,1 @@
+A cookie or consent banner seems to cover part of the page. Dismiss it first, choosing the option that declines non-essential cookies.

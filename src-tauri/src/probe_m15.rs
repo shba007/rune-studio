@@ -293,9 +293,9 @@ async fn ask(
         use crate::analysis::report;
         let points = mode.convention == Convention::AnalysisPoint;
         let system = if points {
-            format!("{}{}", report::SYSTEM, report::POINT_SENTENCE)
+            format!("{} {}", crate::prompts::analysis_system(), crate::prompts::analysis_point())
         } else {
-            report::SYSTEM.to_string()
+            crate::prompts::analysis_system().to_string()
         };
         let tools = json!([report::tool_with(points)]);
         let question = format!("Where is {description}?");

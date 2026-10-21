@@ -27,7 +27,7 @@ const RISKY: f64 = 0.5;
 pub async fn is_simple_task(app: &AppHandle, task: &str) -> bool {
     let question = Question::yes_no(
         "simple",
-        "Can this request be done as one short step, such as opening a single app, or typing one short line, without separate stages?",
+        crate::prompts::quick_simple(),
     );
     let text = format!("Request: {}", task.trim());
     decision::ask(app, &text, &[], &[question])
@@ -43,7 +43,7 @@ pub async fn is_simple_task(app: &AppHandle, task: &str) -> bool {
 pub async fn looks_finished(app: &AppHandle, task: &str, actions: &str, screenshot: &str) -> bool {
     let question = Question::yes_no(
         "finished",
-        "Looking at the screen and the steps taken, has the whole request been completely carried out, with nothing left to do?",
+        crate::prompts::quick_finished(),
     );
     let text = format!(
         "Request: {}\nSteps taken so far:\n{}",
@@ -65,7 +65,7 @@ pub async fn risk_opinion(
 ) -> Option<Risk> {
     let question = Question::choice(
         "risk",
-        "How much harm could this action do on the user's computer? High means it could delete or overwrite data, spend money, send a message, change security settings or install something.",
+        crate::prompts::quick_risk(),
         &["low", "medium", "high"],
     );
     let text = format!("Action: {action}\nWhy: {reason}\nWindow in front: {window}");
@@ -102,24 +102,7 @@ pub struct ScreenNotes {
 /// The note the big model gets for something in the way. A CAPTCHA or a login is never worked
 /// around: it is the user's to handle.
 pub fn hint_for(blocker: &str) -> Option<&'static str> {
-    Some(match blocker {
-        "cookie_banner" => {
-            "A cookie or consent banner seems to cover part of the page. Dismiss it first, choosing the option that declines non-essential cookies."
-        }
-        "popup" => {
-            "A pop-up or dialog seems to be in front of what you want. Answer or close it first."
-        }
-        "login_required" => {
-            "The page seems to ask for a login. Never enter credentials: use ask_user, or finish with done and success=false."
-        }
-        "captcha" => {
-            "A CAPTCHA seems to be shown. Never try to solve it: use ask_user, or finish with done and success=false."
-        }
-        "error_page" => {
-            "This looks like an error page (not found, offline or blocked). Go back or try a different address."
-        }
-        _ => return None,
-    })
+    crate::prompts::blocker_hint(blocker)
 }
 
 /// Reads the screen in one quick pass: is it still loading, and is something in the way? `None`
@@ -128,11 +111,11 @@ pub async fn read_screen(app: &AppHandle, screenshot: &str) -> Option<ScreenNote
     let questions = [
         Question::yes_no(
             "loading",
-            "Is the page or app on this screen still loading: mostly blank, half drawn, or showing a loading spinner or progress bar?",
+            crate::prompts::quick_loading(),
         ),
         Question::choice(
             "blocker",
-            "Is something covering or blocking the main content of this screen? Pick none if the content is clearly usable.",
+            crate::prompts::quick_blocker(),
             BLOCKERS,
         ),
     ];

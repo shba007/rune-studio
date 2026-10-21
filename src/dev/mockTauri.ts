@@ -95,10 +95,21 @@ export function installTauriMock() {
   // by whoever is testing; nothing is committed under public/dev.
   const videoParam = new URLSearchParams(location.search).get('video')
   const withVideo = videoParam !== null
+  const agentParam = new URLSearchParams(location.search).get('agent')
   mockIPC(
     (command, args) => {
       const given = (args ?? {}) as Record<string, unknown>
       switch (command) {
+        case 'external_agent':
+          return agentParam
+            ? {
+                agent: agentParam,
+                id: agentParam.toLowerCase(),
+                known: false,
+                verified: false,
+                declared: agentParam,
+              }
+            : null
         case 'flight_runs':
           return flightRuns
         case 'flight_run':
