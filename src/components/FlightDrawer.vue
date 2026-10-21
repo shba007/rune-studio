@@ -464,7 +464,7 @@ const rawText = computed(() => {
         </div>
         <div v-if="pickedCall" class="mt-3 space-y-2" data-testid="bodies">
           <div
-            v-if="pickedCall.servedModel || pickedCall.swapMs"
+            v-if="pickedCall.servedModel || pickedCall.swapMs || pickedCall.locality"
             class="flex flex-wrap items-center gap-2 text-status"
             data-testid="call-model-info"
           >
@@ -478,6 +478,9 @@ const rawText = computed(() => {
             <span v-else-if="pickedCall.servedModel" class="text-zinc-400">
               Model: {{ pickedCall.servedModel }}
             </span>
+            <span v-if="pickedCall.locality" class="text-zinc-400"
+              >Locality: {{ pickedCall.locality }}</span
+            >
             <span v-if="pickedCall.swapMs" class="text-zinc-400">
               Swap: {{ pickedCall.swapMs }} ms
             </span>

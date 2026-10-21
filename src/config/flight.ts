@@ -88,6 +88,7 @@ export interface FlightCall {
   model: string
   promptTokens: number | null
   completionTokens: number | null
+  locality?: string | null
   servedModel?: string | null
   swapMs?: number | null
 }

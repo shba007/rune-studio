@@ -137,6 +137,8 @@ pub fn request<'a>(question: &'a str, screenshot: &'a str, tools: &'a Value) -> 
         tools,
         think: false,
         max_tokens: Some(MAX_OUTPUT_TOKENS),
+        data_class: None,
+        background: false,
     }
 }
 
@@ -595,6 +597,8 @@ mod tests {
             tools: &tools,
             think: false,
             max_tokens: None,
+            data_class: None,
+            background: false,
         };
         assert_eq!(chat_body("m", &profile, &plain)["max_tokens"], 512);
         let thinking = Request {

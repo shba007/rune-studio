@@ -50,6 +50,16 @@ pub enum Locality {
     Unknown,
 }
 
+impl Locality {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Locality::Local => "local",
+            Locality::Cloud => "cloud",
+            Locality::Unknown => "unknown",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelCapabilities {
@@ -72,6 +82,10 @@ pub struct ModelCapabilities {
     pub status: Option<String>,
     #[serde(default)]
     pub raw_capabilities: Vec<String>,
+    #[serde(default)]
+    pub roles: Vec<String>,
+    #[serde(default)]
+    pub aliases: Vec<String>,
 }
 
 impl ModelCapabilities {
@@ -93,6 +107,8 @@ impl ModelCapabilities {
             load_ms_estimate: None,
             status: None,
             raw_capabilities: Vec::new(),
+            roles: Vec::new(),
+            aliases: Vec::new(),
         }
     }
 }
@@ -114,6 +130,35 @@ fn parse_tri_state(val: Option<&Value>) -> TriState {
             }
         }
         _ => TriState::Unknown,
+    }
+}
+
+fn string_list(value: &Value, key: &str) -> Vec<String> {
+    value[key]
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|v| v.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerMemory {
+    pub vram_total_bytes: Option<u64>,
+    pub vram_free_bytes: Option<u64>,
+    pub vram_used_bytes: Option<u64>,
+}
+
+pub fn parse_server_memory(body: &str) -> ServerMemory {
+    let value: Value = serde_json::from_str(body).unwrap_or(Value::Null);
+    ServerMemory {
+        vram_total_bytes: value["vram_total_bytes"].as_u64(),
+        vram_free_bytes: value["vram_free_bytes"].as_u64(),
+        vram_used_bytes: value["vram_used_bytes"].as_u64(),
     }
 }
 
@@ -222,7 +267,11 @@ pub fn parse_model_entry(entry: &Value) -> Option<ModelCapabilities> {
     };
 
     let thinking_control = if let Some(val) = obj.get("thinking_control") {
-        parse_tri_state(Some(val))
+        match val.as_str() {
+            Some("thinking") => TriState::Yes,
+            Some("none") => TriState::No,
+            _ => parse_tri_state(Some(val)),
+        }
     } else if !raw_capabilities.is_empty() {
         if contains_ci(&raw_capabilities, "thinking") || contains_ci(&raw_capabilities, "reasoning")
         {
@@ -280,6 +329,8 @@ pub fn parse_model_entry(entry: &Value) -> Option<ModelCapabilities> {
         vram_mb_estimate,
         load_ms_estimate,
         status,
+        roles: string_list(entry, "roles"),
+        aliases: string_list(entry, "aliases"),
         raw_capabilities,
     })
 }
@@ -518,5 +569,32 @@ mod tests {
         assert!(cache.get().is_some());
         std::thread::sleep(Duration::from_millis(60));
         assert!(cache.get().is_none(), "cache should expire after TTL");
+    }
+
+    #[test]
+    fn real_thinking_contract_and_optional_metadata() {
+        use serde_json::json;
+        for (value, expected) in [
+            (json!("thinking"), TriState::Yes),
+            (json!("none"), TriState::No),
+            (json!(true), TriState::Yes),
+            (json!(false), TriState::No),
+            (json!("yes"), TriState::Yes),
+            (json!("no"), TriState::No),
+        ] {
+            let model = parse_model_entry(
+                &json!({"id":"m", "thinking_control":value, "roles":["agent"], "aliases":["fast"]}),
+            )
+            .unwrap();
+            assert_eq!(model.thinking_control, expected);
+            assert_eq!(model.roles, ["agent"]);
+            assert_eq!(model.aliases, ["fast"]);
+            assert_eq!(model.vram_mb_estimate, None);
+            assert_eq!(model.resident, TriState::Unknown);
+        }
+        let memory = parse_server_memory(r#"{"vram_total_bytes":12000,"vram_free_bytes":0}"#);
+        assert_eq!(memory.vram_total_bytes, Some(12000));
+        assert_eq!(memory.vram_free_bytes, Some(0));
+        assert_eq!(memory.vram_used_bytes, None);
     }
 }

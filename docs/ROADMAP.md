@@ -1,6 +1,37 @@
 # Rune Studio roadmap: reflective personal agent + visual analysis
 
-> Status: **plan, nothing here is built.** The current behaviour is in [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules for this document: only facts read from the repositories named below, or decisions recorded here. Anything else is marked **NOT CERTAIN**. Durations and overhead numbers are estimates. Facts about the sibling projects were read from their code at the commits cloned on 2026-10-19 and not run.
+> Status: **mixed implementation and future plans; current evidence is in the table below.** The current behaviour is in [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules for this document: only facts read from the repositories named below, or decisions recorded here. Anything else is marked **NOT CERTAIN**. Durations and overhead numbers are estimates. Facts about the sibling projects were read from their code at the commits cloned on 2026-10-19 and not run.
+
+## Current milestone evidence (2026-10-21)
+
+This table supersedes the historical status snapshots retained under each milestone. **Built**, **unit tested**, and **seen on a real machine** describe separate evidence; a live observation is not a claim of correctness. The current C1 checks are recorded in [C1-report.md](handoff/C1-report.md).
+
+| Milestone                            | Built  | Unit tested | Seen on a real machine               | Evidence and remaining gaps                                                                                                                                                                                     |
+| ------------------------------------ | ------ | ----------- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R0 Foundations                       | yes    | yes         | partly, 2026-10-19 Windows           | Field report at `0531bec^:docs/field-test-report-2026-10-19.md`; race, crash, retry, single-instance and outside-agent checks passed; elevation partial; wire audit restored in [wire-audit.md](wire-audit.md). |
+| R1 Flight recorder                   | yes    | yes         | partly, 2026-10-19 Windows           | Same field report: passed live; queue pressure not run. Code is on develop, rather than awaiting merge.                                                                                                         |
+| R2 Eval harness and baseline         | partly | yes         | partly, 2026-10-19 Windows           | Same field report: partial run, invalid baseline; harness and fixture checkers built, valid baseline still absent. Replay and kit tasks deferred.                                                               |
+| R3 Verifier                          | yes    | yes         | partly, 2026-10-19 Windows           | Same field report: verifier made false contradictions on Notepad. Agreement and overhead exit criteria remain unmeasured.                                                                                       |
+| R4 Visual analysis v1                | yes    | yes         | partly, 2026-10-19 Windows           | Same field report: boxes 1 of 8 right. Live use does not establish usable grounding accuracy.                                                                                                                   |
+| F1 Field-test fixes                  | yes    | yes         | no, fixes not re-observed            | `0531bec` and historical `docs/handoff/F1-report.md`; 18 reported bugs fixed, no follow-up live verification.                                                                                                   |
+| R5 Identity, demo, idle shell        | yes    | yes         | no                                   | `9aa1c40` historical R5 report; identity `b4dfc69`, demo `806bb54`; idle review is a stub. No live evidence found.                                                                                              |
+| R6a Analysis overlay                 | yes    | yes         | no                                   | `9171b31` historical R6a report, implementation `13c24f1`, `c3f0aee`; R4 field results predate this overlay.                                                                                                    |
+| R6b Session review and Flight Player | yes    | yes         | partly, 2026-10-20 headless Chromium | [R6b report](handoff/R6b-report.md): fixture playback and seeking observed in Chromium; Windows encoder, WebView2 H.264 and asset protocol not observed.                                                        |
+| M1 Model interchangeability          | yes    | yes         | no                                   | [M1 report](handoff/M1-report.md), `7fd7d5b`: unit/component/fake-server fixtures; no live model server. C1 corrects the reported contract.                                                                     |
+| L0 Life data foundation              | partly | partly      | no                                   | Commits `7e60e06`, `217947a`, `0cb76b5` implement store, consent and encryption. Local-only policy work was uncommitted at C1 start; C1 does not audit or modify that module. No live evidence found.           |
+| K1 Kit integration                   | no     | no          | no                                   | Planned; C1 does not start it.                                                                                                                                                                                  |
+| K2 Studio catalog                    | no     | no          | no                                   | Deferred; rune-tools blueprints remain drafts.                                                                                                                                                                  |
+| R6c Post-mortems and notes           | no     | no          | no                                   | Planned; C1 does not start it.                                                                                                                                                                                  |
+| L1 Life jobs                         | no     | no          | no                                   | Planned; C1 does not start it.                                                                                                                                                                                  |
+| R7 Notes in the loop                 | no     | no          | no                                   | Planned; no implementation evidence found.                                                                                                                                                                      |
+| R8 Trust                             | partly | partly      | no                                   | Archive retention exists in R1; L0 provides consent, retention, export and encryption for life data. Broader archive controls and kit trust remain planned.                                                     |
+| R9 Universal abstractions            | no     | no          | no                                   | Planned; replay and surface traits remain deferred.                                                                                                                                                             |
+
+## Field test 2026-10-19
+
+The orchestrator's supplied summary: R0 race, crash, retry, single-instance and outside-agent checks passed live; elevation partial; R1 passed live (queue pressure not run); R2 partial and invalid baseline; R3 verifier made false contradictions on Notepad; R4 boxes 1 of 8 right; the confirm-focus bug (BUG-02) and 17 others were found and then fixed in F1 **without being re-observed**.
+
+The report is absent from the current tree but recoverable at `0531bec^:docs/field-test-report-2026-10-19.md`. It records Windows 11, a dev build, and temporary fixes applied before many checks. Historical “never run” statements below describe the earlier implementation reports only, not current status. Fixes after the test require another live check.
 
 ## Goal and decisions
 
@@ -69,7 +100,7 @@ Decisions:
 
 ### R0 Foundations — M / high
 
-**Status as of 2026-10-19 (merged into `develop`):**
+**Historical implementation snapshot, 2026-10-19; superseded by the current evidence table:**
 
 | Item                                              | Status                                                                                                                                                                        |
 | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -97,7 +128,7 @@ The original plan:
 
 ### R1 Flight recorder — M / high
 
-**Status as of 2026-10-19 (branch `feat/r1-flight-recorder`, not yet merged):**
+**Historical pre-merge snapshot, 2026-10-19; now merged and superseded by the current evidence table:**
 
 | Item                                                                | Status                                                                                                                                                                                                                                                                      |
 | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -133,7 +164,7 @@ The original plan:
 
 **Scope change (2026-10-19):** R2 is the harness and the baseline. Replay mode against stored episodes is **moved to a later milestone** (it needs Observer/Actor traits that do not exist yet) and is not built. The kit-tool tasks wait for K1.
 
-**Status (branch `develop`, 2026-10-19):**
+**Historical implementation snapshot, 2026-10-19; superseded by the current evidence table:**
 
 | Item                                                                                                  | Status                                                                                                                              |
 | ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
@@ -151,7 +182,7 @@ Exit: baseline for the current default model. Every later milestone is gated: su
 
 ### R3 Verifier — M / high
 
-**Status (branch `develop`, 2026-10-19):**
+**Historical implementation snapshot, 2026-10-19; superseded by the current evidence table:**
 
 | Item                                                                                                                                      | Status                                                                                                                                                       |
 | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -171,7 +202,7 @@ Decisions: a forced tool call through the existing client rather than `response_
 
 ### R4 Visual analysis v1 — M-H / medium
 
-**Status (branch `develop`, 2026-10-19):**
+**Historical implementation snapshot, 2026-10-19; superseded by the current evidence table:**
 
 | Item                                                                                              | Status                                                                                            |
 | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
@@ -211,7 +242,7 @@ Scope: (a) outside agents get their own accent colour and mark in the orb, ring 
 
 **R6a Screen analysis as an overlay** (decided: no separate window). The analysis window is removed. A top status bar in the style of the control bar (stage, timer, cancel), a scan line at capture, and compact cards that grow upward from the orb (answer, findings accordion with evidence) replace it. Bounding boxes with numbered badges are drawn on the real screen **by default and cannot be turned off** (maintainer decision); they are hidden only when the screen has changed, and boxes that are plainly unusable (off-screen, tiny, huge, tiling the screen) are dropped by a guard. Boxes were 1 of 8 right in the field test, so their quality is the main risk; a box + point request variant and a probe measure it. Whether either is reliable is **NOT CERTAIN** until the maintainer runs the probe. The pill-above-orb growth on multi-monitor and the final look are **NOT CERTAIN** until seen on a real screen.
 
-**R6b status (2026-10-20): built, unit and component tested; nothing seen on a real screen; the Windows video encoder has never run.** Details, measurements and live checks: `docs/handoff/R6b-report.md`.
+**R6b status (2026-10-21): built, unit and component tested; fixture playback and seeking seen in headless Chromium on 2026-10-20; Windows encoder and WebView2 playback not observed.** Details, measurements and live checks: `docs/handoff/R6b-report.md`.
 
 **R6b Session video, review prompt and Flight Player.** When a task ends, the pill offers Review (`offerReview`, 15 s of dots). Review opens the separate Flight Player window (Video.js v10, pinned 10.0.1, no packaged skin): the video or, without one, the step screenshots with a light action layer from the trace, a zoomable timeline of steps (phase dots, retry ticks, event markers), one caption line and a details drawer whose tabs (step, reasoning, prompt, safety, API attempts, timing, tools, files) appear only where the record has data. Typed text is hidden until Show. New recording: a `calls` table (every model attempt with redacted request and response), run counters, and a `session.mp4` built after the task from the step screenshots (a storyboard, not smooth motion; `recordSessionVideo: motion` adds a 2 fps capture, off by default, cost unmeasured). **NOT CERTAIN:** the H.264 encoder on Windows (never run; it can be missing on "N" editions), local mp4 seeking and the asset protocol in the Tauri webview (measured only in headless Chromium with a WebM file), the size of a video per minute, and the cost of `motion`. Kit tool calls and skill use have no data until K1 and skills exist.
 

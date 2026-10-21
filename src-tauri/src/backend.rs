@@ -20,6 +20,7 @@ pub struct BackendStatus {
     pub error: Option<String>,
     #[serde(default)]
     pub models: Vec<ModelCapabilities>,
+    pub memory: crate::model::capabilities::ServerMemory,
 }
 
 impl BackendStatus {
@@ -32,6 +33,7 @@ impl BackendStatus {
             latency_ms: None,
             error: Some(error),
             models: Vec::new(),
+            memory: Default::default(),
         }
     }
 }
@@ -89,6 +91,7 @@ pub async fn check(
             latency_ms: Some(latency_ms),
             error: Some("API key rejected".into()),
             models: Vec::new(),
+            memory: Default::default(),
         };
     }
     if !status.is_success() {
@@ -100,6 +103,7 @@ pub async fn check(
             latency_ms: Some(latency_ms),
             error: Some(format!("model list returned {status}")),
             models: Vec::new(),
+            memory: Default::default(),
         };
     }
 
@@ -136,6 +140,7 @@ pub async fn check(
         latency_ms: Some(latency_ms),
         error: None,
         models,
+        memory: crate::model::capabilities::parse_server_memory(&body),
     }
 }
 

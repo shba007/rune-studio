@@ -18,6 +18,7 @@ pub struct Attempt {
     pub prompt_tokens: Option<u64>,
     pub completion_tokens: Option<u64>,
     pub served_model: Option<String>,
+    pub locality: Option<String>,
     pub swap_ms: Option<u64>,
 }
 

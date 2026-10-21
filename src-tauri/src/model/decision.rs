@@ -241,24 +241,15 @@ pub async fn ask(
         .post(url)
         .timeout(timeout)
         .json(&request_body(&model, text, images, questions));
+    request = with_optional_swap_policy(request, skip_swap);
     if let Some(key) = settings::api_key() {
         request = request.bearer_auth(key);
     }
 
-    let outcome = async {
-        let response = request.send().await.map_err(|err| err.to_string())?;
-        let status = response.status();
-        if !status.is_success() {
-            return Err(format!("status {status}"));
-        }
-        response
-            .json::<Value>()
-            .await
-            .map_err(|err| err.to_string())
-    }
-    .await;
+    let outcome = send_optional_decision(request).await;
 
     match outcome {
+        Ok(Value::Null) => None,
         Ok(value) => {
             let answers = Answers::from_response(&value);
             log::info!(
@@ -275,6 +266,37 @@ pub async fn ask(
             None
         }
     }
+}
+
+fn with_optional_swap_policy(
+    request: reqwest::RequestBuilder,
+    skip_swap: bool,
+) -> reqwest::RequestBuilder {
+    if skip_swap {
+        request.header("x-no-swap", "true")
+    } else {
+        request
+    }
+}
+
+async fn send_optional_decision(request: reqwest::RequestBuilder) -> Result<Value, String> {
+    let response = request.send().await.map_err(|err| err.to_string())?;
+    let status = response.status();
+    if status.as_u16() == 409 {
+        let value = response.json::<Value>().await.map_err(|e| e.to_string())?;
+        if crate::model::swap::is_swap_refused(409, &value) {
+            log::info!("optional decision skipped: swap_refused");
+            return Ok(Value::Null);
+        }
+        return Err("status 409".into());
+    }
+    if !status.is_success() {
+        return Err(format!("status {status}"));
+    }
+    response
+        .json::<Value>()
+        .await
+        .map_err(|err| err.to_string())
 }
 
 #[cfg(test)]
@@ -461,5 +483,37 @@ mod tests {
         assert_eq!(answers.picked_probability("missing"), None);
         assert!(answers.confident_yes("requires_approval", 0.68));
         assert!(!answers.confident_yes("requires_approval", 0.69));
+    }
+    #[tokio::test]
+    async fn decision_refusal_is_a_skip_and_sends_no_swap() {
+        use std::{
+            io::{Read, Write},
+            net::TcpListener,
+        };
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/v1/decisions", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0; 8192];
+            let n = stream.read(&mut buf).unwrap();
+            let head = String::from_utf8_lossy(&buf[..n]).to_lowercase();
+            assert!(head.contains("x-no-swap: true"));
+            let body = r#"{"error":{"message":"not resident","type":"swap_refused","code":"swap_refused"}}"#;
+            write!(
+                stream,
+                "HTTP/1.1 409 Conflict\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .unwrap();
+        });
+        let http = reqwest::Client::builder().no_proxy().build().unwrap();
+        let request =
+            with_optional_swap_policy(http.post(url).timeout(Duration::from_secs(5)), true);
+        assert_eq!(send_optional_decision(request).await.unwrap(), Value::Null);
+        server.join().unwrap();
+        let request = with_optional_swap_policy(http.post("http://127.0.0.1"), false)
+            .build()
+            .unwrap();
+        assert!(!request.headers().contains_key("x-no-swap"));
     }
 }

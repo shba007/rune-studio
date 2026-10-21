@@ -177,6 +177,10 @@ pub fn resolve_profile(
         profile.id = model_id.to_string();
     }
 
+    // An explicit server declaration must suppress unsupported switches even for bundled profiles.
+    if capabilities.is_some_and(|caps| caps.thinking_control == TriState::No) {
+        profile.thinking = ThinkingSwitch::None;
+    }
     profile
 }
 

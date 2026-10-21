@@ -96,6 +96,7 @@ pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
         model: &voice_model,
         profile: Some(&profile),
         sink: None,
+        no_swap: false,
         on_loading: None,
     };
     use seam::Transcriber;

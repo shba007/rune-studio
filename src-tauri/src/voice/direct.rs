@@ -136,6 +136,8 @@ pub async fn listen(
         tools: &tools,
         think: false,
         max_tokens: Some(MAX_TRANSCRIPT_TOKENS),
+        data_class: None,
+        background: false,
     };
     let reply = client.call(&request, &mut |_: &str| {}).await?;
     if reply.call.name != "heard" {
@@ -239,6 +241,8 @@ mod tests {
             tools: &tools,
             think: false,
             max_tokens: Some(MAX_TRANSCRIPT_TOKENS),
+            data_class: None,
+            background: false,
         };
         let profile = crate::model::profile::resolve_profile("m", None, None);
         let body = crate::model::client::chat_body("m", &profile, &request);

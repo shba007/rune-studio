@@ -1,9 +1,11 @@
 pub mod crypto;
+pub mod policy;
 pub mod record;
 pub mod schema;
 pub mod store;
 
 pub use crypto::{CryptoError, LifeCrypto};
+pub use policy::{PolicyDecision, may_send};
 pub use record::{
     Assumption, AssumptionStatus, AuditEntry, DataClass, GRADE_0_WORD_ONLY,
     GRADE_1_CHECKABLE_DETAIL, GRADE_2_OBSERVED, GRADE_3_INDEPENDENT, NewRecord, Plan, PlanVersion,

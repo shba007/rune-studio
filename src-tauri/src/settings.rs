@@ -268,6 +268,8 @@ impl Settings {
             model: self.model_for_role(role),
             profile: Some(profile),
             sink,
+            no_swap: self.skip_swap_for_optional_roles
+                && matches!(role, ModelRole::Decision | ModelRole::Verifier),
             on_loading: None,
         }
     }

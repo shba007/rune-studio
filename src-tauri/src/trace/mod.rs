@@ -98,6 +98,7 @@ pub struct CallRecord {
     pub prompt_tokens: Option<i64>,
     pub completion_tokens: Option<i64>,
     pub served_model: Option<String>,
+    pub locality: Option<String>,
     pub swap_ms: Option<i64>,
 }
 
@@ -197,6 +198,7 @@ impl crate::model::attempts::AttemptSink for CallLog {
             completion_tokens: attempt
                 .completion_tokens
                 .and_then(|n| i64::try_from(n).ok()),
+            locality: attempt.locality,
             served_model: attempt.served_model,
             swap_ms: attempt.swap_ms.and_then(|n| i64::try_from(n).ok()),
         });

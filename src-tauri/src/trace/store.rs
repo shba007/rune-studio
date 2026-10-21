@@ -134,9 +134,9 @@ fn apply(db: &Connection, message: &Msg) -> rusqlite::Result<()> {
         }
         Msg::Call(record) => {
             db.execute(
-                "INSERT INTO calls (run_id, step, kind, attempt, started_utc, duration_ms, wait_before_ms, status, outcome, error, request_json, response_json, truncated, model, prompt_tokens, completion_tokens, served_model, swap_ms)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
-                params![record.run_id, record.step, record.kind, record.attempt, record.started_utc, record.duration_ms, record.wait_before_ms, record.status, record.outcome, record.error, record.request_json, record.response_json, record.truncated, record.model, record.prompt_tokens, record.completion_tokens, record.served_model, record.swap_ms],
+                "INSERT INTO calls (run_id, step, kind, attempt, started_utc, duration_ms, wait_before_ms, status, outcome, error, request_json, response_json, truncated, model, prompt_tokens, completion_tokens, served_model, swap_ms, locality)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
+                params![record.run_id, record.step, record.kind, record.attempt, record.started_utc, record.duration_ms, record.wait_before_ms, record.status, record.outcome, record.error, record.request_json, record.response_json, record.truncated, record.model, record.prompt_tokens, record.completion_tokens, record.served_model, record.swap_ms, record.locality],
             )?;
         }
         Msg::Reflection(record) => {

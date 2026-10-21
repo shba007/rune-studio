@@ -275,6 +275,8 @@ async fn ask(
             tools: &tools,
             think: !mode.no_think && false,
             max_tokens: Some(1500),
+            data_class: None,
+            background: false,
         };
         let profile = crate::model::profile::resolve_profile(&mode.model, None, None);
         let body = crate::model::client::chat_body(&mode.model, &profile, &request);

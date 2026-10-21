@@ -21,6 +21,10 @@ pub enum ModelError {
     Status { status: u16, body: String },
     #[error("model is loading (estimated {estimated_ms:?} ms)")]
     Loading { estimated_ms: Option<u64> },
+    #[error("skipped: model is not resident (swap_refused)")]
+    SwapRefused,
+    #[error("deferred: server busy; try again after {retry_after_secs} seconds")]
+    Deferred { retry_after_secs: u64 },
     #[error("the model's reply was not understood: {0}")]
     Reply(String),
     #[error("the model did not call a tool: {0}")]
@@ -50,6 +54,7 @@ pub struct ChatClient<'a> {
     pub model: &'a str,
     pub profile: Option<&'a ModelProfile>,
     pub sink: Option<&'a dyn AttemptSink>,
+    pub no_swap: bool,
     pub on_loading: Option<&'a (dyn Fn() + Send + Sync)>,
 }
 
@@ -61,6 +66,38 @@ pub struct Request<'a> {
     pub tools: &'a Value,
     pub think: bool,
     pub max_tokens: Option<u32>,
+    pub data_class: Option<crate::life::DataClass>,
+    pub background: bool,
+}
+
+impl<'a> Default for Request<'a> {
+    fn default() -> Self {
+        Self {
+            system: "",
+            user_text: "",
+            screenshot: None,
+            audio: None,
+            tools: &Value::Null,
+            think: false,
+            max_tokens: None,
+            data_class: None,
+            background: false,
+        }
+    }
+}
+
+impl<'a> Request<'a> {
+    pub fn simple(user_text: &'a str) -> Self {
+        Self {
+            user_text,
+            ..Default::default()
+        }
+    }
+
+    pub fn with_data_class(mut self, class: crate::life::DataClass) -> Self {
+        self.data_class = Some(class);
+        self
+    }
 }
 
 pub fn is_retryable(error: &ModelError) -> bool {
@@ -68,6 +105,7 @@ pub fn is_retryable(error: &ModelError) -> bool {
         ModelError::Request(_) => true,
         ModelError::Status { status, .. } => matches!(status, 429 | 502 | 503 | 504),
         ModelError::Loading { .. } => true,
+        ModelError::SwapRefused | ModelError::Deferred { .. } => false,
         ModelError::Reply(_) | ModelError::NoToolCall(_) | ModelError::BadArguments(_) => false,
     }
 }
@@ -162,7 +200,25 @@ struct Exchange {
     response: Value,
     signal: crate::model::swap::SwapSignal,
     served_model: Option<String>,
+    locality: Option<String>,
     swap_ms: Option<u64>,
+}
+
+pub const LOCALITY_HEADER_NAMES: &[&str] =
+    &["x-rune-locality", "x-model-locality", "x-infer-locality"];
+
+pub fn detect_echoed_cloud_locality(headers: &reqwest::header::HeaderMap) -> Option<String> {
+    for name in LOCALITY_HEADER_NAMES {
+        if let Some(val) = headers.get(*name) {
+            if let Ok(s) = val.to_str() {
+                let trimmed = s.trim().to_ascii_lowercase();
+                if trimmed == "cloud" || trimmed == "lan" {
+                    return Some(trimmed);
+                }
+            }
+        }
+    }
+    None
 }
 
 impl ChatClient<'_> {
@@ -256,6 +312,23 @@ impl ChatClient<'_> {
                 &default_profile
             }
         };
+
+        if let Some(dc) = request.data_class {
+            let locality = Some(profile.locality.as_str());
+            match crate::life::policy::may_send(Some(dc), self.base_url, locality) {
+                crate::life::policy::PolicyDecision::Allow => {}
+                crate::life::policy::PolicyDecision::Deny(reason) => {
+                    log::warn!("Rejected request before network send: data class '{dc}': {reason}");
+                    return (
+                        Err(ModelError::Reply(format!(
+                            "Local-only policy violation: data class '{dc}' cannot be sent: {reason}"
+                        ))),
+                        None,
+                    );
+                }
+            }
+        }
+
         let body = chat_body(self.model, profile, request);
         let started = std::time::Instant::now();
         let mut guard = Guard {
@@ -274,6 +347,7 @@ impl ChatClient<'_> {
                 model: self.model.to_string(),
                 prompt_tokens: None,
                 completion_tokens: None,
+                locality: None,
                 served_model: None,
                 swap_ms: None,
             }),
@@ -293,6 +367,7 @@ impl ChatClient<'_> {
                     .map(ToString::to_string)
             });
             report.swap_ms = exchange.swap_ms;
+            report.locality = exchange.locality.clone();
             if let Some(ref served) = report.served_model
                 && served != self.model
             {
@@ -304,6 +379,11 @@ impl ChatClient<'_> {
             match &exchange.result {
                 Ok(_) => report.outcome = "ok",
                 Err(ModelError::Loading { .. }) => report.outcome = "loading",
+                Err(ModelError::SwapRefused) => {
+                    report.outcome = "skipped";
+                    report.error = Some("swap_refused".into());
+                }
+                Err(ModelError::Deferred { .. }) => report.outcome = "deferred",
                 Err(error) => {
                     let text = error.to_string();
                     report.outcome = if text.contains("timed out") {
@@ -336,6 +416,12 @@ impl ChatClient<'_> {
         if let Some(key) = self.api_key {
             http = http.bearer_auth(key);
         }
+        if self.no_swap {
+            http = http.header("x-no-swap", "true");
+        }
+        if request.background {
+            http = http.header("x-rune-priority", "background");
+        }
         let mut response = match http.send().await {
             Ok(response) => response,
             Err(err) => {
@@ -344,6 +430,7 @@ impl ChatClient<'_> {
                     status: None,
                     response: Value::Null,
                     signal: crate::model::swap::SwapSignal::None,
+                    locality: None,
                     served_model: None,
                     swap_ms: None,
                 };
@@ -360,30 +447,81 @@ impl ChatClient<'_> {
                 status.as_u16(),
                 body_val.as_ref(),
             );
-            let err = match &signal {
-                crate::model::swap::SwapSignal::Loading { estimated_ms } => ModelError::Loading {
-                    estimated_ms: *estimated_ms,
-                },
-                _ => ModelError::Status {
-                    status: status.as_u16(),
-                    body: snippet(&text),
-                },
+            let err = if body_val
+                .as_ref()
+                .is_some_and(|v| crate::model::swap::is_swap_refused(status.as_u16(), v))
+            {
+                ModelError::SwapRefused
+            } else if status.as_u16() == 429 && request.background {
+                ModelError::Deferred {
+                    retry_after_secs: headers
+                        .get("retry-after")
+                        .and_then(|v| v.to_str().ok())
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(1),
+                }
+            } else {
+                match &signal {
+                    crate::model::swap::SwapSignal::Loading { estimated_ms } => {
+                        ModelError::Loading {
+                            estimated_ms: *estimated_ms,
+                        }
+                    }
+                    _ => ModelError::Status {
+                        status: status.as_u16(),
+                        body: snippet(&text),
+                    },
+                }
             };
             return Exchange {
                 response: Value::String(text.chars().take(4_000).collect()),
                 status: code,
                 result: Err(err),
                 signal,
+                locality: None,
                 served_model: None,
                 swap_ms: None,
             };
         }
 
         let header_signal = crate::model::swap::detect_swap_signal(&headers, status.as_u16(), None);
-        let header_swap_ms = match header_signal {
-            crate::model::swap::SwapSignal::Swapped { swap_ms } => swap_ms,
-            _ => None,
-        };
+        if matches!(
+            header_signal,
+            crate::model::swap::SwapSignal::Loading { .. }
+        ) {
+            if let Some(cb) = self.on_loading {
+                cb();
+            }
+        }
+        let header_swap_ms = headers
+            .get("x-model-load-duration-ms")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.parse().ok())
+            .or(match header_signal {
+                crate::model::swap::SwapSignal::Swapped { swap_ms } => swap_ms,
+                _ => None,
+            });
+
+        if let Some(dc) = request.data_class {
+            if dc.is_sensitive() {
+                if let Some(echoed) = detect_echoed_cloud_locality(&headers) {
+                    log::error!(
+                        "Locality violation: response echoed '{echoed}' locality for sensitive data class {dc}"
+                    );
+                    return Exchange {
+                        result: Err(ModelError::Reply(format!(
+                            "Local-only policy violation: response echoed '{echoed}' locality for sensitive data class '{dc}'"
+                        ))),
+                        status: code,
+                        response: Value::Null,
+                        signal: header_signal,
+                        locality: None,
+                        served_model: None,
+                        swap_ms: header_swap_ms,
+                    };
+                }
+            }
+        }
 
         if !request.think {
             let text = match response.text().await {
@@ -394,6 +532,7 @@ impl ChatClient<'_> {
                         status: code,
                         response: Value::Null,
                         signal: header_signal,
+                        locality: None,
                         served_model: None,
                         swap_ms: header_swap_ms,
                     };
@@ -407,6 +546,7 @@ impl ChatClient<'_> {
                         status: code,
                         response: Value::String(text.chars().take(4_000).collect()),
                         signal: header_signal,
+                        locality: None,
                         served_model: None,
                         swap_ms: header_swap_ms,
                     };
@@ -418,13 +558,19 @@ impl ChatClient<'_> {
                 crate::model::swap::SwapSignal::Swapped { swap_ms } => swap_ms,
                 _ => value.get("swap_ms").and_then(|v| v.as_u64()),
             });
-            let served_model = value
-                .get("model")
-                .and_then(|v| v.as_str())
-                .map(ToString::to_string);
+            let served_model = headers
+                .get("x-model-served")
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_owned)
+                .or_else(|| {
+                    value
+                        .get("model")
+                        .and_then(|v| v.as_str())
+                        .map(ToString::to_string)
+                });
             let mut result = parse_reply(&value);
             if let Ok(ref mut reply) = result {
-                if reply.served_model.is_none() {
+                if served_model.is_some() {
                     reply.served_model = served_model.clone();
                 }
                 if reply.swap_ms.is_none() {
@@ -440,6 +586,10 @@ impl ChatClient<'_> {
                 } else {
                     body_signal
                 },
+                locality: headers
+                    .get("x-model-locality")
+                    .and_then(|v| v.to_str().ok())
+                    .map(str::to_owned),
                 served_model,
                 swap_ms,
             };
@@ -460,6 +610,10 @@ impl ChatClient<'_> {
                         status: code,
                         response: stream.summary(),
                         signal: header_signal,
+                        locality: headers
+                            .get("x-model-locality")
+                            .and_then(|v| v.to_str().ok())
+                            .map(str::to_owned),
                         served_model: stream.model.clone(),
                         swap_ms: header_swap_ms,
                     };
@@ -467,12 +621,24 @@ impl ChatClient<'_> {
             }
         }
         let summary = stream.summary();
-        let served_model = stream.model.clone();
+        let served_model = headers
+            .get("x-model-served")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned)
+            .or_else(|| stream.model.clone());
+        let mut result = stream.finish(header_swap_ms);
+        if let Ok(reply) = &mut result {
+            reply.served_model = served_model.clone();
+        }
         Exchange {
-            result: stream.finish(header_swap_ms),
+            result,
             status: code,
             response: summary,
             signal: header_signal,
+            locality: headers
+                .get("x-model-locality")
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_owned),
             served_model,
             swap_ms: header_swap_ms,
         }
@@ -903,6 +1069,8 @@ mod tests {
             tools,
             think: false,
             max_tokens: None,
+            data_class: None,
+            background: false,
         }
     }
 
@@ -921,6 +1089,7 @@ mod tests {
             model: "m",
             profile: None,
             sink: None,
+            no_swap: false,
             on_loading: None,
         };
         let tools = json!([]);
@@ -949,6 +1118,7 @@ mod tests {
             model: "m",
             profile: None,
             sink: Some(&sink),
+            no_swap: false,
             on_loading: None,
         };
         let tools = json!([]);
@@ -997,6 +1167,7 @@ mod tests {
             model: "m",
             profile: None,
             sink: Some(&sink),
+            no_swap: false,
             on_loading: None,
         };
         let tools = json!([]);
@@ -1025,6 +1196,7 @@ mod tests {
             model: "m",
             profile: None,
             sink: Some(&sink),
+            no_swap: false,
             on_loading: None,
         };
         let gave_up = tokio::time::timeout(
@@ -1053,6 +1225,7 @@ mod tests {
             model: "m",
             profile: None,
             sink: None,
+            no_swap: false,
             on_loading: None,
         };
         let tools = json!([]);
@@ -1103,6 +1276,7 @@ mod tests {
             model: "m",
             profile: None,
             sink: None,
+            no_swap: false,
             on_loading: None,
         };
         let tools = json!([]);
@@ -1138,6 +1312,8 @@ mod tests {
             tools: &tools,
             think: false,
             max_tokens: None,
+            data_class: None,
+            background: false,
         };
         let profile = ModelProfile::conservative("m");
         let body = chat_body("m", &profile, &request);
@@ -1169,6 +1345,8 @@ mod tests {
             tools: &tools,
             think: false,
             max_tokens: None,
+            data_class: None,
+            background: false,
         };
         let profile = ModelProfile::conservative("m");
         let off = chat_body("m", &profile, &request);
@@ -1203,6 +1381,8 @@ mod tests {
             tools: &tools,
             think: false,
             max_tokens: None,
+            data_class: None,
+            background: false,
         };
         let mut profile = ModelProfile::conservative("the-model");
         profile.tool_choice_required = TriState::Yes;
@@ -1232,6 +1412,8 @@ mod tests {
             tools: &tools,
             think: true,
             max_tokens: None,
+            data_class: None,
+            background: false,
         };
 
         // Thinking None
@@ -1355,6 +1537,7 @@ mod tests {
             model: "requested-model-v1",
             profile: None,
             sink: Some(&sink),
+            no_swap: false,
             on_loading: Some(&on_loading),
         };
         let tools = json!([]);
@@ -1403,6 +1586,7 @@ mod tests {
             model: "model-refused",
             profile: None,
             sink: None,
+            no_swap: false,
             on_loading: None,
         };
         let tools = json!([]);
@@ -1411,5 +1595,132 @@ mod tests {
             .await;
         assert!(result.is_err());
         assert_eq!(served.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn real_refusal_and_background_deferral_are_recorded_without_retry() {
+        use crate::model::attempts::Collect;
+        use std::{
+            io::{Read, Write},
+            net::TcpListener,
+        };
+        for background in [false, true] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let url = format!("http://{}", listener.local_addr().unwrap());
+            let server = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut bytes = Vec::new();
+                loop {
+                    let mut buf = [0; 4096];
+                    let n = stream.read(&mut buf).unwrap();
+                    assert!(n > 0);
+                    bytes.extend_from_slice(&buf[..n]);
+                    if bytes.windows(4).any(|w| w == b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                let head = String::from_utf8_lossy(&bytes).to_lowercase();
+                assert!(head.contains("x-no-swap: true"));
+                assert_eq!(head.contains("x-rune-priority: background"), background);
+                let (status, body) = if background {
+                    (
+                        "429 Too Many Requests",
+                        r#"{"error":{"type":"server_busy","code":"busy"}}"#,
+                    )
+                } else {
+                    (
+                        "409 Conflict",
+                        r#"{"error":{"message":"not resident","type":"swap_refused","code":"swap_refused"}}"#,
+                    )
+                };
+                write!(stream, "HTTP/1.1 {status}\r\nContent-Length: {}\r\nRetry-After: 7\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+            });
+            let http = reqwest::Client::builder().no_proxy().build().unwrap();
+            let sink = Collect::default();
+            let client = ChatClient {
+                http: &http,
+                base_url: &url,
+                api_key: None,
+                model: "optional",
+                profile: None,
+                sink: Some(&sink),
+                no_swap: true,
+                on_loading: None,
+            };
+            let tools = json!([]);
+            let mut request = a_click_request(&tools);
+            request.background = background;
+            let result = client.call_retrying(&request, &mut |_| {}).await;
+            if background {
+                assert!(matches!(
+                    result,
+                    Err(ModelError::Deferred {
+                        retry_after_secs: 7
+                    })
+                ));
+            } else {
+                assert!(matches!(result, Err(ModelError::SwapRefused)));
+            }
+            server.join().unwrap();
+            let attempts = sink.0.lock().unwrap();
+            assert_eq!(attempts.len(), 1);
+            assert_eq!(
+                attempts[0].outcome,
+                if background { "deferred" } else { "skipped" }
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn real_attribution_headers_override_body_model_and_preserve_body() {
+        let body = json!({"model":"body-model","choices":[{"message":{"tool_calls":[{"function":{"name":"click","arguments":"{}"}}]}}]});
+        let (url, _) = serve_with_headers(vec![(
+            "200 OK",
+            vec![
+                ("x-model-served", "canonical"),
+                ("x-model-locality", "local"),
+                ("x-model-resident", "false"),
+                ("x-model-load-duration-ms", "25"),
+            ],
+            body.to_string(),
+        )]);
+        let http = reqwest::Client::builder().no_proxy().build().unwrap();
+        let sink = crate::model::attempts::Collect::default();
+        let client = ChatClient {
+            http: &http,
+            base_url: &url,
+            api_key: None,
+            model: "role",
+            profile: None,
+            sink: Some(&sink),
+            no_swap: false,
+            on_loading: None,
+        };
+        let tools = json!([]);
+        let reply = client
+            .call(&a_click_request(&tools), &mut |_| {})
+            .await
+            .unwrap();
+        assert_eq!(reply.served_model.as_deref(), Some("canonical"));
+        assert_eq!(reply.swap_ms, Some(25));
+        let calls = sink.0.lock().unwrap();
+        assert_eq!(calls[0].locality.as_deref(), Some("local"));
+        assert_eq!(calls[0].response["model"], "body-model");
+    }
+
+    #[test]
+    fn explicit_no_thinking_suppresses_bundled_switches() {
+        let caps = crate::model::capabilities::parse_model_entry(
+            &json!({"id":"gemma-4-12b-it","thinking_control":"none"}),
+        )
+        .unwrap();
+        let profile = crate::model::profile::resolve_profile("gemma-4-12b-it", None, Some(&caps));
+        let tools = json!([]);
+        let body = chat_body("gemma-4-12b-it", &profile, &a_click_request(&tools));
+        assert!(body.get("thinking").is_none());
+        assert!(body.get("chat_template_kwargs").is_none());
     }
 }

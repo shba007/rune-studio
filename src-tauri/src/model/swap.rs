@@ -14,6 +14,21 @@ pub enum SwapSignal {
 }
 
 pub fn detect_swap_signal(headers: &HeaderMap, _status: u16, body: Option<&Value>) -> SwapSignal {
+    let duration = headers
+        .get("x-model-load-duration-ms")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse().ok());
+    if headers
+        .get("x-model-resident")
+        .is_some_and(|v| v == "false")
+    {
+        return SwapSignal::Loading {
+            estimated_ms: duration,
+        };
+    }
+    if duration.is_some() || headers.contains_key("x-model-evicted") {
+        return SwapSignal::Swapped { swap_ms: duration };
+    }
     for key in [
         "x-rune-infer-loading",
         "x-rune-model-loading",
@@ -52,6 +67,16 @@ pub fn detect_swap_signal(headers: &HeaderMap, _status: u16, body: Option<&Value
     }
 
     SwapSignal::None
+}
+
+pub fn is_swap_refused(status: u16, body: &Value) -> bool {
+    if status != 409 {
+        return false;
+    }
+    let error = &body["error"];
+    error.as_str() == Some("swap_refused")
+        || error["type"].as_str() == Some("swap_refused")
+        || error["code"].as_str() == Some("swap_refused")
 }
 
 pub fn is_idle_or_first_call(idle_threshold: Duration) -> bool {
@@ -155,5 +180,33 @@ mod tests {
         reset_call_activity_for_test();
         assert!(is_idle_or_first_call(Duration::from_secs(10)));
         assert!(!is_idle_or_first_call(Duration::from_secs(10)));
+    }
+
+    #[test]
+    fn real_headers_take_precedence_over_legacy() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-model-resident", HeaderValue::from_static("false"));
+        headers.insert("x-model-load-duration-ms", HeaderValue::from_static("3200"));
+        headers.insert("x-model-loading", HeaderValue::from_static("9"));
+        assert_eq!(
+            detect_swap_signal(&headers, 200, None),
+            SwapSignal::Loading {
+                estimated_ms: Some(3200)
+            }
+        );
+        headers.remove("x-model-resident");
+        assert_eq!(
+            detect_swap_signal(&headers, 200, None),
+            SwapSignal::Swapped {
+                swap_ms: Some(3200)
+            }
+        );
+        for body in [
+            json!({"error":"swap_refused"}),
+            json!({"error":{"message":"not resident","type":"swap_refused","code":"swap_refused"}}),
+        ] {
+            assert!(is_swap_refused(409, &body));
+            assert!(!is_swap_refused(503, &body));
+        }
     }
 }

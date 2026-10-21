@@ -101,6 +101,7 @@ describe('FlightDrawer', () => {
           model: 'requested-model',
           servedModel: 'different-served-model',
           swapMs: 1250,
+          locality: 'local',
         }),
       ],
       loadBodies: vi.fn<Loader>(async () => ({ request: '{}', response: '{}' })),
@@ -113,5 +114,6 @@ describe('FlightDrawer', () => {
       'Served by different-served-model (requested requested-model)',
     )
     expect(wrapper.find('[data-testid="call-model-info"]').text()).toContain('Swap: 1250 ms')
+    expect(wrapper.find('[data-testid="call-model-info"]').text()).toContain('Locality: local')
   })
 })

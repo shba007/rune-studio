@@ -207,6 +207,7 @@ fn verdict_record(
             Some(verdict.evidence.clone()),
             None,
         ),
+        Err(why) if why.starts_with("skipped:") => ("skipped", Some(why.clone()), None),
         Err(why) => ("error", None, Some(why.clone())),
     };
     VerdictRecord {
@@ -310,6 +311,7 @@ fn spawn_background_check(app: &AppHandle, run_id: String, evidence: Option<Evid
             model: verify_model,
             profile: Some(&profile),
             sink: Some(&call_log),
+            no_swap: settings.skip_swap_for_optional_roles,
             on_loading: None,
         };
         let started = Instant::now();
@@ -515,6 +517,8 @@ async fn make_plan(
         tools: &tools,
         think,
         max_tokens: None,
+        data_class: None,
+        background: false,
     };
     let mut send_thinking = thinking_sender(app);
     let started = Instant::now();
@@ -566,6 +570,7 @@ async fn run(
         model: agent_model,
         profile: Some(&agent_profile),
         sink: Some(&call_log),
+        no_swap: false,
         on_loading: Some(&on_loading),
     };
     let verifier_model = settings.model_for_role(crate::model::role::ModelRole::Verifier);
@@ -577,6 +582,7 @@ async fn run(
         model: verifier_model,
         profile: Some(&verifier_profile),
         sink: Some(&call_log),
+        no_swap: settings.skip_swap_for_optional_roles,
         on_loading: Some(&on_loading),
     };
 
@@ -845,6 +851,8 @@ async fn run(
             tools: &tools,
             think,
             max_tokens: None,
+            data_class: None,
+            background: false,
         };
         let mut send_thinking = thinking_sender(app);
         let started = Instant::now();
@@ -1468,6 +1476,7 @@ mod live {
             model: "ternary-bonsai-2-27b-pq2-0",
             profile: None,
             sink: None,
+            no_swap: false,
             on_loading: None,
         };
         let tools = protocol::plan_tools();
@@ -1479,6 +1488,8 @@ mod live {
             tools: &tools,
             think: true,
             max_tokens: None,
+            data_class: None,
+            background: false,
         };
         let mut updates = 0;
         let mut longest = 0;
@@ -1498,5 +1509,19 @@ mod live {
         println!("goals: {goals:?}");
         assert!(updates > 1, "thinking should stream in pieces");
         assert!(!goals.is_empty() && goals.len() <= protocol::MAX_GOALS);
+    }
+    #[test]
+    fn optional_swap_refusal_records_a_skip_with_reason() {
+        let row = verdict_record(
+            "run",
+            VerifyMode::Background,
+            "optional",
+            &Err("skipped: model is not resident (swap_refused)".into()),
+            Some(1),
+            false,
+        );
+        assert_eq!(row.result, "skipped");
+        assert!(row.error.is_none());
+        assert!(row.evidence.unwrap().contains("swap_refused"));
     }
 }

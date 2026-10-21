@@ -63,6 +63,7 @@ pub struct FlightCall {
     pub prompt_tokens: Option<i64>,
     pub completion_tokens: Option<i64>,
     pub served_model: Option<String>,
+    pub locality: Option<String>,
     pub swap_ms: Option<i64>,
 }
 
@@ -194,11 +195,14 @@ pub fn calls(db: &Path, id: &str, step: Option<i64>) -> Result<Vec<FlightCall>, 
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap_or(0);
-    let sql = if version >= 7 {
-        "SELECT id, step, kind, attempt, started_utc, duration_ms, wait_before_ms, status, outcome, error, truncated, model, prompt_tokens, completion_tokens, served_model, swap_ms
+    let sql = if version >= 8 {
+        "SELECT id, step, kind, attempt, started_utc, duration_ms, wait_before_ms, status, outcome, error, truncated, model, prompt_tokens, completion_tokens, served_model, swap_ms, locality
+         FROM calls WHERE run_id = ?1 AND (?2 IS NULL OR step = ?2) ORDER BY id"
+    } else if version >= 7 {
+        "SELECT id, step, kind, attempt, started_utc, duration_ms, wait_before_ms, status, outcome, error, truncated, model, prompt_tokens, completion_tokens, served_model, swap_ms, NULL
          FROM calls WHERE run_id = ?1 AND (?2 IS NULL OR step = ?2) ORDER BY id"
     } else {
-        "SELECT id, step, kind, attempt, started_utc, duration_ms, wait_before_ms, status, outcome, error, truncated, model, prompt_tokens, completion_tokens, NULL, NULL
+        "SELECT id, step, kind, attempt, started_utc, duration_ms, wait_before_ms, status, outcome, error, truncated, model, prompt_tokens, completion_tokens, NULL, NULL, NULL
          FROM calls WHERE run_id = ?1 AND (?2 IS NULL OR step = ?2) ORDER BY id"
     };
     let mut statement = conn.prepare(sql)?;
@@ -220,6 +224,7 @@ pub fn calls(db: &Path, id: &str, step: Option<i64>) -> Result<Vec<FlightCall>, 
             completion_tokens: row.get(13)?,
             served_model: row.get(14)?,
             swap_ms: row.get(15)?,
+            locality: row.get(16)?,
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)

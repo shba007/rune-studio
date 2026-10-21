@@ -12,6 +12,7 @@ import HubRow from './HubRow.vue'
 import HubToggle from './HubToggle.vue'
 import ModelRoleRow from './ModelRoleRow.vue'
 import AppIcon from './AppIcon.vue'
+import SettingsReview from './SettingsReview.vue'
 
 const props = defineProps<{ agent: Agent; draft: Settings }>()
 
@@ -165,6 +166,7 @@ async function revealDeveloper() {
     </HubGroup>
 
     <HubGroup title="Recording">
+      <SettingsReview :draft="draft" />
       <HubToggle
         v-model="draft.demoMode"
         label="Show Rune in screen recordings"

@@ -1,6 +1,6 @@
 use rusqlite::Connection;
 
-pub const VERSION: i64 = 7;
+pub const VERSION: i64 = 8;
 
 pub const CREATE_V1: &str = "
 CREATE TABLE runs (
@@ -164,6 +164,7 @@ pub fn open(db: &Connection) -> rusqlite::Result<Opened> {
         (5, CREATE_V5),
         (6, CREATE_V6),
         (7, CREATE_V7),
+        (8, "ALTER TABLE calls ADD COLUMN locality TEXT;"),
     ] {
         if found < version {
             batch.push_str(ddl);

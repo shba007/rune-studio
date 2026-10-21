@@ -171,6 +171,8 @@ async fn verify_within(
         tools: &tools,
         think: false,
         max_tokens: None,
+        data_class: None,
+        background: false,
     };
     let mut ignore_thinking = |_: &str| {};
     match tokio::time::timeout(limit, client.call(&request, &mut ignore_thinking)).await {
@@ -479,6 +481,7 @@ mod tests {
             model: "m",
             profile: None,
             sink: None,
+            no_swap: false,
             on_loading: None,
         }
     }
