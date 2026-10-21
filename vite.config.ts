@@ -20,6 +20,7 @@ export default defineConfig({
   fmt: {
     semi: false,
     singleQuote: true,
+    ignorePatterns: ['src-tauri/prompts/**'],
   },
   lint: {
     plugins: ['typescript', 'unicorn', 'oxc', 'vue', 'vitest'],
