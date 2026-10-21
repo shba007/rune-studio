@@ -37,12 +37,43 @@ function sum(numbers) {
   return numbers.reduce((total, value) => total + value, 0)
 }
 
+/** Extracts the model name from a list of runs, or 'unknown'. */
+export function modelOf(rows) {
+  for (const row of rows) {
+    if (row.model) return row.model
+  }
+  return 'unknown'
+}
+
+/** Extracts the profile from a list of runs, or null. */
+export function profileOf(rows) {
+  for (const row of rows) {
+    if (row.profile) return row.profile
+  }
+  return null
+}
+
+/** Checks whether two sets of runs share the exact same model and profile. */
+export function sameModelAndProfile(current, baseline) {
+  const modelA = modelOf(current)
+  const modelB = modelOf(baseline)
+  if (modelA !== modelB) return false
+  const profileA = profileOf(current)
+  const profileB = profileOf(baseline)
+  if (!profileA && !profileB) return true
+  if (!profileA || !profileB) return false
+  return JSON.stringify(profileA) === JSON.stringify(profileB)
+}
+
 /** Aggregates one group of runs. */
 export function summarize(rows) {
   const passes = rows.filter((row) => row.passed).length
   const perStepDecide = rows
     .filter((row) => row.steps > 0)
     .map((row) => row.decide_ms_total / row.steps)
+  const boxQualities = rows
+    .map((row) => row.boxes_quality ?? row.boxesQuality ?? row.box_quality ?? row.boxQuality)
+    .filter((q) => q !== undefined && q !== null && typeof q === 'number')
   return {
     runs: rows.length,
     passes,
@@ -51,6 +82,8 @@ export function summarize(rows) {
     medianDuration: median(rows.map((row) => row.duration_ms)),
     medianDecidePerStep: median(perStepDecide),
     totalTokens: sum(rows.map((row) => row.completion_tokens_total)),
+    boxesQuality: median(boxQualities),
+    hasBoxesQuality: boxQualities.length > 0,
   }
 }
 
@@ -97,6 +130,14 @@ export function disagreements(rows) {
  * not more than 10% higher. With this few repeats it is indicative, not a statistical test.
  */
 export function gate(current, baseline) {
+  if (!sameModelAndProfile(current, baseline)) {
+    return {
+      verdict: null,
+      reasons: ['different models or profiles cannot be judged by the gate'],
+      now: summarize(current),
+      before: summarize(baseline),
+    }
+  }
   const now = summarize(current)
   const before = summarize(baseline)
   if (now.runs === 0 || before.runs === 0) {
@@ -231,9 +272,16 @@ function runList(rows) {
 /** The whole report as Markdown. */
 export function render(current, baseline) {
   const now = aggregate(current)
+  const base = baseline ? aggregate(baseline) : null
+  const o = now.overall
+  const b = base?.overall
   const out = ['# Eval report', '']
   let verdict = null
-  if (baseline) {
+  const isComparison = Boolean(baseline && !sameModelAndProfile(current, baseline))
+  const modelNow = modelOf(current)
+  const modelBefore = baseline ? modelOf(baseline) : null
+
+  if (baseline && !isComparison) {
     verdict = gate(current, baseline)
     out.push(`## Gate: ${verdict.verdict}`, '')
     out.push(
@@ -244,8 +292,23 @@ export function render(current, baseline) {
         : verdict.reasons.map((reason) => `- ${reason}`)),
     )
     out.push('', '_With this few repeats the gate is indicative, not a statistical test._', '')
+  } else if (isComparison) {
+    out.push(`## Model comparison: ${modelNow} vs ${modelBefore}`, '')
+    out.push('Comparing runs of different models or profiles; no pass or fail gate applies.', '')
+    const compRows = [
+      ['runs', String(o.runs), String(b.runs)],
+      ['passed', String(o.passes), String(b.passes)],
+      ['success rate', pct(o.rate), pct(b.rate)],
+      ['median duration', seconds(o.medianDuration), seconds(b.medianDuration)],
+      ['median steps', num(o.medianSteps), num(b.medianSteps)],
+      ['completion tokens', String(o.totalTokens), String(b.totalTokens)],
+    ]
+    if (o.hasBoxesQuality || b.hasBoxesQuality) {
+      compRows.push(['boxes quality', num(o.boxesQuality, 2), num(b.boxesQuality, 2)])
+    }
+    out.push(table(['metric', modelNow, modelBefore], compRows), '')
   }
-  if (baseline) {
+  if (baseline && !isComparison) {
     const cost = overhead(current, baseline)
     const percent =
       cost.medianDuration.percent === null
@@ -280,90 +343,122 @@ export function render(current, baseline) {
       '',
     )
   }
-  const base = baseline ? aggregate(baseline) : null
-  const o = now.overall
-  out.push('## Overall', '')
-  out.push(
-    table(
-      base ? ['', 'now', 'baseline', 'change'] : ['', 'value'],
-      [
-        ['runs', o.runs, base?.overall.runs],
-        ['passed', o.passes, base?.overall.passes],
+  if (!isComparison) {
+    out.push('## Overall', '')
+    out.push(
+      table(
+        base ? ['', 'now', 'baseline', 'change'] : ['', 'value'],
         [
-          'success rate',
-          pct(o.rate),
-          base && pct(base.overall.rate),
-          base && delta(o.rate, base.overall.rate, (value) => `${(value * 100).toFixed(1)} points`),
-        ],
-        [
-          'median duration',
-          seconds(o.medianDuration),
-          base && seconds(base.overall.medianDuration),
-          base && delta(o.medianDuration, base.overall.medianDuration, seconds),
-        ],
-        [
-          'median steps',
-          num(o.medianSteps),
-          base && num(base.overall.medianSteps),
-          base && delta(o.medianSteps, base.overall.medianSteps, num),
-        ],
-        [
-          'completion tokens',
-          o.totalTokens,
-          base?.overall.totalTokens,
-          base && delta(o.totalTokens, base.overall.totalTokens, String),
-        ],
-      ].map((cells) =>
-        (base ? cells : cells.slice(0, 2)).map((cell) =>
-          cell === undefined || cell === null ? '-' : String(cell),
+          ['runs', o.runs, base?.overall.runs],
+          ['passed', o.passes, base?.overall.passes],
+          [
+            'success rate',
+            pct(o.rate),
+            base && pct(base.overall.rate),
+            base &&
+              delta(o.rate, base.overall.rate, (value) => `${(value * 100).toFixed(1)} points`),
+          ],
+          [
+            'median duration',
+            seconds(o.medianDuration),
+            base && seconds(base.overall.medianDuration),
+            base && delta(o.medianDuration, base.overall.medianDuration, seconds),
+          ],
+          [
+            'median steps',
+            num(o.medianSteps),
+            base && num(base.overall.medianSteps),
+            base && delta(o.medianSteps, base.overall.medianSteps, num),
+          ],
+          [
+            'completion tokens',
+            o.totalTokens,
+            base?.overall.totalTokens,
+            base && delta(o.totalTokens, base.overall.totalTokens, String),
+          ],
+        ].map((cells) =>
+          (base ? cells : cells.slice(0, 2)).map((cell) =>
+            cell === undefined || cell === null ? '-' : String(cell),
+          ),
         ),
       ),
-    ),
-    '',
-  )
+      '',
+    )
+  }
   out.push('## Per task', '')
   const baseByTask = new Map((base?.tasks ?? []).map((task) => [task.task, task]))
-  out.push(
-    table(
-      base
-        ? [
-            'task',
-            'runs',
-            'passed',
-            'pass rate',
-            'baseline rate',
-            'median steps',
-            'median duration',
-            'baseline duration',
-            'median decide/step',
+  if (isComparison) {
+    out.push(
+      table(
+        [
+          'task',
+          `${modelNow} runs`,
+          `${modelNow} pass rate`,
+          `${modelBefore} pass rate`,
+          `${modelNow} median duration`,
+          `${modelBefore} median duration`,
+          `${modelNow} median steps`,
+          `${modelBefore} median steps`,
+        ],
+        now.tasks.map((task) => {
+          const before = baseByTask.get(task.task)
+          return [
+            task.task,
+            String(task.runs),
+            pct(task.rate),
+            before ? pct(before.rate) : '-',
+            seconds(task.medianDuration),
+            before ? seconds(before.medianDuration) : '-',
+            num(task.medianSteps),
+            before ? num(before.medianSteps) : '-',
           ]
-        : [
-            'task',
-            'runs',
-            'passed',
-            'pass rate',
-            'median steps',
-            'median duration',
-            'median decide/step',
-          ],
-      now.tasks.map((task) => {
-        const before = baseByTask.get(task.task)
-        const common = [task.task, String(task.runs), String(task.passes), pct(task.rate)]
-        const tail = [num(task.medianSteps), seconds(task.medianDuration)]
-        const decide = seconds(task.medianDecidePerStep)
-        return base
+        }),
+      ),
+      '',
+    )
+  } else {
+    out.push(
+      table(
+        base
           ? [
-              ...common,
-              before ? pct(before.rate) : '-',
-              ...tail,
-              before ? seconds(before.medianDuration) : '-',
-              decide,
+              'task',
+              'runs',
+              'passed',
+              'pass rate',
+              'baseline rate',
+              'median steps',
+              'median duration',
+              'baseline duration',
+              'median decide/step',
             ]
-          : [...common, ...tail, decide]
-      }),
-    ),
-    '',
-  )
+          : [
+              'task',
+              'runs',
+              'passed',
+              'pass rate',
+              'median steps',
+              'median duration',
+              'median decide/step',
+            ],
+        now.tasks.map((task) => {
+          const before = baseByTask.get(task.task)
+          const common = [task.task, String(task.runs), String(task.passes), pct(task.rate)]
+          const tail = [num(task.medianSteps), seconds(task.medianDuration)]
+          const decide = seconds(task.medianDecidePerStep)
+          return base
+            ? [
+                ...common,
+                before ? pct(before.rate) : '-',
+                ...tail,
+                before ? seconds(before.medianDuration) : '-',
+                decide,
+              ]
+            : [...common, ...tail, decide]
+        }),
+      ),
+      '',
+    )
+  }
   const split = disagreements(current)
   out.push('## Where the model and the check disagree', '')
   out.push(

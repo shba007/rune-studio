@@ -9,8 +9,11 @@ import {
   disagreements,
   gate,
   median,
+  modelOf,
   parseResults,
+  profileOf,
   render,
+  sameModelAndProfile,
   summarize,
 } from '../report.mjs'
 
@@ -209,4 +212,55 @@ test('compare prints what blocking mode costs next to the gate', async () => {
   assert.match(markdown, /\| median duration \| 11\.0s \| 10\.0s \| \+10\.0% \|/)
   assert.match(markdown, /\| median steps \| 5 \| 4 \| \+1 \|/)
   assert.equal(verdict.verdict, 'PASS', 'exactly 10% slower is inside the gate, as before')
+})
+
+test('runs track model and profile, matching models and profiles are recognized', () => {
+  const alpha = load('model-alpha.jsonl')
+  const beta = load('model-beta.jsonl')
+  const alphaVar = load('model-alpha-variant.jsonl')
+  const base = load('base.jsonl')
+
+  assert.equal(modelOf(alpha), 'model-alpha')
+  assert.equal(modelOf(beta), 'model-beta')
+  assert.equal(modelOf(base), 'unknown')
+
+  assert.deepEqual(profileOf(alpha), { id: 'model-alpha', pointing: 'norm1000' })
+  assert.equal(profileOf(base), null)
+
+  assert.equal(sameModelAndProfile(alpha, alphaVar), true)
+  assert.equal(sameModelAndProfile(alpha, beta), false)
+  assert.equal(sameModelAndProfile(base, base), true)
+})
+
+test('comparing same model runs runs the gate and checks tolerance', () => {
+  const alpha = load('model-alpha.jsonl')
+  const alphaVar = load('model-alpha-variant.jsonl')
+  const { markdown, verdict } = render(alpha, alphaVar)
+
+  assert.ok(verdict !== null)
+  assert.equal(verdict.verdict, 'PASS')
+  assert.match(markdown, /## Gate: PASS/)
+})
+
+test('comparing different models outputs a model comparison table and never a pass or fail', () => {
+  const alpha = load('model-alpha.jsonl')
+  const beta = load('model-beta.jsonl')
+  const { markdown, verdict } = render(alpha, beta)
+
+  assert.equal(verdict, null, 'never a pass or fail verdict')
+  assert.ok(!markdown.includes('## Gate:'))
+  assert.match(markdown, /## Model comparison: model-alpha vs model-beta/)
+  assert.match(markdown, /\| metric \| model-alpha \| model-beta \|/)
+  assert.match(markdown, /\| success rate \| 100\.0% \| 66\.7% \|/)
+  assert.match(markdown, /\| median duration \| 5\.0s \| 6\.8s \|/)
+  assert.match(markdown, /\| median steps \| 4 \| 5 \|/)
+  assert.match(markdown, /\| completion tokens \| 340 \| 520 \|/)
+  assert.match(markdown, /\| boxes quality \| 0\.95 \| 0\.82 \|/)
+
+  // CLI exit code test: comparison exits with code 0, not 1
+  const run = (...args) => spawnSync(process.execPath, [script, ...args], { encoding: 'utf8' })
+  const result = run(here + 'model-alpha.jsonl', '--compare', here + 'model-beta.jsonl')
+  assert.equal(result.status, 0)
+  assert.match(result.stdout, /## Model comparison: model-alpha vs model-beta/)
+  assert.ok(!result.stdout.includes('## Gate:'))
 })

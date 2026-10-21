@@ -16,6 +16,7 @@ use tauri::{AppHandle, Manager};
 use crate::{
     backend, commands,
     events::{self, AgentState, AppState},
+    model::{profile::ModelProfile, role::ModelRole},
     safety::gate,
     settings,
     sync::LockExt,
@@ -227,6 +228,10 @@ pub struct RunResult {
     pub verify_ms: Option<i64>,
     pub challenged: bool,
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile: Option<ModelProfile>,
 }
 
 impl RunResult {
@@ -247,6 +252,8 @@ pub fn build_result(
     denied_prompts: u32,
     error: Option<String>,
     verification: Verification,
+    model: Option<String>,
+    profile: Option<ModelProfile>,
 ) -> RunResult {
     let (decide_ms_total, observe_ms_total, act_ms_total, completion_tokens_total) = totals(steps);
     RunResult {
@@ -278,6 +285,8 @@ pub fn build_result(
         verify_ms: verification.verify_ms,
         challenged: verification.challenged,
         error,
+        model,
+        profile,
     }
 }
 
@@ -361,8 +370,12 @@ async fn execute(app: &AppHandle, suite_path: &Path, out: &Path) -> i32 {
         return refuse(out, &why);
     }
 
+    let agent_model = effective.model_for_role(ModelRole::Agent).to_string();
+    let profile = crate::model::profile::resolve_profile(&agent_model, None, None);
+
     let env = json!({
-        "model": effective.model,
+        "model": agent_model,
+        "profile": profile,
         "settings": serde_json::from_str::<serde_json::Value>(&trace::settings_snapshot(&effective)).unwrap_or_default(),
         "app_version": crate::VERSION,
         "git_commit": option_env!("RUNE_GIT_COMMIT"),
@@ -408,6 +421,8 @@ async fn execute(app: &AppHandle, suite_path: &Path, out: &Path) -> i32 {
                 &vars.work,
                 timeout,
                 suite.verify_mode(),
+                &agent_model,
+                &profile,
             )
             .await;
             log::info!(
@@ -441,6 +456,8 @@ async fn run_one(
     work: &Path,
     timeout: Duration,
     verify_mode: VerifyMode,
+    model: &str,
+    profile: &ModelProfile,
 ) -> (RunResult, bool) {
     let roots = vec![work.to_path_buf(), out.to_path_buf()];
     let started = Instant::now();
@@ -458,6 +475,8 @@ async fn run_one(
                 0,
                 Some(problems.join("; ")),
                 verification(verify_mode, None, false),
+                Some(model.to_string()),
+                Some(profile.clone()),
             ),
             true,
         )
@@ -560,6 +579,8 @@ async fn run_one(
         denied,
         (!problems.is_empty()).then(|| problems.join("; ")),
         verification(verify_mode, stored.as_ref(), waited_out),
+        Some(model.to_string()),
+        Some(profile.clone()),
     );
     (result, teardown_failed)
 }

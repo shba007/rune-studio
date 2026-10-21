@@ -933,6 +933,8 @@ fn an_unbelievable_usage_count_is_replaced_by_characters_over_four_and_marked() 
         0,
         None,
         Verification::off(),
+        None,
+        None,
     );
     assert!(result.tokens_estimated);
     assert_eq!(result.completion_tokens_total, 20);
@@ -963,6 +965,8 @@ fn a_result_line_has_exactly_the_documented_fields() {
         0,
         None,
         Verification::off(),
+        None,
+        None,
     );
     let expected = r#"{"task":"notepad-write-save","repeat":2,"run_id":"120000-1-open-notepad","outcome":"reported_failure","self_reported_success":false,"check_passed":true,"expect":"success","passed":true,"steps":2,"duration_ms":18250,"decide_ms_total":1700,"observe_ms_total":610,"act_ms_total":100,"completion_tokens_total":100,"tokens_estimated":false,"denied_prompts":0,"verify_mode":"off","verdict":null,"verify_ms":null,"challenged":false,"error":null}"#;
     assert_eq!(result.to_line(), expected);
@@ -985,6 +989,8 @@ fn the_models_claim_and_the_check_are_kept_apart() {
         0,
         None,
         Verification::off(),
+        None,
+        None,
     );
     assert!(
         (
@@ -1004,6 +1010,8 @@ fn the_models_claim_and_the_check_are_kept_apart() {
         0,
         None,
         Verification::off(),
+        None,
+        None,
     );
     assert!(!timeout.self_reported_success && timeout.passed);
     let should_not_have = build_result(
@@ -1017,6 +1025,8 @@ fn the_models_claim_and_the_check_are_kept_apart() {
         1,
         None,
         Verification::off(),
+        None,
+        None,
     );
     assert!(should_not_have.check_passed && !should_not_have.passed);
     assert_eq!(should_not_have.expect, "failure");
@@ -1031,6 +1041,8 @@ fn the_models_claim_and_the_check_are_kept_apart() {
         2,
         Some("teardown: x".into()),
         Verification::off(),
+        None,
+        None,
     );
     assert!(right.passed);
     assert_eq!(
@@ -1353,6 +1365,8 @@ fn a_result_line_carries_the_check_next_to_the_task_time() {
             Some(&stored("contradicted", Some(3_100), false)),
             false,
         ),
+        None,
+        None,
     );
     let line: serde_json::Value = serde_json::from_str(&result.to_line()).unwrap();
     assert_eq!(
@@ -1377,4 +1391,28 @@ fn a_result_line_carries_the_check_next_to_the_task_time() {
         result.self_reported_success && !result.check_passed && !result.passed,
         "the claim and the machine still disagree"
     );
+}
+
+#[test]
+fn a_result_line_serializes_model_and_resolved_profile() {
+    let task = sample_task(Expect::Success);
+    let profile = crate::model::profile::resolve_profile("gemma-4-12b-it", None, None);
+    let result = build_result(
+        &task,
+        1,
+        "r",
+        "succeeded",
+        true,
+        &[],
+        Duration::from_millis(1000),
+        0,
+        None,
+        Verification::off(),
+        Some("gemma-4-12b-it".into()),
+        Some(profile),
+    );
+    let line: serde_json::Value = serde_json::from_str(&result.to_line()).unwrap();
+    assert_eq!(line["model"].as_str(), Some("gemma-4-12b-it"));
+    assert_eq!(line["profile"]["id"].as_str(), Some("gemma-4-12b-it"));
+    assert_eq!(line["profile"]["pointing"].as_str(), Some("norm1000"));
 }

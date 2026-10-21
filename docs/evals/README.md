@@ -4,6 +4,24 @@ A baseline is one full run of the suite, kept in the repository, so that any lat
 judged against it with `scripts/eval/report.mjs --compare`. The rule: **success rate not lower than the
 baseline's by more than one run, and median task duration not more than 10% higher.**
 
+## Baseline storage convention: `baselines/<model>/`
+
+Baselines are stored per model under `docs/evals/baselines/<model>/`:
+
+```
+docs/evals/baselines/<model>/baseline-<YYYY-MM-DD>-fast-off.md             (report.md)
+docs/evals/baselines/<model>/baseline-<YYYY-MM-DD>-fast-off.results.jsonl  (results.jsonl)
+docs/evals/baselines/<model>/baseline-<YYYY-MM-DD>-fast-off.env.json       (env.json)
+```
+
+and the same for `-fast-on`.
+
+Every `results.jsonl` row and `env.json` file records the served `model` and the resolved `profile` (including coordinate pointing convention, thinking switch style, image limits, and tool requirements).
+
+- **Same-model comparisons**: When `report.mjs --compare` compares two runs sharing the same model and profile, it enforces the gate rule: success rate not lower by more than one run, and median task duration within +10%. Exit code is 1 on `FAIL`.
+- **Cross-model comparisons**: When comparing runs with different models or profiles, the harness outputs a **model comparison table** instead (success rate, median duration, steps, tokens, and boxes quality if recorded). It never emits a `PASS` or `FAIL` verdict and exits with code 0.
+- **Maintainer only**: Baseline data is not committed by agents without live model access; the maintainer produces and commits baseline sets after measuring real model performance.
+
 ## Make a baseline (the maintainer does this, on Windows)
 
 1. Windows 11, a clean desktop (no Notepad, Calculator, Settings or Paint open), rune-infer running,
@@ -21,15 +39,15 @@ baseline's by more than one run, and median task duration not more than 10% high
 
 4. Look at the report first. Runs with an `error` column are setup, teardown or read-back problems, not
    agent failures: fix the cause and run again rather than committing a broken baseline.
-5. Commit, for each run, three files named by date and setting:
+5. Store in `docs/evals/baselines/<model>/`, for each run, three files named by date and setting:
 
    ```
-   docs/evals/baseline-<YYYY-MM-DD>-fast-off.md             (report.md)
-   docs/evals/baseline-<YYYY-MM-DD>-fast-off.results.jsonl  (results.jsonl)
-   docs/evals/baseline-<YYYY-MM-DD>-fast-off.env.json       (env.json)
+   docs/evals/baselines/<model>/baseline-<YYYY-MM-DD>-fast-off.md             (report.md)
+   docs/evals/baselines/<model>/baseline-<YYYY-MM-DD>-fast-off.results.jsonl  (results.jsonl)
+   docs/evals/baselines/<model>/baseline-<YYYY-MM-DD>-fast-off.env.json       (env.json)
    ```
 
-   and the same with `fast-on`. `env.json` records the model, the settings snapshot (no key and no URL),
+   and the same with `fast-on`. `env.json` records the model, resolved profile, the settings snapshot (no key and no URL),
    the app version and git commit, and a hash of the suite, so a later run can be checked against the
    same suite and model.
 
