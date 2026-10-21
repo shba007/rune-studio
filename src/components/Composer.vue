@@ -9,7 +9,6 @@ import AppIcon from './AppIcon.vue'
 const props = defineProps<{ agent: Agent }>()
 const agent = props.agent
 
-/** The field grows with its text (up to a few lines), and the card with it. */
 const { textarea: field, input: command } = useTextareaAutosize()
 const { focused } = useFocus(field)
 
@@ -17,11 +16,6 @@ const hasText = computed(() => command.value.trim().length > 0)
 const isListening = computed(() => agent.state.value === 'listening')
 const needsConfirm = computed(() => agent.state.value === 'awaiting_confirm')
 
-/**
- * One button on the right, always the most useful thing to do next: stop while a task runs,
- * send once there is text, otherwise talk. Its look is the same in every case, only the colour
- * and the icon change.
- */
 const action = computed(() => {
   if (agent.isRunning.value)
     return { icon: 'stop', label: 'Stop', tone: 'red', run: () => agent.stop() } as const
@@ -34,7 +28,6 @@ const action = computed(() => {
   } as const
 })
 
-/** The field says what the app is doing, so the card never looks idle while it is not. */
 const offline = computed(() => agent.health.value.tone === 'down')
 const placeholder = computed(() => {
   if (needsConfirm.value) return 'Needs your OK'
@@ -57,12 +50,10 @@ async function submit() {
 </script>
 
 <template>
-  <!-- One row, the same height as the orb (64 px). It grows upward as the text gets longer. -->
   <div
     data-tauri-drag-region
     class="flex w-full flex-col gap-1 rounded-[32px] bg-[#141414] p-2 shadow-[inset_0_0_0_1px_rgb(255_255_255/0.08)]"
   >
-    <!-- Notices (a refused task, a mic problem, a failed check) get a line of their own: they can be long. -->
     <p
       v-if="agent.notice.value"
       class="m-0 px-3 pt-1 text-label"
@@ -72,9 +63,7 @@ async function submit() {
     >
       {{ agent.notice.value }}
     </p>
-    <!-- What the card is doing, for screen readers: Thinking, Acting, Done. -->
     <p class="sr-only" role="status" aria-live="polite">{{ agent.statusText.value }}</p>
-    <!-- Light by default (a pale field in the dark card); fully dark when the system is in dark mode. -->
     <div
       class="flex w-full items-end gap-1 rounded-[24px] bg-[#f1f1ef] p-2 text-[#111] dark:bg-[#1f1f1f] dark:text-zinc-100"
     >

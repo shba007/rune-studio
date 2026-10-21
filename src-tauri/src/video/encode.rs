@@ -1,38 +1,23 @@
-//! Turns the frame list into an H.264 `session.mp4`. Windows only, through Media Foundation's
-//! sink writer (part of Windows 11; **missing on "N" editions without the Media Feature Pack**, where
-//! starting it fails and the caller records `video: unavailable`). No binary is bundled. Elsewhere
-//! there is no encoder at all.
-//!
-//! **Not run here**: this was written against the `windows` crate's bindings and cross-checked for
-//! types only; no Windows machine was available, so whether it produces a file WebView2 plays is
-//! unmeasured (H.264 main profile in MP4 is what Media Foundation's encoder makes by default).
-
-// The encoder itself exists only on Windows; the frame loading is shared and tested everywhere.
 #![cfg_attr(not(windows), allow(dead_code))]
 
 use std::path::Path;
 
 use super::schedule::{Shown, video_size};
 
-/// The video is at most this wide.
 pub const MAX_WIDTH: u32 = 1920;
 
 #[derive(Debug)]
 #[cfg_attr(not(windows), allow(dead_code))]
 pub enum EncodeError {
-    /// No encoder on this machine (not Windows, or Media Foundation's H.264 encoder is missing).
     Unavailable(String),
-    /// A new task started: the job stops and will be tried again when the PC is idle.
     Cancelled,
     Failed(String),
 }
 
-/// One decoded frame: BGRA, top row first.
 pub struct Bgra {
     pub data: Vec<u8>,
 }
 
-/// Loads a screenshot as BGRA at exactly `size` (it is scaled if the file is another size).
 pub fn load(path: &Path, size: (u32, u32)) -> Result<Bgra, String> {
     let image = image::open(path).map_err(|err| format!("{}: {err}", path.display()))?;
     let resized = if (image.width(), image.height()) == size {
@@ -48,12 +33,11 @@ pub fn load(path: &Path, size: (u32, u32)) -> Result<Bgra, String> {
     let mut data = resized.into_raw();
     let (pixels, _) = data.as_chunks_mut::<4>();
     for pixel in pixels {
-        pixel.swap(0, 2); // RGBA -> BGRA
+        pixel.swap(0, 2);
     }
     Ok(Bgra { data })
 }
 
-/// The size to encode at, from the first frame that can be read.
 pub fn size_of_first(shown: &[Shown]) -> Option<(u32, u32)> {
     shown
         .iter()
@@ -61,7 +45,6 @@ pub fn size_of_first(shown: &[Shown]) -> Option<(u32, u32)> {
         .map(|(w, h)| video_size(w, h, MAX_WIDTH))
 }
 
-/// Media Foundation packs a size or a ratio into one 64-bit attribute: high half first, low half second.
 #[cfg(windows)]
 fn pack(high: u32, low: u32) -> u64 {
     (u64::from(high) << 32) | u64::from(low)
@@ -84,13 +67,9 @@ pub fn encode(
     let size =
         size_of_first(shown).ok_or_else(|| EncodeError::Failed("no frame could be read".into()))?;
     let (width, height) = size;
-    // 100 nanosecond units, the unit Media Foundation times are in.
     const TICKS_PER_MS: i64 = 10_000;
 
-    // SAFETY: plain Media Foundation calls on interfaces this function creates and drops; every buffer
-    // is locked, filled within its length and unlocked again.
     unsafe {
-        // Already initialised on this thread is fine (S_FALSE).
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
         MFStartup(MF_VERSION, MFSTARTUP_FULL).map_err(|err| {
             EncodeError::Unavailable(format!("Media Foundation did not start: {err}"))
@@ -126,7 +105,6 @@ pub fn encode(
                         windows::Win32::Foundation::E_ABORT,
                     ));
                 }
-                // A frame that cannot be read is skipped; its time is given to the previous one by the hold.
                 let Ok(bgra) = load(Path::new(&frame.path), size) else {
                     continue;
                 };
@@ -153,7 +131,6 @@ pub fn encode(
             if err.code() == windows::Win32::Foundation::E_ABORT {
                 EncodeError::Cancelled
             } else {
-                // 0xC00D36B4 and friends: no H.264 encoder (an "N" edition without the Media Feature Pack).
                 EncodeError::Unavailable(format!("the H.264 encoder failed: {err}"))
             }
         })

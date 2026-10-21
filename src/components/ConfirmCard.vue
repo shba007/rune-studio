@@ -4,17 +4,12 @@ import { computed, onMounted, ref, useTemplateRef, watch } from 'vue'
 
 import type { Agent } from '@/composables/useAgent'
 
-/**
- * The question an action is waiting on: what it wants to do, why it counts as risky, and the two
- * answers. Nothing risky happens without a Yes, and an unanswered question counts as No.
- */
 const props = defineProps<{ agent: Agent }>()
 const agent = props.agent
 
 const question = computed(() => agent.question.value)
 const asking = computed(() => question.value?.kind === 'question')
 const left = ref(0)
-// Each new question starts its own countdown.
 watch(question, (asked) => (left.value = asked?.timeoutSecs ?? 0), { immediate: true })
 useIntervalFn(() => (left.value = Math.max(0, left.value - 1)), 1000)
 
@@ -22,7 +17,6 @@ const clock = computed(
   () => `${Math.floor(left.value / 60)}:${String(left.value % 60).padStart(2, '0')}`,
 )
 
-// No is focused first, so a stray Enter declines rather than allows.
 const no = useTemplateRef<HTMLButtonElement>('no')
 onMounted(() => no.value?.focus())
 </script>

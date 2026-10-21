@@ -1,16 +1,11 @@
-//! The suite file and the hard limits on what it may do. No Tauri in here: everything is plain
-//! data and pure functions, so it can be tested anywhere.
-
 use std::path::{Component, Path, PathBuf};
 
 use serde::Deserialize;
 
 use crate::settings::VerifyMode;
 
-/// The only suite format this code reads.
 pub const SUITE_VERSION: u32 = 1;
 
-/// The programs a suite may ask to have closed. Never a browser, never `explorer.exe`.
 pub const KILL_ALLOWLIST: [&str; 5] = [
     "notepad.exe",
     "CalculatorApp.exe",
@@ -19,7 +14,6 @@ pub const KILL_ALLOWLIST: [&str; 5] = [
     "mspaint.exe",
 ];
 
-/// Most repeats a suite may ask for.
 const MAX_REPEATS: u32 = 20;
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -56,27 +50,20 @@ impl Default for Defaults {
     }
 }
 
-/// Settings the run overrides **in memory**; `settings.json` is never written. `None` keeps the user's value.
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct Config {
     pub fast_checks: Option<bool>,
     pub show_thinking: Option<bool>,
     pub model: Option<String>,
-    /// `off`, `background` or `blocking`: the independent check of a finished task. Left out means
-    /// **off** in an eval run, so that earlier baselines stay comparable.
     pub verify_mode: Option<String>,
 }
 
-/// What the right behaviour is.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Expect {
-    /// The task should be carried out; the checker says whether it was.
     #[default]
     Success,
-    /// The task should **not** be completed: the agent should finish with `success=false`, ask, or
-    /// stop. The checker then says that nothing bad happened.
     Failure,
 }
 
@@ -90,8 +77,6 @@ pub struct Task {
     pub check: Check,
     #[serde(default)]
     pub expect: Expect,
-    /// For an `expect: failure` task: the run outcomes that count as stopping in time. Defaults to
-    /// `reported_failure` and `stopped`.
     #[serde(default)]
     pub accept_outcomes: Option<Vec<String>>,
     #[serde(default)]
@@ -100,8 +85,6 @@ pub struct Task {
     pub timeout_secs: Option<u64>,
 }
 
-/// Setup and teardown steps. These are the only things a suite can make happen; there is no way
-/// to run a command.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Step {
@@ -112,7 +95,6 @@ pub enum Step {
     WaitMs { ms: u64 },
 }
 
-/// How a run is judged, by looking at the machine.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Check {
@@ -127,15 +109,11 @@ pub enum Check {
     Not { check: Box<Check> },
 }
 
-/// The values substituted for `{work}`, `{run}`, `{fixtures}` and `{fixtures_url}`.
 #[derive(Debug, Clone)]
 pub struct Vars {
-    /// A fresh folder for this run.
     pub work: PathBuf,
-    /// Unique per task run; fixture pages put it in their title.
     pub run: String,
     pub fixtures: PathBuf,
-    /// The fixtures folder as a `file:///` address, for opening a page with a query string.
     pub fixtures_url: String,
 }
 
@@ -198,7 +176,6 @@ impl Check {
         }
     }
 
-    /// Every file path the check reads.
     fn collect(&self, paths: &mut Vec<String>) {
         match self {
             Check::FileExists { path }
@@ -215,7 +192,6 @@ impl Check {
 }
 
 impl Task {
-    /// This task with the placeholders filled in.
     pub fn resolve(&self, vars: &Vars) -> Task {
         let f = |text: &str| vars.substitute(text);
         Task {
@@ -230,8 +206,6 @@ impl Task {
         }
     }
 
-    /// Checks that a **resolved** task only touches the given folders and only kills allowed
-    /// programs. This is the hard limit on what a suite can do to the machine.
     pub fn confine(&self, roots: &[PathBuf]) -> Result<(), String> {
         let mut paths: Vec<String> = Vec::new();
         let mut kills: Vec<String> = Vec::new();
@@ -256,7 +230,6 @@ impl Task {
         Ok(())
     }
 
-    /// The outcomes that count as the right behaviour for an `expect: failure` task.
     pub fn accepted_outcomes(&self) -> Vec<String> {
         self.accept_outcomes
             .clone()
@@ -264,7 +237,6 @@ impl Task {
     }
 }
 
-/// Reads one of the three words, strictly: a typo in a suite is an error, not a quiet default.
 pub fn parse_verify_mode(word: &str) -> Option<VerifyMode> {
     match word {
         "off" => Some(VerifyMode::Off),
@@ -275,7 +247,6 @@ pub fn parse_verify_mode(word: &str) -> Option<VerifyMode> {
 }
 
 impl Suite {
-    /// The check mode of this run: what the suite says, else **off**.
     pub fn verify_mode(&self) -> VerifyMode {
         self.config
             .verify_mode
@@ -291,7 +262,6 @@ impl Suite {
         Ok(suite)
     }
 
-    /// What can be checked without running anything.
     pub fn validate(&self) -> Result<(), String> {
         if self.version != SUITE_VERSION {
             return Err(format!(
@@ -338,7 +308,6 @@ impl Suite {
             if task.timeout_secs == Some(0) {
                 return Err(format!("task {} has a zero timeout", task.id));
             }
-            // Program names can be checked before any placeholder is filled in.
             for step in task.setup.iter().chain(&task.teardown) {
                 if let Step::KillProcess { name } = step
                     && !kill_allowed(name)
@@ -354,15 +323,12 @@ impl Suite {
     }
 }
 
-/// Whether a suite may close this program (case does not matter).
 pub fn kill_allowed(name: &str) -> bool {
     KILL_ALLOWLIST
         .iter()
         .any(|allowed| allowed.eq_ignore_ascii_case(name))
 }
 
-/// Accepts a path only if it is absolute, has no `..`, lies inside one of `roots`, and (where it
-/// can be told) does not get there through a link that leads elsewhere.
 pub fn jail(path: &str, roots: &[PathBuf]) -> Result<PathBuf, String> {
     let candidate = Path::new(path);
     if !candidate.is_absolute() {
@@ -379,7 +345,6 @@ pub fn jail(path: &str, roots: &[PathBuf]) -> Result<PathBuf, String> {
             "path \"{path}\" is outside the work and output folders"
         ));
     };
-    // The nearest part of the path that exists must still be inside the root once links are followed.
     let existing = candidate.ancestors().find(|part| part.exists());
     if let Some(existing) = existing.filter(|part| part.starts_with(root))
         && let (Ok(real), Ok(real_root)) = (existing.canonicalize(), root.canonicalize())

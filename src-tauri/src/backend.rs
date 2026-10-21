@@ -12,8 +12,6 @@ pub struct BackendStatus {
     pub reachable: bool,
     pub auth_ok: bool,
     pub missing_models: Vec<String>,
-    /// What the configured model says it can do (`Chat`, `Vision`, `Audio`, ...). Empty when the
-    /// server does not list it or does not report capabilities.
     pub model_capabilities: Vec<String>,
     pub latency_ms: Option<u64>,
     pub error: Option<String>,
@@ -44,8 +42,6 @@ struct ModelEntry {
     capabilities: Vec<String>,
 }
 
-/// True only when the server listed the model's capabilities and `Audio` is not among them.
-/// An empty list means "unknown", never "no audio".
 pub fn lacks_audio(capabilities: &[String]) -> bool {
     !capabilities.is_empty()
         && !capabilities
@@ -53,8 +49,6 @@ pub fn lacks_audio(capabilities: &[String]) -> bool {
             .any(|capability| capability.eq_ignore_ascii_case("audio"))
 }
 
-/// Probes `/health` (open), then `/v1/models` (authenticated) and checks that the
-/// models the agent needs are actually served.
 pub async fn check(
     client: &reqwest::Client,
     settings: &Settings,

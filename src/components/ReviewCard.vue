@@ -5,10 +5,6 @@ import { computed, watch } from 'vue'
 import type { Agent } from '@/composables/useAgent'
 import { REVIEW_SECONDS, dotsLeft, reviewMeta } from '@/config/review'
 
-/**
- * Offered when a session ends: the task on one line, how it ended, and Review or Dismiss. It goes by
- * itself after 15 seconds, shown only as a row of dots (no text countdown, so it stays calm).
- */
 const props = defineProps<{ agent: Agent }>()
 const agent = props.agent
 

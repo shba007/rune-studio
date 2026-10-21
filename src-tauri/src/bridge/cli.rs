@@ -1,19 +1,3 @@
-//! The `rune-studio-cli` command line, for people and agents on a machine with nothing but the app.
-//!
-//! ```text
-//! rune-studio                 open the app
-//! rune-studio-cli mcp             speak MCP on stdin/stdout (what an agent runs); starts the app if needed
-//! rune-studio connect claude  register Rune Studio with Claude Code, for every project
-//! rune-studio-cli enable          allow outside agents      (rune-studio-cli disable turns it off)
-//! rune-studio-cli status          show what is running and allowed
-//! rune-studio guide           print the guide an agent reads
-//! ```
-//!
-//! This is its own small console program (`rune-studio-cli.exe`), next to the windowed app
-//! (`rune-studio.exe`), so a terminal waits for it and shows what it prints. It is plain Rust:
-//! no Node, Python or other tool is needed. `mcp` is a small bridge between an agent's stdio and
-//! the app's local door.
-
 use std::{
     io::{BufRead, Write},
     net::{SocketAddr, TcpStream},
@@ -38,35 +22,25 @@ use crate::{
 };
 
 const START_TIMEOUT: Duration = Duration::from_secs(30);
-/// How many runs `runs` lists when `--limit` is not given.
 const DEFAULT_RUNS: usize = 20;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
-    /// No arguments: open the app.
     App,
-    /// `mcp [--agent <id>]`: the stdio shim; the id is what the registration says the agent is.
     Mcp(Option<String>),
     Status,
     Enable,
     Disable,
     Connect(String),
     Guide,
-    /// Install (or with `--remove`, remove) the Claude Code skill.
     Skill(String),
     Disconnect(String),
-    /// `runs [--limit N]`: the newest runs recorded in the trace database.
     Runs(usize),
-    /// `run <id> [--calls]`: one run, its steps and events; with `--calls`, every model attempt too.
     Run(String, bool),
-    /// `analyses [--limit N]`: the newest visual analyses.
     Analyses(usize),
-    /// `analysis <id>`: one visual analysis with its findings.
     Analysis(String),
-    /// `reflections [--limit N]`: the newest idle reflection runs.
     Reflections(usize),
     Help,
-    /// Not a command we know: shown as an error with the help text.
     Unknown(String),
 }
 
@@ -160,7 +134,6 @@ Rune Studio
 You are always in control: press Stop in the app (Ctrl+Alt+Esc) and the agent loses control at once.
 ";
 
-/// Runs the command line and returns the exit code.
 pub fn run() -> i32 {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match parse(&args) {
@@ -196,7 +169,6 @@ pub fn run() -> i32 {
     }
 }
 
-/// `rune-studio-cli runs`: a table of the newest runs.
 fn runs_command(limit: usize) -> i32 {
     with_trace(|path| match trace::store::list_runs(path, limit) {
         Ok(rows) if rows.is_empty() => {
@@ -214,7 +186,6 @@ fn runs_command(limit: usize) -> i32 {
     })
 }
 
-/// `rune-studio-cli run <id>`: one run with its steps and events.
 fn run_command(id: &str, calls: bool) -> i32 {
     if id.is_empty() {
         say("Say which run: rune-studio-cli run <id>   (see rune-studio-cli runs for the ids)");
@@ -238,7 +209,6 @@ fn run_command(id: &str, calls: bool) -> i32 {
     })
 }
 
-/// The model attempts of a run, one line each: `run <id> --calls`.
 fn calls_report(list: &[crate::flight::FlightCall]) -> String {
     if list.is_empty() {
         return "\nModel attempts: none recorded (this run is older than the attempt record)."
@@ -268,7 +238,6 @@ fn calls_report(list: &[crate::flight::FlightCall]) -> String {
     out
 }
 
-/// `rune-studio-cli analyses`: a table of the newest screen analyses.
 fn analyses_command(limit: usize) -> i32 {
     with_trace(|path| match trace::store::list_analyses(path, limit) {
         Ok(rows) if rows.is_empty() => {
@@ -286,7 +255,6 @@ fn analyses_command(limit: usize) -> i32 {
     })
 }
 
-/// `rune-studio-cli analysis <id>`: one analysis with its findings.
 fn analysis_command(id: &str) -> i32 {
     if id.is_empty() {
         say(
@@ -307,8 +275,6 @@ fn analysis_command(id: &str) -> i32 {
     })
 }
 
-/// What `run <id>` and `analysis <id>` print and exit with: the report (0), "there is no such one"
-/// (1, so a script can tell) or the read error (1).
 fn lookup_outcome(
     noun: &str,
     id: &str,
@@ -325,7 +291,6 @@ fn lookup_outcome(
     }
 }
 
-/// `rune-studio-cli reflections`: a table of the newest idle reflection runs.
 fn reflections_command(limit: usize) -> i32 {
     with_trace(|path| match trace::store::list_reflections(path, limit) {
         Ok(rows) if rows.is_empty() => {
@@ -343,7 +308,6 @@ fn reflections_command(limit: usize) -> i32 {
     })
 }
 
-/// The reflection list: one line per run, columns padded to their widest cell.
 fn reflections_table(rows: &[trace::ReflectionRecord]) -> String {
     let mut lines = vec![["ID", "STARTED", "OUTCOME", "STAGES", "DURATION"].map(String::from)];
     for row in rows {
@@ -381,7 +345,6 @@ fn reflections_table(rows: &[trace::ReflectionRecord]) -> String {
     out
 }
 
-/// Finds the trace database and hands its path to `show`; says so plainly when there is none.
 fn with_trace(show: impl FnOnce(&std::path::Path) -> i32) -> i32 {
     let Some(path) = trace::db_path_without_app() else {
         say("Cannot tell where Rune Studio keeps its data on this system (no APPDATA folder).");
@@ -415,20 +378,13 @@ fn switch_is_on() -> bool {
     settings::path_without_app().is_some_and(|path| settings::read_file(&path).external_agent)
 }
 
-/// Who answers on the bridge's port.
 #[derive(Debug, PartialEq, Eq)]
 enum Door {
-    /// Nothing listens.
     Closed,
-    /// Rune Studio's bridge.
     Ours,
-    /// Something else holds the port, so the bridge could not start.
     Taken,
 }
 
-/// Tells Rune's bridge from another program from one answer to a request that carries no token.
-/// The bridge refuses such a request with `{ "error": <code>, "message": <text> }` (or answers
-/// JSON-RPC); a web server or anything else does not speak that.
 fn classify_door(answer: Option<&str>) -> Door {
     let Some(answer) = answer else {
         return Door::Closed;
@@ -441,7 +397,6 @@ fn classify_door(answer: Option<&str>) -> Door {
     if ours { Door::Ours } else { Door::Taken }
 }
 
-/// Asks the port what it is: one tokenless POST to `/mcp`, answered by Rune with a JSON refusal.
 fn probe_door() -> Door {
     let address: SocketAddr = ([127, 0, 0, 1], server::PORT).into();
     let Ok(mut stream) = TcpStream::connect_timeout(&address, Duration::from_millis(300)) else {
@@ -515,9 +470,7 @@ fn app_path() -> String {
         .unwrap_or_else(|_| "rune-studio".into())
 }
 
-/// The windowed app, which sits next to this program.
 fn app_exe() -> Result<std::path::PathBuf, String> {
-    // Resolve links first: on macOS and Linux this program is often run through a link in PATH.
     let own = std::env::current_exe().map_err(|err| err.to_string())?;
     #[cfg(unix)]
     let own = std::fs::canonicalize(own).map_err(|err| err.to_string())?;
@@ -532,7 +485,6 @@ fn app_exe() -> Result<std::path::PathBuf, String> {
     }
 }
 
-/// `rune-studio` with no arguments: open the app (unless it is already running).
 fn open_app() -> i32 {
     match ensure_app() {
         Ok(()) => {
@@ -546,7 +498,6 @@ fn open_app() -> i32 {
     }
 }
 
-/// The agents `connect` and `disconnect` know how to set up.
 const AGENTS: &str = "claude, antigravity";
 
 fn unknown_agent(verb: &str, target: &str) -> i32 {
@@ -577,7 +528,6 @@ fn connect(target: &str) -> i32 {
     }
 }
 
-/// Runs Claude Code's `claude` command, which may be a .cmd shim that only the command interpreter can start.
 fn run_claude(arguments: &[&str]) -> std::io::Result<std::process::ExitStatus> {
     match Process::new("claude").args(arguments).status() {
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Process::new("cmd")
@@ -762,13 +712,10 @@ fn disconnect(target: &str) -> i32 {
     }
 }
 
-// --- mcp: stdio <-> local door -------------------------------------------------------------
-
 fn rpc_error(id: &Value, message: &str) -> Value {
     json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32000, "message": message } })
 }
 
-/// Starts the windowed app if the door is closed, and waits until it is open.
 fn ensure_app() -> Result<(), String> {
     if door_is_open() {
         return Ok(());
@@ -785,7 +732,6 @@ fn ensure_app() -> Result<(), String> {
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
         launch.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
     }
-    // Its own process group, so the app outlives the terminal that started it.
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -807,7 +753,6 @@ fn ensure_app() -> Result<(), String> {
     )
 }
 
-/// Sends one message to the app. `Ok(None)` means it was a notification and nothing comes back.
 async fn forward(
     client: &reqwest::Client,
     message: &Value,
@@ -861,7 +806,6 @@ fn run_mcp(agent: Option<&str>) -> i32 {
         let Ok(message) = serde_json::from_str::<Value>(&line) else {
             continue;
         };
-        // One at a time keeps replies in the order the agent asked.
         let reply = match runtime.block_on(forward(&client, &message, agent)) {
             Ok(reply) => reply,
             Err(problem) => message.get("id").map(|id| rpc_error(id, &problem)),
@@ -874,9 +818,6 @@ fn run_mcp(agent: Option<&str>) -> i32 {
     0
 }
 
-// ---------------------------------------------------------------- how a recorded run is shown
-
-/// `2026-10-19T12:00:05Z` as `2026-10-19 12:00:05`; `-` when there is none.
 fn shown_time(time: Option<&str>) -> String {
     time.map_or_else(
         || "-".to_string(),
@@ -884,7 +825,6 @@ fn shown_time(time: Option<&str>) -> String {
     )
 }
 
-/// `42s`, `3m 07s`, `1h 02m`; `-` when the run has not ended or the times cannot be read.
 fn shown_duration(started: Option<&str>, ended: Option<&str>) -> String {
     let (Some(started), Some(ended)) = (
         started.and_then(trace::parse_iso),
@@ -900,13 +840,11 @@ fn shown_duration(started: Option<&str>, ended: Option<&str>) -> String {
     }
 }
 
-/// `text` on one line, cut to `max` characters with `…`.
 fn one_line(text: &str, max: usize) -> String {
     let flat: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
     trace::cap(&flat, max)
 }
 
-/// The run list: one line per run, columns padded to their widest cell.
 fn runs_table(rows: &[RunSummary]) -> String {
     let header = [
         "ID", "STARTED", "SOURCE", "OUTCOME", "VERDICT", "STEPS", "DURATION", "TASK",
@@ -953,7 +891,6 @@ fn runs_table(rows: &[RunSummary]) -> String {
     out
 }
 
-/// The analysis list: one line per analysis, columns padded to their widest cell.
 fn analyses_table(rows: &[AnalysisRecord]) -> String {
     let mut lines = vec![["ID", "CREATED", "STATUS", "TIME", "QUESTION"].map(String::from)];
     for row in rows {
@@ -998,7 +935,6 @@ fn analyses_table(rows: &[AnalysisRecord]) -> String {
     out
 }
 
-/// One analysis, top to bottom: question, answer, then a line per finding with its box and evidence.
 fn analysis_report(record: &AnalysisRecord) -> String {
     let mut out = format!(
         "Analysis {}\n  Created:   {}\n  Status:    {}",
@@ -1057,7 +993,6 @@ fn number(value: Option<i64>) -> String {
 const STEP_HEADER: &str =
     "  N  TOOL            RESULT     GATE                DECIDE_MS  ACT_MS  REASON";
 
-/// One step: `n tool result gate decide_ms act_ms reason`, with `-` for what did not happen.
 fn step_line(step: &StepRecord) -> String {
     format!(
         "{:>3}  {:<15} {:<10} {:<19} {:>9}  {:>6}  {}",
@@ -1071,7 +1006,6 @@ fn step_line(step: &StepRecord) -> String {
     )
 }
 
-/// A whole run: its facts, then its steps, then its events.
 fn run_report(detail: &RunDetail) -> String {
     let run = &detail.run;
     let info = &run.info;

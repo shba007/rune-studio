@@ -44,7 +44,6 @@ fn call(run: &str, step: Option<i64>, attempt: i64, outcome: &str) -> CallRecord
     }
 }
 
-/// A database with two runs: `old` (one step, no attempts) and `new` (two steps, three attempts).
 fn recorded(dir: &TempDir) -> PathBuf {
     let db = crate::trace::db_path(&dir.0);
     let rec = Recorder::start(&db);

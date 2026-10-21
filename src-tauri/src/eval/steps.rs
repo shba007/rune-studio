@@ -1,6 +1,3 @@
-//! Carrying out a task's setup and teardown. Every path is checked against the jail again here,
-//! on top of the check made before the run starts.
-
 use std::{fs, path::PathBuf, time::Duration};
 
 use super::{
@@ -8,10 +5,8 @@ use super::{
     windows,
 };
 
-/// The longest a `wait_ms` step may wait.
 const MAX_WAIT_MS: u64 = 30_000;
 
-/// Does one step. `roots` are the folders it may touch.
 pub fn apply(step: &Step, roots: &[PathBuf]) -> Result<(), String> {
     match step {
         Step::MakeDir { path } => {
@@ -30,7 +25,6 @@ pub fn apply(step: &Step, roots: &[PathBuf]) -> Result<(), String> {
         }
         Step::DeletePath { path } => {
             let path = jail(path, roots)?;
-            // The folders themselves are never removed: a task may only clear what is inside them.
             if roots.iter().any(|root| root == &path) {
                 return Err(format!(
                     "{} is a root folder and cannot be deleted",
@@ -54,7 +48,6 @@ pub fn apply(step: &Step, roots: &[PathBuf]) -> Result<(), String> {
     }
 }
 
-/// Runs all of them; stops at the first that fails.
 pub fn apply_all(steps: &[Step], roots: &[PathBuf]) -> Result<(), String> {
     steps.iter().try_for_each(|step| apply(step, roots))
 }

@@ -8,7 +8,6 @@ import { KIND_ICON, TOOL_LABEL, kindOf } from '@/config/actions'
 
 import AppIcon from './AppIcon.vue'
 
-/** The expanded progress tracker: the goals, which one is current, what is happening now. */
 const props = defineProps<{ agent: Agent }>()
 const agent = props.agent
 
@@ -19,7 +18,6 @@ const done = computed(() =>
   finished.value ? goals.value.length : Math.min(current.value, goals.value.length),
 )
 
-/** Time left, counting down once a goal has been finished (nothing to go on before that). */
 const now = useNow({ interval: 1000 })
 const eta = computed(() => {
   if (!agent.isRunning.value || !agent.timing.value) return null
@@ -43,7 +41,6 @@ const lastDetail = computed(() => {
   return detail.length > 24 ? `${detail.slice(0, 23)}…` : detail
 })
 
-/** Thinking while it streams in, else the last thing the agent said. */
 const message = computed(() => {
   const thinking = agent.thinking.value
   if (thinking && thinking.text && !thinking.done)
@@ -141,7 +138,6 @@ function statusOf(index: number): 'done' | 'current' | 'pending' {
 
     <div v-if="message" class="flex flex-col gap-1">
       <span class="text-caption text-zinc-500 uppercase">{{ message.label }}</span>
-      <!-- The result is what the user came for: it gets more room once the task is over. -->
       <p
         class="overflow-y-auto text-label whitespace-pre-wrap text-zinc-300"
         :class="agent.isRunning.value ? 'max-h-[72px]' : 'max-h-44'"

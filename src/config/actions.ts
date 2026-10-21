@@ -1,18 +1,5 @@
 import type { IconName } from '@/icons'
 
-/**
- * What an agent action means, so the control overlay shows the same icon for the same kind of
- * thing. The icon is the *device* involved, not the individual tool:
- *
- * - mouse: anything with the cursor (click, scroll, drag)
- * - keyboard: anything typed or pressed
- * - screen: looking at the screen (a screenshot, flashed over the captured area)
- * - video: recording the screen
- * - mic: listening through the microphone
- * - audio: headphones, for recording or playing sound
- *
- * A new tool only needs a line in TOOL_KIND.
- */
 export type ActionKind =
   | 'mouse'
   | 'keyboard'
@@ -70,7 +57,6 @@ export const TOOL_LABEL: Record<string, string> = {
   ask_user: 'Ask',
 }
 
-/** The device a tool uses, falling back to the mouse for tools that are not listed yet. */
 export function kindOf(tool: string): ActionKind {
   return TOOL_KIND[tool] ?? 'mouse'
 }

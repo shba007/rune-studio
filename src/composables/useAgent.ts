@@ -56,7 +56,6 @@ const STATE_LABELS: Record<AgentState, string> = {
   stopped: 'Stopped',
 }
 
-/** Window size order. Bigger modes need a bigger window than smaller ones. */
 const MODE_RANK: Record<PillMode, number> = {
   ambient: 0,
   open: 1,
@@ -66,45 +65,32 @@ const MODE_RANK: Record<PillMode, number> = {
   artifacts: 3,
 }
 
-/** Longer than the page and width transitions, so the window only shrinks once they have finished. */
 const COLLAPSE_MS = 340
-/** How long the mic may stay silent before we suggest it is not getting any audio. */
 const SILENCE_MS = 4000
 const SOUND_THRESHOLD = 0.04
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-/** Thin view-model over the Rust side: every piece of state here arrives as an event or command result. */
 export function useAgent() {
   const state = ref<AgentState>('idle')
   const backend = ref<BackendStatus | null>(null)
   const settings = ref<Settings | null>(null)
   const hasApiKey = ref(false)
-  /** The outside-agent door. `available` is false unless the app was built with it. */
   const bridge = ref<BridgeInfo | null>(null)
   const mode = ref<PillMode>('ambient')
-  /** The task's goals and the one being worked on. Null until a plan arrives. */
   const plan = ref<PlanUpdatedPayload | null>(null)
-  /** When the task and its current goal started, for the time left. Null when there is no task. */
   const timing = ref<TaskTiming | null>(null)
-  /** What the model is thinking right now (only with Show thinking on). */
   const thinking = ref<ThinkingPayload | null>(null)
-  /** What the agent last said: its reason for the current action, or the final summary. */
   const response = ref<string | null>(null)
-  /** The question waiting for the user's yes or no, if any. */
   const question = ref<ConfirmRequestPayload | null>(null)
-  /** The actions taken so far, newest last. */
   const steps = ref<{ step: number; tool: string; detail: string; ok: boolean | null }[]>([])
   const notice = ref<string | null>(null)
-  /** An error (red) or plain information (a confirmation such as "Saved"). */
   const noticeKind = ref<'error' | 'info'>('error')
   const focusTick = ref(0)
-  /** Live microphone level, 0..1. Stays 0 unless the mic is open. */
   const level = ref(0)
 
   const isRunning = computed(() => RUNNING.includes(state.value))
 
-  /** How healthy the model server is, as one colour and a sentence for the tooltip. */
   const health = computed<{ tone: 'ok' | 'warn' | 'down' | 'checking'; title: string }>(() => {
     const status = backend.value
     const model = settings.value?.model ?? ''
@@ -117,9 +103,7 @@ export function useAgent() {
     if (status.error) return { tone: 'warn', title: status.error }
     return { tone: 'ok', title: `Model server OK, ${status.latencyMs ?? '?'} ms, ${model}` }
   })
-  /** What the agent is doing right now (its reason for the current step), while a task runs. */
   const stepText = ref<string | null>(null)
-  /** How the last task ended, shown while the state is done or failed. */
   const resultText = ref<string | null>(null)
   const statusText = computed(() => {
     if (notice.value) return notice.value
@@ -129,14 +113,10 @@ export function useAgent() {
     return STATE_LABELS[state.value]
   })
 
-  /** The idle review offer, while it is up; `endsAt` is when the countdown runs out on this window's clock. */
   const reflectionPrompt = ref<{ endsAt: number } | null>(null)
-  /** How far the idle review is (null when none is running). */
   const reflection = ref<ReflectionProgressPayload | null>(null)
 
-  /** The offer to review a finished session, while it is up (`endsAt` on this window's clock). */
   const reviewOffer = ref<(ReviewOffer & { endsAt: number }) | null>(null)
-  /** Where the end-of-session flow is: asking if it completed, asking why not, then the review offer. */
   const reviewStage = ref<'complete' | 'why' | 'review'>('complete')
 
   const unlisten: UnlistenFn[] = []
@@ -144,7 +124,6 @@ export function useAgent() {
   let heardSound = false
 
   let noticeHandle: ReturnType<typeof setTimeout> | undefined
-  /** The content's height as last reported, so a mode change can restore it. */
   let wantedHeight = 0
   const silenceTimer = useTimeoutFn(
     () => {
@@ -154,7 +133,6 @@ export function useAgent() {
     { immediate: false },
   )
 
-  /** A newer notice always gets its full time on screen; a longer one stays longer. */
   function showNotice(message: string, kind: 'error' | 'info' = 'error') {
     const text = friendly(message)
     notice.value = text
@@ -172,15 +150,7 @@ export function useAgent() {
     }
   }
 
-  /**
-   * A transparent window still catches clicks, and clips whatever does not fit. So when the
-   * target needs a bigger window (ambient < open < settings) the window grows first and the
-   * page animates in afterwards; when it needs a smaller one the page animates out first and
-   * the window shrinks last. This holds for every pair of modes, so no page is ever drawn
-   * into a window that is too small. A newer call cancels the tail of an older one.
-   */
   async function setMode(next: PillMode) {
-    // A question waits for its answer: the card stays up until it is answered (or times out).
     if (next === 'ambient' && question.value) return
     const token = ++modeToken
     const grows = MODE_RANK[next] > MODE_RANK[mode.value]
@@ -193,22 +163,17 @@ export function useAgent() {
       await sleep(COLLAPSE_MS)
       if (token === modeToken) await call('set_mode', { mode: next })
     }
-    // set_mode gives the window the page's default height. The content may have settled at another height
-    // while it waited (the page animates before the window shrinks), so ask for the content's height again.
     if (token === modeToken && wantedHeight >= 48) await fitHeight(wantedHeight)
     if (next === 'open') focusTick.value += 1
   }
 
-  /** Make the window as tall as the open card's content. Only the open and task pages do this. */
   async function fitHeight(height: number) {
-    // Only pages that fit their content count: the settings page has a fixed height of its own.
     if (mode.value === 'open' || mode.value === 'task' || mode.value === 'analysis') {
       wantedHeight = height
       await call('fit_height', { height })
     }
   }
 
-  /** The page the card opens to: the task's progress while there is one, else the composer. */
   const home = (): PillMode => (plan.value ? 'task' : 'open')
   const toggleOpen = () => setMode(mode.value === 'ambient' ? home() : 'ambient')
   const dismiss = () => (mode.value === 'ambient' ? Promise.resolve() : setMode('ambient'))
@@ -235,7 +200,6 @@ export function useAgent() {
     await refreshBackend()
   }
 
-  /** Resolves to whether the task was accepted, so the composer only clears on success. */
   async function startTask(text: string): Promise<boolean> {
     try {
       stepText.value = null
@@ -256,13 +220,11 @@ export function useAgent() {
 
   const stop = () => call('stop')
   const dismissReview = () => (reviewOffer.value = null)
-  /** On to the review offer, whose countdown starts now. */
   function goReview() {
     reviewStage.value = 'review'
     if (reviewOffer.value)
       reviewOffer.value = { ...reviewOffer.value, endsAt: Date.now() + REVIEW_SECONDS * 1000 }
   }
-  /** "Did this complete your task?" Yes is recorded at once; No asks why first. Null skips the question. */
   async function answerComplete(complete: boolean | null) {
     const offer = reviewOffer.value
     if (!offer || complete === null) return goReview()
@@ -273,7 +235,6 @@ export function useAgent() {
       reviewStage.value = 'why'
     }
   }
-  /** The reason a task was not completed; an empty one is skipped. Either way the review offer follows. */
   async function answerWhy(reason: string) {
     const offer = reviewOffer.value
     if (offer)
@@ -284,17 +245,14 @@ export function useAgent() {
       })
     goReview()
   }
-  /** Opens the Flight Player on this session and puts the card away. */
   async function openReview(runId: string) {
     reviewOffer.value = null
     await call('open_flight', { runId })
   }
-  /** Start (true) or Deny (false) the idle review. */
   async function answerReflection(start: boolean) {
     reflectionPrompt.value = null
     await call('reflection_answer', { start })
   }
-  /** Tells the backend the pill is being used, so the idle clock restarts (at most every 5 s). */
   let lastActivity = 0
   function noteActivity() {
     const now = Date.now()
@@ -302,10 +260,8 @@ export function useAgent() {
     lastActivity = now
     void call('pill_activity')
   }
-  /** Looks at the screen and shows the answer in the analysis window (a refusal shows as a notice). */
   const analyzeScreen = () => call('analyze_screen', { question: null })
   const toggleListening = () => call('toggle_listening')
-  /** Answer the waiting question. A stale answer is refused by the Rust side. */
   async function answer(approved: boolean) {
     const waiting = question.value
     if (!waiting) return
@@ -317,7 +273,6 @@ export function useAgent() {
     call<ClickReport>('debug_click', args)
   const debugType = (text: string, delayMs?: number) => call('debug_type', { text, delayMs })
 
-  // A task starts while the card is open: show its progress above the composer.
   watch(isRunning, (running) => {
     if (running && !timing.value) {
       const now = Date.now()
@@ -326,7 +281,6 @@ export function useAgent() {
     if (running && mode.value === 'open') void setMode('task')
   })
 
-  // A finished goal restarts the goal clock, which is what the time left is worked out from.
   watch(
     () => (plan.value ? (plan.value.finished ? plan.value.goals.length : plan.value.current) : 0),
     (done) => {
@@ -335,7 +289,6 @@ export function useAgent() {
     },
   )
 
-  /** Put the progress panel away and go back to the plain composer. */
   function clearTask() {
     plan.value = null
     timing.value = null
@@ -345,7 +298,6 @@ export function useAgent() {
     if (mode.value === 'task') void setMode('open')
   }
 
-  // Tell the user when "listening" is not actually hearing anything.
   watch(state, (next) => {
     silenceTimer.stop()
     heardSound = false
@@ -385,25 +337,21 @@ export function useAgent() {
         response.value = event.payload.summary
         thinking.value = null
       }),
-      // Only a contradiction is worth interrupting for; verified, unsure and errors stay in the trace.
       await listen<TaskVerifiedPayload>(TASK_VERIFIED, (event) => {
         if (event.payload.result === 'contradicted')
           showNotice(`Check: the screen may not show the task as done: ${event.payload.evidence}`)
       }),
       await listen<ReflectionPromptPayload>(REFLECTION_PROMPT, (event) => {
         reflectionPrompt.value = { endsAt: Date.now() + event.payload.endsInMs }
-        // The offer needs room: open the card by itself, as an update prompt does.
         if (mode.value === 'ambient') void setMode('open')
       }),
       await listen(REFLECTION_RESOLVED, () => (reflectionPrompt.value = null)),
       await listen<ReflectionProgressPayload>(REFLECTION_PROGRESS, (event) => {
-        // The ring shows the plan or the review, never both: a review has no plan.
         reflection.value = event.payload.total > 0 ? event.payload : null
         if (event.payload.total > 0) plan.value = null
       }),
       await listen('review_offer', (event) => {
         const offer = readOffer(event.payload)
-        // Never over a running task; the confirm card and the idle prompt take the place first.
         if (offer && !isRunning.value) {
           reviewOffer.value = { ...offer, endsAt: Date.now() + REVIEW_SECONDS * 1000 }
           reviewStage.value = 'complete'
@@ -413,7 +361,6 @@ export function useAgent() {
       await listen<PlanUpdatedPayload>(PLAN_UPDATED, (event) => (plan.value = event.payload)),
       await listen<ConfirmRequestPayload>(CONFIRM_REQUEST, (event) => {
         question.value = event.payload
-        // The question needs room: open the card by itself, also over the settings page.
         if (mode.value !== 'task' && mode.value !== 'analysis') void setMode('task')
       }),
       await listen<{ id: string }>(CONFIRM_RESOLVED, (event) => {

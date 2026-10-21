@@ -9,10 +9,6 @@ import {
   flightSteps,
 } from './flightFixture'
 
-/**
- * Development only: lets the UI render in a plain browser (design review, screenshots) by
- * answering the Tauri commands it calls at startup. Never bundled into a production build.
- */
 const monitor = () => ({
   id: 1,
   x: 0,
@@ -23,7 +19,6 @@ const monitor = () => ({
   primary: true,
 })
 
-/** A small gradient standing in for a real screenshot. */
 function placeholderThumbnail(): string {
   const canvas = document.createElement('canvas')
   canvas.width = 320
@@ -91,8 +86,6 @@ function analysisFixture() {
 }
 
 export function installTauriMock() {
-  // `?video=1` gives the fixture session a video, served from /dev/flight.mp4 (`?video=webm`: /dev/flight.webm)
-  // by whoever is testing; nothing is committed under public/dev.
   const videoParam = new URLSearchParams(location.search).get('video')
   const withVideo = videoParam !== null
   const agentParam = new URLSearchParams(location.search).get('agent')

@@ -1,9 +1,3 @@
-//! The tools an outside agent sees, as MCP (JSON-RPC 2.0) methods.
-//!
-//! Each action tool reuses the built-in agent's own pieces: `agent::protocol::parse` to check the
-//! arguments, and `agent::body` to announce, perform and settle the action. So an outside agent's
-//! click looks and behaves exactly like the model's, and Stop reaches it the same way.
-
 use crate::sync::LockExt;
 use std::time::Instant;
 
@@ -32,7 +26,6 @@ const LATEST_PROTOCOL: &str = "2025-06-18";
 const SUPPORTED_PROTOCOLS: [&str; 3] = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const KEY_NAMES: &str = "ctrl, shift, alt, win, enter, tab, esc, backspace, delete, space, up, down, left, right, home, end, pageup, pagedown, f1 to f12, or one character like s";
 
-/// One tool answer: some text, maybe a screenshot, and whether it is an error.
 struct Reply {
     text: String,
     image: Option<Vec<u8>>,
@@ -56,7 +49,6 @@ impl Reply {
         }
     }
 
-    /// An error carries a short code from the guide, then a sentence on what to do.
     fn error(code: &str, message: impl std::fmt::Display) -> Self {
         Self {
             text: format!("{code}: {message}"),
@@ -102,7 +94,6 @@ fn rpc_error(id: &Value, code: i32, message: &str) -> Value {
     json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } })
 }
 
-/// Handles one JSON-RPC message. `None` means it was a notification and needs no answer.
 pub async fn handle(app: &AppHandle, request: Value) -> Option<Value> {
     let id = request.get("id").cloned()?;
     let method = request["method"].as_str().unwrap_or("");
@@ -148,8 +139,6 @@ pub async fn handle(app: &AppHandle, request: Value) -> Option<Value> {
     })
 }
 
-/// The guide is also offered as an MCP resource and prompt, so a client that knows nothing about
-/// skills still gets it.
 const GUIDE_URI: &str = "rune://guide";
 
 fn resource_list() -> Value {
@@ -265,7 +254,6 @@ fn tool_list() -> Value {
     ])
 }
 
-/// The names the action tools map onto in the built-in protocol.
 fn protocol_name(tool: &str) -> Option<&'static str> {
     Some(match tool {
         "rune_click" => "click",
@@ -300,7 +288,6 @@ fn clip(text: &str, max: usize) -> String {
     text.trim().chars().take(max).collect()
 }
 
-/// Added to a reply when the front window runs as administrator and so ignores our input.
 const ELEVATED_NOTE: &str = " Note: the front window runs as administrator, so clicks and typing are ignored there. Tell the user, or finish with rune_done.";
 
 fn screen_note(frame: &Frame) -> String {
@@ -322,12 +309,8 @@ async fn capture(region: Option<[f64; 4]>) -> Result<Frame, Reply> {
     }
 }
 
-/// The argument the server puts the registration's id in. The server removes any value an agent sent
-/// under this name first, so only the shim's header can set it (`inject_attestation`).
 pub const ATTESTED_KEY: &str = "_attested";
 
-/// Puts the attested id (or nothing) into a `tools/call` request's arguments, dropping whatever the
-/// agent itself put there.
 pub fn inject_attestation(request: &mut Value, attested: Option<&str>) {
     let Some(arguments) = request
         .pointer_mut("/params/arguments")
@@ -349,7 +332,6 @@ fn begin(app: &AppHandle, arguments: &Value) -> Reply {
     if events::agent_state(app).is_running() && !state.lease.locked().is_held() {
         return LeaseError::Busy.into();
     }
-    // The label: what the agent declared, or what its registration attested (see `bridge::identity`).
     crate::reflect::touch(app, crate::reflect::idle::Input::Task);
     let who = identity::identify(
         arguments["agent"].as_str().unwrap_or(""),
@@ -360,14 +342,11 @@ fn begin(app: &AppHandle, arguments: &Value) -> Reply {
     if let Err(err) = state.lease.locked().begin(&agent, &task, Instant::now()) {
         return err.into();
     }
-    // A fresh cancellation scope for this lease; it also cancels whatever the last run left behind.
     let scope = state.begin_run();
-    // This agent's turn at the wheel is one session folder (closed by rune_done, Stop or the idle limit).
     let session = crate::archive::begin_session(&task, &agent).unwrap_or_else(|err| {
         log::error!("could not open the session folder: {err}");
         String::new()
     });
-    // The same id in the flight recorder; fire and forget, nothing here waits for it.
     let run_id = if session.is_empty() {
         format!("norun-{}-{}", scope.id, crate::archive::now())
     } else {
@@ -401,7 +380,6 @@ fn begin(app: &AppHandle, arguments: &Value) -> Reply {
     ))
 }
 
-/// Marks a call by the lease holder, or says why it may not go on.
 fn touch(app: &AppHandle) -> Result<u32, Reply> {
     let state = app.state::<AppState>();
     let mut book = state.lease.locked();
@@ -457,7 +435,6 @@ async fn observe(app: &AppHandle, arguments: &Value) -> Reply {
     Reply::shot(text, frame.jpeg)
 }
 
-/// Lists the front window's controls with ids, and remembers them for `rune_click_element`.
 async fn elements(app: &AppHandle) -> Reply {
     if let Err(reply) = touch(app) {
         return reply;
@@ -477,9 +454,6 @@ async fn elements(app: &AppHandle) -> Reply {
     ))
 }
 
-/// One action by the outside agent. Calls take turns: the guard is held from before the lease is
-/// touched until the reply (with its screenshot) is built, so the gate's single confirm slot and the
-/// mouse are never shared. A call waiting for its turn is released by Stop.
 async fn act(app: &AppHandle, tool: &'static str, arguments: &Value) -> Reply {
     let state = app.state::<AppState>();
     let _turn = match lock_unless_stopped(&state.act_turn, &state.current_scope().token).await {
@@ -495,8 +469,6 @@ async fn act_turn(app: &AppHandle, tool: &'static str, arguments: &Value) -> Rep
         Err(reply) => return reply,
     };
     let state = app.state::<AppState>();
-    // This call's row for the flight recorder. It is sent when this function returns, however it
-    // returns; a call that ends with no result recorded was cut short by Stop.
     let mut row = match state.trace.open_run_id() {
         Some(run_id) => StepRow::new(&state.trace, &run_id, step),
         None => StepRow::new(&trace::Recorder::noop(), "", step),
@@ -530,7 +502,6 @@ async fn act_turn(app: &AppHandle, tool: &'static str, arguments: &Value) -> Rep
     }
 
     let cancel = state.current_scope().token;
-    // Risky actions wait for the user's yes, exactly as the built-in agent's do.
     let source = state
         .lease
         .locked()
@@ -596,7 +567,6 @@ async fn act_turn(app: &AppHandle, tool: &'static str, arguments: &Value) -> Rep
     row.rec.settle_ms = settle_ms;
 
     if matches!(result, Err(ExecError::Cancelled)) || cancel.is_cancelled() {
-        // Stop already moved the state to Stopped and revoked the lease. Leave both alone.
         return LeaseError::StoppedByUser.into();
     }
     body::finish_step(app, step, &result);
@@ -611,14 +581,11 @@ async fn act_turn(app: &AppHandle, tool: &'static str, arguments: &Value) -> Rep
         );
     }
 
-    // If the decision model sees the page still loading, give it a moment (a few times at most)
-    // so the screenshot the agent gets is of the finished page, not a half-drawn one.
     let mut attempt = 0;
     loop {
         let frame = match capture(None).await {
             Ok(frame) => frame,
             Err(reply) => {
-                // The action itself worked; only the screenshot for the reply is missing.
                 row.rec.result = Some("ok".into());
                 return reply;
             }
@@ -651,7 +618,6 @@ async fn act_turn(app: &AppHandle, tool: &'static str, arguments: &Value) -> Rep
     }
 }
 
-/// Saves the agent's goals and shows them to the user as the progress tracker.
 fn set_goals(app: &AppHandle, goals: Vec<String>) {
     let state = app.state::<AppState>();
     if let Some(lease) = state.lease.locked().current_mut() {
@@ -687,7 +653,6 @@ fn plan(app: &AppHandle, arguments: &Value) -> Reply {
     }
 }
 
-/// The agent says which goal an action is for. Goals only move forward.
 fn advance_goal(app: &AppHandle, goal: Option<u32>) {
     let Some(goal) = goal else { return };
     let state = app.state::<AppState>();

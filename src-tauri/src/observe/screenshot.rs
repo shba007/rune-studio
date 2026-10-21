@@ -9,11 +9,8 @@ use xcap::Monitor as XMonitor;
 
 use crate::model::coords::{Monitor, fit_within};
 
-/// The longest edge a screenshot is downscaled to before it goes to the model.
-/// About 2.7k image tokens at 16:9 (see ARCHITECTURE.md).
 pub const MODEL_MAX_EDGE: u32 = 1280;
 pub const MODEL_JPEG_QUALITY: u8 = 80;
-/// The stored copy (what the Preview shows) is kept sharper than what the model needs: up to this edge.
 const ARCHIVE_MAX_EDGE: u32 = 2560;
 const ARCHIVE_JPEG_QUALITY: u8 = 90;
 
@@ -29,20 +26,15 @@ pub enum ObserveError {
     Capture(String),
     #[error("could not encode the screenshot: {0}")]
     Encode(String),
-    /// Every screenshot is stored before anyone may use it (see `archive`).
     #[error("screenshot not used because it could not be stored: {0}")]
     Archive(String),
 }
 
-/// One captured, downscaled monitor. Carries the monitor geometry it was taken from, so a point
-/// the model picks in this image can always be mapped back to a real pixel.
 pub struct Frame {
     pub monitor: Monitor,
-    /// Size of the downscaled image (what the model sees).
     pub width: u32,
     pub height: u32,
     pub jpeg: Vec<u8>,
-    /// Where the archive stored this exact image (empty in unit tests).
     pub path: std::path::PathBuf,
     #[cfg_attr(not(debug_assertions), allow(dead_code))]
     pub elapsed_ms: u64,
@@ -50,14 +42,12 @@ pub struct Frame {
 }
 
 impl Frame {
-    /// `data:image/jpeg;base64,...`, the form rune-infer's chat endpoint takes. Used from M2.
     #[allow(dead_code)]
     pub fn data_uri(&self) -> String {
         format!("data:image/jpeg;base64,{}", BASE64.encode(&self.jpeg))
     }
 
     #[cfg_attr(not(debug_assertions), allow(dead_code))]
-    /// A smaller copy as a data URI, for showing in the UI.
     pub fn thumbnail_data_uri(&self, max_edge: u32) -> Result<String, ObserveError> {
         let (w, h) = fit_within(self.width, self.height, max_edge);
         let small = image::imageops::resize(&self.image, w, h, FilterType::Triangle);
@@ -65,14 +55,10 @@ impl Frame {
         Ok(format!("data:image/jpeg;base64,{}", BASE64.encode(jpeg)))
     }
 
-    /// A small grey copy (128 by 72, see `stuck::SIGNATURE_SIZE`), to tell whether the screen changed
-    /// between two looks. Fine enough to see a menu or a few words, coarse enough to ignore a caret.
     pub fn signature(&self) -> Vec<u8> {
         signature_of(&self.image)
     }
 
-    /// The colour of the downscaled image at a model-space point (0..=1000 on both axes).
-    /// Lets the Windows desktop tests check what the model would actually see at a point.
     #[cfg(all(test, windows))]
     pub fn pixel_at_model(&self, x: f64, y: f64) -> Rgb<u8> {
         let px = ((x / 1000.0 * f64::from(self.width)) as u32).min(self.width - 1);
@@ -81,7 +67,6 @@ impl Frame {
     }
 }
 
-/// The grey comparison picture (`stuck::SIGNATURE_SIZE`) of any RGB image.
 pub fn signature_of(image: &RgbImage) -> Vec<u8> {
     let small = image::imageops::resize(
         image,
@@ -97,8 +82,6 @@ pub fn signature_of(image: &RgbImage) -> Vec<u8> {
         .collect()
 }
 
-/// A JPEG of the primary monitor right now, **without** storing it in the archive: the full-motion
-/// session video writes its own frames (`video::record_motion`). Rune's windows are masked in demo mode.
 pub fn live_jpeg(max_edge: u32, quality: u8) -> Result<Vec<u8>, ObserveError> {
     let (xmonitor, monitor) = resolve(None)?;
     let mut rgba = xmonitor
@@ -111,9 +94,6 @@ pub fn live_jpeg(max_edge: u32, quality: u8) -> Result<Vec<u8>, ObserveError> {
     Ok(prepare(rgba, max_edge, quality)?.jpeg)
 }
 
-/// The comparison picture of the primary monitor right now, **without** storing anything in the
-/// archive (the screen-changed watcher looks every second or two; only real captures are archived).
-/// Rune's own windows are masked in demo mode exactly as in a real capture.
 pub fn live_signature() -> Result<Vec<u8>, ObserveError> {
     let (xmonitor, monitor) = resolve(None)?;
     let mut rgba = xmonitor
@@ -150,7 +130,6 @@ pub fn monitors() -> Result<Vec<Monitor>, ObserveError> {
     all_monitors()?.iter().map(describe).collect()
 }
 
-/// The monitor with this id, or the primary one (falling back to the first) when `id` is `None`.
 fn resolve(id: Option<u32>) -> Result<(XMonitor, Monitor), ObserveError> {
     let mut found = None;
     for candidate in all_monitors()? {
@@ -170,12 +149,10 @@ fn resolve(id: Option<u32>) -> Result<(XMonitor, Monitor), ObserveError> {
     }
 }
 
-/// Geometry of a monitor by id, or of the primary one when `id` is `None`.
 pub fn monitor(id: Option<u32>) -> Result<Monitor, ObserveError> {
     resolve(id).map(|(_, monitor)| monitor)
 }
 
-/// The monitor a physical desktop pixel is on. Used from M2 to pick the monitor under the cursor.
 #[allow(dead_code)]
 pub fn monitor_at(px: i32, py: i32) -> Result<Monitor, ObserveError> {
     let monitor =
@@ -183,7 +160,6 @@ pub fn monitor_at(px: i32, py: i32) -> Result<Monitor, ObserveError> {
     describe(&monitor)
 }
 
-/// What the model is sent: the screenshot downscaled to the model's budget, as JPEG.
 pub struct Prepared {
     pub width: u32,
     pub height: u32,
@@ -191,9 +167,6 @@ pub struct Prepared {
     image: RgbImage,
 }
 
-/// The one place a captured screen becomes a model-sized JPEG: downscale so the longer edge is at
-/// most `max_edge`, then encode. The app and the M1.5 grounding probe both go through here, so the
-/// probe measures exactly what the agent will send.
 pub fn prepare(
     rgba: image::RgbaImage,
     max_edge: u32,
@@ -215,17 +188,12 @@ pub fn prepare(
     })
 }
 
-/// Captures a monitor and downscales it so the longer edge is at most `max_edge`.
 pub fn capture(id: Option<u32>, max_edge: u32, quality: u8) -> Result<Frame, ObserveError> {
     capture_region(id, None, max_edge, quality)
 }
 
-/// Smallest crop, in physical pixels, worth sending.
 const MIN_REGION_PX: u32 = 16;
 
-/// Like [`capture`], but only the part inside `region` (`[x0, y0, x1, y1]` in model units,
-/// 0..=1000 across the monitor) when given. The crop is scaled up to the same budget as a full
-/// screenshot, which is how a small target gets enough pixels to be read and aimed at.
 pub fn capture_region(
     id: Option<u32>,
     region: Option<[f64; 4]>,
@@ -237,7 +205,6 @@ pub fn capture_region(
     let mut rgba = xmonitor
         .capture_image()
         .map_err(|err| ObserveError::Capture(err.to_string()))?;
-    // Demo mode: Rune's own windows are visible to recorders, so they are painted over for the model.
     let masked = super::mask::current();
     if !masked.is_empty() {
         super::mask::apply(&mut rgba, &masked, monitor.x, monitor.y);
@@ -262,8 +229,6 @@ pub fn capture_region(
         jpeg,
         image,
     } = prepare(rgba.clone(), max_edge, quality)?;
-    // The record is stored first; no caller can skip this. It is the same picture as the agent's, kept
-    // at a higher resolution when the screen has one, so the Preview is sharp (the model gets the small one).
     let sharp = prepare(rgba, max_edge.max(ARCHIVE_MAX_EDGE), ARCHIVE_JPEG_QUALITY)?;
     let path = crate::archive::save(
         crate::archive::Kind::Screenshots,

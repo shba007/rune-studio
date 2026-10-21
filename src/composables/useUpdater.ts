@@ -13,18 +13,14 @@ export type UpdatePhase =
   | 'restarting'
   | 'error'
 
-/** Wait a little after launch so the check never competes with the first paint. */
 const STARTUP_DELAY_MS = 5000
 const CHECK_TIMEOUT_MS = 15000
 
-// One shared state, so App.vue, the orb and Settings all see the same update.
 const version = ref('')
 const phase = ref<UpdatePhase>('idle')
 const latest = ref<{ version: string; notes: string } | null>(null)
-/** Download progress 0..1, or null while the size is not known. */
 const progress = ref<number | null>(0)
 const error = ref<string | null>(null)
-/** An update was found at start-up and the user has not answered yet. */
 const prompt = ref(false)
 
 let handle: Update | null = null
@@ -32,10 +28,6 @@ let started = false
 
 const updating = computed(() => ['downloading', 'installing', 'restarting'].includes(phase.value))
 
-/**
- * Looks for a newer version. `silent` (the start-up check) never reports "up to date" or a
- * failure, and is the only kind that raises the prompt.
- */
 async function checkForUpdate(silent = false) {
   if (updating.value || phase.value === 'checking') return
   phase.value = 'checking'
@@ -53,18 +45,11 @@ async function checkForUpdate(silent = false) {
       phase.value = silent ? 'idle' : 'uptodate'
     }
   } catch (err) {
-    // Offline or no release yet is nothing to bother anyone about at launch.
     phase.value = silent ? 'idle' : 'error'
     error.value = silent ? null : String(err)
   }
 }
 
-/**
- * Downloads and installs the update found by the last check, then restarts the app. On Windows
- * the plugin quits the app itself as soon as the installer starts, so the restart there is the
- * installer's job (see `plugins.updater.windows` in tauri.conf.json); on macOS and Linux
- * `relaunch()` below does it. `busy` is true while a task runs: updating then would cut it short.
- */
 async function installUpdate(busy = false) {
   if (!handle || updating.value || busy) return
   prompt.value = false
@@ -93,7 +78,6 @@ async function installUpdate(busy = false) {
   }
 }
 
-/** Reads the running version and, a moment later, checks for an update once. */
 function startup() {
   if (started) return
   started = true
@@ -121,7 +105,6 @@ export function useUpdater() {
 
 export type Updater = ReturnType<typeof useUpdater>
 
-/** Test hook: forget everything, as if the app had just been opened. */
 export function resetUpdaterForTests() {
   version.value = ''
   phase.value = 'idle'

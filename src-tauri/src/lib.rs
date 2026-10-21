@@ -1,5 +1,4 @@
 mod agent;
-/// The app's version: `package.json`'s, the same number Settings shows (see `build.rs`).
 pub const VERSION: &str = env!("RUNE_VERSION");
 
 mod analysis;
@@ -49,7 +48,6 @@ use tauri_plugin_global_shortcut::ShortcutState;
 use events::{AgentState, AppState};
 use hotkeys::Hotkeys;
 
-/// Entry point of the `rune-studio-cli` command (see `bridge::cli`). Returns the exit code.
 #[cfg(feature = "agent-bridge")]
 pub fn cli_main() -> i32 {
     bridge::cli::run()
@@ -63,8 +61,6 @@ pub fn run() {
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
-        // First, as the plugin requires: a second launch hands over to this process and exits,
-        // so the pill opens here instead of a second app fighting over the hotkeys and the door.
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             window::summon(app)
         }));
@@ -89,7 +85,6 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
-            // A pointer left changed by an earlier run that did not shut down cleanly.
             cursor::reset();
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -99,9 +94,7 @@ pub fn run() {
                 )?;
             }
 
-            // Before anything can look or listen: see `archive` for why this has no off switch.
             let _ = archive::init(app.handle());
-            // The flight recorder. Unlike the archive it never fails a task: without a database it records nothing.
             let trace = match app.path().app_data_dir() {
                 Ok(dir) => trace::Recorder::start(&trace::db_path(&dir)),
                 Err(err) => {
@@ -112,7 +105,6 @@ pub fn run() {
 
             let loaded = settings::load(app.handle());
             let hotkeys = Hotkeys::from_settings(&loaded);
-            // Retention is opt-in: with the default of 0 days nothing is ever deleted.
             let keep_days = loaded.archive_keep_days;
             let retention_trace = trace.clone();
             if keep_days > 0 {
@@ -152,8 +144,6 @@ pub fn run() {
             video::start_motion_recorder(app.handle());
             if let Some(pill) = app.get_webview_window(window::MAIN) {
                 window::protect(&pill)?;
-                // Windows clamps the configured size to its minimum window width; an explicit
-                // resize is exact.
                 window::set_mode(app.handle(), window::Mode::Ambient)?;
                 window::place_bottom_right(&pill)?;
             }
@@ -163,15 +153,11 @@ pub fn run() {
             #[cfg(all(feature = "agent-bridge", unix))]
             bridge::path_link::ensure();
 
-            // Failures are already logged; the pill stays reachable from the tray.
             let _ = hotkeys::apply(app.handle(), None, &hotkeys);
 
             let show = MenuItem::with_id(app, "show", "Show / hide", true, None::<&str>)?;
             let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
-            // Stop lives in the tray too: it works while the window is click-through and does
-            // not depend on the Stop hotkey being free.
-            let flight =
-                MenuItem::with_id(app, "artifacts", "Open Artifacts", true, None::<&str>)?;
+            let flight = MenuItem::with_id(app, "artifacts", "Open Artifacts", true, None::<&str>)?;
             let stop = MenuItem::with_id(app, "stop", "Stop", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &settings, &flight, &stop, &quit])?;
@@ -191,7 +177,6 @@ pub fn run() {
             }
             tray.build(app)?;
 
-            // The evaluation harness: only in an `eval` build, and only if both variables are set.
             #[cfg(feature = "eval")]
             eval::start(app.handle());
 

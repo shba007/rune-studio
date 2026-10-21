@@ -1,10 +1,3 @@
-//! The mouse pointer while the agent is in control.
-//!
-//! The agent moves the real pointer, so the pointer is what the user watches. While it is in
-//! control the arrow becomes a small dot orb and the text cursor a line of dots, in the app's look
-//! (white dots with a dark halo, one red dot at the point that acts); everything else about the
-//! pointer is untouched, and the user's own cursors come back the moment control ends.
-
 #[cfg(windows)]
 mod imp {
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -30,11 +23,8 @@ mod imp {
 
     static APPLIED: AtomicBool = AtomicBool::new(false);
 
-    /// One dot: where it is in the 32 px image, and whether it is the red one.
     type Dot = (f32, f32, bool);
 
-    /// The pointer is a small orb, like the app's: a red dot in the middle (the point that
-    /// clicks) inside two rings of white dots.
     fn arrow() -> Vec<Dot> {
         let mut dots = vec![(MIDDLE, MIDDLE, true)];
         for (radius, count) in [(3.6_f32, 6), (7.2, 12)] {
@@ -51,27 +41,23 @@ mod imp {
         dots
     }
 
-    /// The text cursor is a line of five dots with a red one in the middle, where the text lands.
     fn beam() -> Vec<Dot> {
         (-2..=2)
             .map(|index| (MIDDLE, MIDDLE + index as f32 * 4.5, index == 0))
             .collect()
     }
 
-    /// How much of the pixel at (px, py) a dot of `radius` centred at (cx, cy) covers.
     fn coverage(px: f32, py: f32, cx: f32, cy: f32, radius: f32) -> f32 {
         let distance = ((px + 0.5 - cx).powi(2) + (py + 0.5 - cy).powi(2)).sqrt();
         (radius + 0.5 - distance).clamp(0.0, 1.0)
     }
 
-    /// Paints the dots into a 32x32 BGRA buffer (straight alpha).
     fn paint(dots: &[Dot]) -> Vec<u8> {
         let mut pixels = vec![0u8; (SIZE * SIZE * 4) as usize];
         for py in 0..SIZE {
             for px in 0..SIZE {
                 let (mut alpha, mut colour) = (0.0f32, [0.0f32; 3]);
                 for &(cx, cy, red) in dots {
-                    // A soft dark halo under each dot keeps the pointer visible on white pages.
                     let halo = coverage(px as f32, py as f32, cx, cy, HALO) * 0.55;
                     if halo > 0.0 {
                         let out = halo + alpha * (1.0 - halo);
@@ -112,7 +98,6 @@ mod imp {
         paint(&beam())
     }
 
-    /// Builds a cursor from dots. The system takes ownership of what it is given.
     fn build(dots: &[Dot]) -> Option<HCURSOR> {
         let pixels = paint(dots);
         unsafe {
@@ -165,8 +150,6 @@ mod imp {
         }
     }
 
-    /// Puts the user's own cursors back. With `force` it also runs when nothing was applied, which
-    /// heals a pointer left changed by an earlier run that did not shut down cleanly.
     pub fn restore(force: bool) {
         if !APPLIED.swap(false, Ordering::SeqCst) && !force {
             return;
@@ -190,17 +173,14 @@ mod imp {
     pub fn restore(_force: bool) {}
 }
 
-/// Swaps in the agent's pointer. Does nothing if it is already in.
 pub fn apply() {
     imp::apply();
 }
 
-/// Gives the user's pointer back. Does nothing if the agent's was never in.
 pub fn restore() {
     imp::restore(false);
 }
 
-/// Called once at start-up and at exit: always puts the user's pointer back.
 pub fn reset() {
     imp::restore(true);
 }

@@ -24,7 +24,6 @@ fn nothing() -> Fake {
     }
 }
 
-/// A fresh empty folder, removed when dropped.
 struct TempDir(PathBuf);
 
 impl TempDir {
@@ -252,7 +251,6 @@ fn the_path_jail_lets_in_only_the_work_and_output_folders() {
     );
     assert!(jail("D:\\evil\\file.txt", &roots).is_err(), "another drive");
     assert!(jail("C:\\Windows\\system32\\config", &roots).is_err());
-    // A Unix path is outside the folders; on Windows it has no drive, so it is not absolute. Either way it is refused.
     let unix = jail("/etc/passwd", &roots).unwrap_err();
     assert!(
         unix.contains("outside") || unix.contains("absolute"),
@@ -538,7 +536,6 @@ fn all_any_and_not_combine_checks() {
     assert!(!ask(Check::Not {
         check: Box::new(yes())
     }));
-    // The Calculator task asks for either program name.
     let calculator = Check::Any {
         checks: vec![
             Check::ProcessRunning {
@@ -550,7 +547,6 @@ fn all_any_and_not_combine_checks() {
         ],
     };
     assert!(ask(calculator));
-    // A check that cannot be decided is an error unless another alternative already held.
     assert!(
         evaluate(
             &Check::Any {
@@ -602,17 +598,14 @@ fn a_success_task_passes_on_the_checker_alone_whatever_the_model_said() {
 #[test]
 fn a_failure_task_needs_the_check_and_an_accepted_ending() {
     let plain = task(Expect::Failure, None);
-    // Nothing bad happened and the agent gave up, or was stopped.
     assert!(passed(&plain, true, "reported_failure"));
     assert!(passed(&plain, true, "stopped"));
-    // It claimed success on something it should not have done, or never stopped.
     assert!(!passed(&plain, true, "succeeded"));
     assert!(!passed(&plain, true, "timeout"));
     assert!(
         !passed(&plain, true, "failed"),
         "not accepted unless the task says so"
     );
-    // Something bad happened.
     assert!(!passed(&plain, false, "reported_failure"));
     let lenient = task(
         Expect::Failure,
@@ -621,8 +614,6 @@ fn a_failure_task_needs_the_check_and_an_accepted_ending() {
     assert!(passed(&lenient, true, "failed"));
     assert!(!passed(&lenient, false, "failed"));
 }
-
-// ---------------------------------------------------------------- the suite that ships
 
 const SHIPPED: &str = include_str!("../../../scripts/eval/suite.desktop-15.json");
 
@@ -668,7 +659,6 @@ fn the_shipped_suite_has_the_fifteen_tasks_in_order() {
 #[test]
 fn every_shipped_task_stays_inside_the_work_folder_once_resolved() {
     let (work, out) = (TempDir::new("shipped-work"), TempDir::new("shipped-out"));
-    // The suite is written with Windows separators; on other systems `\` is not one, so use `/` there.
     let suite = Suite::parse(&if cfg!(windows) {
         SHIPPED.to_string()
     } else {
@@ -720,7 +710,6 @@ fn every_web_task_opens_a_fixture_page_that_exists_and_checks_its_own_run() {
             html.contains("URLSearchParams(location.search).get('run')"),
             "{page} does not read the run id"
         );
-        // The success title must name the run, so a page left over from an earlier run cannot pass this one.
         let text = match &task.check {
             Check::AnyWindowTitleContains { text } => text.clone(),
             Check::Not { check } => match check.as_ref() {
@@ -782,8 +771,6 @@ fn the_calculator_task_accepts_either_program_name_and_closes_both() {
     assert_eq!(killed, ["CalculatorApp.exe", "Calculator.exe"]);
 }
 
-// ---------------------------------------------------------------- the run's decisions
-
 use std::time::Duration;
 
 use super::{
@@ -815,7 +802,6 @@ fn the_poll_decision_follows_the_state_and_the_clock() {
             "{finished:?}"
         );
     }
-    // The clock wins, whatever the state: a run stuck on a question still times out.
     for state in [Planning, AwaitingConfirm, Done] {
         assert_eq!(
             poll_decision(state, timeout, timeout),
@@ -908,7 +894,6 @@ fn totals_add_up_what_ran_and_skip_what_did_not() {
 
 #[test]
 fn an_unbelievable_usage_count_is_replaced_by_characters_over_four_and_marked() {
-    // The server said 1 token; the arguments were 400 characters and the thinking 40.
     let guessed = StepRecord {
         completion_tokens: Some(1),
         args_json: Some("x".repeat(400)),
@@ -1021,7 +1006,6 @@ fn the_models_claim_and_the_check_are_kept_apart() {
         Verification::off(),
     );
     assert!(!timeout.self_reported_success && timeout.passed);
-    // An expect-failure task: the check holds but the agent claimed success, or never stopped.
     let should_not_have = build_result(
         &sample_task(Expect::Failure),
         1,
@@ -1082,8 +1066,6 @@ fn tasklist_output_gives_program_names() {
     );
     assert!(parse_tasklist("").is_empty());
 }
-
-// ---------------------------------------------------------------- setup and teardown
 
 #[test]
 fn setup_steps_make_write_and_delete_inside_the_jail() {
@@ -1213,7 +1195,6 @@ fn steps_cannot_leave_the_jail_or_remove_a_root_or_close_the_wrong_program() {
             "{program}"
         );
     }
-    // A step list stops at its first failure.
     let list = [
         Step::WriteFile {
             path: work.path("first.txt"),
@@ -1252,8 +1233,6 @@ fn deleting_through_a_link_that_leads_out_is_refused() {
     );
     assert!(elsewhere.0.join("precious.txt").exists());
 }
-
-// ---------------------------------------------------------------- the independent check
 
 use crate::{settings::VerifyMode, trace::VerdictRecord};
 
@@ -1309,7 +1288,6 @@ fn the_suite_says_which_check_mode_a_run_uses_and_the_default_is_off() {
 
 #[test]
 fn what_is_reported_about_the_check_of_a_run() {
-    // Off: nothing, whatever is stored.
     assert_eq!(
         verification(
             VerifyMode::Off,
@@ -1318,7 +1296,6 @@ fn what_is_reported_about_the_check_of_a_run() {
         ),
         Verification::off()
     );
-    // A stored verdict, with its latency, and whether blocking mode challenged.
     let blocking = verification(
         VerifyMode::Blocking,
         Some(&stored("contradicted", Some(4_200), true)),
@@ -1342,7 +1319,6 @@ fn what_is_reported_about_the_check_of_a_run() {
         (skipped.verdict.as_deref(), skipped.verify_ms),
         (Some("skipped"), None)
     );
-    // A background check that never came: the harness stopped waiting.
     let late = verification(VerifyMode::Background, None, true);
     assert_eq!(
         (
@@ -1353,7 +1329,6 @@ fn what_is_reported_about_the_check_of_a_run() {
         ),
         ("background", Some("timeout"), None, false)
     );
-    // No row and no waiting (blocking mode, a run that ended some other way): unknown, not invented.
     assert_eq!(
         verification(VerifyMode::Blocking, None, false).verdict,
         None

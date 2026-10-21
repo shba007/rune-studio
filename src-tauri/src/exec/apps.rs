@@ -1,19 +1,12 @@
-//! Launching applications by name.
-
 use super::ExecError;
 
-/// How one name is opened.
 #[cfg_attr(not(windows), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Target {
-    /// `ShellExecute` with this one argument (a program, a file, a folder, a protocol such as `ms-settings:`).
     Shell(String),
-    /// A local page: handed to the URL handler whole, because `ShellExecute` drops the query string of a
-    /// `file:` address (`file:///page.html?run=3` opened as `page.html`).
     FileUrl(String),
 }
 
-/// Friendly names the model uses that Windows does not resolve by itself.
 #[cfg_attr(not(windows), allow(dead_code))]
 const ALIASES: [(&str, &str); 12] = [
     ("calculator", "calc"),
@@ -30,10 +23,6 @@ const ALIASES: [(&str, &str); 12] = [
     ("registry editor", "regedit"),
 ];
 
-/// What to try for a name, decided without touching the system. A bare program name (no folder, no
-/// extension, no protocol) is opened as `name.exe`: `ShellExecute` would otherwise take an
-/// extensionless **file** of that name from the PATH (Git's `usr\bin\notepad`) and open it in
-/// Notepad. An extensionless file is never treated as an app.
 #[cfg_attr(not(windows), allow(dead_code))]
 pub fn plan(name: &str) -> Vec<Target> {
     let name = name.trim();
@@ -52,7 +41,6 @@ pub fn plan(name: &str) -> Vec<Target> {
     }
 }
 
-/// The value on a `reg query` line: `    ProgId    REG_SZ    BraveHTML` gives `BraveHTML`.
 #[cfg_attr(not(windows), allow(dead_code))]
 pub fn reg_value(output: &str) -> Option<String> {
     output.lines().find_map(|line| {
@@ -62,8 +50,6 @@ pub fn reg_value(output: &str) -> Option<String> {
     })
 }
 
-/// The program in a registered open command: `"C:\Brave\brave.exe" --single-argument %1` gives
-/// `C:\Brave\brave.exe`.
 #[cfg_attr(not(windows), allow(dead_code))]
 pub fn exe_of_command(command: &str) -> Option<String> {
     let command = command.trim();
@@ -78,7 +64,6 @@ pub fn exe_of_command(command: &str) -> Option<String> {
     Some(command[..end].to_string())
 }
 
-/// The default web browser's program, read from the registry with `reg query` (no extra crate).
 #[cfg(windows)]
 fn default_browser() -> Option<std::path::PathBuf> {
     use std::os::windows::process::CommandExt;
@@ -106,9 +91,6 @@ fn default_browser() -> Option<std::path::PathBuf> {
     exe.is_file().then_some(exe)
 }
 
-/// Opens an application, file, folder or web address the way Win+R would, but without a shell:
-/// the name is one argument to `ShellExecute` (or to the URL handler), so nothing in it can chain a
-/// second command.
 #[cfg(windows)]
 pub fn open(name: &str) -> Result<(), ExecError> {
     use windows::{
@@ -125,9 +107,6 @@ pub fn open(name: &str) -> Result<(), ExecError> {
         match target {
             Target::FileUrl(url) => {
                 use std::os::windows::process::CommandExt;
-                // Even the URL handler turns `file:///page.html?run=3` into the path `page.html`. A page that
-                // needs its query (or fragment) is handed to the default browser's program instead, which
-                // keeps the address as it is. Without a browser or on failure, the handler is the fallback.
                 if url.contains(['?', '#'])
                     && let Some(browser) = default_browser()
                     && std::process::Command::new(browser)
@@ -137,7 +116,6 @@ pub fn open(name: &str) -> Result<(), ExecError> {
                 {
                     return Ok(());
                 }
-                // CREATE_NO_WINDOW: rundll32 has no window of its own. The address is one argument.
                 std::process::Command::new("rundll32.exe")
                     .arg("url.dll,FileProtocolHandler")
                     .arg(&url)
@@ -147,7 +125,6 @@ pub fn open(name: &str) -> Result<(), ExecError> {
                 return Ok(());
             }
             Target::Shell(argument) => {
-                // SAFETY: all strings outlive the call; a null parameters/directory pointer is allowed.
                 let result = unsafe {
                     ShellExecuteW(
                         None,
@@ -158,7 +135,6 @@ pub fn open(name: &str) -> Result<(), ExecError> {
                         SW_SHOWNORMAL,
                     )
                 };
-                // ShellExecute reports failure with a value of 32 or less.
                 if result.0 as isize > 32 {
                     return Ok(());
                 }

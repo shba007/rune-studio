@@ -1,16 +1,7 @@
-//! Who is allowed to drive the PC right now.
-//!
-//! One external agent at a time holds the *lease*. It ends when the agent finishes, when the
-//! user presses Stop (which also *revokes*: the agent may not simply start again), or after the
-//! agent has been silent for [`IDLE_LIMIT`]. The logic is pure, with the clock passed in, so it
-//! can be tested without waiting.
-//!
-//! Without the `agent-bridge` feature nothing can begin a lease, so most of this is unused.
 #![cfg_attr(not(feature = "agent-bridge"), allow(dead_code))]
 
 use std::time::{Duration, Instant};
 
-/// A lease with no tool call for this long is over, so a crashed agent cannot hold the PC forever.
 pub const IDLE_LIMIT: Duration = Duration::from_secs(300);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -26,7 +17,6 @@ pub enum LeaseError {
 }
 
 impl LeaseError {
-    /// The short code an agent sees (and the guide documents).
     pub fn code(self) -> &'static str {
         match self {
             LeaseError::Busy => "busy",
@@ -41,9 +31,7 @@ impl LeaseError {
 pub struct Lease {
     pub agent: String,
     pub task: String,
-    /// Actions taken so far.
     pub step: u32,
-    /// The goals the agent set for itself with `rune_plan`, and the one it is on.
     pub plan: Vec<String>,
     pub current_goal: usize,
     last_call: Instant,
@@ -52,7 +40,6 @@ pub struct Lease {
 #[derive(Debug, Default)]
 pub struct LeaseBook {
     current: Option<Lease>,
-    /// Set by Stop while an agent held the lease. Cleared only by the user (see `rearm`).
     revoked: bool,
 }
 
@@ -61,7 +48,6 @@ impl LeaseBook {
         self.current.is_some()
     }
 
-    /// Whether the user's Stop is still locking agents out.
     pub fn is_revoked(&self) -> bool {
         self.revoked
     }
@@ -78,14 +64,11 @@ impl LeaseBook {
         self.current.as_mut()
     }
 
-    /// Takes control for `agent`. Fails while the user's Stop is still in force or someone holds it.
     pub fn begin(&mut self, agent: &str, task: &str, now: Instant) -> Result<(), LeaseError> {
         if self.revoked {
             return Err(LeaseError::StoppedByUser);
         }
-        if self.expire_if_idle(now) {
-            // The previous holder timed out; the new agent may go ahead.
-        }
+        if self.expire_if_idle(now) {}
         if self.current.is_some() {
             return Err(LeaseError::Busy);
         }
@@ -100,7 +83,6 @@ impl LeaseBook {
         Ok(())
     }
 
-    /// Marks a call by the holder and returns the lease, or says why it may not go on.
     pub fn touch(&mut self, now: Instant) -> Result<&mut Lease, LeaseError> {
         if self.revoked {
             return Err(LeaseError::StoppedByUser);
@@ -113,25 +95,20 @@ impl LeaseBook {
         Ok(lease)
     }
 
-    /// Ends the lease after a finished task.
     pub fn end(&mut self) {
         self.current = None;
     }
 
-    /// The user pressed Stop. If an agent held the lease it loses it and may not start again
-    /// until the user re-arms.
     pub fn revoke(&mut self) {
         if self.current.take().is_some() {
             self.revoked = true;
         }
     }
 
-    /// The user turned the External agent switch back on: agents may begin again.
     pub fn rearm(&mut self) {
         self.revoked = false;
     }
 
-    /// Ends the lease if the holder has been silent too long. Returns whether it did.
     pub fn expire_if_idle(&mut self, now: Instant) -> bool {
         let idle = self
             .current
@@ -201,7 +178,6 @@ mod tests {
         );
         let late = start + IDLE_LIMIT - Duration::from_secs(1) + IDLE_LIMIT;
         assert_eq!(book.touch(late).err(), Some(LeaseError::Expired));
-        // And the next agent can take over.
         assert_eq!(book.begin("next", "task", late), Ok(()));
     }
 

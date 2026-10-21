@@ -1,7 +1,3 @@
-//! The review offer: when a session ends the pill offers to open it in the Flight Player. One watcher
-//! looks at the newest finished run every couple of seconds, so every way a run can end (own agent,
-//! outside agent, Stop, the idle limit) is covered by one mechanism.
-
 use std::{path::Path, time::Duration};
 
 use serde::Serialize;
@@ -17,21 +13,17 @@ use crate::{
 pub const OFFER: &str = "review_offer";
 const EVERY: Duration = Duration::from_secs(2);
 
-/// What the review card shows.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Offer {
     pub run_id: String,
     pub task: String,
-    /// `succeeded`, `failed` or `stopped` (every unsuccessful ending that is not a stop is a failure).
     pub outcome: String,
     pub steps: i64,
     pub duration_secs: i64,
-    /// `Rune` or an outside agent's name.
     pub source: String,
 }
 
-/// How the card words an ending: the trace's labels folded into three.
 pub fn outcome_word(label: &str) -> &'static str {
     match label {
         "succeeded" => "succeeded",
@@ -40,7 +32,6 @@ pub fn outcome_word(label: &str) -> &'static str {
     }
 }
 
-/// Whether to offer a review: the setting allows it, the run did something, and nothing else is going on.
 pub fn should_offer(setting: OfferReview, outcome: &str, steps: i64, busy: bool) -> bool {
     if busy || steps <= 0 {
         return false;
@@ -52,7 +43,6 @@ pub fn should_offer(setting: OfferReview, outcome: &str, steps: i64, busy: bool)
     }
 }
 
-/// The offer for a finished run, or `None` when its row is not finished or has nothing to show.
 pub fn offer_for(detail: &store::RunDetail) -> Option<Offer> {
     detail.run.ended_utc.as_ref()?;
     let started = trace::parse_iso(&detail.run.info.started_utc)?;
@@ -70,7 +60,6 @@ pub fn offer_for(detail: &store::RunDetail) -> Option<Offer> {
     })
 }
 
-/// Starts the watcher.
 pub fn start_watcher(app: &AppHandle) {
     let app = app.clone();
     let since = trace::now_utc();

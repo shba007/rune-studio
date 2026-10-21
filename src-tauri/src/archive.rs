@@ -1,36 +1,3 @@
-//! The record of what the agent saw and heard: every screenshot it looks at, every recording of
-//! the user's voice, and (when screen recording exists) every video, kept in the user's Documents
-//! folder under `Rune Studio`.
-//!
-//! **One folder per session.** A session is one task run: a task the built-in agent carries out, or
-//! one outside agent's turn at the wheel (`rune_begin` to `rune_done`). Everything captured while it
-//! runs goes inside it, split by type, with a small manifest, so one task's evidence (and what is
-//! learned from it later) is one folder:
-//!
-//! ```text
-//! Documents/Rune Studio/sessions/2026-10-19/<hhmmss>-<n>-<task-slug>/session.json
-//! Documents/Rune Studio/sessions/2026-10-19/<hhmmss>-<n>-<task-slug>/screenshots/<time>-<n>-screen.jpg
-//! Documents/Rune Studio/sessions/2026-10-19/<hhmmss>-<n>-<task-slug>/voice/<time>-<n>-utterance.wav
-//! Documents/Rune Studio/sessions/2026-10-19/<hhmmss>-<n>-<task-slug>/recordings/...
-//! ```
-//!
-//! Anything saved while no session is open (a debug capture, an outside agent looking before it
-//! has begun, speech that is not a command, a recording from before a spoken task started and was
-//! not adopted) keeps the older layout, by type and then by day:
-//!
-//! ```text
-//! Documents/Rune Studio/screenshots/2026-10-19/<time>-<n>-screen.jpg
-//! Documents/Rune Studio/voice/2026-10-19/<time>-<n>-utterance.wav
-//! Documents/Rune Studio/recordings/2026-10-19/<time>-<n>-<label>.<ext>
-//! ```
-//!
-//! Documents is wherever the OS keeps it (the Windows Known Folder, `~/Documents` or the XDG
-//! documents directory elsewhere). There is deliberately no setting, tool or command to turn this
-//! off or to point it elsewhere, and it fails closed: the capture and voice code store first and
-//! only hand the data on when the save worked, so if the folder cannot be written the agent gets
-//! no screenshot and no utterance is acted on. Dates and times in names are UTC. Only one session
-//! is open at a time; the manifest is a convenience and failing to write it is only logged.
-
 use std::{
     fs,
     io::Write,
@@ -45,7 +12,6 @@ use std::{
 use serde_json::{Value, json};
 use tauri::{AppHandle, Manager};
 
-/// The folder inside Documents that holds everything.
 pub const FOLDER: &str = "Rune Studio";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,15 +44,10 @@ static COUNTER: AtomicU64 = AtomicU64::new(0);
 static SESSION_COUNTER: AtomicU64 = AtomicU64::new(0);
 static SESSION: Mutex<Option<Session>> = Mutex::new(None);
 
-/// The folder (inside the record) that holds one folder per session.
 const SESSIONS_FOLDER: &str = "sessions";
-/// The manifest inside a session's folder.
 const MANIFEST: &str = "session.json";
-/// Longest task slug in a session's folder name.
 const SLUG_MAX: usize = 32;
 
-/// Finds (and creates) the record folders. Call once at startup. A failure is remembered, not
-/// fatal to the app: every later save then fails, which is what keeps the agent blind.
 pub fn init(app: &AppHandle) -> Result<PathBuf, String> {
     let result = app
         .path()
@@ -120,7 +81,6 @@ fn root() -> Result<&'static Path, ArchiveError> {
     }
 }
 
-/// (year, month, day) for a count of days since 1970-01-01 (Howard Hinnant's civil_from_days).
 fn civil_from_days(days: i64) -> (i64, u32, u32) {
     let z = days + 719_468;
     let era = z.div_euclid(146_097);
@@ -139,7 +99,6 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
     (year, month, day)
 }
 
-/// `("2026-10-19", "075912")` for a Unix time in seconds.
 fn stamp(seconds: u64) -> (String, String) {
     let (year, month, day) = civil_from_days((seconds / 86_400) as i64);
     let in_day = seconds % 86_400;
@@ -154,10 +113,8 @@ fn stamp(seconds: u64) -> (String, String) {
     )
 }
 
-/// One open session: a task run's folder.
 #[derive(Debug, Clone)]
 struct Session {
-    /// The folder's name: `<hhmmss>-<n>-<task-slug>`.
     id: String,
     dir: PathBuf,
     task: String,
@@ -180,13 +137,11 @@ fn write_error(err: impl std::fmt::Display) -> ArchiveError {
     ArchiveError::Write(err.to_string())
 }
 
-/// `2026-10-19T07:59:12Z` for a Unix time in seconds.
 pub(crate) fn iso(seconds: u64) -> String {
     let (date, time) = stamp(seconds);
     format!("{date}T{}:{}:{}Z", &time[0..2], &time[2..4], &time[4..6])
 }
 
-/// A short, file-name-safe form of the task, for the session's folder name.
 fn slug(task: &str) -> String {
     let mut out = String::new();
     for c in task.chars() {
@@ -208,7 +163,6 @@ fn slug(task: &str) -> String {
     }
 }
 
-/// What the manifest says about a session; `ended` is `(outcome, summary, time)` once it is over.
 fn manifest(
     session: &Session,
     ended: Option<(&str, &str, u64)>,
@@ -256,7 +210,6 @@ fn count_files(dir: &Path) -> usize {
         .unwrap_or(0)
 }
 
-/// Makes a new session folder under `base` (never reusing one) and writes its first manifest.
 fn begin_in(base: &Path, task: &str, source: &str, seconds: u64) -> Result<Session, ArchiveError> {
     let (date, time) = stamp(seconds);
     let parent = base.join(SESSIONS_FOLDER).join(date);
@@ -285,21 +238,15 @@ fn begin_in(base: &Path, task: &str, source: &str, seconds: u64) -> Result<Sessi
     }
 }
 
-/// Writes the final manifest of a session (outcome, summary, how many files of each kind).
 fn end_in(session: &Session, outcome: &str, summary: &str, seconds: u64) -> std::io::Result<()> {
     let files = [Kind::Screenshots, Kind::Voice, Kind::Recordings]
         .map(|kind| count_files(&session.dir.join(kind.folder())));
     write_manifest(session, Some((outcome, summary, seconds)), Some(files))
 }
 
-/// Opens a session for a task run: everything saved from now on goes in its folder, until it ends.
-/// `source` is who runs the task ("built-in", or an outside agent's name). Returns the session's id,
-/// to pass to [`end_session`]. A session still open is ended as "replaced". If the folder cannot be
-/// made, saving fails anyway (the archive fails closed), so callers may just log the error.
 pub fn begin_session(task: &str, source: &str) -> Result<String, ArchiveError> {
     let base = match root() {
         Ok(root) => root,
-        // Unit tests have no app; production builds never take this branch.
         Err(_) if cfg!(test) => return Ok(String::new()),
         Err(err) => return Err(err),
     };
@@ -314,9 +261,6 @@ pub fn begin_session(task: &str, source: &str) -> Result<String, ArchiveError> {
     Ok(id)
 }
 
-/// Ends the open session. With `Some(id)` it only ends that session, so a task that finishes late
-/// cannot close the next one; with `None` it ends whichever is open (Stop). Does nothing when none
-/// is open.
 pub fn end_session(id: Option<&str>, outcome: &str, summary: &str) {
     let taken = {
         let mut open = current();
@@ -332,12 +276,10 @@ pub fn end_session(id: Option<&str>, outcome: &str, summary: &str) {
     }
 }
 
-/// The folder of the session that is open now, whatever its id.
 pub fn open_session_dir() -> Option<PathBuf> {
     current().as_ref().map(|session| session.dir.clone())
 }
 
-/// The folder of the open session with this id, if it is the one open.
 pub fn session_dir(id: &str) -> Option<PathBuf> {
     current()
         .as_ref()
@@ -345,7 +287,6 @@ pub fn session_dir(id: &str) -> Option<PathBuf> {
         .map(|session| session.dir.clone())
 }
 
-/// Days since 1970-01-01 for a calendar date (Howard Hinnant's days_from_civil).
 fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
     let year = if month <= 2 { year - 1 } else { year };
     let era = year.div_euclid(400);
@@ -356,7 +297,6 @@ fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
     era * 146_097 + day_of_era - 719_468
 }
 
-/// Days since 1970-01-01 for a name of exactly the form `YYYY-MM-DD` that is a real date.
 fn day_number(name: &str) -> Option<i64> {
     let bytes = name.as_bytes();
     if bytes.len() != 10
@@ -375,13 +315,9 @@ fn day_number(name: &str) -> Option<i64> {
         name[8..10].parse::<u32>().ok()?,
     );
     let days = days_from_civil(year, month, day);
-    // 2026-02-30 and the like come back as another date.
     (civil_from_days(days) == (year, month, day)).then_some(days)
 }
 
-/// Which of the date-named folders in `names` are older than `keep_days` days before `today`
-/// (`YYYY-MM-DD`). A folder from exactly `keep_days` days ago is kept. 0 keeps everything, and
-/// names that are not dates are never listed.
 pub fn expired_dates(names: &[String], today: &str, keep_days: u32) -> Vec<String> {
     let Some(today) = day_number(today).filter(|_| keep_days > 0) else {
         return Vec::new();
@@ -394,15 +330,11 @@ pub fn expired_dates(names: &[String], today: &str, keep_days: u32) -> Vec<Strin
         .collect()
 }
 
-/// Deletes the session folders of `base/sessions/<date>/` for every expired date, and nothing
-/// else. Returns the paths of the session folders that were removed (as the trace database
-/// records them), so their rows can go too.
 fn purge_in(base: &Path, today: &str, keep_days: u32) -> Vec<String> {
     let sessions = base.join(SESSIONS_FOLDER);
     let Ok(entries) = fs::read_dir(&sessions) else {
         return Vec::new();
     };
-    // Real folders only: a link in here is not ours to follow.
     let names: Vec<String> = entries
         .flatten()
         .filter(|entry| {
@@ -442,8 +374,6 @@ fn purge_in(base: &Path, today: &str, keep_days: u32) -> Vec<String> {
     removed
 }
 
-/// Applies the retention setting once: removes old session folders. Returns the removed folders'
-/// paths. Does nothing when `keep_days` is 0 (the default) or the record folder is not set up.
 pub fn purge_expired(keep_days: u32) -> Vec<String> {
     if keep_days == 0 {
         return Vec::new();
@@ -454,9 +384,6 @@ pub fn purge_expired(keep_days: u32) -> Vec<String> {
     }
 }
 
-/// Moves a voice file saved just before a task started (the words that started it) into the open
-/// session's `voice/` folder. Returns the new path. If no session is open or the move fails, the
-/// file stays where it is.
 pub fn adopt(path: &Path) -> Option<PathBuf> {
     if path.as_os_str().is_empty() {
         return None;
@@ -473,8 +400,6 @@ pub fn adopt(path: &Path) -> Option<PathBuf> {
     }
 }
 
-/// The folder a new file goes in: the open session's folder for its kind, else the day's folder
-/// for that kind.
 fn dir_in(base: &Path, session: Option<&Session>, kind: Kind, seconds: u64) -> PathBuf {
     match session {
         Some(session) => session.dir.join(kind.folder()),
@@ -507,13 +432,9 @@ fn path_in(
     Ok(dir.join(format!("{time}-{number:05}-{label}.{extension}")))
 }
 
-/// Where a new file of this kind goes (inside the open session, else the day's folder; the folder
-/// is created). Names are unique, so nothing is ever overwritten. A recorder that streams to disk
-/// uses this directly.
 pub fn path_for(kind: Kind, label: &str, extension: &str) -> Result<PathBuf, ArchiveError> {
     let base = match root() {
         Ok(root) => root,
-        // Unit tests have no app; production builds never take this branch.
         Err(_) if cfg!(test) => return Ok(PathBuf::new()),
         Err(err) => return Err(err),
     };
@@ -521,7 +442,6 @@ pub fn path_for(kind: Kind, label: &str, extension: &str) -> Result<PathBuf, Arc
     path_in(base, session.as_ref(), kind, label, extension, now())
 }
 
-/// Stores one file. `Err` means it was NOT stored, and the caller must not use the data.
 pub fn save(
     kind: Kind,
     label: &str,
@@ -550,7 +470,7 @@ mod tests {
     #[test]
     fn dates_are_right_across_leap_days_and_the_epoch() {
         assert_eq!(stamp(0), ("1970-01-01".into(), "000000".into()));
-        assert_eq!(stamp(951_782_400), ("2000-02-29".into(), "000000".into())); // a leap day
+        assert_eq!(stamp(951_782_400), ("2000-02-29".into(), "000000".into()));
         assert_eq!(stamp(1_792_396_752), ("2026-10-19".into(), "075912".into()));
     }
 
@@ -729,13 +649,11 @@ mod tests {
     #[test]
     fn a_folder_exactly_keep_days_old_is_kept_and_one_day_older_goes() {
         let all = names(&["2026-10-11", "2026-10-12", "2026-10-13", "2026-10-19"]);
-        // Today is the 19th; 7 days back is the 12th: the 12th stays, the 11th goes.
         assert_eq!(expired_dates(&all, "2026-10-19", 7), ["2026-10-11"]);
         assert_eq!(
             expired_dates(&all, "2026-10-19", 1),
             ["2026-10-11", "2026-10-12", "2026-10-13"]
         );
-        // Across a month and a year boundary, and a leap day.
         assert_eq!(
             expired_dates(
                 &names(&["2025-12-30", "2025-12-31", "2026-01-01"]),
@@ -796,7 +714,6 @@ mod tests {
 
         let mut removed = purge_in(&base, "2026-10-19", 30);
         removed.sort();
-        // Built from components, like the code under test, so the separators agree on Windows too.
         let expected: Vec<String> = ["120000-001-old", "130000-002-old-too"]
             .iter()
             .map(|dir| {

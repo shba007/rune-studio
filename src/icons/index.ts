@@ -1,12 +1,3 @@
-/**
- * The only place an icon set is named. The UI asks for a meaning ("mic", "send") through
- * `<AppIcon>` and never imports an icon directly (a lint rule enforces this), so changing the
- * family or style is a one-file change.
- *
- * Style rule: filled (Phosphor `-fill`) wherever the shape has a body; glyph-only shapes (x, minus, arrows, caret, sliders, scan) use `-bold`, because their fill is a box. State is carried by the container and the
- * colour (a dark circle, red while listening), never by swapping between outline and filled.
- * Hand-made icons live in src/assets/icons and are registered here as `~icons/custom/<name>`.
- */
 import IconArrowClockwise from '~icons/ph/arrow-clockwise-bold'
 import IconArrowLeft from '~icons/ph/arrow-left-bold'
 import IconAppWindow from '~icons/ph/app-window-fill'

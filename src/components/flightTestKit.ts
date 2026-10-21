@@ -1,6 +1,5 @@
 import type { FlightCall, FlightEvent, FlightHeader, FlightStep } from '@/config/flight'
 
-/** Shared fixtures for the Flight Player tests. */
 export const START = '2026-10-20T10:00:00Z'
 
 export function makeStep(n: number, seconds: number, extra: Partial<FlightStep> = {}): FlightStep {
@@ -79,7 +78,6 @@ export function makeCall(id: number, step: number, extra: Partial<FlightCall> = 
 
 export const noEvents: FlightEvent[] = []
 
-/** jsdom has no layout: this reports a fixed size to anything that observes an element. */
 export function stubResizeObserver(width = 800, height = 400) {
   class Fake {
     callback: ResizeObserverCallback
@@ -105,7 +103,6 @@ export function stubResizeObserver(width = 800, height = 400) {
   }
   globalThis.ResizeObserver = Fake as unknown as typeof ResizeObserver
   window.ResizeObserver = Fake as unknown as typeof ResizeObserver
-  // VueUse also reads the element's own size once it is mounted.
   Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
     configurable: true,
     get: () => width,

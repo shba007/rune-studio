@@ -1,7 +1,3 @@
-//! What the analysis cards and the screen markers show: the latest screenshot (kept for follow-up
-//! questions, never sent to the webview), the question, where the call is and the parsed result. The rules (when an analysis may start, which status may follow which) are pure
-//! functions; nothing here touches Tauri.
-
 use std::sync::Arc;
 
 use serde::Serialize;
@@ -9,20 +5,16 @@ use serde::Serialize;
 use super::report::{Finding, Status};
 use crate::{exec::CancelToken, model::coords::Monitor, safety::foreground::WindowId};
 
-/// The screenshot an analysis is about, kept so a follow-up question can use it again.
 #[derive(Debug, Clone)]
 pub struct StoredFrame {
     pub jpeg: Arc<Vec<u8>>,
     pub monitor: Monitor,
-    /// The small grey picture taken with it, to tell later whether the screen has moved (`stale`).
     pub signature: Vec<u8>,
-    /// The foreground window then (`None`: Rune's own, or unknown).
     pub front: Option<WindowId>,
 }
 
 pub struct AnalysisState {
     pub status: Status,
-    /// The archive session id of the analysis in flight or finished.
     pub id: String,
     pub question: String,
     pub answer: String,
@@ -32,14 +24,9 @@ pub struct AnalysisState {
     pub error: Option<String>,
     pub created_utc: String,
     pub frame: Option<StoredFrame>,
-    /// The screen changed after the capture: the boxes are gone and never come back for this analysis.
     pub stale: bool,
-    /// How many boxes the quality guard dropped (`analysis::boxes`).
     pub boxes_rejected: u32,
-    /// The finding picked in the cards (its marker is full strength on the screen); the cards and the
-    /// overlay are separate pages, so the choice lives here.
     pub selected: Option<u8>,
-    /// Cancels the call in flight (Stop, Cancel, closing the cards).
     pub cancel: CancelToken,
 }
 
@@ -64,7 +51,6 @@ impl Default for AnalysisState {
     }
 }
 
-/// What the UI gets: everything it needs to draw. The screenshot itself never goes to the webview.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
@@ -77,12 +63,9 @@ pub struct Snapshot {
     pub latency_ms: u64,
     pub error: Option<String>,
     pub created_utc: String,
-    /// The monitor that was captured (its box coordinates are relative to it); `None` before a capture.
     pub monitor: Option<Monitor>,
-    /// The screen changed since the capture: no boxes are drawn.
     pub stale: bool,
     pub boxes_rejected: u32,
-    /// The picked finding's number.
     pub selected: Option<u8>,
 }
 
@@ -105,8 +88,6 @@ impl AnalysisState {
         }
     }
 
-    /// Closes the cards: whatever runs is cancelled and the findings, and with them the boxes on the
-    /// screen, are cleared. The captured frame stays, so a follow-up question still works.
     pub fn close(&mut self) {
         self.cancel.cancel();
         self.status = Status::Idle;
@@ -118,8 +99,6 @@ impl AnalysisState {
         self.selected = None;
     }
 
-    /// Starts an analysis: clears the last result and gives the new call its own cancel token.
-    /// `fresh` takes a new capture first; otherwise the stored frame is asked about again.
     pub fn begin(&mut self, question: &str, fresh: bool) {
         self.status = if fresh {
             Status::Capturing
@@ -141,18 +120,14 @@ impl AnalysisState {
     }
 }
 
-/// Whether the screen overlay should be up for an analysis: while it works, and while its boxes are on
-/// the screen (a finished analysis with at least one box that has not gone stale).
 pub fn wants_overlay(status: Status, boxes_on_screen: bool, stale: bool) -> bool {
     in_flight(status) || (status == Status::Done && boxes_on_screen && !stale)
 }
 
-/// Whether an analysis is under way (the screen is being captured or the model is answering).
 pub fn in_flight(status: Status) -> bool {
     matches!(status, Status::Capturing | Status::Asking)
 }
 
-/// Why an analysis may not start now, if it may not. The text is shown to the user as it is.
 pub fn refusal(status: Status, task_running: bool, outside_agent: bool) -> Option<&'static str> {
     if task_running {
         Some("A task is running. Wait for it to finish, or stop it, before analysing the screen.")
@@ -165,9 +140,6 @@ pub fn refusal(status: Status, task_running: bool, outside_agent: bool) -> Optio
     }
 }
 
-/// Whether `to` may follow `from`:
-/// `idle -> capturing -> asking -> done | error | cancelled`, and a finished analysis may be asked
-/// again (`asking`) or replaced by a new capture.
 pub fn may_follow(from: Status, to: Status) -> bool {
     use Status::*;
     matches!(

@@ -1,22 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-/**
- * The orb's outer ring, as the progress of the task: one continuous blue arc per goal, with a small
- * gap between them. Finished goals are solid, the current one pulses, the rest are dim, and a small
- * arrow marks the goal being worked on. While the plan is still being written the arrow circles an
- * empty ring.
- */
 const props = defineProps<{
-  /** Number of goals in the plan (0 while there is none). */
   goals: number
-  /** Index of the goal being worked on; equal to `goals` when everything is done. */
   current: number
   finished: boolean
-  /** A task is running, so a ring with no plan yet means "planning". */
   running: boolean
   failed: boolean
-  /** An outside agent's colour for the lit arcs (on the dark rim); null is Rune's blue. */
   accent?: string | null
 }>()
 
@@ -27,7 +17,6 @@ const GAP_DEGREES = 14
 
 type Status = 'done' | 'current' | 'pending'
 
-/** Where a point at `degrees` (0 = top, clockwise) on the ring is. */
 function point(degrees: number): [number, number] {
   const radians = ((degrees - 90) * Math.PI) / 180
   return [CENTER + RADIUS * Math.cos(radians), CENTER + RADIUS * Math.sin(radians)]
@@ -45,7 +34,6 @@ const segments = computed(() => {
   const gap = n === 1 ? 0 : GAP_DEGREES
   return Array.from({ length: n }, (_, index) => {
     const from = index * slice + gap / 2
-    // A full circle cannot be one arc, so a single goal stops just short of closing.
     const to = from + slice - gap - (n === 1 ? 0.01 : 0)
     const status: Status =
       props.finished || index < props.current
@@ -78,7 +66,6 @@ const visible = computed(() => props.goals > 0 || props.running)
         :class="[segment.status, { failed: failed && segment.status === 'current' }]"
       />
     </template>
-    <!-- Planning: a dim ring; the arrow below circles it. -->
     <path v-else :d="arc(0, 359.9)" fill="none" class="dots pending planning-ring" />
   </svg>
 </template>
@@ -92,7 +79,6 @@ const visible = computed(() => props.goals > 0 || props.running)
   pointer-events: none;
 }
 
-/* One solid stroke per goal; the round caps keep the gaps between goals tidy. */
 .dots {
   stroke-width: 3;
   stroke-linecap: round;

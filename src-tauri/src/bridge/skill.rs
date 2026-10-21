@@ -1,10 +1,3 @@
-//! Packages `docs/AGENT-GUIDE.md` as a Claude Code skill, so one command gives an agent both the
-//! tools (the MCP server) and the know-how (the skill).
-//!
-//! The guide stays the single source of truth. A skill loads in layers: a short `SKILL.md` is
-//! read first and the detail files only when needed, so the guide is split by its numbered
-//! sections. A test fails if a section is not placed in exactly one file.
-
 use std::{
     fs, io,
     path::{Path, PathBuf},
@@ -13,10 +6,8 @@ use std::{
 pub const GUIDE: &str = include_str!("../../../docs/AGENT-GUIDE.md");
 
 const NAME: &str = "rune-studio";
-/// What makes an agent reach for the skill. Keep it about the user's request, not the product.
 const DESCRIPTION: &str = "Use when the user asks you to do something on their Windows PC with the screen, mouse or keyboard: open apps, click, type, press keys, or read what is on screen. Works through the rune_ tools from Rune Studio.";
 
-/// Which guide sections go in which file (by their number in the guide).
 const SKILL_SECTIONS: [u32; 4] = [1, 2, 3, 9];
 const TOOLS_SECTIONS: [u32; 5] = [4, 5, 6, 7, 8];
 const RECIPES_SECTIONS: [u32; 2] = [11, 12];
@@ -24,12 +15,10 @@ const ERRORS_SECTIONS: [u32; 2] = [10, 13];
 
 struct Section {
     number: u32,
-    /// The heading without its number, e.g. "Tools".
     title: String,
     body: String,
 }
 
-/// The text before the first numbered section, and the numbered sections.
 fn split(guide: &str) -> (String, Vec<Section>) {
     let mut intro = String::new();
     let mut sections: Vec<Section> = Vec::new();
@@ -69,7 +58,6 @@ fn render(sections: &[Section], numbers: &[u32]) -> String {
     out
 }
 
-/// The skill's files as (file name, content).
 pub fn files(guide: &str) -> Vec<(&'static str, String)> {
     let (intro, sections) = split(guide);
     let intro = intro.replacen("# Rune Studio: guide for agents", "# Rune Studio", 1);
@@ -98,7 +86,6 @@ pub fn files(guide: &str) -> Vec<(&'static str, String)> {
     ]
 }
 
-/// `~/.claude/skills/rune-studio`, where Claude Code looks for a user's own skills.
 pub fn default_dir() -> Option<PathBuf> {
     Some(
         PathBuf::from(std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"))?)
@@ -108,7 +95,6 @@ pub fn default_dir() -> Option<PathBuf> {
     )
 }
 
-/// Writes the skill into `dir`, replacing an older copy. Returns the files written.
 pub fn install(dir: &Path, guide: &str) -> io::Result<Vec<PathBuf>> {
     fs::create_dir_all(dir)?;
     let mut written = Vec::new();
@@ -120,7 +106,6 @@ pub fn install(dir: &Path, guide: &str) -> io::Result<Vec<PathBuf>> {
     Ok(written)
 }
 
-/// Removes the skill. Missing is fine.
 pub fn remove(dir: &Path) -> io::Result<()> {
     match fs::remove_dir_all(dir) {
         Err(err) if err.kind() != io::ErrorKind::NotFound => Err(err),
@@ -223,10 +208,9 @@ mod tests {
         let written = install(&dir, GUIDE).unwrap();
         assert_eq!(written.len(), 4);
         assert!(dir.join("SKILL.md").exists());
-        // Installing again replaces the files.
         install(&dir, GUIDE).unwrap();
         remove(&dir).unwrap();
         assert!(!dir.exists());
-        remove(&dir).unwrap(); // already gone is fine
+        remove(&dir).unwrap();
     }
 }

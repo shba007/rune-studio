@@ -26,15 +26,12 @@ import TaskPanel from './TaskPanel.vue'
 const agent = useAgent()
 const updater = useUpdater()
 
-/** An update is being installed: the rim shows that instead of the task's goals. */
 const updating = updater.updating
-/** Percent of the download for the rim, or null while the size is unknown. */
 const downloadPercent = computed(() =>
   updater.phase.value === 'downloading' && updater.progress.value !== null
     ? Math.round(updater.progress.value * 100)
     : null,
 )
-/** The prompt waits for a free moment: never over a running task or a question. */
 const promptVisible = computed(
   () =>
     updater.prompt.value &&
@@ -42,7 +39,6 @@ const promptVisible = computed(
     !agent.isRunning.value &&
     !agent.question.value,
 )
-// A found update opens the card by itself so the prompt is seen.
 watch(promptVisible, (visible) => {
   if (visible && agent.mode.value === 'ambient') void agent.setMode('open')
 })
@@ -55,7 +51,6 @@ const {
   letter: agentLetter,
 } = useExternalAgent()
 
-/** The ring shows the plan of a task or the progress of the idle review, never both. */
 const reflecting = computed(() => agent.state.value === 'reflecting' && agent.reflection.value)
 const ringGoals = computed(() =>
   reflecting.value ? reflecting.value.total : (agent.plan.value?.goals.length ?? 0),
@@ -70,8 +65,6 @@ const ringFinished = computed(() =>
 )
 
 const analysis = useAnalysis()
-// The cards open by themselves when an analysis starts, and the pill goes back to the composer when
-// they are closed (an analysis that is refused never changes the status, so nothing opens).
 watch(
   () => analysis.snapshot.value.status,
   (status) => {
@@ -81,25 +74,18 @@ watch(
 )
 
 const isAmbient = computed(() => agent.mode.value === 'ambient')
-/** Settings and Artifacts fill the window and scroll inside; the other pages are as tall as their content. */
 const isFullPage = computed(
   () => agent.mode.value === 'settings' || agent.mode.value === 'artifacts',
 )
 
-// Dev only: lets a plain browser preview set the plan, thinking and steps by hand.
 if (import.meta.env.DEV) Object.assign(window, { __demoAgent: agent })
 
-// The window is as tall as the open card's content, so it grows when the text does.
 const content = useTemplateRef<HTMLElement>('content')
 const { height: contentHeight } = useElementSize(content)
 watch(contentHeight, (height) => {
-  // Between two pages the column is briefly empty; ignore that.
   if (height >= 48) void agent.fitHeight(Math.ceil(height / 8) * 8)
 })
 
-// Esc dismisses the card from anywhere in the window, not only while a control has focus. Not while a
-// question waits (it must be answered), and not in the analysis view, whose own Esc closes a row, then
-// the selection, then the analysis. From settings it goes back one step first.
 onKeyStroke('Escape', () => {
   if (agent.question.value || agent.mode.value === 'analysis') return
   if (agent.mode.value === 'settings' || agent.mode.value === 'artifacts')
@@ -107,7 +93,6 @@ onKeyStroke('Escape', () => {
   else void agent.dismiss()
 })
 
-/** Idle: the orb opens and closes the card. While the agent runs it is the Stop button. */
 function onOrb() {
   if (updating.value) return
   if (agent.isRunning.value) void agent.stop()
@@ -122,7 +107,6 @@ function onOrb() {
     @pointerdown="agent.noteActivity()"
     @keydown="agent.noteActivity()"
   >
-    <!-- Dock: Settings and Analyse the screen, attached to the orb's left. Hidden while only the orb shows. -->
     <div
       class="h-16 shrink-0 self-end overflow-hidden transition-[width] duration-300 ease-out"
       :style="{ width: isAmbient ? '0px' : `${DOCK_WIDTH + DOCK_GAP}px` }"
@@ -135,7 +119,6 @@ function onOrb() {
       data-tauri-drag-region
       class="relative flex size-16 shrink-0 items-center justify-center rounded-full bg-[#141414]"
     >
-      <!-- The rim of the orb is the task's progress: one dotted arc per goal. -->
       <svg v-if="updating" viewBox="0 0 64 64" class="update-ring" aria-hidden="true">
         <circle cx="32" cy="32" r="30" fill="none" class="update-track" />
         <circle
@@ -199,13 +182,11 @@ function onOrb() {
       </button>
     </div>
 
-    <!-- Page column. Every page has the same fixed width, so switching pages never reflows. -->
     <div
       class="h-full overflow-hidden transition-[width] duration-300 ease-out"
       :style="{ width: isAmbient ? '0px' : `${PAGE_WIDTH + PAGE_GAP}px` }"
     >
       <div class="ml-2 flex h-full flex-col justify-end" :style="{ width: `${PAGE_WIDTH}px` }">
-        <!-- Settings fills the window and scrolls inside; the other pages are as tall as their content. -->
         <div ref="content" class="flex flex-col" :class="isFullPage ? 'h-full min-h-0' : ''">
           <Transition name="page" mode="out-in">
             <SettingsPanel v-if="agent.mode.value === 'settings'" key="settings" :agent="agent" />
@@ -289,7 +270,6 @@ function onOrb() {
 </template>
 
 <style scoped>
-/* The update ring is deliberately unlike the goal ring: one solid, thin line. */
 .update-ring {
   position: absolute;
   inset: 0;

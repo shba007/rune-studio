@@ -6,7 +6,6 @@ import { describe, expect, it } from 'vite-plus/test'
 import { AGENT_BRANDS, NEUTRAL_ON_DARK, accentOnDark, brandFor, lookFor } from './agents'
 import { contrast, rgba } from './color'
 
-/** Every id `bridge::identity` can emit (`identity::all_ids`); a test on the Rust side pins its length. */
 const RUST_IDS = [
   'claude',
   'antigravity',

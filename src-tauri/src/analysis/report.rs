@@ -1,28 +1,19 @@
-//! What the model is asked, what it may answer, and how a messy answer is made safe to draw.
-//! No Tauri types in here: everything is plain data and pure functions.
-
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::{model::client::Request, trace};
 
-/// At most this many findings are kept.
 pub const MAX_FINDINGS: usize = 8;
 pub const LABEL_CAP: usize = 24;
 pub const DESCRIPTION_CAP: usize = 200;
 pub const EVIDENCE_CAP: usize = 200;
-/// Longest answer text kept.
 pub const ANSWER_CAP: usize = 2_000;
-/// Longest question sent.
 pub const QUESTION_CAP: usize = 500;
-/// The analysis asks for more output than the agent's steps, which stop at 512 tokens: eight findings need room.
 pub const MAX_OUTPUT_TOKENS: u32 = 1_500;
-/// What is asked when the user gives no question.
 pub fn default_question() -> &'static str {
     crate::prompts::analysis_question()
 }
 
-/// What a finding is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
@@ -35,7 +26,6 @@ pub enum Kind {
 }
 
 impl Kind {
-    /// Reads the model's word; anything else is `Other`.
     pub fn from_word(word: &str) -> Kind {
         match word.trim().to_ascii_lowercase().as_str() {
             "text" => Kind::Text,
@@ -48,26 +38,20 @@ impl Kind {
     }
 }
 
-/// One thing the model points at.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Finding {
-    /// 1-based, in order.
     pub n: u8,
     pub label: String,
     pub kind: Kind,
-    /// `[x0, y0, x1, y1]` in 0..1000 across the whole screenshot; `None` when it could not be located.
     #[serde(rename = "box")]
     pub bbox: Option<[f32; 4]>,
     pub description: String,
-    /// What on the screen supports it.
     pub evidence: String,
-    /// `[x, y]` in 0..1000, only when the `box + point` request variant is on (`REQUEST_POINTS`).
     #[serde(default)]
     pub point: Option<[f32; 2]>,
 }
 
-/// Where an analysis is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Status {
@@ -79,25 +63,18 @@ pub enum Status {
     Cancelled,
 }
 
-/// What the model said, made safe to show.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParsedReport {
     pub answer: String,
     pub findings: Vec<Finding>,
 }
 
-/// The one tool the model must call.
-/// The `box + point` request variant: each finding may also carry `point: [x, y]`. **Off.** It exists so
-/// the probe can compare it with box-only (`probe_m15` modes `analysis` and `analysis-point`); the
-/// maintainer switches it on after reading that comparison, never a user setting. When it is on and a
-/// box is rejected but a point exists, a badge may be drawn at the point (that path is not drawn yet).
 pub const REQUEST_POINTS: bool = false;
 
 pub fn tool() -> Value {
     tool_with(REQUEST_POINTS)
 }
 
-/// The `report` tool, with the optional `point` property when `points` is set.
 pub fn tool_with(points: bool) -> Value {
     let mut tool = json!({
         "type": "function",
@@ -138,13 +115,10 @@ pub fn tool_with(points: bool) -> Value {
     tool
 }
 
-/// The `tools` array of the request: the `report` tool wrapped in a list (the server rejects a bare
-/// tool object with a schema error).
 pub fn tools() -> Value {
     json!([tool()])
 }
 
-/// The user's question, or the default one when there is none. Trimmed and cut.
 pub fn question_or_default(question: &str) -> String {
     let question = question.split_whitespace().collect::<Vec<_>>().join(" ");
     if question.is_empty() {
@@ -154,8 +128,6 @@ pub fn question_or_default(question: &str) -> String {
     }
 }
 
-/// The request for one analysis: the screenshot, the question, the `report` tool, no thinking, and
-/// room for eight findings.
 pub fn request<'a>(question: &'a str, screenshot: &'a str, tools: &'a Value) -> Request<'a> {
     Request {
         system: crate::prompts::analysis_system(),
@@ -168,7 +140,6 @@ pub fn request<'a>(question: &'a str, screenshot: &'a str, tools: &'a Value) -> 
     }
 }
 
-/// A number from a JSON value; numeric strings count, nothing else does.
 fn number(value: &Value) -> Option<f32> {
     let n = value
         .as_f64()
@@ -176,9 +147,6 @@ fn number(value: &Value) -> Option<f32> {
     n.is_finite().then_some(n as f32)
 }
 
-/// A box the UI can draw: four numbers (numeric strings count), put through `boxes::usable_box`
-/// (corners in order, a small overrun clamped, a big one, a tiny one or a huge one rejected).
-/// Anything else is no box (the finding itself stays).
 pub fn normalise_box(value: &Value) -> Option<[f32; 4]> {
     let list = value.as_array()?;
     if list.len() != 4 {
@@ -191,7 +159,6 @@ pub fn normalise_box(value: &Value) -> Option<[f32; 4]> {
     super::boxes::usable_box(numbers).ok()
 }
 
-/// A point `[x, y]`: two numbers (numeric strings count), clamped into 0..1000. Anything else is no point.
 pub fn normalise_point(value: &Value) -> Option<[f32; 2]> {
     let list = value.as_array()?;
     if list.len() != 2 {
@@ -208,9 +175,6 @@ fn text(value: &Value, cap: usize) -> String {
         .unwrap_or_default()
 }
 
-/// Reads the arguments of a `report` call. Forgiving: texts are cut to their limits, at most
-/// `MAX_FINDINGS` findings are kept and numbered from 1, boxes are normalised (see
-/// `normalise_box`), and a missing `answer` is empty. It never panics.
 pub fn parse(arguments: &Value) -> ParsedReport {
     let findings = arguments["findings"]
         .as_array()
@@ -319,7 +283,6 @@ mod tests {
             report.findings[7].label, "Item 8",
             "the first eight, in order"
         );
-        // Items that are not objects do not take a number.
         let mixed = found(
             json!({ "answer": "x", "findings": ["junk", null, { "label": "Real", "kind": "text", "description": "d", "evidence": "e" }, 7] }),
         );
@@ -619,7 +582,6 @@ mod tests {
         assert_eq!(body["tools"][0]["function"]["name"], "report");
         assert_eq!(body["messages"][1]["content"][0]["type"], "image_url");
         assert!(body.get("stream").is_none());
-        // The same request type with no override, as the agent's steps and the check send it.
         let plain = Request {
             system: "s",
             user_text: "u",

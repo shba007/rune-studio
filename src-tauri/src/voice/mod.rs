@@ -1,15 +1,3 @@
-//! Talking to the agent: the microphone, cutting speech into utterances, hearing them with the omni
-//! model, and acting on what was said.
-//!
-//! While listening, every utterance goes to the omni model (`direct` hears it, with no
-//! transcript in between), and then:
-//! - **Stop** (the word, on its own) stops the agent at once, like the Stop button.
-//! - **Yes / No** answer the question on screen. A spoken **no** always works. A spoken **yes**
-//!   works for the agent's own questions, but not for an action that needs approval: a TV or a
-//!   colleague saying "yes" must never be able to allow something risky, so that one needs a click.
-//! - Anything else is a **task** when the agent is idle, or a **steer** (extra instructions the
-//!   agent reads before its next step) when it is working.
-
 pub mod capture;
 pub mod direct;
 pub mod intent;
@@ -30,7 +18,6 @@ use intent::Intent;
 
 pub const VOICE_HEARD: &str = "voice_heard";
 
-/// What the UI shows after something was said: the words, and what the app did about them.
 #[derive(Clone, Serialize)]
 pub struct Heard {
     pub text: String,
@@ -47,8 +34,6 @@ fn heard(app: &AppHandle, text: &str, note: impl Into<String>) {
     );
 }
 
-/// After a task ends (or is stopped) with the microphone still open, go back to listening once
-/// the result has had a moment on screen, so the user can simply say the next thing.
 pub fn resume_listening_soon(app: &AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -66,20 +51,14 @@ pub fn resume_listening_soon(app: &AppHandle) {
     });
 }
 
-/// How many times Stop has been pressed (any way). A task heard by voice waits `START_DELAY` before it
-/// starts, and a Stop in that time cancels it.
 static STOPS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// How long the words of a spoken task stay on the pill before the task starts. The model sometimes
-/// mishears; this is the time to see it and press Stop. Control words (stop, yes, no) act at once.
 const START_DELAY: std::time::Duration = std::time::Duration::from_secs(2);
 
-/// Called by Stop: cancels a spoken task that has not started yet.
 pub fn note_stop() {
     STOPS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 }
 
-/// One utterance, start to finish: the omni model hears it, then the app acts on what it was.
 pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
     crate::reflect::touch(app, crate::reflect::idle::Input::Voice);
     let state = app.state::<AppState>();
@@ -88,7 +67,6 @@ pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
         (settings.base_url.clone(), settings.model.clone())
     };
     let api_key = settings::api_key();
-    // The recording is stored before anything is done with it; if it cannot be, it is not acted on.
     let wav = direct::wav(&utterance);
     let saved = match crate::archive::save(crate::archive::Kind::Voice, "utterance", "wav", &wav) {
         Ok(path) => path,
@@ -129,10 +107,6 @@ pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
     }
 }
 
-/// Does what an intent asks for. `text` is what was typed or heard, if there is a transcript; for
-/// speech the model's own wording of a task is shown instead. `goals` are the plan an
-/// audio model already made for a new task. `recording` is the stored audio of what was said, if
-/// any: when it starts a task it is moved into that task's session folder.
 fn apply(
     app: &AppHandle,
     intent: Intent,
@@ -180,7 +154,6 @@ fn apply(
                     heard(app, &said, "Passed to the agent");
                 }
             } else if let Some(recording) = recording {
-                // Heard, not typed: show the words first, so a mishearing can be stopped before it acts.
                 heard(app, &said, "Starting in 2 s. Press Stop to cancel");
                 let (app, said, recording) = (app.clone(), said, recording.to_path_buf());
                 let stops = STOPS.load(std::sync::atomic::Ordering::SeqCst);
@@ -202,7 +175,6 @@ fn apply(
             } else {
                 match crate::commands::begin_task_planned(app, &said, true, goals) {
                     Ok(()) => {
-                        // The task's session folder exists now; the words that started it belong in it.
                         if let Some(recording) = recording {
                             crate::archive::adopt(recording);
                         }

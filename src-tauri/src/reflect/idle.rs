@@ -1,27 +1,14 @@
-//! When is the user idle? One clock with the time passed in, so tests need no real waiting.
-//!
-//! Idle means: nothing has happened for `idle_ms` and nothing is running. Every kind of input
-//! resets it; time during which a task runs, an outside agent holds the lease, the analysis window
-//! is open or a prompt is up does not count at all (the clock restarts when that ends).
-
-/// What counts as the user being there (each resets the clock).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Input {
-    /// A task started (typed, voice, hotkey or an outside agent's `rune_begin`).
     Task,
-    /// An utterance was heard.
     Voice,
-    /// The pill was clicked, typed in or opened.
     Pill,
-    /// A screen analysis was asked for.
     Analysis,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct IdleClock {
-    /// Milliseconds on whatever clock the caller uses (a monotonic one in the app).
     last_activity: u64,
-    /// A prompt was already shown for this stretch of idleness.
     prompted: bool,
 }
 
@@ -33,14 +20,11 @@ impl IdleClock {
         }
     }
 
-    /// Something happened: the idle stretch starts again.
     pub fn touch(&mut self, now: u64, _input: Input) {
         self.last_activity = now;
         self.prompted = false;
     }
 
-    /// Called every few seconds. `busy` means something that is not idleness is going on. Returns
-    /// whether the prompt is due now; it returns true once per idle stretch.
     pub fn tick(&mut self, now: u64, idle_ms: u64, busy: bool) -> bool {
         if busy {
             self.last_activity = now;
@@ -54,7 +38,6 @@ impl IdleClock {
         true
     }
 
-    /// The user said no (or a reflection ended): the next prompt comes after another full idle period.
     pub fn restart(&mut self, now: u64) {
         self.last_activity = now;
         self.prompted = false;
@@ -95,7 +78,6 @@ mod tests {
     #[test]
     fn busy_time_does_not_count_and_the_clock_restarts_when_it_ends() {
         let mut clock = IdleClock::new(0);
-        // A task (or a held lease, or an open analysis window) for 30 minutes.
         for minute in 0..30 {
             assert!(!clock.tick(minute * MIN, 10 * MIN, true));
         }

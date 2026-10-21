@@ -1,6 +1,5 @@
 import type { FlightRun } from '@/config/flight'
 
-/** How long a session took: "45s", "2m 5s". Empty while it is still open. */
 export function durationText(totalSeconds: number): string {
   const seconds = Math.max(0, Math.round(totalSeconds))
   if (seconds < 60) return `${seconds} s`
@@ -18,7 +17,6 @@ export function lengthText(run: Pick<FlightRun, 'startedUtc' | 'endedUtc'>): str
   return durationText((end - start) / 1000)
 }
 
-/** How a session ended, as the tone of its dot. */
 export function toneOf(outcome: string | null): 'ok' | 'bad' | 'stopped' | 'open' {
   if (outcome === 'succeeded') return 'ok'
   if (outcome === 'failed') return 'bad'

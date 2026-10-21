@@ -7,20 +7,12 @@ use enigo::{Axis, Button, Coordinate, Direction, Enigo, Key, Keyboard, Mouse, Se
 
 use super::{CancelToken, ExecError};
 
-/// Pause after moving the cursor, so the target app sees the pointer before the button goes down.
 const SETTLE_AFTER_MOVE: Duration = Duration::from_millis(30);
-/// Gap between the two clicks of a double click (well inside Windows' default double-click time).
 const DOUBLE_CLICK_GAP: Duration = Duration::from_millis(60);
-/// Pause between typed characters. 4 ms made Windows 11 Notepad drop letters and repeat others (about
-/// half of the lines in a live test were garbled); 8 ms and slower typed 25 of 25 lines cleanly. 15 ms
-/// leaves margin and still types about 70 characters a second.
 const TYPE_DELAY: Duration = Duration::from_millis(15);
 
-/// How often the cursor is moved while it glides to a target.
 const GLIDE_STEP: Duration = Duration::from_millis(8);
 
-/// How long the cursor takes to glide `distance` pixels: quick for short hops, never slower than
-/// about half a second, so a person can follow it without it holding the task up.
 pub fn glide_duration(distance: f64) -> Duration {
     if distance < 2.0 {
         return Duration::ZERO;
@@ -28,7 +20,6 @@ pub fn glide_duration(distance: f64) -> Duration {
     Duration::from_millis((120.0 + distance * 0.25).clamp(120.0, 450.0) as u64)
 }
 
-/// Smoothstep: starts slow, speeds up, then eases into the target like a hand would.
 fn ease(t: f64) -> f64 {
     let t = t.clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
@@ -38,12 +29,10 @@ fn lerp(from: i32, to: i32, amount: f64) -> i32 {
     (f64::from(from) + f64::from(to - from) * amount).round() as i32
 }
 
-/// Where the cursor is now, in physical desktop pixels, without needing an input handle.
 #[cfg(windows)]
 pub fn cursor_position() -> Option<(i32, i32)> {
     use windows::Win32::{Foundation::POINT, UI::WindowsAndMessaging::GetCursorPos};
     let mut point = POINT::default();
-    // SAFETY: `point` is a valid, writable POINT.
     unsafe { GetCursorPos(&mut point) }.ok()?;
     Some((point.x, point.y))
 }
@@ -53,12 +42,10 @@ pub fn cursor_position() -> Option<(i32, i32)> {
     None
 }
 
-/// How long the whole pause between typed characters adds up to for `text`, for the on-screen typing effect.
 pub fn typing_duration(text: &str) -> Duration {
     type_delay() * text.chars().count() as u32
 }
 
-/// Experiment knob: RUNE_TYPE_DELAY_MS overrides the pause between typed characters.
 fn type_delay() -> Duration {
     static DELAY: std::sync::OnceLock<Duration> = std::sync::OnceLock::new();
     *DELAY.get_or_init(|| {
@@ -109,9 +96,7 @@ impl FromStr for ScrollDirection {
     }
 }
 
-/// Gap between wheel notches, so apps with smooth scrolling keep up.
 const SCROLL_GAP: Duration = Duration::from_millis(60);
-/// Pause after pressing the button for a drag, before the pointer starts to move.
 const DRAG_GRAB: Duration = Duration::from_millis(120);
 
 impl FromStr for MouseButton {
@@ -141,8 +126,6 @@ fn input_error(err: impl std::fmt::Display) -> ExecError {
     ExecError::Input(err.to_string())
 }
 
-/// Real mouse and keyboard input on the desktop. All coordinates are physical desktop pixels;
-/// the model-space conversion happens in `model::coords`, never here.
 pub struct Input {
     enigo: Enigo,
 }
@@ -154,7 +137,6 @@ impl Input {
         })
     }
 
-    /// Where the cursor is now, in physical desktop pixels.
     #[cfg_attr(not(debug_assertions), allow(dead_code))]
     pub fn cursor(&self) -> Result<(i32, i32), ExecError> {
         self.enigo.location().map_err(input_error)
@@ -168,8 +150,6 @@ impl Input {
         cancel.sleep(SETTLE_AFTER_MOVE)
     }
 
-    /// Moves the cursor to a point by gliding there with easing, instead of jumping, so a person
-    /// watching can follow where it goes. Ends exactly on the target, and Stop interrupts it.
     pub fn glide_to(&mut self, px: i32, py: i32, cancel: &CancelToken) -> Result<(), ExecError> {
         let (from_x, from_y) = self.cursor()?;
         let distance = f64::from(px - from_x).hypot(f64::from(py - from_y));
@@ -215,8 +195,6 @@ impl Input {
         Ok(())
     }
 
-    /// Scrolls the wheel `amount` notches with the pointer at a point (the window under the pointer
-    /// is the one that scrolls).
     pub fn scroll(
         &mut self,
         px: i32,
@@ -240,8 +218,6 @@ impl Input {
         Ok(())
     }
 
-    /// Presses the left button at `from`, glides to `to` and lets go. The button is released even
-    /// if Stop or an error interrupts the drag, so it can never stay held down.
     pub fn drag(
         &mut self,
         from: (i32, i32),
@@ -261,7 +237,6 @@ impl Input {
         outcome
     }
 
-    /// Types text one character at a time, checking for Stop between characters.
     pub fn type_text(&mut self, text: &str, cancel: &CancelToken) -> Result<(), ExecError> {
         let mut buffer = [0_u8; 4];
         for character in text.chars() {
@@ -274,9 +249,6 @@ impl Input {
         Ok(())
     }
 
-    /// Presses a key combination: every key but the last is held, the last is clicked, and then
-    /// the held keys are released in reverse order. The release runs even if Stop or an error
-    /// interrupts the combination, so a modifier can never stay stuck down.
     pub fn press_keys(&mut self, names: &[String], cancel: &CancelToken) -> Result<(), ExecError> {
         let keys = names
             .iter()
@@ -309,7 +281,6 @@ impl Input {
     }
 }
 
-/// Key names the model may use. Case-insensitive; a single character is typed as itself.
 pub fn parse_key(name: &str) -> Result<Key, ExecError> {
     let lowered = name.trim().to_ascii_lowercase();
     let key = match lowered.as_str() {
@@ -380,7 +351,6 @@ mod tests {
 
     #[test]
     fn typing_is_not_faster_than_notepad_can_take() {
-        // A live test dropped letters at 4 ms; see TYPE_DELAY. Do not speed this up without re-running it.
         assert!(TYPE_DELAY >= Duration::from_millis(10));
     }
 

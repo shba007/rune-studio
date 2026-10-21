@@ -1,10 +1,3 @@
-//! Locking that cannot take Stop down.
-//!
-//! A `std::sync::Mutex` is poisoned when a thread panics while holding it, and `.lock().unwrap()`
-//! then panics on every later call, including `commands::stop`. None of the state behind our locks
-//! is left half-written in a way that matters more than being able to stop, so a poisoned lock is
-//! logged once and used anyway.
-
 use std::sync::{
     Mutex, MutexGuard,
     atomic::{AtomicBool, Ordering},
@@ -13,7 +6,6 @@ use std::sync::{
 static WARNED: AtomicBool = AtomicBool::new(false);
 
 pub trait LockExt<T> {
-    /// Locks, and on a poisoned lock logs once at error level and returns the data regardless.
     fn locked(&self) -> MutexGuard<'_, T>;
 }
 

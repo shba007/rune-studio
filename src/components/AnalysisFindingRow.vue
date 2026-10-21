@@ -6,11 +6,6 @@ import type { Finding, FindingKind } from '@/types/protocol'
 
 import AppIcon from './AppIcon.vue'
 
-/**
- * One finding in the accordion: a numbered badge, the label, what kind of thing it is and a chevron.
- * Opening it shows the description and the evidence as plain text (never HTML) and picks its marker on
- * the screen. A finding with no usable box has a dashed badge: it is listed, but nothing is drawn.
- */
 const props = defineProps<{ finding: Finding; open: boolean; selected: boolean }>()
 const emit = defineEmits<{ toggle: [n: number] }>()
 

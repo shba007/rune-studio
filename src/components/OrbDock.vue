@@ -10,7 +10,6 @@ const tool =
 </script>
 
 <template>
-  <!-- Two separate round tools hugging the orb's left side, one above the other's mirror image. -->
   <div class="relative h-16 w-8 shrink-0">
     <button
       type="button"

@@ -1,8 +1,3 @@
-//! Read-only access for the Flight Player: the list of runs, one run's header, steps, events, model
-//! attempts (bodies loaded one at a time) and the files of its session folder. Every read opens its own
-//! read-only connection (the database is in WAL mode, so the recorder keeps writing). Nothing here
-//! can change the record, and a file is only ever read from inside the run's own session folder.
-
 pub mod files;
 
 use std::path::{Path, PathBuf};
@@ -16,7 +11,6 @@ use crate::trace::{
     store::{self, StoreError},
 };
 
-/// One line of the player's run picker.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct FlightRun {
@@ -31,7 +25,6 @@ pub struct FlightRun {
     pub thumb: Option<String>,
 }
 
-/// A run's header, everything the player shows above the stage.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct FlightHeader {
@@ -40,7 +33,6 @@ pub struct FlightHeader {
     pub source: String,
     pub model: Option<String>,
     pub started_utc: String,
-    /// `None` while the run is still open (the player shows LIVE).
     pub ended_utc: Option<String>,
     pub outcome: Option<String>,
     pub summary: Option<String>,
@@ -49,12 +41,10 @@ pub struct FlightHeader {
     pub retries: i64,
     pub duration_secs: Option<i64>,
     pub verdict: Option<Value>,
-    /// `session.json`'s `video` entry, or null (older runs).
     pub video: Option<Value>,
     pub session_dir: Option<String>,
 }
 
-/// One model attempt without its bodies.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct FlightCall {
@@ -83,7 +73,6 @@ fn has_table(db: &rusqlite::Connection, name: &str) -> bool {
     .is_ok()
 }
 
-/// The newest runs first, at most `limit`, older than `before` (a start time) when given.
 pub fn runs(db: &Path, limit: usize, before: Option<&str>) -> Result<Vec<FlightRun>, StoreError> {
     let all = store::list_runs(db, limit.saturating_add(200).min(5_000))?;
     Ok(all
@@ -108,7 +97,6 @@ pub fn runs(db: &Path, limit: usize, before: Option<&str>) -> Result<Vec<FlightR
         .collect())
 }
 
-/// How many attempts were retried, for a run. A database older than version 6 has none.
 fn retries_of(db: &Path, id: &str) -> i64 {
     let Ok(conn) = store::open_read(db) else {
         return 0;
@@ -124,7 +112,6 @@ fn retries_of(db: &Path, id: &str) -> i64 {
     .unwrap_or(0)
 }
 
-/// The header of one run, or `None` when there is no such run.
 pub fn header(db: &Path, id: &str) -> Result<Option<FlightHeader>, StoreError> {
     let Some(detail) = store::get_run(db, id)? else {
         return Ok(None);
@@ -164,7 +151,6 @@ pub fn header(db: &Path, id: &str) -> Result<Option<FlightHeader>, StoreError> {
     }))
 }
 
-/// A run's steps in order, with every phase time, as the player's timeline needs them.
 pub fn steps(db: &Path, id: &str) -> Result<Vec<Value>, StoreError> {
     let Some(detail) = store::get_run(db, id)? else {
         return Ok(Vec::new());
@@ -191,7 +177,6 @@ pub fn steps(db: &Path, id: &str) -> Result<Vec<Value>, StoreError> {
         .collect())
 }
 
-/// A run's events in order.
 pub fn events(db: &Path, id: &str) -> Result<Vec<Value>, StoreError> {
     let Some(detail) = store::get_run(db, id)? else {
         return Ok(Vec::new());
@@ -199,7 +184,6 @@ pub fn events(db: &Path, id: &str) -> Result<Vec<Value>, StoreError> {
     Ok(detail.events.iter().map(|event| json!({ "id": event.id, "atUtc": event.at_utc, "kind": event.kind, "dataJson": event.data_json })).collect())
 }
 
-/// The attempts of a run (or of one step), in order, **without** their bodies.
 pub fn calls(db: &Path, id: &str, step: Option<i64>) -> Result<Vec<FlightCall>, StoreError> {
     let conn = store::open_read(db)?;
     if !has_table(&conn, "calls") {
@@ -230,7 +214,6 @@ pub fn calls(db: &Path, id: &str, step: Option<i64>) -> Result<Vec<FlightCall>, 
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
-/// One attempt's request and response bodies (as stored: redacted and capped), loaded on demand.
 pub fn call_bodies(db: &Path, call_id: i64) -> Result<Option<(String, String)>, StoreError> {
     let conn = store::open_read(db)?;
     if !has_table(&conn, "calls") {
@@ -252,7 +235,6 @@ pub fn call_bodies(db: &Path, call_id: i64) -> Result<Option<(String, String)>, 
     }
 }
 
-/// The run's session folder, from the record.
 pub fn session_dir(db: &Path, id: &str) -> Result<Option<PathBuf>, StoreError> {
     Ok(store::get_run(db, id)?
         .and_then(|detail| detail.run.info.session_dir)
@@ -260,12 +242,9 @@ pub fn session_dir(db: &Path, id: &str) -> Result<Option<PathBuf>, StoreError> {
         .map(PathBuf::from))
 }
 
-/// The window's label.
 pub const WINDOW: &str = "flight";
-/// Sent to an open player to make it switch to another run.
 pub const OPEN_EVENT: &str = "flight_open";
 
-/// Percent-encodes everything but letters, digits, `-` and `_`, so a run id is safe in a URL.
 fn url_safe(text: &str) -> String {
     text.bytes()
         .map(|byte| match byte {
@@ -275,7 +254,6 @@ fn url_safe(text: &str) -> String {
         .collect()
 }
 
-/// Opens the player (or brings the open one forward) on a run, or on its run picker when `run` is empty.
 pub fn open(app: &tauri::AppHandle, run: Option<&str>) -> tauri::Result<()> {
     use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
@@ -296,16 +274,13 @@ pub fn open(app: &tauri::AppHandle, run: Option<&str>) -> tauri::Result<()> {
         .inner_size(1180.0, 760.0)
         .min_inner_size(880.0, 560.0)
         .resizable(true)
-        // The page draws its own title bar (components/TitleBar.vue), in the look of the app.
         .decorations(false)
         .center()
         .build()?;
-    // It shows the user's screens, so the agent must never see it.
     crate::window::protect(&window)?;
     Ok(())
 }
 
-/// Shows a session folder in the system file manager.
 pub fn reveal(dir: &Path) -> std::io::Result<()> {
     let program = if cfg!(windows) {
         "explorer"

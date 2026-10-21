@@ -1,6 +1,3 @@
-//! Development-only commands for exercising the eyes and hands (M1) without an AI in the loop.
-//! Compiled only in debug builds; the Settings > Developer panel calls them.
-
 use std::time::Duration;
 
 use serde::Serialize;
@@ -24,15 +21,11 @@ fn invalid(err: impl std::fmt::Display) -> AppError {
     AppError::Invalid(err.to_string())
 }
 
-/// Runs `job` on a blocking thread after an optional delay (time to focus the target app).
-/// The pill ignores the mouse while the job runs, so it can never intercept its own clicks, and
-/// Stop interrupts both the delay and the job.
 async fn run_input<T, F>(app: AppHandle, delay_ms: Option<u64>, job: F) -> AppResult<T>
 where
     T: Send + 'static,
     F: FnOnce(&mut Input, &CancelToken) -> Result<T, ExecError> + Send + 'static,
 {
-    // Its own scope per command: Stop reaches it, and the next command cannot revive it.
     let cancel = app.state::<AppState>().begin_run().token;
 
     tauri::async_runtime::spawn_blocking(move || {
@@ -63,7 +56,6 @@ pub struct CaptureReport {
     thumbnail: String,
 }
 
-/// Captures a monitor exactly as the model would see it and returns what was captured.
 #[tauri::command]
 pub async fn debug_capture(monitor: Option<u32>) -> AppResult<CaptureReport> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -101,8 +93,6 @@ pub struct ClickReport {
     cursor_y: i32,
 }
 
-/// Clicks a model-space point (0..=1000 on both axes) on a monitor, and reports where the
-/// cursor actually ended up so the mapping can be checked.
 #[tauri::command]
 pub async fn debug_click(
     app: AppHandle,

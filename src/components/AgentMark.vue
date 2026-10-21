@@ -1,10 +1,6 @@
 <script setup lang="ts">
 import AppIcon from './AppIcon.vue'
 
-/**
- * The mark of whoever is in control: the brand's single-colour glyph in the current text colour, a
- * neutral plug for an agent with no mark, or Rune's own mark when no outside agent is in control.
- */
 defineProps<{
   glyph: string | null
   logo?: string | null

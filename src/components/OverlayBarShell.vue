@@ -1,9 +1,4 @@
-<script setup lang="ts">
-/**
- * The black pill at the top of the screen, shared by "an agent is in control" and "screen analysis":
- * one shell, so control mode looks exactly as it did and analysis looks like its sibling.
- */
-</script>
+<script setup lang="ts"></script>
 
 <template>
   <div

@@ -1,6 +1,3 @@
-//! The actions the model can take, as tool definitions it is shown and the typed form we parse
-//! its answer into. One tool per action; the model must call exactly one each turn.
-
 use serde_json::{Value, json};
 
 use crate::{
@@ -11,39 +8,32 @@ use crate::{
     safety::Risk,
 };
 
-/// Longest pause the model may ask for.
 const MAX_WAIT_MS: u64 = 5_000;
-/// Most wheel notches in one scroll.
 const MAX_SCROLL: u32 = 10;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {
-    /// A point in model space (0..=1000 on both axes).
     Click {
         x: f64,
         y: f64,
         button: MouseButton,
         double: bool,
     },
-    /// A control from the latest element list (see `exec::uia`), clicked at its middle.
     ClickElement {
         id: String,
         button: MouseButton,
         double: bool,
     },
-    /// Scroll the wheel with the pointer at a point in model space.
     Scroll {
         x: f64,
         y: f64,
         direction: ScrollDirection,
         amount: u32,
     },
-    /// Press at one point in model space, move to another, release.
     Drag {
         from: (f64, f64),
         to: (f64, f64),
     },
-    /// Ask the user a yes/no question. The loop handles it; it never touches the desktop.
     AskUser {
         question: String,
     },
@@ -81,7 +71,6 @@ impl Action {
         }
     }
 
-    /// One short line for the history the model sees next turn and for the log.
     pub fn describe(&self) -> String {
         match self {
             Action::Click {
@@ -139,14 +128,11 @@ impl Action {
     }
 }
 
-/// What the model decided: the action plus its one-sentence reason (shown in the pill).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Decision {
     pub action: Action,
     pub reason: String,
-    /// The goal (1-based, from the plan) this action is for, when the model said.
     pub goal: Option<u32>,
-    /// How risky the agent itself says the action is. Our own rules may raise it.
     pub risk: Option<Risk>,
 }
 
@@ -156,8 +142,6 @@ fn number(value: &Value) -> Option<f64> {
         .or_else(|| value.as_str().and_then(|text| text.trim().parse().ok()))
 }
 
-/// Turns a tool call into a typed decision. Arguments come from a language model, so every
-/// field is checked and a wrong shape is an error the loop can report back to the model.
 pub fn parse(name: &str, arguments: &Value) -> Result<Decision, String> {
     let reason = arguments["reason"]
         .as_str()
@@ -298,10 +282,8 @@ pub fn parse(name: &str, arguments: &Value) -> Result<Decision, String> {
     })
 }
 
-/// Most goals a plan may have. More than this is a to-do list, not a plan.
 pub const MAX_GOALS: usize = 6;
 
-/// Checks the goals the model wrote: trimmed, non-empty, short, and not too many.
 pub fn parse_plan(arguments: &Value) -> Result<Vec<String>, String> {
     let goals: Vec<String> = arguments["goals"]
         .as_array()
@@ -320,7 +302,6 @@ pub fn parse_plan(arguments: &Value) -> Result<Vec<String>, String> {
     Ok(goals)
 }
 
-/// The one tool offered for the planning call.
 pub fn plan_tools() -> Value {
     json!([{ "type": "function", "function": {
         "name": "set_plan",
@@ -344,7 +325,6 @@ fn tool(name: &str, description: &str, properties: Value, required: &[&str]) -> 
     }})
 }
 
-/// The tool list sent with every request.
 pub fn tools() -> Value {
     let mut click_properties = json!({
         "x": { "type": "integer", "description": "Horizontal position, 0 to 1000, left to right across the screenshot" },
@@ -585,7 +565,6 @@ mod tests {
                 "done"
             ]
         );
-        // Every tool the model is offered must parse (with the arguments it requires).
         let samples = [
             ("click", json!({ "x": 1, "y": 2 })),
             ("click_element", json!({ "id": "e1" })),

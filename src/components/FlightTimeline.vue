@@ -19,11 +19,6 @@ import {
   type Segment,
 } from '@/config/flight'
 
-/**
- * One track for the whole session: every step as wide as it really lasted, drawn as a row of dots
- * whose shade is the phase (observe, decide, gate, act, settle). Click or drag to seek, wheel to zoom.
- * Only the segments in view are drawn, so a run of hundreds of steps stays smooth.
- */
 const props = defineProps<{
   segments: Segment[]
   steps: FlightStep[]
@@ -32,7 +27,6 @@ const props = defineProps<{
   timeMs: number
   events: FlightEvent[]
   runStartedUtc: string | null
-  /** Indexes of the steps that had a retried model call. */
   retried: ReadonlySet<number>
 }>()
 const emit = defineEmits<{ seek: [ms: number] }>()
@@ -58,8 +52,6 @@ const OPACITY = { observe: 0.35, decide: 0.55, gate: 0.75, act: 1, settle: 0.22 
 function bars(index: number, length: number) {
   const phases = phaseTimes(props.steps[index].phases).filter((item) => item.ms > 0)
   const sum = phases.reduce((all, item) => all + item.ms, 0)
-  // The phases fill the segment from the left; a step whose phases add up to more than the (one
-  // second resolution) segment is squeezed to fit, one with idle time keeps the rest empty.
   const scale = sum > 0 ? Math.min(1, length / sum) : 0
   return phases.map((item) => ({
     phase: item.phase,
@@ -72,7 +64,6 @@ const markers = computed(() => {
   const origin = parseIso(props.runStartedUtc)
   if (origin === null || props.starts.length === 0) return []
   const first = props.steps[0]
-  // Events carry real times; the track is shifted so the first step is at 0.
   const shift = (parseIso(first?.startedUtc) ?? origin) - origin + (first?.phases.observe ?? 0)
   return props.events.flatMap((event) => {
     const mark = markerOf(event)
@@ -113,7 +104,6 @@ function onWheel(event: WheelEvent) {
   const pointer = event.clientX - box.left
   const anchor = timeAtPixel(pointer, scrollLeft.value, pxPerMs.value, props.total)
   zoom.value = zoomed(zoom.value, event.deltaY)
-  // Keep the time under the pointer where it was.
   setScroll(anchor * pxPerMs.value - pointer)
 }
 
@@ -122,7 +112,6 @@ function setScroll(value: number) {
   scrollLeft.value = Math.min(max, Math.max(0, value))
 }
 
-// Follow the playhead when it leaves the visible part (while playing or after a step jump).
 watch(
   () => props.timeMs,
   (ms) => {

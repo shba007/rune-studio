@@ -1,6 +1,3 @@
-//! Asking the user. An action that needs a yes waits here until the user answers, presses Stop,
-//! or the question times out; the answer comes back through the `confirm` command.
-
 use crate::sync::LockExt;
 use std::time::Duration;
 
@@ -18,15 +15,11 @@ use crate::{
 
 pub const CONFIRM_REQUEST: &str = "confirm_request";
 pub const CONFIRM_RESOLVED: &str = "confirm_resolved";
-/// An unanswered question is a no, so a forgotten prompt cannot approve anything later.
 pub const ANSWER_TIMEOUT: Duration = Duration::from_secs(120);
 
-/// A question waiting for its answer.
 pub struct Pending {
     pub id: String,
-    /// "approval" or "question" (see `ConfirmRequest`).
     pub kind: &'static str,
-    /// What is being asked, in a short line (for the evaluation harness, which answers No).
     #[cfg(feature = "eval")]
     text: String,
     sender: oneshot::Sender<bool>,
@@ -36,17 +29,12 @@ pub struct Pending {
 #[serde(rename_all = "camelCase")]
 pub struct ConfirmRequest {
     pub id: String,
-    /// Who wants to do it: "Rune" or the outside agent's name.
     pub source: String,
-    /// What it wants to do, in a short line.
     pub text: String,
-    /// Why, in the agent's words.
     pub reason: String,
     pub risk: Risk,
-    /// What made this risky, in plain words.
     pub reasons: Vec<String>,
     pub timeout_secs: u64,
-    /// "approval" (an action wants a yes) or "question" (the agent asks something).
     pub kind: &'static str,
 }
 
@@ -56,28 +44,20 @@ pub struct ConfirmResolved {
     pub approved: bool,
 }
 
-/// What the gate decided about one action.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Verdict {
     Allow,
-    /// The user said no, or did not answer in time.
     Denied(&'static str),
-    /// The user pressed Stop while we were asking.
     Stopped,
 }
 
-/// What happened to a spoken answer.
 #[derive(Debug, PartialEq, Eq)]
 pub enum VoiceAnswer {
     Answered,
-    /// A spoken yes to an action that needs approval: refused, it takes a click.
     NeedsClick,
     NothingWaiting,
 }
 
-/// Answers the waiting question by voice. A **no** always counts. A **yes** counts only for the
-/// agent's own questions: someone else's voice, or a TV, must never be able to approve a risky
-/// action, so that takes a click on the card.
 pub fn answer_by_voice(app: &AppHandle, approved: bool) -> VoiceAnswer {
     let state = app.state::<AppState>();
     let mut slot = state.confirm.locked();
@@ -92,8 +72,6 @@ pub fn answer_by_voice(app: &AppHandle, approved: bool) -> VoiceAnswer {
     VoiceAnswer::Answered
 }
 
-/// Completes the waiting question with the user's answer. Returns false if there is none (or the
-/// id is stale), so an old button press cannot approve a newer action.
 pub fn answer(app: &AppHandle, id: &str, approved: bool) -> bool {
     let state = app.state::<AppState>();
     let mut slot = state.confirm.locked();
@@ -109,8 +87,6 @@ pub fn answer(app: &AppHandle, id: &str, approved: bool) -> bool {
     }
 }
 
-/// The question waiting for an answer, if any: its id, its kind ("approval" or "question") and
-/// its text. It only looks; nothing about asking or answering changes.
 #[cfg(feature = "eval")]
 pub fn pending_question(app: &AppHandle) -> Option<(String, &'static str, String)> {
     app.state::<AppState>()
@@ -126,20 +102,15 @@ fn new_id() -> String {
     format!("q{}", NEXT.fetch_add(1, Ordering::Relaxed))
 }
 
-/// What the gate decided and how it got there, for the flight recorder.
 #[derive(Debug)]
 pub struct CheckResult {
     pub verdict: Verdict,
-    /// The risk after our rules, the agent's own word and the quick second opinion.
     pub risk_final: Risk,
     pub reasons: Vec<String>,
-    /// `allowed`, `approved`, `declined`, `no answer in time`, `stopped`, or `none` for a harmless action.
     pub decision: &'static str,
 }
 
-/// Weighs an action and, if it needs a yes, asks for one. `source` is who chose the action.
-/// `stated` is the risk the agent itself declared, if any.
-#[allow(dead_code)] // both drivers use `check_detailed` now; this is the same decision without the details
+#[allow(dead_code)]
 pub async fn check(
     app: &AppHandle,
     cancel: &CancelToken,
@@ -153,7 +124,6 @@ pub async fn check(
         .verdict
 }
 
-/// `check`, with the risk and reasons it worked out and a label for what was decided.
 pub async fn check_detailed(
     app: &AppHandle,
     cancel: &CancelToken,
@@ -176,8 +146,6 @@ pub async fn check_detailed(
         reasons.push("The agent marked it as high risk".into());
     }
     let text = action.describe();
-    // A quick second opinion from the decision model, only when nothing has said "high" yet.
-    // It can raise the risk, never lower it, and Stop still works while it thinks.
     if risk != Risk::High && !rules::is_harmless(action) {
         let window = foreground::current();
         let window = format!("{} ({})", window.title, window.process);
@@ -213,7 +181,6 @@ pub async fn check_detailed(
             json!({ "source": source, "action": text, "reason": reason, "risk": risk, "why": reasons, "decision": decision }),
         );
     }
-    // A harmless action is never weighed in the log; the recorder says so with `none`.
     let decision = if rules::is_harmless(action) && decision == "allowed" {
         "none"
     } else {
@@ -227,15 +194,12 @@ pub async fn check_detailed(
     }
 }
 
-/// Resolves when the user presses Stop.
 async fn until_stopped(cancel: &CancelToken) {
     while !cancel.is_cancelled() {
         tokio::time::sleep(Duration::from_millis(25)).await;
     }
 }
 
-/// The agent asks the user a yes/no question. Yes comes back as `Allow`, no and no answer as
-/// `Denied`. It is not an action, so it is neither assessed nor written to the audit log.
 pub async fn ask_question(
     app: &AppHandle,
     cancel: &CancelToken,
@@ -267,8 +231,6 @@ async fn ask_user(
     kind: &'static str,
 ) -> Verdict {
     let id = new_id();
-    // The window the action is meant for: answering in the pill makes the pill the front window, and
-    // an approved key press or typing would otherwise land in Rune instead of the target.
     let target = foreground::remember();
     let (sender, receiver) = oneshot::channel();
     *app.state::<AppState>().confirm.locked() = Some(Pending {
@@ -292,7 +254,6 @@ async fn ask_user(
             kind,
         },
     );
-    // The pill may be hidden from the tray; a question must be seen.
     if let Some(pill) = app.get_webview_window(crate::window::MAIN) {
         let _ = pill.show();
     }
@@ -307,7 +268,6 @@ async fn ask_user(
         () = tokio::time::sleep(ANSWER_TIMEOUT) => Verdict::Denied("no answer in time"),
     };
 
-    // Whatever happened, nothing may stay waiting.
     app.state::<AppState>().confirm.locked().take();
     let outcome = match outcome {
         Verdict::Allow if kind == "approval" => match foreground::give_back(target).await {
@@ -315,8 +275,6 @@ async fn ask_user(
             Err(why) => Verdict::Denied(why),
         },
         other => {
-            // A no, a timeout or an answered question left Rune in front too: the agent's next
-            // action is still for the program it was working in.
             if !matches!(other, Verdict::Stopped) {
                 let _ = foreground::give_back(target).await;
             }

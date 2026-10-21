@@ -1,23 +1,11 @@
-//! The quality guard for the boxes drawn on the real screen. Boxes cannot be turned off (maintainer
-//! decision), and in the field test 1 of 8 was right, so a box that is plainly unusable must never
-//! reach the screen: malformed, far outside the picture, tiny, huge, a duplicate, or one of a set
-//! that tiles the whole screen (the "three equal thirds" pattern). This is a guard, not a toggle: it
-//! never hides a plausible box. Rejections are logged with their reason and counted in the record.
-
 use super::report::Finding;
 
-/// A box is `[x0, y0, x1, y1]`, each 0..1000 across the whole screenshot.
 pub type Box4 = [f32; 4];
 
-/// Shortest side kept, in units.
 pub const MIN_SIDE: f32 = 8.0;
-/// A box covering more than this share of the screen says nothing about where something is.
 pub const MAX_AREA_SHARE: f32 = 0.60;
-/// How far outside 0..1000 a box may stick out and still be clamped in (a model's rounding), in units.
 pub const OVERRUN_TOLERANCE: f32 = 40.0;
-/// A set of boxes whose union covers at least this share of the screen is a tiling, not a finding.
 pub const TILING_SHARE: f32 = 0.95;
-/// Boxes at least this alike (intersection over union) are duplicates.
 const DUPLICATE_IOU: f32 = 0.98;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,8 +31,6 @@ impl Reject {
     }
 }
 
-/// Fixes and checks one box on its own: swapped corners are put right, a small overrun is clamped,
-/// everything else the guard rejects is an `Err`.
 pub fn usable_box(raw: [f32; 4]) -> Result<Box4, Reject> {
     if raw.iter().any(|value| !value.is_finite()) {
         return Err(Reject::Malformed);
@@ -78,7 +64,6 @@ fn iou(a: Box4, b: Box4) -> f32 {
     if union <= 0.0 { 0.0 } else { overlap / union }
 }
 
-/// The share of the screen covered by the union of `boxes`, on a 100 by 100 grid.
 fn coverage(boxes: &[Box4]) -> f32 {
     let mut covered = 0;
     for gy in 0..100 {
@@ -95,11 +80,8 @@ fn coverage(boxes: &[Box4]) -> f32 {
     covered as f32 / 10_000.0
 }
 
-/// Checks the boxes of a whole report against each other. Returns, per finding, why its box was
-/// rejected (`None`: kept or it had none). Pure.
 pub fn check_set(boxes: &[Option<Box4>]) -> Vec<Option<Reject>> {
     let mut verdicts: Vec<Option<Reject>> = vec![None; boxes.len()];
-    // Duplicates: the later finding loses its box; the first stays.
     for (later, later_box) in boxes.iter().enumerate() {
         let Some(later_box) = later_box else { continue };
         if boxes[..later]
@@ -110,7 +92,6 @@ pub fn check_set(boxes: &[Option<Box4>]) -> Vec<Option<Reject>> {
             verdicts[later] = Some(Reject::Duplicate);
         }
     }
-    // Tiling: two or more boxes that together cover the screen with no gaps are a layout, not findings.
     let kept: Vec<usize> = (0..boxes.len())
         .filter(|i| boxes[*i].is_some() && verdicts[*i].is_none())
         .collect();
@@ -125,8 +106,6 @@ pub fn check_set(boxes: &[Option<Box4>]) -> Vec<Option<Reject>> {
     verdicts
 }
 
-/// Applies `check_set` to the findings: a rejected finding keeps its text but loses its box. Returns
-/// how many boxes were rejected, and logs each reason.
 pub fn guard(findings: &mut [Finding]) -> u32 {
     let boxes: Vec<Option<Box4>> = findings.iter().map(|finding| finding.bbox).collect();
     let mut rejected = 0;
@@ -246,14 +225,12 @@ mod tests {
 
     #[test]
     fn three_boxes_that_tile_the_screen_are_all_rejected() {
-        // The field test's findings 1 to 3: three equal thirds.
         let thirds = [
             Some([0.0, 0.0, 333.0, 1000.0]),
             Some([333.0, 0.0, 666.0, 1000.0]),
             Some([666.0, 0.0, 1000.0, 1000.0]),
         ];
         assert_eq!(check_set(&thirds), vec![Some(Reject::TilesTheScreen); 3]);
-        // Thirds stacked the other way, and a 2x2 grid, are the same pattern.
         let rows = [
             Some([0.0, 0.0, 1000.0, 333.0]),
             Some([0.0, 333.0, 1000.0, 666.0]),
@@ -314,7 +291,6 @@ mod tests {
             finding(3, Some([666.0, 0.0, 1000.0, 1000.0])),
             finding(4, Some([100.0, 100.0, 200.0, 150.0])),
         ];
-        // The first three tile the screen, but the fourth sits inside the first: union stays full.
         let rejected = guard(&mut findings);
         assert_eq!(
             rejected, 4,

@@ -1,9 +1,3 @@
-//! End-to-end checks for M1 against a real window. They move the real mouse and type real keys, so
-//! they are `#[ignore]`d and run through `scripts/m1-system-test.ps1`, which starts the target
-//! window these tests drive and passes its geometry in through environment variables.
-//!
-//!     pwsh scripts/m1-system-test.ps1
-
 use std::{
     env, fs,
     path::PathBuf,
@@ -28,10 +22,7 @@ use crate::{
     observe::screenshot::{self, MODEL_JPEG_QUALITY, MODEL_MAX_EDGE},
 };
 
-/// The real app is per-monitor DPI aware; the test process must be too, or coordinates would be
-/// silently virtualised on a scaled display.
 fn make_dpi_aware() {
-    // Failing just means the process is already aware.
     unsafe {
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     }
@@ -50,7 +41,6 @@ fn target_dir() -> PathBuf {
     PathBuf::from(env::var("RUNE_TARGET_DIR").expect("RUNE_TARGET_DIR is not set"))
 }
 
-/// Mouse-down events the target window has logged: `down,<x>,<y>,<button>,<clicks>`.
 fn mouse_downs() -> Vec<(i32, i32, String, u32)> {
     fs::read_to_string(target_dir().join("events.log"))
         .unwrap_or_default()
@@ -72,7 +62,6 @@ fn textbox() -> String {
     fs::read_to_string(target_dir().join("textbox.txt")).unwrap_or_default()
 }
 
-/// The target publishes its state every ~100 ms; wait for `condition` to hold.
 fn eventually<T>(what: &str, mut probe: impl FnMut() -> Option<T>) -> T {
     let deadline = Instant::now() + Duration::from_secs(3);
     loop {
@@ -90,8 +79,6 @@ fn cursor() -> (i32, i32) {
     (point.x, point.y)
 }
 
-/// Typing goes to whatever has focus, so refuse to type unless the target window does. A missed
-/// focus click must never send keystrokes to the user's own windows.
 fn assert_target_has_focus() {
     let mut process_id = 0_u32;
     unsafe { GetWindowThreadProcessId(GetForegroundWindow(), Some(&mut process_id)) };
@@ -118,7 +105,6 @@ fn cursor_lands_exactly_on_every_probe_point() {
     let cancel = CancelToken::default();
     let mut input = Input::new().unwrap();
 
-    // Corners, edges, the centre, and awkward fractions that expose rounding errors.
     let probes = [
         (0.0, 0.0),
         (1000.0, 0.0),
@@ -195,7 +181,6 @@ fn typing_and_key_combos_reach_the_focused_field() {
     let mut input = Input::new().unwrap();
     focus_textbox(&mut input, &cancel);
 
-    // Select everything and clear, so the test does not depend on what was there before.
     input
         .press_keys(&["ctrl".into(), "a".into()], &cancel)
         .unwrap();
@@ -209,7 +194,6 @@ fn typing_and_key_combos_reach_the_focused_field() {
     });
     println!("typed ok: {typed:?}");
 
-    // A combination: Ctrl+A selects all, then typing replaces the selection.
     input
         .press_keys(&["ctrl".into(), "a".into()], &cancel)
         .unwrap();
@@ -218,7 +202,6 @@ fn typing_and_key_combos_reach_the_focused_field() {
         (textbox() == "X").then_some(())
     });
 
-    // A modifier must not stay stuck down after a combination.
     thread::sleep(Duration::from_millis(100));
     let ctrl_down = unsafe {
         windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState(
@@ -306,8 +289,6 @@ fn the_model_sees_the_target_where_the_mapping_says() {
         (r as i32 - 255).abs() < 20 && g < 30 && (b as i32 - 255).abs() < 20
     };
 
-    // Well inside the rectangle: magenta. Just outside every edge: not magenta. This pins the
-    // mapping to a few pixels even after the downscale.
     let margin = 10;
     for (x, y) in [
         (left + width / 2, top + height / 2),
@@ -344,11 +325,9 @@ fn capture_speed() {
     }
 }
 
-/// Title of the window that has keyboard focus.
 fn foreground_title() -> String {
     use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowTextW};
     let mut buffer = [0_u16; 256];
-    // SAFETY: the buffer is valid for 256 UTF-16 units.
     let length = unsafe { GetWindowTextW(GetForegroundWindow(), &mut buffer) };
     String::from_utf16_lossy(&buffer[..length.max(0) as usize])
 }
@@ -368,9 +347,7 @@ fn the_caret_is_found_in_notepad() {
     crate::exec::apps::open("notepad").unwrap();
     thread::sleep(Duration::from_millis(3500));
 
-    // Click inside Notepad so it has the keyboard, and refuse to type anywhere else.
     let mut rect = RECT::default();
-    // SAFETY: plain Win32 calls with a valid out-pointer.
     unsafe {
         let window = FindWindowW(w!("Notepad"), None).expect("no Notepad window");
         GetWindowRect(window, &mut rect).unwrap();

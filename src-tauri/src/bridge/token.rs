@@ -1,6 +1,3 @@
-//! The secret an outside agent must present. Created on first use and kept in the Windows
-//! Credential Manager next to the rune-infer key, never in a file.
-
 use crate::settings::KEYRING_SERVICE;
 
 const KEYRING_USER: &str = "agent-bridge-token";
@@ -13,7 +10,6 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-/// The stored token, made (32 random bytes, hex) the first time it is asked for.
 pub fn get_or_create() -> Result<String, String> {
     let entry = entry()?;
     if let Ok(token) = entry.get_password()
@@ -28,7 +24,6 @@ pub fn get_or_create() -> Result<String, String> {
     Ok(token)
 }
 
-/// Compares without stopping at the first difference, so timing reveals nothing about the token.
 pub fn matches(candidate: &str) -> bool {
     let Ok(expected) = get_or_create() else {
         return false;

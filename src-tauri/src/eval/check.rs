@@ -1,21 +1,12 @@
-//! Judging a run by looking at the machine. Success never comes from what the model says: the
-//! model's own claim is recorded next to the result, because the disagreement between the two is
-//! the data the verifier will need.
-
 use std::path::Path;
 
 use super::spec::{Check, Expect, Task};
 
-/// What the checkers can see besides files: windows and processes. Windows-only in practice; tests
-/// give it a fake.
 pub trait Machine {
-    /// The titles of the visible top-level windows.
     fn window_titles(&self) -> Result<Vec<String>, String>;
-    /// The names of the running programs (`notepad.exe`).
     fn process_names(&self) -> Result<Vec<String>, String>;
 }
 
-/// For tests of the "cannot be listed" case; on a real system `windows::System` says so itself.
 #[cfg(test)]
 pub struct Unsupported;
 
@@ -30,7 +21,6 @@ impl Machine for Unsupported {
     }
 }
 
-/// The text of a file, whatever Notepad saved it as: UTF-8 (with or without a byte order mark) or UTF-16.
 pub fn read_text(path: &Path) -> Result<String, String> {
     let bytes =
         std::fs::read(path).map_err(|err| format!("could not read {}: {err}", path.display()))?;
@@ -47,8 +37,6 @@ pub fn read_text(path: &Path) -> Result<String, String> {
     Ok(String::from_utf8_lossy(bytes).into_owned())
 }
 
-/// Whether the condition holds right now. `Err` means it could not be decided (an unreadable
-/// file, windows that cannot be listed); the runner counts that as not passed and says why.
 pub fn evaluate(check: &Check, machine: &dyn Machine) -> Result<bool, String> {
     Ok(match check {
         Check::FileExists { path } => Path::new(path).is_file(),
@@ -85,17 +73,12 @@ pub fn evaluate(check: &Check, machine: &dyn Machine) -> Result<bool, String> {
                     }
                 }
             }
-            // One alternative that cannot be told is not "no" when none of the others held.
             return first_problem.map_or(Ok(false), Err);
         }
         Check::Not { check } => !evaluate(check, machine)?,
     })
 }
 
-/// Whether the run counts as passed. For an ordinary task the checker alone decides, whatever the
-/// model said. For an `expect: failure` task the checker must say nothing bad happened **and** the
-/// run must have ended in one of the accepted ways (it gave up, asked, or was stopped), not by
-/// claiming success, running out of time, or the like.
 pub fn passed(task: &Task, check_passed: bool, outcome: &str) -> bool {
     match task.expect {
         Expect::Success => check_passed,

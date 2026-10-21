@@ -15,7 +15,6 @@ pub struct Hotkeys {
 }
 
 impl Hotkeys {
-    /// An unparsable setting falls back to its default instead of leaving the app without a hotkey.
     pub fn from_settings(settings: &Settings) -> Self {
         Self {
             toggle: parse_or_default(&settings.toggle_hotkey, DEFAULT_TOGGLE),
@@ -47,8 +46,6 @@ fn parse_or_default(text: &str, default: &str) -> Shortcut {
     })
 }
 
-/// Swaps the registered hotkeys. Registration failures (usually another app owns the
-/// combination) are returned so the UI can say so; they never abort the app.
 pub fn apply(app: &AppHandle, previous: Option<&Hotkeys>, next: &Hotkeys) -> Result<(), String> {
     let shortcuts = app.global_shortcut();
     if let Some(previous) = previous {

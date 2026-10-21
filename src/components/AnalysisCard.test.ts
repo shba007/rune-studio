@@ -81,7 +81,6 @@ describe('AnalysisCard states', () => {
     const { analysis } = fake({ status: 'done', answer: 'x', findings })
     const wrapper = mount(AnalysisCard, { props: { analysis } })
     expect(wrapper.findAllComponents(AnalysisFindingRow)).toHaveLength(8)
-    // The stack scrolls inside the pill, and labels truncate instead of widening a row.
     expect(wrapper.classes()).toEqual(expect.arrayContaining(['max-h-full', 'overflow-y-auto']))
     expect(wrapper.find('li span.truncate').exists()).toBe(true)
   })

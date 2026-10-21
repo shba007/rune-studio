@@ -1,7 +1,3 @@
-//! Blocking reads and writes on the trace database. The writer thread calls `write_batch`;
-//! tooling (the command line) reads through `list_runs` and `get_run`, each on its own read-only
-//! connection.
-
 use std::path::Path;
 
 use rusqlite::{Connection, OpenFlags, Row, params, params_from_iter, types::Value};
@@ -26,8 +22,6 @@ impl From<rusqlite::Error> for StoreError {
     }
 }
 
-/// Applies the messages in one transaction. A message that fails does not stop the others; the
-/// first error is returned after the rest have been written.
 pub fn write_batch(db: &mut Connection, batch: &[Msg]) -> rusqlite::Result<()> {
     let tx = db.transaction()?;
     let mut first_error = None;
@@ -40,8 +34,6 @@ pub fn write_batch(db: &mut Connection, batch: &[Msg]) -> rusqlite::Result<()> {
     first_error.map_or(Ok(()), Err)
 }
 
-/// A step or event may arrive for a run whose beginning was dropped; give it a bare row to hang on
-/// rather than lose it.
 fn ensure_run(db: &Connection, run_id: &str) -> rusqlite::Result<()> {
     db.execute("INSERT OR IGNORE INTO runs (id) VALUES (?1)", [run_id])?;
     Ok(())
@@ -50,8 +42,6 @@ fn ensure_run(db: &Connection, run_id: &str) -> rusqlite::Result<()> {
 fn apply(db: &Connection, message: &Msg) -> rusqlite::Result<()> {
     match message {
         Msg::BeginRun(info) => {
-            // A run that is still open when another begins was replaced (this also tidies runs
-            // left open by a crash); the same label the session folder gets.
             db.execute("UPDATE runs SET ended_utc = ?1, outcome = 'replaced' WHERE ended_utc IS NULL AND id != ?2", params![info.started_utc, info.id])?;
             db.execute(
                 "INSERT INTO runs (id, scope_id, task, source, started_utc, plan_json, model, app_version, settings_json, session_dir)
@@ -71,7 +61,6 @@ fn apply(db: &Connection, message: &Msg) -> rusqlite::Result<()> {
         }
         Msg::Step(record) => {
             ensure_run(db, &record.run_id)?;
-            // A piece overwrites only what it carries.
             let columns = STEP_COLUMNS.join(", ");
             let marks: Vec<String> = (3..3 + STEP_COLUMNS.len())
                 .map(|n| format!("?{n}"))
@@ -110,9 +99,7 @@ fn apply(db: &Connection, message: &Msg) -> rusqlite::Result<()> {
             outcome,
             summary,
         } => {
-            // Only the first end counts.
             let ended = db.execute("UPDATE runs SET ended_utc = ?2, outcome = ?3, summary = ?4 WHERE id = ?1 AND ended_utc IS NULL", params![run_id, ended_utc, outcome, summary])?;
-            // Counters for the review card and the CLI, so they need not recompute (older runs have none).
             if ended > 0 {
                 db.execute(
                     "UPDATE runs SET
@@ -162,7 +149,6 @@ fn apply(db: &Connection, message: &Msg) -> rusqlite::Result<()> {
         }
         Msg::PurgeSessions(dirs) => {
             for dir in dirs {
-                // Foreign keys are on: what hangs on a run goes first.
                 db.execute("DELETE FROM calls WHERE run_id IN (SELECT id FROM runs WHERE session_dir = ?1)", [dir])?;
                 db.execute("DELETE FROM verdicts WHERE run_id IN (SELECT id FROM runs WHERE session_dir = ?1)", [dir])?;
                 db.execute("DELETE FROM events WHERE run_id IN (SELECT id FROM runs WHERE session_dir = ?1)", [dir])?;
@@ -176,9 +162,6 @@ fn apply(db: &Connection, message: &Msg) -> rusqlite::Result<()> {
     Ok(())
 }
 
-// ---------------------------------------------------------------- reading
-
-/// One line of the run list.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RunSummary {
     pub id: String,
@@ -188,13 +171,11 @@ pub struct RunSummary {
     pub outcome: Option<String>,
     pub task: Option<String>,
     pub steps: i64,
-    /// The result of the independent check (`verified`, `contradicted`, ...), if there is one.
     pub verdict: Option<String>,
     pub session_dir: Option<String>,
     pub last_shot: Option<String>,
 }
 
-/// A whole run row.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RunRow {
     pub info: RunInfo,
@@ -216,11 +197,9 @@ pub struct RunDetail {
     pub run: RunRow,
     pub steps: Vec<StepRecord>,
     pub events: Vec<EventRow>,
-    /// The independent check of this run, if one was stored.
     pub verdict: Option<VerdictRecord>,
 }
 
-/// Opens the database read-only. A missing file and a newer schema are errors the caller can word.
 pub fn open_read(path: &Path) -> Result<Connection, StoreError> {
     if !path.exists() {
         return Err(StoreError::NotFound);
@@ -237,12 +216,10 @@ pub fn open_read(path: &Path) -> Result<Connection, StoreError> {
     Ok(db)
 }
 
-/// The newest runs first, at most `limit`.
 pub fn list_runs(path: &Path, limit: usize) -> Result<Vec<RunSummary>, StoreError> {
     list_runs_in(&open_read(path)?, limit)
 }
 
-/// Whether this file has the `verdicts` table: a version 1 database that the app has not opened yet does not.
 fn has_verdicts(db: &Connection) -> Result<bool, StoreError> {
     let version: i64 = db.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     Ok(version >= 2)
@@ -276,7 +253,6 @@ pub fn list_runs_in(db: &Connection, limit: usize) -> Result<Vec<RunSummary>, St
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
-/// One run with its steps (in order) and events (in order). `None` when there is no such run.
 pub fn get_run(path: &Path, id: &str) -> Result<Option<RunDetail>, StoreError> {
     get_run_in(&open_read(path)?, id)
 }
@@ -364,7 +340,6 @@ pub fn get_run_in(db: &Connection, id: &str) -> Result<Option<RunDetail>, StoreE
     }))
 }
 
-/// The newest analyses first, at most `limit`. A database older than version 3 has none.
 pub fn list_analyses(path: &Path, limit: usize) -> Result<Vec<AnalysisRecord>, StoreError> {
     let db = open_read(path)?;
     if !has_analyses(&db)? {
@@ -381,7 +356,6 @@ pub fn list_analyses(path: &Path, limit: usize) -> Result<Vec<AnalysisRecord>, S
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
-/// The newest reflection runs first, at most `limit`. A database older than version 4 has none.
 pub fn list_reflections(path: &Path, limit: usize) -> Result<Vec<ReflectionRecord>, StoreError> {
     let db = open_read(path)?;
     let version: i64 = db.query_row("PRAGMA user_version", [], |row| row.get(0))?;
@@ -403,7 +377,6 @@ pub fn list_reflections(path: &Path, limit: usize) -> Result<Vec<ReflectionRecor
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
-/// One analysis. `None` when there is no such id.
 pub fn get_analysis(path: &Path, id: &str) -> Result<Option<AnalysisRecord>, StoreError> {
     let db = open_read(path)?;
     if !has_analyses(&db)? {
@@ -425,7 +398,6 @@ pub fn get_analysis(path: &Path, id: &str) -> Result<Option<AnalysisRecord>, Sto
 
 const ANALYSIS_COLUMNS: &str = "id, created_utc, question, answer, findings_json, model, latency_ms, status, error, screenshot_path, monitor_json";
 
-/// The columns to read: version 5 added `boxes_rejected`; an older file reads as 0.
 fn analysis_columns(db: &Connection) -> Result<String, StoreError> {
     let version: i64 = db.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     Ok(format!(

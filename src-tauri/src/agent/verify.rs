@@ -1,11 +1,3 @@
-//! The independent check at the end of a task. `done{success}` is the model grading its own work;
-//! this asks the omni model once more, with fresh eyes, whether the **screen** shows the task is done.
-//!
-//! It is a forced tool call (`verdict`) through the same `ChatClient::call` as everything else, with
-//! thinking off, the screenshot the agent already holds, no retries and a 30 s limit. Any failure is
-//! an error value that the caller stores; nothing in here can change what a task did. See
-//! `agent/mod.rs` for the two modes and how the check yields to the user.
-
 use std::time::Duration;
 
 use serde_json::{Value, json};
@@ -17,16 +9,13 @@ use crate::{
     trace::{self, EVIDENCE_CAP},
 };
 
-/// How long the check may take before it counts as an error. The client's own limit (300 s) stays.
 pub const TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Longest task, goal and claim text put into the message.
 const TASK_CAP: usize = 500;
 const GOAL_CAP: usize = 200;
 const CLAIM_CAP: usize = 400;
 const FRONT_CAP: usize = 200;
 
-/// What the checker decided.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VerdictResult {
     Verified,
@@ -35,7 +24,6 @@ pub enum VerdictResult {
 }
 
 impl VerdictResult {
-    /// The word stored in the trace and shown to the user.
     pub fn as_str(self) -> &'static str {
         match self {
             VerdictResult::Verified => "verified",
@@ -48,11 +36,9 @@ impl VerdictResult {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Verdict {
     pub result: VerdictResult,
-    /// One short sentence naming what the checker saw (cut to 400 characters).
     pub evidence: String,
 }
 
-/// The one tool the checker may call.
 pub fn tool() -> Value {
     json!({
         "type": "function",
@@ -71,21 +57,15 @@ pub fn tool() -> Value {
     })
 }
 
-/// Everything the check is told besides the screenshot.
 pub struct VerifyInput<'a> {
     pub task: &'a str,
     pub goals: &'a [String],
     pub history: &'a [Entry],
-    /// What the agent says it did (its `done` summary).
     pub claim_summary: &'a str,
-    /// The screen now, as a data URI: the frame the agent already holds.
     pub screenshot: &'a str,
-    /// What the system says is in front (see `front_line`); empty when unknown.
     pub front: &'a str,
 }
 
-/// The window in front and its program, from the system, as a fact for the checker. Without it the
-/// model named the program from the look of a window ("a VS Code editor" for Notepad).
 pub fn front_line() -> String {
     let window = crate::safety::foreground::current();
     if window.title.is_empty() && window.process.is_empty() {
@@ -102,8 +82,6 @@ pub fn front_line() -> String {
     )
 }
 
-/// The text part of the request: the task, the plan, the last steps (formatted exactly as the
-/// agent's own prompt shows them) and the claim.
 pub fn user_message(
     task: &str,
     goals: &[String],
@@ -146,8 +124,6 @@ pub fn user_message(
     text
 }
 
-/// Reads the arguments of a `verdict` call. Forgiving: a missing or unknown result is `unsure`, the
-/// evidence is trimmed and cut, and nothing here can panic.
 pub fn parse(arguments: &Value) -> Verdict {
     let result = match arguments["result"]
         .as_str()
@@ -170,8 +146,6 @@ pub fn parse(arguments: &Value) -> Verdict {
     Verdict { result, evidence }
 }
 
-/// Asks the model. `Err` carries the reason a verdict could not be had: the server, a reply that
-/// is not the `verdict` tool, or the 30 s limit. Never retried.
 pub async fn verify(client: &ChatClient<'_>, input: VerifyInput<'_>) -> Result<Verdict, String> {
     verify_within(client, input, TIMEOUT).await
 }
@@ -213,8 +187,6 @@ async fn verify_within(
     }
 }
 
-/// Whether blocking mode sends the agent back to work: only in `blocking` mode, for a task the
-/// agent claims succeeded, that has not been challenged yet, when the check says `contradicted`.
 pub fn should_challenge(
     mode: VerifyMode,
     claimed_success: bool,
@@ -436,9 +408,6 @@ mod tests {
         }
     }
 
-    // ---- against a throwaway server
-
-    /// Serves canned answers, one per connection, each after `delay`. Returns the base URL and the number of requests seen.
     fn serve(answers: Vec<(&'static str, String)>, delay: Duration) -> (String, Arc<AtomicUsize>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
@@ -541,7 +510,6 @@ mod tests {
     #[tokio::test]
     async fn failures_are_errors_and_are_not_retried() {
         let http = reqwest::Client::builder().no_proxy().build().unwrap();
-        // A server error: one request only, no retry (the planning call would have retried a 503).
         let (url, seen) = serve(
             vec![
                 ("503 Service Unavailable", "busy".into()),
@@ -555,7 +523,6 @@ mod tests {
         let error = verify(&client(&http, &url), input()).await.unwrap_err();
         assert!(error.contains("503"), "{error}");
         assert_eq!(seen.load(Ordering::SeqCst), 1, "never retried");
-        // Another tool, or no tool at all.
         let (url, _) = serve(
             vec![("200 OK", call_reply("done", json!({ "summary": "x" })))],
             Duration::ZERO,
@@ -580,7 +547,6 @@ mod tests {
                 .unwrap_err()
                 .contains("did not call a tool")
         );
-        // Nothing listening.
         let dead = TcpListener::bind("127.0.0.1:0").unwrap();
         let dead_url = format!("http://{}", dead.local_addr().unwrap());
         drop(dead);

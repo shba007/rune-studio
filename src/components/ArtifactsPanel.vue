@@ -8,10 +8,6 @@ import AppIcon from './AppIcon.vue'
 import ArtifactCard from './ArtifactCard.vue'
 import PageTabs from './PageTabs.vue'
 
-/**
- * The recorded sessions, newest first. Choosing one opens it in Rune Preview, the window that
- * replays it. Nothing here changes the record.
- */
 const props = defineProps<{ agent: Agent }>()
 const agent = props.agent
 const flight = useFlight()

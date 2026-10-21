@@ -29,11 +29,6 @@ import {
   type TabId,
 } from '@/config/flight'
 
-/**
- * Rune Preview: a finished (or still running) session replayed from the record. The video (or,
- * without one, the screenshots) with a light layer of what Rune did, a timeline of the steps, one
- * caption line, and a details drawer. It only reads: nothing here changes the record.
- */
 const flight = useFlight()
 const stage = ref<InstanceType<typeof FlightStage> | null>(null)
 
@@ -90,7 +85,6 @@ watch(tabs, (list) => {
 const layer = computed(() => actionLayer(step.value, showTyped.value))
 const badge = computed(() => stepBadge(index.value, steps.value.length, step.value))
 
-// ---- the picture for a step (when there is no video)
 watch(
   () => step.value?.observationFile ?? null,
   async (file) => {
@@ -106,7 +100,6 @@ watch(
   { immediate: true },
 )
 
-// ---- the clock: the video's, or a virtual one over the stills
 let frame = 0
 let last = 0
 function loop(now: number) {
@@ -148,7 +141,6 @@ function goto(target: number) {
   return seek(timeOfStep(flight.starts.value, target))
 }
 function previousStep() {
-  // Within the first moment of a step, go to the one before; otherwise back to its start.
   const here = index.value
   const atStart = timeMs.value - timeOfStep(flight.starts.value, here) < 600
   return goto(atStart ? here - 1 : here)
@@ -166,7 +158,6 @@ function onVideoFailed(message: string) {
   playing.value = false
 }
 
-// ---- opening a run
 async function openRun(id: string) {
   await pause()
   timeMs.value = 0
@@ -194,7 +185,6 @@ async function closeWindow() {
   }
 }
 
-// ---- keyboard
 function onKey(event: KeyboardEvent) {
   const target = event.target as HTMLElement | null
   if (event.ctrlKey || event.metaKey || event.altKey) return
@@ -239,9 +229,7 @@ onMounted(async () => {
       if (id) await openRun(id)
       else await backToRuns()
     })
-  } catch {
-    // A plain browser has no event bus; the run in the address is all there is.
-  }
+  } catch {}
 })
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKey)
@@ -276,7 +264,6 @@ function runDate(text: string | null): string {
 <template>
   <main class="flex h-screen flex-col overflow-hidden bg-black text-zinc-100" data-testid="flight">
     <TitleBar title="Rune Preview" />
-    <!-- The picker: no run chosen yet, or the record could not be read. -->
     <section v-if="!header" class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-6">
       <h1 class="m-0 text-title uppercase">Preview</h1>
       <p v-if="flight.loading.value" class="m-0 text-zinc-400" data-testid="loading">Loading…</p>

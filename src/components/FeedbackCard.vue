@@ -3,10 +3,6 @@ import { computed, nextTick, ref, watch } from 'vue'
 
 import type { Agent } from '@/composables/useAgent'
 
-/**
- * Asked once a session has ended, before the review offer: did it really complete the task? A No asks
- * why (one line, optional). What is said goes into the session's record.
- */
 const props = defineProps<{ agent: Agent }>()
 const agent = props.agent
 

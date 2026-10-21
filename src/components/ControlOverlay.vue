@@ -27,8 +27,6 @@ import AnalysisLayer from './AnalysisLayer.vue'
 import OverlayBarShell from './OverlayBarShell.vue'
 import AppIcon from './AppIcon.vue'
 
-/** Full-screen "the agent is driving" effect: a dot-matrix frame with a pulse circling it. */
-
 const STEP = 8
 const DEPTH = 4
 const DOT = 1.15
@@ -47,7 +45,6 @@ let dots: { x: number; y: number; depth: number; along: number }[] = []
 
 const hotkeyLabel = computed(() => stopHotkey.value.replace(/\+/g, ' + '))
 
-/** Lays the dots out once per size: a band of rows and columns along every edge. */
 function layout() {
   const el = canvas.value
   if (!el) return
@@ -70,7 +67,6 @@ function layout() {
       if (depth >= DEPTH) continue
       const x = x0 + c * STEP
       const y = y0 + r * STEP
-      // Distance travelled clockwise from the top-left corner, along the nearest edge.
       let along: number
       if (depth === r && r <= rows - 1 - r) along = x
       else if (depth === cols - 1 - c) along = width + y
@@ -87,7 +83,6 @@ function draw(now: number) {
   ctx.clearRect(0, 0, width, height)
   const still = reducedMotion.value === 'reduce'
   const seconds = (now - startedAt) / 1000
-  // The frame draws itself inward from the very edge when control starts.
   const reveal = still ? DEPTH : Math.min(DEPTH, seconds * 14)
   const head = still ? -1 : (seconds * TRAVEL) % perimeter
 
@@ -102,7 +97,6 @@ function draw(now: number) {
         level = Math.max(level, glow * glow * (0.35 + 0.65 * edge))
       }
     }
-    // A dark ring keeps the white dots readable over light windows.
     ctx.beginPath()
     ctx.arc(frameDot.x, frameDot.y, DOT + 0.9 + level, 0, Math.PI * 2)
     ctx.fillStyle = `rgba(0, 0, 0, ${0.22 * level + 0.06})`
@@ -128,14 +122,11 @@ function dot(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number
   ctx.fill()
 }
 
-/** A click marker: rings of dots spreading from the point where the agent clicked. */
 interface Ripple {
   x: number
   y: number
   at: number
-  /** 1 or 2 pulses (a double click pulses twice). */
   pulses: number
-  /** Typed text rather than a click: a smaller ring around a caret mark. */
   typing?: boolean
 }
 const RIPPLE_SECONDS = 0.9
@@ -143,7 +134,6 @@ const RIPPLE_REACH = 72
 const TYPING_REACH = 44
 let ripples: Ripple[] = []
 
-/** Rings of dots on an 8 px pitch spreading out from each click, and a dot that stays at the centre. */
 function drawRipples(ctx: CanvasRenderingContext2D, now: number, still: boolean) {
   ripples = ripples.filter(
     (ripple) => (now - ripple.at) / 1000 < RIPPLE_SECONDS * ripple.pulses + 0.4,
@@ -170,7 +160,6 @@ function drawRipples(ctx: CanvasRenderingContext2D, now: number, still: boolean)
     const settle = Math.max(0, 1 - Math.max(0, age - 0.3) / (RIPPLE_SECONDS * ripple.pulses + 0.1))
     const hold = Math.min(1, 0.35 + settle)
     if (ripple.typing) {
-      // A text caret: a short vertical bar of dots where the text went.
       for (const offset of [-1, 0, 1]) dot(ctx, ripple.x, ripple.y + offset * STEP, 2.2, hold)
     } else {
       dot(ctx, ripple.x, ripple.y, 3, hold)
@@ -178,11 +167,6 @@ function drawRipples(ctx: CanvasRenderingContext2D, now: number, still: boolean)
   }
 }
 
-/**
- * A capture: a wave of dots crosses the captured area from its top-left corner to its
- * bottom-right, once for a screenshot. For a recording (`continuous`) the wave keeps coming until
- * it is told to stop. The dots sit on a 16 px grid and only the ones the wave is passing light up.
- */
 interface Flash {
   x: number
   y: number
@@ -192,7 +176,6 @@ interface Flash {
   continuous: boolean
 }
 const WAVE_SECONDS = 1.2
-/** How thick the wave is, as a share of the diagonal. */
 const WAVE_BAND = 0.14
 const WAVE_PITCH = 2 * STEP
 let flashes: Flash[] = []
@@ -201,10 +184,8 @@ function drawFlashes(ctx: CanvasRenderingContext2D, now: number, still: boolean)
   flashes = flashes.filter((flash) => flash.continuous || (now - flash.at) / 1000 < WAVE_SECONDS)
   for (const flash of flashes) {
     const cycle = (now - flash.at) / 1000 / WAVE_SECONDS
-    // Recording repeats the wave; a screenshot has just the one.
     const t = still ? 0.5 : flash.continuous ? cycle % 1 : cycle
     if (t < 0) continue
-    // The front runs a little past the far corner so the last dots light too.
     const front = t * (1 + 2 * WAVE_BAND) - WAVE_BAND
     for (let y = flash.y; y <= flash.y + flash.h; y += WAVE_PITCH) {
       for (let x = flash.x; x <= flash.x + flash.w; x += WAVE_PITCH) {
@@ -228,17 +209,14 @@ function setActive(next: boolean) {
     startedAt = performance.now()
     resume()
   } else {
-    // Keep painting while the page fades out, then stop.
     window.setTimeout(() => {
       if (!active.value) pause()
     }, 600)
   }
 }
 
-/** Name of the outside agent in control, or null when it is Rune Studio's own agent. */
 const agentName = ref<string | null>(null)
 const { identity, darkAccent, mark, logo, mono, letter, hint } = useExternalAgent()
-/** The mark pulses for the first 600 ms of a hand-over, then holds still (a steady pulse beside a moving action chip is noise). */
 const markPulse = ref(false)
 watch(identity, (who, before) => {
   if (who && who.id !== before?.id) {
@@ -246,7 +224,6 @@ watch(identity, (who, before) => {
     setTimeout(() => (markPulse.value = false), 600)
   }
 })
-// ---- Screen analysis: the same overlay, a second mode. Control and analysis never share it.
 const owner = ref<OverlayOwner>('none')
 const overlayInfo = ref<OverlayInfo | null>(null)
 const analysis = useAnalysis()
@@ -256,7 +233,6 @@ const view = computed(() => ({
   height: overlayInfo.value?.height ?? window.innerHeight * (window.devicePixelRatio || 1),
   scaleFactor: overlayInfo.value?.scaleFactor ?? (window.devicePixelRatio || 1),
 }))
-/** Markers belong on the primary monitor, where the analysis captured. */
 const drawsMarkers = computed(
   () =>
     analysisMode.value &&
@@ -277,10 +253,8 @@ watch(
       startedAtMs.value = performance.now()
       barShown.value = true
     }
-    // The capture has happened: sweep the scan line once.
     if (status === 'asking' && before === 'capturing') scanKey.value += 1
     if (status === 'done' || status === 'error' || status === 'cancelled') {
-      // The end word stays for 1.5 s; the markers stay on the screen after the bar is gone.
       barTimer = window.setTimeout(() => (barShown.value = false), 1500)
     }
     if (status === 'idle') barShown.value = false
@@ -289,7 +263,6 @@ watch(
 const elapsedMs = computed(() => Math.max(0, nowMs.value - startedAtMs.value))
 const shownName = computed(() => identity.value?.agent ?? agentName.value ?? 'Rune')
 
-/** Characters of typed text shown at once; longer text scrolls so the newest letters stay in view. */
 const TYPED_TAIL = 24
 
 interface Typing {
@@ -298,7 +271,6 @@ interface Typing {
   msPerChar: number
 }
 
-/** What the agent is doing right now. One at a time; the next replaces it. */
 const action = ref<{
   key: number
   kind: ActionKind
@@ -307,14 +279,12 @@ const action = ref<{
   typing: Typing | null
 } | null>(null)
 
-/** How many characters of the text being typed have appeared so far. */
 const typedCount = ref(0)
 const typedShown = computed(() => {
   const text = action.value?.typing?.text.slice(0, typedCount.value).replaceAll('\n', '↵') ?? ''
   return text.length > TYPED_TAIL ? `…${text.slice(-TYPED_TAIL)}` : text
 })
 
-/** The caption types out in step with the real typing, so the user sees the text arrive. */
 function updateTyping(now: number, still: boolean) {
   const typing = action.value?.typing
   if (!typing) return
@@ -344,19 +314,16 @@ function showStep(step: StepStartedPayload) {
     detail: typing ? '' : step.detail.length > 28 ? `${step.detail.slice(0, 27)}…` : step.detail,
   }
   if (step.point) {
-    // Desktop pixels to this window: the window sits at its monitor's origin.
     const dpr = window.devicePixelRatio || 1
     ripples.push({
       x: step.point.x / dpr - window.screenX,
       y: step.point.y / dpr - window.screenY,
-      // The ripple lands when the cursor arrives, not when the step starts.
       at: performance.now() + step.durationMs,
       pulses: step.double ? 2 : 1,
     })
   }
 }
 
-/** Text was typed: mark the spot the way a click is marked, with a caret. */
 function showTyped({ point }: TypedPayload) {
   if (!point) return
   const dpr = window.devicePixelRatio || 1
@@ -371,7 +338,6 @@ function showTyped({ point }: TypedPayload) {
 
 let observeCount = 0
 
-/** A screenshot: the monitor icon, and a flash over the area that was captured. */
 function showObserve({ region, continuous }: ObserveStartedPayload) {
   typedCount.value = 0
   action.value = {
@@ -381,7 +347,6 @@ function showObserve({ region, continuous }: ObserveStartedPayload) {
     detail: '',
     typing: null,
   }
-  // The whole screen is flashed a little inside the edge frame, so the two do not overlap.
   const inset = 3 * STEP
   const [x0, y0, x1, y1] = region ?? [0, 0, 1000, 1000]
   const box = region
@@ -392,15 +357,10 @@ function showObserve({ region, continuous }: ObserveStartedPayload) {
         h: (Math.abs(y1 - y0) / 1000) * height,
       }
     : { x: inset, y: inset, w: width - 2 * inset, h: height - 2 * inset }
-  // Only one recording wave at a time.
   if (continuous) flashes = flashes.filter((flash) => !flash.continuous)
   flashes.push({ ...box, at: performance.now(), continuous: Boolean(continuous) })
 }
 
-/**
- * The speech bubble at the orb's head: what the agent is thinking (when Show thinking is on) and
- * what it just said. Compact here; the full text is in the pill's task panel when it is expanded.
- */
 const BUBBLE_CHARS = 120
 const bubbleThinking = ref('')
 const bubbleSays = ref('')
@@ -414,9 +374,7 @@ async function refreshPill() {
   }
 }
 
-/** Thinking shows its newest words; a response shows its start. */
 const bubble = computed(() => {
-  // Expanded: the task panel shows all of it, so the bubble steps aside.
   if (!pill.value || pill.value.width > 100) return null
   if (bubbleThinking.value) {
     const text = bubbleThinking.value.replace(/\s+/g, ' ').trim()
@@ -431,7 +389,6 @@ const bubble = computed(() => {
   return null
 })
 
-/** Where the bubble sits: right edges aligned with the orb, just above its top. */
 const bubbleStyle = computed(() => {
   const rect = pill.value
   if (!rect) return {}
@@ -462,9 +419,7 @@ onMounted(async () => {
   draw(performance.now())
   try {
     stopHotkey.value = (await invoke<Settings>('get_settings')).stopHotkey
-  } catch {
-    // The label is optional.
-  }
+  } catch {}
   unlisten.push(
     await listen<{ state: AgentState }>('state_changed', (event) => {
       const next = event.payload.state
@@ -509,19 +464,13 @@ onMounted(async () => {
   try {
     overlayInfo.value = await invoke<OverlayInfo>('overlay_info')
     owner.value = overlayInfo.value.mode
-  } catch {
-    // Without it the overlay draws as before (control only).
-  }
+  } catch {}
   nowMs.value = performance.now()
   tick = window.setInterval(() => (nowMs.value = performance.now()), 250)
-  // The window is created at the moment control starts, so it may have missed the events.
   if (owner.value !== 'analysis') setActive(true)
   try {
     agentName.value = await invoke<string | null>('get_control_label')
-  } catch {
-    // The label falls back to Rune.
-  }
-  // Dev only: lets a plain browser preview play steps without the Rust side.
+  } catch {}
   if (import.meta.env.DEV) {
     Object.assign(window, {
       __demoStep: showStep,
@@ -556,7 +505,6 @@ onBeforeUnmount(() => {
     >
       <canvas ref="canvas" class="absolute inset-0 size-full" aria-hidden="true" />
 
-      <!-- One pill: who is in control, what they are doing right now, and how to stop them. -->
       <OverlayBarShell>
         <span
           class="grid shrink-0 place-items-center"
@@ -607,7 +555,6 @@ onBeforeUnmount(() => {
       </OverlayBarShell>
     </div>
 
-    <!-- Screen analysis: the same bar, and the boxes on the real screen (primary monitor only). -->
     <template v-if="analysisMode && overlayInfo?.primary">
       <AnalysisBar
         v-if="barShown"
@@ -623,7 +570,6 @@ onBeforeUnmount(() => {
       />
     </template>
 
-    <!-- The speech bubble at the orb's head. Outside the fading frame, so it outlasts it briefly. -->
     <Transition name="bubble">
       <div
         v-if="bubble"

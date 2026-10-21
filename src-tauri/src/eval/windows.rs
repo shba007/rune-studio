@@ -1,13 +1,8 @@
-//! What the harness needs from Windows: the visible window titles, the running programs, and
-//! closing one of the allowlisted programs. Everything is a stub that says "unsupported" elsewhere.
-
 use super::check::Machine;
 use super::spec::kill_allowed;
 
-/// The real machine.
 pub struct System;
 
-/// The names (`notepad.exe`) in the output of `tasklist /FO CSV /NH`.
 #[cfg_attr(not(windows), allow(dead_code))]
 pub fn parse_tasklist(output: &str) -> Vec<String> {
     output
@@ -30,7 +25,6 @@ impl Machine for System {
     }
 }
 
-/// Closes every running copy of an allowlisted program. Not running is fine.
 pub fn kill_process(name: &str) -> Result<(), String> {
     if !kill_allowed(name) {
         return Err(format!(
@@ -55,10 +49,7 @@ mod imp {
     use super::parse_tasklist;
 
     unsafe extern "system" fn collect(window: HWND, lparam: LPARAM) -> BOOL {
-        // SAFETY: `lparam` is the address of the `Vec<String>` that `window_titles` keeps alive
-        // for the whole of the `EnumWindows` call, and nothing else touches it meanwhile.
         let titles = unsafe { &mut *(lparam.0 as *mut Vec<String>) };
-        // SAFETY: plain Win32 calls with a buffer that is valid for the length passed.
         unsafe {
             if IsWindowVisible(window).as_bool() {
                 let mut buffer = [0_u16; 512];
@@ -73,7 +64,6 @@ mod imp {
 
     pub fn window_titles() -> Result<Vec<String>, String> {
         let mut titles: Vec<String> = Vec::new();
-        // SAFETY: `collect` only uses `lparam` as the vector passed here, which outlives the call.
         unsafe {
             EnumWindows(
                 Some(collect),
@@ -96,7 +86,6 @@ mod imp {
     }
 
     pub fn kill_process(name: &str) -> Result<(), String> {
-        // taskkill exits non-zero when the program is not running, which is exactly the goal.
         Command::new("taskkill")
             .args(["/IM", name, "/F"])
             .output()

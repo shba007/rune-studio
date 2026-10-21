@@ -8,13 +8,9 @@ import type { AgentState } from '@/types/protocol'
 const props = defineProps<{
   state: AgentState
   level?: number
-  /** An outside agent's colour for the lit dots (on the light disc); null keeps them dark. Red stays red. */
   accent?: string | null
-  /** That agent's mark, one 24x24 SVG path, drawn in the middle. */
   mark?: string | null
-  /** That agent's logo (an image in public/agents), drawn in the middle in its own colours. */
   logo?: string | null
-  /** The first letter of an agent with no logo, drawn in the middle. */
   letter?: string | null
 }>()
 
@@ -57,7 +53,6 @@ const KIND: Record<AgentState, Kind> = {
   failed: 'failed',
 }
 
-/** Disc diameter in px. Dot geometry below was tuned at 64 px and scales with it. */
 const SIZE = 56
 const SCALE = SIZE / 64
 const GRID = 11
@@ -85,7 +80,6 @@ const wave = (x: number) => Math.sin(x) * 0.5 + 0.5
 
 type Light = (x: number, y: number, brightness: number) => void
 
-/** Brightness of every dot for one frame. `since` is seconds since the current state began. */
 function paint(kind: Kind, t: number, since: number, light: Light) {
   for (let x = 0; x < GRID; x++) {
     for (let y = 0; y < GRID; y++) {
@@ -100,8 +94,6 @@ function paint(kind: Kind, t: number, since: number, light: Light) {
           if (r < 0.5) light(x, y, 0.7)
           break
         case 'listening': {
-          // Follows the real microphone level. At silence only the centre breathes, so a dead
-          // mic looks different from a live one.
           const reach = 0.9 + smoothedLevel * 4.3
           if (r <= reach) light(x, y, 0.4 + 0.6 * (1 - r / reach))
           else if (Math.abs(r - 4.6) < 0.5) light(x, y, 0.08 + 0.25 * smoothedLevel)
@@ -117,8 +109,6 @@ function paint(kind: Kind, t: number, since: number, light: Light) {
           if (r < 0.6) light(x, y, 0.3 + 0.5 * wave(t * 4))
           break
         case 'reflecting': {
-          // A slow arc of dots turning on the ring, with a faint centre: calmer than thinking, and
-          // always neutral (an outside agent's colour never applies to Rune's own reflection).
           if (r > 3.2 && r < 4.8) {
             const head = (t * 0.7) % (Math.PI * 2)
             const behind = (angle - head + Math.PI * 4) % (Math.PI * 2)
@@ -162,7 +152,6 @@ function draw(now: number) {
   if (!ctx) return
 
   const kind = KIND[props.state]
-  // Fast attack, slow decay: syllables register but the glyph does not flicker.
   smoothedLevel = Math.max(props.level ?? 0, smoothedLevel * 0.86)
   const t = reducedMotion.value === 'reduce' ? 0 : (now - origin) / 1000
   const since = reducedMotion.value === 'reduce' ? 10 : (now - kindStartedAt) / 1000
@@ -201,7 +190,6 @@ function draw(now: number) {
   drawMark(ctx, kind)
 }
 
-/** The outside agent's mark: one flat vector over the dimmed dot field, about 14 px. No glow, no gradient. */
 function drawMark(ctx: CanvasRenderingContext2D, kind: Kind) {
   if (!marked() || kind === 'attention' || kind === 'failed' || kind === 'reflecting') return
   const size = 14 * SCALE
@@ -230,7 +218,6 @@ function drawMark(ctx: CanvasRenderingContext2D, kind: Kind) {
   ctx.restore()
 }
 
-/** Animates only while the window is visible and the user has not asked for reduced motion. */
 const { pause, resume } = useRafFn(({ timestamp }) => draw(timestamp), { immediate: false })
 
 watchEffect(() => {

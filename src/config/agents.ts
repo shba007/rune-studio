@@ -1,32 +1,13 @@
-/**
- * The brand registry: the only place an outside agent's name, accent colour and mark are written down.
- * Everything else asks for an id (`bridge::identity` on the Rust side emits one of these ids).
- *
- * Provenance and rights: accents and marks come from the Simple Icons data (CC0 for the data; the
- * marks themselves remain the trademarks of their owners). A brand whose rules forbid recolouring or
- * redrawing its mark (Anthropic asks for prior approval of any use; OpenAI forbids altering its logo)
- * is the maintainer's call: set `glyph` to null to fall back to the neutral mark. Where no official
- * palette or mark could be found (Antigravity, ChatGPT, Codex) the entry has `accent: null` and
- * `glyph: null` and renders neutral until the maintainer supplies values. Nothing here was drawn or
- * guessed.
- */
 export interface AgentBrand {
   name: string
-  /** The brand colour, as published; null when none is known. */
   accent: string | null
-  /** The colour to use on the dark `#141414` surfaces; null when the accent is too dark to read there (3:1), which means: use the neutral light colour. */
   accentOnDark: string | null
-  /** One 24x24 SVG path (single colour); null draws the neutral plug icon. */
   glyph: string | null
-  /** The brand logo in public/agents (colour); null when the agent is not in the list. */
   logo: string | null
-  /** The logo is one flat colour (black), so on a dark surface it is inverted. */
   mono: boolean
-  /** Where the values came from. */
   source: string
 }
 
-/** The colour used when a brand has no readable accent. */
 export const NEUTRAL_ON_DARK = '#f1f1ef'
 
 export const AGENT_BRANDS: Record<string, AgentBrand> = {
@@ -138,12 +119,10 @@ export const AGENT_BRANDS: Record<string, AgentBrand> = {
   },
 }
 
-/** The brand for an id from the backend; an id nobody knows is the neutral one. */
 export function brandFor(id: string | null | undefined): AgentBrand {
   return (id && AGENT_BRANDS[id]) || AGENT_BRANDS.external!
 }
 
-/** The accent to draw with on a dark surface: the brand's, or the neutral light colour. */
 export function accentOnDark(id: string | null | undefined): string {
   return brandFor(id).accentOnDark ?? NEUTRAL_ON_DARK
 }
@@ -177,10 +156,6 @@ function hslToHex(hue: number, saturation: number, lightness: number): string {
   return `#${channel(0)}${channel(8)}${channel(4)}`.toUpperCase()
 }
 
-/**
- * How an outside agent looks on the orb: its brand where it is in the list, otherwise a stable colour
- * made from its name and its first letter, so any agent gets an identity.
- */
 export function lookFor(id: string | null | undefined, name: string | null | undefined): AgentLook {
   const brand = brandFor(id)
   if (id && id !== 'external' && AGENT_BRANDS[id]) {

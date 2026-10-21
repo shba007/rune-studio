@@ -23,10 +23,6 @@ import {
   type TabId,
 } from '@/config/flight'
 
-/**
- * The details of the current step, one calm tab at a time. A tab is listed only when the record has
- * something for it. RAW shows the stored JSON with a Copy button. Typed text stays hidden behind SHOW.
- */
 const props = defineProps<{
   open: boolean
   tabs: TabId[]
@@ -34,7 +30,6 @@ const props = defineProps<{
   step: FlightStep | undefined
   index: number
   header: FlightHeader
-  /** Every step of the run, so text typed anywhere is masked wherever it shows up. */
   typed: string[]
   calls: FlightCall[]
   events: FlightEvent[]
@@ -63,7 +58,6 @@ const stepRaw = computed(() => {
   return mask(JSON.stringify(copyOf, null, 2))
 })
 
-// ---- API tab: fixed-height rows, only the ones in view are drawn
 const ROW = 32
 const listTop = ref(0)
 const LIST_HEIGHT = 224
@@ -100,7 +94,6 @@ watch(
 const reasoning = computed(() => {
   for (const call of props.calls) {
     if (call.kind !== 'decide') continue
-    // Bodies are loaded on demand; the reasoning shows once the decide call is opened.
     if (call.id === picked.value && pickedBodies.value) {
       return reasoningOf(pickedBodies.value.response)
     }
@@ -122,7 +115,6 @@ const sections = computed(() =>
   promptSections(props.step?.promptText ? mask(props.step.promptText) : ''),
 )
 const RISK = ['Low', 'Medium', 'High']
-/** The action's own inputs as rows; the reason, risk and goal have places of their own. */
 const inputRows = computed(() => {
   if (!props.step?.argsJson) return []
   try {

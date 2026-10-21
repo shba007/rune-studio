@@ -1,15 +1,6 @@
-//! Keeping the boxes honest. They were drawn for the screen as it was when it was captured; once the
-//! screen has changed they are wrong. So while boxes are on the real screen the live screen is
-//! compared every 1.5 s with the small grey picture taken at capture, and the foreground window with
-//! the one then. If the window changed, or more than 5% of the picture moved, the boxes fade out and
-//! never come back for that analysis. **This is the only way the boxes disappear** (the findings text
-//! stays), because they are false after the screen moved.
-
 use crate::{agent::stuck::changed_fraction, safety::foreground::WindowId};
 
-/// How often the live screen is looked at.
 pub const EVERY_MS: u64 = 1500;
-/// More than this share of the comparison picture moved: the screen is not the one that was analysed.
 pub const MOVED_SHARE: f64 = 0.05;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,9 +10,6 @@ pub enum Staleness {
     ScreenChanged,
 }
 
-/// Decides from the picture at capture and now, and the foreground window then and now. Rune's own
-/// windows are not "a different window" (`None` means the front window is Rune's own, or unknown):
-/// with no window to compare only the pixels decide.
 pub fn decide(
     thumbnail: &[u8],
     live: &[u8],
@@ -49,7 +37,6 @@ mod tests {
         vec![200; N]
     }
 
-    /// The first `pixels` pixels set to `level`.
     fn moved(pixels: usize, level: u8) -> Vec<u8> {
         let mut screen = screen();
         screen[..pixels].fill(level);
@@ -67,12 +54,10 @@ mod tests {
 
     #[test]
     fn a_caret_a_clock_or_a_few_words_are_not_a_change() {
-        // 4 percent of the picture moved: under the 5 percent line.
         assert_eq!(
             decide(&screen(), &moved(N * 4 / 100, 20), Some(7), Some(7)),
             Staleness::Fresh
         );
-        // A tiny colour drift everywhere stays under the per-pixel delta.
         assert_eq!(
             decide(&screen(), &vec![205; N], Some(7), Some(7)),
             Staleness::Fresh

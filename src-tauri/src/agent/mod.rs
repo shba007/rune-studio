@@ -1,8 +1,3 @@
-//! The agent loop: plan, then look at the screen, ask the model for one action, do it, repeat.
-//!
-//! One run is one task. Stop (hotkey, tray or button) cancels the run's own token; every wait in
-//! here, including the model request, watches it, so Stop is felt within milliseconds.
-
 pub mod body;
 pub mod prompt;
 pub mod protocol;
@@ -39,16 +34,11 @@ use crate::safety::{
     gate::{self, Verdict},
 };
 
-/// Give up after this many unusable model answers in a row.
 const MAX_INVALID_IN_A_ROW: u32 = 3;
-/// Give up after the user has said no this many times: they do not want this done.
 const MAX_DECLINES: u32 = 3;
-/// Thinking streams in token by token; the UI is told this often at most.
 const THINKING_EVERY: Duration = Duration::from_millis(150);
-/// How long to wait before looking again at a page that is still loading.
 const LOAD_WAIT: Duration = Duration::from_millis(900);
 
-/// How a run ended.
 #[derive(Debug, PartialEq)]
 enum Outcome {
     Finished { summary: String, success: bool },
@@ -56,22 +46,14 @@ enum Outcome {
     Failed(String),
 }
 
-/// Starts a task on a background task and returns at once. `plan` is the goals already worked out
-/// (a spoken task heard by an audio model comes with its plan, so the separate planning call is
-/// skipped); `None` plans first.
 pub fn start_planned(app: &AppHandle, task: String, plan: Option<Vec<String>>) {
-    // Synchronously, so a second start_task sees a running agent and is refused. The new scope
-    // also cancels the previous run's, so nothing from an earlier task can carry on.
     let scope = app.state::<AppState>().begin_run();
     log::info!("run {} started", scope.id);
     events::set_agent_state(app, AgentState::Planning);
-    // Everything captured for this task goes in one session folder. If it cannot be made, saving
-    // fails closed anyway, so the run is left to report that.
     let session = crate::archive::begin_session(&task, "built-in").unwrap_or_else(|err| {
         log::error!("could not open the session folder: {err}");
         String::new()
     });
-    // The run's id in the flight recorder is its session id, or a stand-in when there is no session folder.
     let run_id = if session.is_empty() {
         format!("norun-{}-{}", scope.id, crate::archive::now())
     } else {
@@ -79,7 +61,6 @@ pub fn start_planned(app: &AppHandle, task: String, plan: Option<Vec<String>>) {
     };
     let state = app.state::<AppState>();
     let trace = state.trace.clone();
-    // Read once: a change to the setting in the middle of a task does not change how this one ends.
     let mode = state.settings.locked().verify_mode;
     let handoff: Shared = Shared::default();
     let (model, settings_json) = trace::model_and_snapshot(&state.settings);
@@ -99,8 +80,6 @@ pub fn start_planned(app: &AppHandle, task: String, plan: Option<Vec<String>>) {
     });
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        // The run is its own task, so a panic inside it cannot skip `finish`: the state would stay
-        // at Planning/Acting, the pill would stay click-through and the voice session would hang.
         let work_app = app.clone();
         let leftovers = scope.token.clone();
         let work_id = run_id.clone();
@@ -128,7 +107,6 @@ pub fn start_planned(app: &AppHandle, task: String, plan: Option<Vec<String>>) {
         };
         let next = after_run(mode, &outcome, checked);
         finish(&app, outcome);
-        // Only now, with the user already looking at the result: the check never delays it.
         match next {
             AfterRun::Nothing => {}
             AfterRun::Check => spawn_background_check(&app, run_id, evidence),
@@ -141,17 +119,13 @@ pub fn start_planned(app: &AppHandle, task: String, plan: Option<Vec<String>>) {
     });
 }
 
-/// What a finished run leaves for the background check: only the one latest frame is kept.
 #[derive(Debug, Clone)]
 struct Evidence {
     task: String,
     goals: Vec<String>,
     history: Vec<Entry>,
-    /// What the agent says it did.
     claim_summary: String,
-    /// The screen at the end, as a data URI. `None` when there was no frame to keep.
     screenshot: Option<String>,
-    /// The window in front when the run ended, as the system reports it.
     front: String,
 }
 
@@ -174,24 +148,18 @@ impl Evidence {
     }
 }
 
-/// What `run` hands to `start_planned` besides its outcome.
 #[derive(Default)]
 struct Leftovers {
-    /// For the background check; filled when a task the agent claims succeeded is about to finish.
     evidence: Option<Evidence>,
-    /// A verdict has been stored for this run already (blocking mode does it inside the run).
     checked: bool,
 }
 
 type Shared = std::sync::Arc<std::sync::Mutex<Leftovers>>;
 
-/// What to do about the independent check once a run is over.
 #[derive(Debug, PartialEq, Eq)]
 enum AfterRun {
     Nothing,
-    /// Run the background check.
     Check,
-    /// Store that there was nothing to check.
     Skip,
 }
 
@@ -201,8 +169,6 @@ fn after_run(mode: VerifyMode, outcome: &Outcome, checked: bool) -> AfterRun {
         VerifyMode::Off => AfterRun::Nothing,
         _ if checked => AfterRun::Nothing,
         VerifyMode::Background if claimed_success => AfterRun::Check,
-        // Blocking mode checks inside the run, before it finishes; a success claim that was not
-        // checked has nothing left to do here.
         VerifyMode::Blocking if claimed_success => AfterRun::Nothing,
         _ => AfterRun::Skip,
     }
@@ -216,7 +182,6 @@ fn mode_label(mode: VerifyMode) -> &'static str {
     }
 }
 
-/// The row for a run that was not checked because the agent did not claim success.
 fn skipped_record(run_id: &str, mode: VerifyMode, model: &str) -> VerdictRecord {
     VerdictRecord {
         run_id: run_id.to_string(),
@@ -228,7 +193,6 @@ fn skipped_record(run_id: &str, mode: VerifyMode, model: &str) -> VerdictRecord 
     }
 }
 
-/// The row for a check that ran (or failed to).
 fn verdict_record(
     run_id: &str,
     mode: VerifyMode,
@@ -259,19 +223,12 @@ fn verdict_record(
     }
 }
 
-/// How blocking mode answered.
 enum Blocking {
-    /// Stop was pressed while the check ran.
     Stopped,
-    /// The check contradicted the agent: push this line into its history and go on, once.
     Challenge(String),
-    /// Finish as the agent wanted.
     Finish,
 }
 
-/// Blocking mode: checks the screen before a claimed success is accepted and stores the verdict.
-/// It runs inside `unless_stopped`, so Stop works; any failure of the check is stored and the
-/// task finishes as it would have. Never challenges twice.
 async fn blocking_check(
     client: &ChatClient<'_>,
     cancel: &CancelToken,
@@ -308,16 +265,12 @@ async fn blocking_check(
     }
 }
 
-/// Resolves when the user needs the screen: the check was cancelled (a new task, Stop) or the
-/// agent is working again.
 async fn until_the_user_needs_the_screen(app: &AppHandle, token: &CancelToken) {
     while !token.is_cancelled() && !events::agent_state(app).is_running() {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
 
-/// Background mode: checks the finished task off its clock, stores the verdict, and tells the UI.
-/// Starting a task or pressing Stop cancels it at once; it also gives up if the agent is working again.
 fn spawn_background_check(app: &AppHandle, run_id: String, evidence: Option<Evidence>) {
     let token = app.state::<AppState>().begin_verification();
     let app = app.clone();
@@ -385,9 +338,6 @@ fn spawn_background_check(app: &AppHandle, run_id: String, evidence: Option<Evid
     });
 }
 
-/// One step's row for the flight recorder. It is sent when it goes out of scope, so every way out of
-/// a step (a `continue`, a `return`, even a panic) leaves its row. A step that ends with no result
-/// recorded counts as cancelled: the early returns of the loop are all Stop.
 pub(crate) struct StepRow {
     trace: trace::Recorder,
     pub(crate) rec: StepRecord,
@@ -403,7 +353,6 @@ impl StepRow {
         }
     }
 
-    /// Ends the step as failed with a message.
     pub(crate) fn fail(&mut self, message: &str) {
         self.rec.result = Some("failed".into());
         self.rec.error = Some(message.to_string());
@@ -422,14 +371,10 @@ pub(crate) fn millis(started: Instant) -> Option<i64> {
     i64::try_from(started.elapsed().as_millis()).ok()
 }
 
-/// Once a run is over, however it ended, tells anything it left behind (an input action already
-/// in flight after a panic) to stop. Tokens are per run, so this cannot affect the next one.
 fn stop_leftovers(token: &CancelToken, _outcome: &Outcome) {
     token.cancel();
 }
 
-/// Runs `work` as a separate task and turns a panic or an abort into an `Outcome`, so the caller
-/// always gets one back and can end the task cleanly.
 async fn supervised(work: impl Future<Output = Outcome> + Send + 'static) -> Outcome {
     settle(tokio::spawn(work)).await
 }
@@ -451,7 +396,6 @@ async fn settle(run: tokio::task::JoinHandle<Outcome>) -> Outcome {
     }
 }
 
-/// How a run ended, in the words the session manifest and the flight recorder share.
 fn outcome_label(outcome: &Outcome) -> (&'static str, &str) {
     match outcome {
         Outcome::Finished {
@@ -467,8 +411,6 @@ fn outcome_label(outcome: &Outcome) -> (&'static str, &str) {
     }
 }
 
-/// Closes the task's session folder with how the run ended. Only that session: if Stop already
-/// closed it, or a newer task has opened its own, nothing happens.
 fn end_session(session: &str, outcome: &Outcome) {
     if session.is_empty() {
         return;
@@ -479,7 +421,6 @@ fn end_session(session: &str, outcome: &Outcome) {
 
 fn finish(app: &AppHandle, outcome: Outcome) {
     match outcome {
-        // Stop already moved the state machine to Stopped.
         Outcome::Stopped => {}
         Outcome::Finished { summary, success } => {
             log::info!("task finished (success: {success}): {summary}");
@@ -505,12 +446,9 @@ fn finish(app: &AppHandle, outcome: Outcome) {
             events::set_agent_state(app, AgentState::Failed);
         }
     }
-    // A voice session carries on: back to listening once the result has been seen.
     crate::voice::resume_listening_soon(app);
 }
 
-/// Resolves to `None` if Stop is pressed before the future completes. The future is dropped, so
-/// an in-flight model request is aborted rather than waited for.
 pub(crate) async fn unless_stopped<T>(
     cancel: &CancelToken,
     work: impl Future<Output = T>,
@@ -521,7 +459,6 @@ pub(crate) async fn unless_stopped<T>(
     }
 }
 
-/// Passes the model's thinking on to the UI as it streams in, at most every `THINKING_EVERY`.
 fn thinking_sender(app: &AppHandle) -> impl FnMut(&str) + Send {
     let app = app.clone();
     let mut last = Instant::now()
@@ -535,8 +472,6 @@ fn thinking_sender(app: &AppHandle) -> impl FnMut(&str) + Send {
     }
 }
 
-/// The opening call of a task: split it into goals. A failed plan is not fatal (the whole task
-/// becomes one goal and the loop carries on), but Stop is.
 async fn make_plan(
     app: &AppHandle,
     client: &ChatClient<'_>,
@@ -590,7 +525,6 @@ async fn run(
     let api_key = settings::api_key();
     let tools = protocol::tools();
     let think = settings.show_thinking;
-    // Every model attempt of this run (retries included) goes to the `calls` table.
     let call_log = trace.call_log(run_id, "plan");
     let client = ChatClient {
         http: &state.http,
@@ -600,8 +534,6 @@ async fn run(
         sink: Some(&call_log),
     };
 
-    // A simple task needs no plan, and the decision model can say so in a fraction of the time the
-    // planning call takes. (With "Show thinking" on the user wants to watch the model work, so it runs.)
     let simple = if think || preset_plan.is_some() {
         false
     } else {
@@ -630,19 +562,15 @@ async fn run(
     }
 
     let mut history: Vec<Entry> = Vec::new();
-    // Blocking mode sends the agent back to work once at most.
     let mut challenged = false;
     let mut invalid_in_a_row = 0;
     let mut declines = 0;
 
     let mut watch = stuck::Watch::default();
     let mut elevated_watch = stuck::ElevatedWatch::default();
-    // Whether an action ran since the last look, for noticing a screen that does not change.
     let mut acted: Option<stuck::Acted> = None;
-    // Ids from an earlier task must never be clicked in this one.
     uia::forget();
 
-    // Control starts from the middle of the screen. Failing to move the cursor is not worth a task.
     if let Ok(monitor) = screenshot::monitor(None) {
         let worker_cancel = cancel.clone();
         let moved = tauri::async_runtime::spawn_blocking(move || {
@@ -661,7 +589,6 @@ async fn run(
             return Outcome::Stopped;
         }
 
-        // Anything the user said since the last step goes into the history as an instruction.
         for note in state.steer.locked().drain(..) {
             trace.event(
                 run_id,
@@ -674,14 +601,11 @@ async fn run(
             });
         }
 
-        // Look. If the decision model sees the page still loading, wait a moment and look again
-        // (a few times at most) instead of asking the big model about a half-drawn page.
         let mut waits = 0;
         let (mut observe_ms, mut screen_check_ms) = (0_i64, None::<i64>);
         let (frame, element_text, notes) = loop {
             events::set_agent_state(app, AgentState::Observing);
             body::announce_observe(app, None);
-            // The screenshot and the list of the front window's controls are taken together.
             let observing = Instant::now();
             let (captured, elements) = tokio::join!(
                 tauri::async_runtime::spawn_blocking(|| {
@@ -704,7 +628,6 @@ async fn run(
                     return Outcome::Failed(err.to_string());
                 }
             };
-            // Not on the first look: the desktop before any action is not loading anything.
             let notes = if step > 1 {
                 let checking = Instant::now();
                 let read =
@@ -736,7 +659,6 @@ async fn run(
 
         let screenshot = frame.data_uri();
 
-        // Going nowhere? Tell the model after two unchanged looks, give up after five.
         let unchanged = watch.look(frame.signature(), acted.as_ref());
         acted = None;
         if stuck::warning(unchanged).is_some() {
@@ -752,7 +674,6 @@ async fn run(
                 "Stopped: the screen stopped changing, so the actions are not working".into(),
             );
         }
-        // A window that runs as administrator ignores our clicks and typing: say so, and give up if it stays in front.
         let elevated = foreground::blocked_by_elevation();
         if elevated {
             trace.event(run_id, "elevated_warning", "{}");
@@ -763,7 +684,6 @@ async fn run(
                 "I can't control this window because it runs as administrator.".into(),
             );
         }
-        // What to tell the big model: that it is stuck, anything in the way of the page, and the administrator window.
         let warning = [
             stuck::warning(unchanged),
             notes.and_then(|notes| notes.hint).map(String::from),
@@ -775,8 +695,6 @@ async fn run(
         .join(" ");
         let warning = (!warning.is_empty()).then_some(warning);
 
-        // Already finished? Once the last goal has had its steps, the decision model can tell from
-        // the screen, without a full chat call just to say "done". Unsure means the big model decides.
         let succeeded = history
             .iter()
             .filter(|entry| entry.outcome == "done")
@@ -856,7 +774,6 @@ async fn run(
             }
         }
 
-        // Decide.
         events::set_agent_state(app, AgentState::Planning);
         let text = prompt::user_message(
             task,
@@ -965,7 +882,6 @@ async fn run(
         row.rec.risk_stated = risk.map(|risk| risk.label().to_string());
         row.rec.goal = goal.map(i64::from).or(row.rec.goal);
 
-        // The model says which goal this action serves. Goals only move forward.
         if let Some(goal) = goal {
             let index = (goal as usize - 1).min(plan.len() - 1);
             if index > current {
@@ -1019,7 +935,6 @@ async fn run(
             return Outcome::Finished { summary, success };
         }
 
-        // A question for the user is answered here; it never touches the desktop.
         if let Action::AskUser { question } = &action {
             let asking = Instant::now();
             let outcome = match gate::ask_question(app, &cancel, "Rune", question).await {
@@ -1045,7 +960,6 @@ async fn run(
             continue;
         }
 
-        // Ask first if it is risky (or if the user wants every action confirmed).
         let gating = Instant::now();
         let checked = gate::check_detailed(app, &cancel, "Rune", &action, &reason, risk).await;
         row.rec.gate_ms = millis(gating);
@@ -1069,7 +983,6 @@ async fn run(
             }
         }
 
-        // Act.
         let described = body::announce(app, step, &reason, &action, &frame.monitor);
         let acted_now = stuck::Acted::new(action.tool_name(), action.describe());
         events::set_agent_state(app, AgentState::Acting);
@@ -1221,12 +1134,10 @@ mod tests {
             Outcome::Stopped,
             Outcome::Failed("boom".into()),
         ];
-        // Off: nothing, whatever happened.
         for outcome in &outcomes {
             assert_eq!(after_run(Off, outcome, false), AfterRun::Nothing);
             assert_eq!(after_run(Off, outcome, true), AfterRun::Nothing);
         }
-        // Background: a claimed success is checked after the run; everything else is recorded as skipped.
         assert_eq!(
             after_run(Background, &finished(true), false),
             AfterRun::Check
@@ -1238,7 +1149,6 @@ mod tests {
                 "{outcome:?}"
             );
         }
-        // Blocking checks inside the run: a claimed success is left alone, the rest is skipped...
         assert_eq!(
             after_run(Blocking, &finished(true), false),
             AfterRun::Nothing
@@ -1250,7 +1160,6 @@ mod tests {
                 "{outcome:?}"
             );
         }
-        // ...unless the run already stored a verdict (a challenged task that later failed keeps its verdict).
         for outcome in &outcomes {
             for mode in [Background, Blocking] {
                 assert_eq!(
@@ -1352,7 +1261,6 @@ mod tests {
             Some("data:image/jpeg;base64,AA")
         );
         assert_eq!(Evidence::new("t", &[], &[], "", None).screenshot, None);
-        // What the check shows of those 20 steps is capped at twelve (plus the note that older ones were left out).
         let shown = verify::user_message(
             &evidence.task,
             &evidence.goals,
@@ -1407,7 +1315,6 @@ mod tests {
 
     #[test]
     fn a_step_row_is_sent_when_it_is_dropped_and_defaults_to_cancelled() {
-        // No writer behind it: nothing is sent, nothing panics, and the default is applied.
         let trace = trace::Recorder::noop();
         let mut row = StepRow::new(&trace, "r1", 4);
         row.fail("no screen");
@@ -1444,7 +1351,6 @@ mod tests {
             cancelled.rec.tool = Some("click".into());
             let mut failed = StepRow::new(&recorder, "r1", 2);
             failed.fail("no screen");
-            // Both go out of scope here, as they do on every way out of a loop iteration.
             let _ = (&mut cancelled, &mut failed);
         }
         recorder.flush();
@@ -1484,8 +1390,6 @@ mod tests {
     }
 }
 
-/// Talks to a real rune-infer server: asks for a plan with thinking on and checks that thinking
-/// streams in and a usable plan comes out. Run with `-- --ignored --nocapture`.
 #[cfg(test)]
 mod live {
     use super::*;

@@ -1,9 +1,3 @@
-//! The local door: an HTTP endpoint that speaks MCP (JSON-RPC) to one agent at a time.
-//!
-//! It listens on 127.0.0.1 only. Every request needs the bearer token, a `Host` of this machine
-//! (blocks DNS rebinding) and no browser `Origin` (blocks web pages). The Settings switch must
-//! be on. Nothing here decides what the agent may do; that is the lease, the safety gate and Stop.
-
 use crate::sync::LockExt;
 use std::time::Duration;
 
@@ -23,14 +17,12 @@ use crate::events::{self, AgentState, AppState};
 use super::{identity, mcp, token};
 
 pub const PORT: u16 = 47600;
-/// Requests are small JSON; anything bigger is refused.
 const MAX_BODY_BYTES: usize = 256 * 1024;
 
 pub fn url() -> String {
     format!("http://127.0.0.1:{PORT}/mcp")
 }
 
-/// Starts the listener and the idle watcher on the app's async runtime.
 pub fn start(app: &AppHandle) {
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -53,7 +45,6 @@ pub fn start(app: &AppHandle) {
     });
 }
 
-/// Takes control back from an agent that has gone silent.
 async fn watch_for_idle(app: AppHandle) {
     loop {
         tokio::time::sleep(Duration::from_secs(10)).await;
@@ -79,9 +70,6 @@ async fn watch_for_idle(app: AppHandle) {
     }
 }
 
-/// Whether the user allows outside agents. Read from the settings file on every request, so the
-/// switch in Settings and `rune-studio-cli enable` / `disable` take effect at once. Turning it back on,
-/// or running `rune-studio-cli enable` again, also re-arms an agent that Stop locked out.
 fn switch_is_on(app: &AppHandle) -> bool {
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     static WAS_ON: AtomicBool = AtomicBool::new(false);
@@ -110,7 +98,6 @@ fn refuse(status: StatusCode, code: &str, message: &str) -> Response {
         .into_response()
 }
 
-/// Whether the `Host` header names this machine and our port.
 fn host_is_local(headers: &HeaderMap) -> bool {
     let Some(host) = headers
         .get(header::HOST)
@@ -168,8 +155,6 @@ async fn post_mcp(State(app): State<AppHandle>, headers: HeaderMap, body: Bytes)
         Ok(request) => request,
         Err(err) => return refuse(StatusCode::BAD_REQUEST, "bad_json", &err.to_string()),
     };
-    // Who the registration says this is (the shim's `mcp --agent <id>`); a value the agent put in its
-    // own arguments is dropped first.
     let attested = headers
         .get(identity::ATTEST_HEADER)
         .and_then(|value| value.to_str().ok());
@@ -180,7 +165,6 @@ async fn post_mcp(State(app): State<AppHandle>, headers: HeaderMap, body: Bytes)
             reply.to_string(),
         )
             .into_response(),
-        // A notification: nothing to say back.
         None => StatusCode::ACCEPTED.into_response(),
     }
 }

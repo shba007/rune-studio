@@ -1,14 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
-/**
- * The model's answer, clamped to four lines with MORE and LESS, or a dot skeleton while it is still
- * working: three rows of dots in a travelling wave (the orb's thinking language), no spinner.
- */
 const props = defineProps<{ text: string; waiting: boolean }>()
 
 const expanded = ref(false)
-/** Roughly four lines at this width; a longer answer gets the toggle. */
 const LONG = 160
 const long = computed(() => props.text.length > LONG || props.text.split('\n').length > 4)
 </script>

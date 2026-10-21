@@ -1,34 +1,19 @@
-//! What can be clicked in the front window, from UI Automation.
-//!
-//! A screenshot shows the model what is there, but a small button is a hard target for a
-//! coordinate guess (57 to 79% of small targets in the M1.5 probe). Windows already knows every
-//! button, link, field and tab by name and exact position, so each step the loop lists the
-//! front window's controls with short ids (`e1`, `e2`, ...) and the model can say
-//! `click_element e7` instead of guessing where to click. Ids belong to the latest listing:
-//! the next listing replaces them, so an old id never points at something new.
-
 use crate::sync::LockExt;
 use std::sync::Mutex;
 
-/// Most controls listed per window; a busy browser page has hundreds.
 #[cfg_attr(not(windows), allow(dead_code))]
 pub const MAX_ELEMENTS: usize = 60;
 
-/// One control in the front window.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Element {
     pub id: String,
-    /// "button", "edit", "link", ...
     pub role: &'static str,
     pub name: String,
-    /// What a text field holds (shortened), if it is one.
     pub value: Option<String>,
-    /// Left, top, right, bottom in physical desktop pixels.
     pub rect: (i32, i32, i32, i32),
 }
 
 impl Element {
-    /// The point to click, in physical desktop pixels.
     pub fn centre(&self) -> (i32, i32) {
         (
             (self.rect.0 + self.rect.2) / 2,
@@ -36,7 +21,6 @@ impl Element {
         )
     }
 
-    /// One line for the model: `e3 button "Save"`.
     pub fn line(&self) -> String {
         let name: String = self.name.chars().take(60).collect();
         match &self.value {
@@ -50,12 +34,10 @@ impl Element {
 
 static LATEST: Mutex<Vec<Element>> = Mutex::new(Vec::new());
 
-/// Remembers a listing as the one ids refer to.
 pub fn remember(elements: Vec<Element>) {
     *LATEST.locked() = elements;
 }
 
-/// The control an id from the latest listing stands for.
 pub fn lookup(id: &str) -> Option<Element> {
     let id = id.trim();
     LATEST
@@ -65,9 +47,6 @@ pub fn lookup(id: &str) -> Option<Element> {
         .cloned()
 }
 
-/// The same control in a fresh listing: same role and name, and when several match the one
-/// nearest to where it was. Pages move while the model thinks (a search box's suggestions change as
-/// it fills in), so a click goes where the control is *now*, and fails if it is gone.
 pub fn best_match(before: &Element, fresh: &[Element]) -> Option<Element> {
     let (cx, cy) = before.centre();
     fresh
@@ -83,8 +62,6 @@ pub fn best_match(before: &Element, fresh: &[Element]) -> Option<Element> {
         })
 }
 
-/// The control an id stands for, at its current position. Takes a fresh listing to find it (the
-/// remembered list is left alone, so ids keep their meaning for the rest of the step).
 pub fn resolve(id: &str) -> Result<Element, String> {
     let before = lookup(id).ok_or_else(|| format!("there is no element {id} in the latest list; use an id from the current list or click a point"))?;
     best_match(&before, &snapshot()).ok_or_else(|| {
@@ -95,12 +72,10 @@ pub fn resolve(id: &str) -> Result<Element, String> {
     })
 }
 
-/// Forgets the listing, so a new task never clicks an id from an old one.
 pub fn forget() {
     LATEST.locked().clear();
 }
 
-/// The listing as text for the model, or nothing if there are no controls.
 pub fn describe(elements: &[Element]) -> String {
     elements
         .iter()
@@ -109,7 +84,6 @@ pub fn describe(elements: &[Element]) -> String {
         .join("\n")
 }
 
-/// Role name for a UI Automation control type id.
 #[cfg_attr(not(windows), allow(dead_code))]
 fn role(control_type: i32) -> &'static str {
     match control_type {
@@ -129,9 +103,6 @@ fn role(control_type: i32) -> &'static str {
     }
 }
 
-/// Lists the controls of the front window that can take a click or the keyboard, in reading order.
-/// Empty when the window cannot be read (elevated or unusual windows), which the caller treats as
-/// "no list, use the screenshot".
 #[cfg(windows)]
 pub fn snapshot() -> Vec<Element> {
     use std::time::{Duration, Instant};
@@ -156,19 +127,16 @@ pub fn snapshot() -> Vec<Element> {
         core::Interface,
     };
 
-    /// A busy window can make UI Automation slow; give up on the rest rather than hold the loop up.
     const BUDGET: Duration = Duration::from_millis(1_500);
     const MIN_SIDE: i32 = 6;
 
     let started = Instant::now();
-    // SAFETY: standard COM use on this thread; every interface is released when dropped.
     let found = unsafe {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
         let window = GetForegroundWindow();
         if window.is_invalid() {
             return Vec::new();
         }
-        // Our own windows (the pill, the settings card) are not something to drive.
         let mut process = 0_u32;
         GetWindowThreadProcessId(window, Some(&mut process));
         if process == std::process::id() {
@@ -227,7 +195,6 @@ pub fn snapshot() -> Vec<Element> {
                     .map(|value| value.to_string().chars().take(60).collect::<String>())
                     .unwrap_or_default()
             });
-            // A control with no name and no value cannot be told apart from its neighbours.
             if name.trim().is_empty() && value.as_deref().unwrap_or("").is_empty() {
                 continue;
             }
@@ -348,7 +315,6 @@ mod tests {
 
     #[test]
     fn ids_belong_to_the_latest_listing_only() {
-        // One test, since the listing is shared by the whole process.
         forget();
         assert!(lookup("e1").is_none());
         remember(vec![element("e1", "Save"), element("e2", "Cancel")]);

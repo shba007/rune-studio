@@ -1,59 +1,46 @@
 @import 'tailwindcss';
 
 @theme {
-  /* Oxanium is the only typeface in this project: every font utility resolves to it. */
   --font-sans: 'Oxanium Variable', sans-serif;
   --font-mono: 'Oxanium Variable', sans-serif;
 
-  /* Type hierarchy. These five roles are the only text sizes; the default Tailwind scale is
-     removed so an off-scale size cannot slip in. Use the class, never a raw size or weight. */
   --text-*: initial;
 
-  /* Title: panel headings. */
   --text-title: 1.125rem;
   --text-title--line-height: 1.5rem;
   --text-title--font-weight: 600;
   --text-title--letter-spacing: 0.02em;
 
-  /* Body: text the user types and reads: composer, form fields. */
   --text-body: 0.875rem;
   --text-body--line-height: 1.25rem;
   --text-body--font-weight: 400;
 
-  /* Status: the live state line in the status bar. */
   --text-status: 0.75rem;
   --text-status--line-height: 1rem;
   --text-status--font-weight: 500;
   --text-status--letter-spacing: 0.03em;
 
-  /* Label: chips, buttons, field labels, badges. */
   --text-label: 0.6875rem;
   --text-label--line-height: 1rem;
   --text-label--font-weight: 500;
   --text-label--letter-spacing: 0.04em;
 
-  /* Caption: section headings. Pair with uppercase. */
   --text-caption: 0.625rem;
   --text-caption--line-height: 1rem;
   --text-caption--font-weight: 600;
   --text-caption--letter-spacing: 0.1em;
 }
 
-/* Icon sizes: two roles. Put one of these on every icon and never a raw size-* class. Filled
-   glyphs carry more weight than outline ones, so keep them small. */
 @utility icon-sm {
-  /* 12 px (the one 4 px-grid size): inline accessories like trailing arrows and remove links. */
   width: 0.75rem;
   height: 0.75rem;
 }
 
 @utility icon-md {
-  /* 16 px: the default, for icon-only buttons and next to a label. */
   width: 1rem;
   height: 1rem;
 }
 
-/* The window is transparent: only the pill itself should paint. */
 html,
 body,
 #app {
@@ -70,8 +57,6 @@ body,
 input {
   user-select: text;
 }
-/* Scrollbars: slim, rounded and quiet, on every scroll area in the app. The thumb colours are
-   variables, so a light surface only has to override them (see the composer field). */
 :root {
   --accent: #2d71c3;
   --scrollbar-thumb: rgb(255 255 255 / 0.16);
@@ -91,7 +76,6 @@ input {
 
 ::-webkit-scrollbar-thumb {
   background-color: var(--scrollbar-thumb);
-  /* The transparent border insets the thumb, which makes it look slimmer than its hit area. */
   border: 2px solid transparent;
   border-radius: 999px;
   background-clip: padding-box;
@@ -101,8 +85,6 @@ input {
   background-color: var(--scrollbar-thumb-hover);
 }
 
-/* Page switch inside the pill: a short cross-fade with a small rise. Shorter than the window's
-   shrink delay (COLLAPSE_MS in useAgent.ts), so the window never resizes mid-transition. */
 .page-enter-active,
 .page-leave-active {
   transition:
@@ -122,12 +104,9 @@ input {
     transition: none;
   }
 }
-/* Vue devtools (development only) adds a floating button to every page. The control overlay covers
-   the whole screen and ignores the mouse, so the button would only get in the way there. */
 .overlay-view #__vue-devtools-container__ {
   display: none !important;
 }
-/* The Flight Player is a normal opaque window: it paints its own background and lets the details be selected. */
 .flight-view,
 .flight-view body,
 .flight-view #app {

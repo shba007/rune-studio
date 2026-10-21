@@ -5,11 +5,6 @@ import { computed, onMounted, useTemplateRef } from 'vue'
 import { clock, secondsLeft } from '@/config/reflection'
 import type { Agent } from '@/composables/useAgent'
 
-/**
- * The idle review offer: "Rune wants to review its recent tasks", Start and Deny, and a countdown
- * that visibly counts down. No answer starts it. The countdown is computed from the deadline on
- * every tick, never decremented, so a missed tick cannot freeze it.
- */
 const props = defineProps<{ agent: Agent }>()
 const agent = props.agent
 
@@ -19,7 +14,6 @@ const left = computed(() => {
   return ends === undefined ? 0 : secondsLeft(now.value.getTime(), ends)
 })
 
-// Deny is focused first, so a stray Enter does not start anything.
 const deny = useTemplateRef<HTMLButtonElement>('deny')
 onMounted(() => deny.value?.focus())
 </script>

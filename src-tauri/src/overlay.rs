@@ -1,10 +1,3 @@
-//! The screen overlay: the "agent has control" effect and the screen analysis markers.
-//! The "agent has control" screen effect: one transparent, click-through window per monitor
-//! that draws a dot-matrix frame along the screen edges while the agent is acting.
-//!
-//! The windows never take focus, ignore the mouse and are excluded from capture, so they
-//! neither get in the user's way nor show up in the screenshots the model reads.
-
 use std::{sync::Mutex, time::Duration};
 
 use serde::Serialize;
@@ -15,15 +8,10 @@ use tauri::{
 use crate::events::{AgentState, agent_state};
 
 const PREFIX: &str = "overlay-";
-/// Long enough for the page's fade-out to finish before the window is hidden.
 const FADE_OUT: Duration = Duration::from_millis(500);
-/// After a task ends the window stays a little longer, so the agent's last words stay in the speech
-/// bubble at the orb. The frame itself fades out as usual.
 const LINGER_AFTER_END: Duration = Duration::from_millis(6_500);
 
-/// States in which the agent is driving the PC.
 pub fn has_control(state: AgentState) -> bool {
-    // Planning too: that is when the model thinks, and the overlay shows what it is saying.
     matches!(
         state,
         AgentState::Planning
@@ -33,8 +21,6 @@ pub fn has_control(state: AgentState) -> bool {
     )
 }
 
-/// Who the overlay belongs to right now. Control (the agent driving) and analysis exclude each other,
-/// so the overlay has exactly one owner at a time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Owner {
@@ -55,12 +41,9 @@ pub enum Change {
 pub enum Effect {
     Nothing,
     Show,
-    /// Fade out and hide.
     Hide,
 }
 
-/// The owner state machine. Control always wins (a running task never gives up the overlay to an
-/// analysis), an analysis only takes a free overlay, and only the owner can release it.
 pub fn step(owner: Owner, change: Change) -> (Owner, Effect) {
     match (owner, change) {
         (_, Change::ControlOn) => (Owner::Control, Effect::Show),
@@ -82,7 +65,6 @@ pub struct ModeChanged {
     pub mode: Owner,
 }
 
-/// The current owner (what the overlay pages draw).
 pub fn owner() -> Owner {
     OWNER.lock().map(|owner| *owner).unwrap_or(Owner::None)
 }
@@ -106,8 +88,6 @@ fn change(app: &AppHandle, change: Change, linger: Duration) {
     let _ = next;
 }
 
-/// What an overlay page needs to know about itself: who owns the overlay and whether this window
-/// is on the primary monitor (the analysis draws there only).
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OverlayInfo {
@@ -135,10 +115,6 @@ pub fn info(window: &tauri::WebviewWindow) -> OverlayInfo {
     }
 }
 
-/// Shows or hides the control overlay for the new state. Safe to call from any thread.
-///
-/// The work runs on its own thread: building and configuring windows from inside the main
-/// thread's event handling blocks on that same thread and the windows never finish setting up.
 pub fn sync(app: &AppHandle, state: AgentState) {
     let handle = app.clone();
     std::thread::spawn(move || {
@@ -157,7 +133,6 @@ pub fn sync(app: &AppHandle, state: AgentState) {
     });
 }
 
-/// Brings the overlay up or takes it down for a screen analysis (see `analysis::state::wants_overlay`).
 pub fn sync_analysis(app: &AppHandle, wanted: bool) {
     let handle = app.clone();
     std::thread::spawn(move || {
@@ -189,7 +164,6 @@ fn show(app: &AppHandle) {
             return;
         }
     };
-    // Monitors may have changed since the last time; start from a clean slate if the count differs.
     let existing = overlays(app);
     if existing.len() != monitors.len() {
         for window in existing {
@@ -218,7 +192,6 @@ fn show(app: &AppHandle) {
         ));
         crate::window::show_without_focus(&window);
     }
-    // The pill sits above the frame, never under it.
     if let Some(pill) = app.get_webview_window(crate::window::MAIN) {
         let _ = pill.set_always_on_top(true);
     }
@@ -248,7 +221,6 @@ fn build(app: &AppHandle, label: &str) -> tauri::Result<tauri::WebviewWindow> {
 
 fn hide_after_fade(app: &AppHandle, wait: Duration) {
     std::thread::sleep(wait);
-    // Control (or an analysis) may have come back while the page was fading out.
     if has_control(agent_state(app)) || owner() != Owner::None {
         return;
     }

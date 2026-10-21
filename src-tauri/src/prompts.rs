@@ -7,9 +7,11 @@ macro_rules! prompt {
 }
 
 pub fn fill(template: &str, values: &[(&str, &str)]) -> String {
-    values.iter().fold(template.to_string(), |text, (name, value)| {
-        text.replace(&format!("{{{name}}}"), value)
-    })
+    values
+        .iter()
+        .fold(template.to_string(), |text, (name, value)| {
+            text.replace(&format!("{{{name}}}"), value)
+        })
 }
 
 pub fn agent_system() -> &'static str {
@@ -30,7 +32,10 @@ pub fn agent_plan() -> &'static str {
 }
 
 pub fn agent_stuck(unchanged: u32) -> String {
-    fill(prompt!("agent/stuck.md"), &[("unchanged", &unchanged.to_string())])
+    fill(
+        prompt!("agent/stuck.md"),
+        &[("unchanged", &unchanged.to_string())],
+    )
 }
 
 pub fn agent_contradicted(evidence: &str) -> String {
@@ -105,7 +110,10 @@ mod tests {
         assert_eq!(fill("a {x} b {x} {y}", &[("x", "1")]), "a 1 b 1 {y}");
         assert!(agent_stuck(3).contains("last 3 actions"));
         assert!(!agent_stuck(3).contains('{'));
-        assert!(agent_contradicted("a window").contains("check says the screen does not show the task as done: a window."));
+        assert!(
+            agent_contradicted("a window")
+                .contains("check says the screen does not show the task as done: a window.")
+        );
     }
 
     #[test]
@@ -125,7 +133,13 @@ mod tests {
         ] {
             assert!(text.len() > 20);
         }
-        for blocker in ["cookie_banner", "popup", "login_required", "captcha", "error_page"] {
+        for blocker in [
+            "cookie_banner",
+            "popup",
+            "login_required",
+            "captcha",
+            "error_page",
+        ] {
             assert!(blocker_hint(blocker).is_some());
         }
         assert!(blocker_hint("none").is_none());

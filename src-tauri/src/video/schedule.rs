@@ -1,27 +1,15 @@
-//! Which screenshot is on screen when, in the session video. The video is a **storyboard**: one frame
-//! per step (the moments the model looked at the screen), each held for the real time until the next
-//! one, so the video is as long as the session. This is not smooth motion and says so in the UI.
-
-/// A frame to show: the file and how long it stays on screen, in milliseconds.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Shown {
     pub path: String,
     pub hold_ms: u64,
 }
 
-/// Shortest a frame stays, so two steps a few milliseconds apart do not make an unreadable flash.
 pub const MIN_HOLD_MS: u64 = 200;
-/// Longest the last frame is held when the session end is not known.
 pub const LAST_HOLD_MS: u64 = 1_000;
 
-/// Builds the frame list. `frames` are the screenshots with the time each was taken, in milliseconds
-/// since the session started (any order); `end_ms` is when the session ended, if known. The first frame
-/// is shown from time 0, each next one from its own time, and the last one until the end. Frames with
-/// the same time keep only the later one; a time before the previous one is moved up to it.
 pub fn schedule(frames: &[(String, u64)], end_ms: Option<u64>) -> Vec<Shown> {
     let mut sorted: Vec<(String, u64)> = frames.to_vec();
     sorted.sort_by_key(|(_, at)| *at);
-    // The same moment twice: the later frame replaces the earlier one.
     let mut unique: Vec<(String, u64)> = Vec::new();
     for (path, at) in sorted {
         match unique.last_mut() {
@@ -29,7 +17,6 @@ pub fn schedule(frames: &[(String, u64)], end_ms: Option<u64>) -> Vec<Shown> {
             _ => unique.push((path, at)),
         }
     }
-    // The first frame starts the video, whatever time it was really taken at.
     if let Some(first) = unique.first_mut() {
         first.1 = 0;
     }
@@ -47,13 +34,10 @@ pub fn schedule(frames: &[(String, u64)], end_ms: Option<u64>) -> Vec<Shown> {
     shown
 }
 
-/// The video's length: the holds added up.
 pub fn total_ms(shown: &[Shown]) -> u64 {
     shown.iter().map(|frame| frame.hold_ms).sum()
 }
 
-/// Width and height for the encoder: at most `max_width` wide, both even (H.264 needs it), keeping the
-/// aspect ratio.
 pub fn video_size(width: u32, height: u32, max_width: u32) -> (u32, u32) {
     let (mut w, mut h) = (width.max(2), height.max(2));
     if w > max_width {

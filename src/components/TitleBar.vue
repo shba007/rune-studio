@@ -4,10 +4,6 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 
 import AppIcon from './AppIcon.vue'
 
-/**
- * The title bar of every ordinary window: the system one is switched off, so this blends with the app.
- * Dragging and double-click-to-maximise come from `data-tauri-drag-region`.
- */
 defineProps<{ title: string }>()
 
 const LOGO = '/logo.svg'
@@ -19,7 +15,7 @@ function win() {
   try {
     return getCurrentWindow()
   } catch {
-    return null // a plain browser (preview, tests) has no window
+    return null
   }
 }
 

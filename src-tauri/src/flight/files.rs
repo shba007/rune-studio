@@ -1,9 +1,5 @@
-//! Which files the player may read: only files inside the run's own session folder. A path that is
-//! absolute, climbs out with `..`, or leads out through a link is refused.
-
 use std::path::{Component, Path, PathBuf};
 
-/// Why a path was refused (the text is shown as it is).
 #[derive(Debug, PartialEq, Eq)]
 pub enum Refused {
     NotRelative,
@@ -23,7 +19,6 @@ impl Refused {
     }
 }
 
-/// The real path of `relative` inside `session`, if it is a file the player may read.
 pub fn resolve(session: &Path, relative: &str) -> Result<PathBuf, Refused> {
     let path = Path::new(relative);
     if path.is_absolute()
@@ -40,7 +35,6 @@ pub fn resolve(session: &Path, relative: &str) -> Result<PathBuf, Refused> {
     let root = session.canonicalize().map_err(|_| Refused::Missing)?;
     let joined = root.join(path);
     let real = joined.canonicalize().map_err(|_| Refused::Missing)?;
-    // A link inside the folder that points elsewhere ends up outside after canonicalising.
     if !real.starts_with(&root) {
         return Err(Refused::Outside);
     }
@@ -50,8 +44,6 @@ pub fn resolve(session: &Path, relative: &str) -> Result<PathBuf, Refused> {
     Ok(real)
 }
 
-/// A screenshot path as the record stores it (absolute) made relative to the session folder, or `None`
-/// when it is not inside it.
 pub fn relative_to(session: &Path, stored: &str) -> Option<String> {
     let root = session.canonicalize().ok()?;
     let real = Path::new(stored).canonicalize().ok()?;
@@ -111,7 +103,6 @@ mod tests {
             Err(Refused::NotRelative)
         );
         assert_eq!(resolve(&session, "/etc/passwd"), Err(Refused::NotRelative));
-        // A drive path is not relative on Windows; elsewhere it is just a name that is not there.
         assert!(matches!(
             resolve(&session, "C:\\Windows\\win.ini"),
             Err(Refused::NotRelative | Refused::Missing)

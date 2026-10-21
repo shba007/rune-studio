@@ -36,7 +36,6 @@ describe('boxToCss', () => {
   })
 
   it('does not depend on where the monitor sits on the desktop', () => {
-    // A monitor at x = -1920: its overlay window sits at its origin, so only its size counts.
     const view = { width: 1920, height: 1080, scaleFactor: 1 }
     expect(boxToCss([250, 250, 750, 750], view)).toEqual(boxToCss([250, 250, 750, 750], view))
     expect(boxToCss([250, 250, 750, 750], view).left).toBe(480)

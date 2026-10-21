@@ -1,28 +1,12 @@
-//! Cutting the microphone stream into utterances.
-//!
-//! Plain energy-based voice activity detection, no model: it tracks the room's noise level and
-//! calls a 20 ms frame speech when it is clearly louder than that. An utterance starts after a
-//! few speech frames in a row (with a little audio from just before, so the first syllable is
-//! not clipped) and ends after a short silence. Clicks and coughs are too short to count. The
-//! output is 16 kHz mono, the format speech models want.
-
-/// Samples per second of what the segmenter works on and emits.
 pub const RATE: u32 = 16_000;
 const FRAME: usize = (RATE as usize) / 50;
-/// Speech frames in a row before an utterance starts (60 ms).
 const START_FRAMES: usize = 3;
-/// Audio kept from before the start, so the first syllable survives (200 ms).
 const PRE_ROLL_FRAMES: usize = 10;
-/// Silence that ends an utterance (700 ms).
 const END_FRAMES: usize = 35;
-/// Shorter than this is a click or a cough, not speech (200 ms of speech frames).
 const MIN_SPEECH_FRAMES: usize = 10;
-/// An utterance is cut here even if the person keeps talking (20 s).
 const MAX_FRAMES: usize = 20 * 50;
-/// Speech must be this much louder than the room (dB), and above an absolute floor.
 const MARGIN_DB: f32 = 12.0;
 const ABSOLUTE_FLOOR_DB: f32 = -50.0;
-/// The room's noise level is kept within this range (dBFS).
 const NOISE_RANGE: (f32, f32) = (-75.0, -42.0);
 
 #[derive(Debug)]
@@ -66,7 +50,6 @@ fn to_pcm(frame: &[f32]) -> Vec<i16> {
 }
 
 impl Segmenter {
-    /// Feeds 16 kHz mono samples (-1 to 1). Returns every utterance that ended within them.
     pub fn push(&mut self, samples: &[f32]) -> Vec<Vec<i16>> {
         let mut done = Vec::new();
         self.pending.extend_from_slice(samples);
@@ -79,7 +62,6 @@ impl Segmenter {
         done
     }
 
-    /// Ends the utterance in progress, if it is long enough to be speech.
     #[cfg(test)]
     pub fn flush(&mut self) -> Option<Vec<i16>> {
         self.finish()
@@ -91,7 +73,6 @@ impl Segmenter {
         let pcm = to_pcm(frame);
 
         if !loud {
-            // The room's level follows quiet frames only, slowly, so speech never raises it.
             self.noise_db = (self.noise_db * 0.95 + db * 0.05).clamp(NOISE_RANGE.0, NOISE_RANGE.1);
         }
 
@@ -126,7 +107,6 @@ impl Segmenter {
     fn finish(&mut self) -> Option<Vec<i16>> {
         let utterance = std::mem::take(&mut self.speech);
         let long_enough = self.speech_frames >= MIN_SPEECH_FRAMES;
-        // Trailing silence is trimmed to a short tail; the model does not need 700 ms of it.
         let trim = self.quiet_run.saturating_sub(10) * FRAME;
         self.in_speech = false;
         self.loud_run = 0;
@@ -142,9 +122,6 @@ impl Segmenter {
     }
 }
 
-/// Turns device audio (any rate, any channel count, interleaved) into 16 kHz mono by averaging
-/// the input samples that fall into each output sample, which also filters out what a plain
-/// pick-every-nth would fold back as noise.
 #[derive(Debug)]
 pub struct Resampler {
     channels: usize,
@@ -201,7 +178,6 @@ impl Resampler {
 mod tests {
     use super::*;
 
-    /// A tone as loud as speech, `seconds` long, at 16 kHz.
     fn tone(seconds: f32, amplitude: f32) -> Vec<f32> {
         (0..(seconds * RATE as f32) as usize)
             .map(|i| amplitude * (i as f32 * 0.35).sin())

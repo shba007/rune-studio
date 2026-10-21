@@ -1,26 +1,11 @@
-//! Which outside agent is in control, as a label the user sees (the orb's colour and mark, the top
-//! bar's "<agent> is in control").
-//!
-//! **A courtesy, not a security boundary.** The name is whatever the agent declares in `rune_begin`;
-//! nothing authenticates it, and any program that holds the bridge token can claim to be "Claude".
-//! The second source is the registration: `rune-studio-cli connect claude` writes `mcp --agent claude`
-//! into the agent's settings, the stdio shim sends that id in a header, and it wins over the declared
-//! name. `verified` means "the registration said so", not cryptographic proof. The safety gate treats
-//! every outside agent alike, whatever it is called.
-
-// Only the bridge builds name outside agents; elsewhere this is reachable but unused.
 #![cfg_attr(not(feature = "agent-bridge"), allow(dead_code))]
 
 use serde::Serialize;
 
-/// Longest display name kept.
 const NAME_MAX: usize = 40;
-/// The name shown for an agent that declared nothing.
 const DEFAULT_NAME: &str = "External agent";
-/// The id of every agent that is not in the list.
 pub const EXTERNAL: &str = "external";
 
-/// Known agents: id, display name, and the normalised spellings that match it exactly.
 const KNOWN: [(&str, &str, &[&str]); 10] = [
     ("claude", "Claude", &["claude", "claude code"]),
     (
@@ -46,7 +31,6 @@ const KNOWN: [(&str, &str, &[&str]); 10] = [
     ("windsurf", "Windsurf", &["windsurf"]),
 ];
 
-/// Every id the UI's brand registry must have an entry for.
 #[cfg(test)]
 pub fn all_ids() -> Vec<&'static str> {
     KNOWN
@@ -60,16 +44,12 @@ pub fn all_ids() -> Vec<&'static str> {
 #[serde(rename_all = "camelCase")]
 pub struct AgentIdentity {
     pub id: String,
-    /// What the UI shows ("Claude", or the declared name of an unknown agent).
     pub name: String,
     pub known: bool,
-    /// The registration (`--agent <id>`) named it, not only the agent itself.
     pub verified: bool,
-    /// What the agent called itself, cleaned; shown in a tooltip when it differs from `name`.
     pub declared: String,
 }
 
-/// Lower case, every run of non-alphanumerics a single space ("Claude-Code" is "claude code").
 fn normalise(text: &str) -> String {
     let mut out = String::new();
     for c in text.chars() {
@@ -82,8 +62,6 @@ fn normalise(text: &str) -> String {
     out.trim_end().to_string()
 }
 
-/// Control characters and the bidirectional overrides that could make a name read differently from
-/// what it is, removed; clipped.
 fn clean(text: &str) -> String {
     let kept: String = text
         .chars()
@@ -106,8 +84,6 @@ fn by_id(id: &str) -> Option<(&'static str, &'static str)> {
         .map(|(id, name, _)| (*id, *name))
 }
 
-/// Works out who is in control from the declared name and the id the registration attested, if any.
-/// Matching is exact on the normalised spelling, never a substring ("Not Claude" is not Claude).
 pub fn identify(declared: &str, attested: Option<&str>) -> AgentIdentity {
     let declared_clean = clean(declared);
     if let Some((id, name)) = attested
@@ -145,7 +121,6 @@ pub fn identify(declared: &str, attested: Option<&str>) -> AgentIdentity {
     }
 }
 
-/// The header the stdio shim sends with the id from `mcp --agent <id>`.
 pub const ATTEST_HEADER: &str = "x-rune-agent";
 
 #[cfg(test)]

@@ -1,7 +1,3 @@
-/**
- * Development only: a recorded session to look at in a plain browser. Six steps over 55 seconds, one
- * retried model call, one typed text, one failed step. The pictures are drawn, not real screenshots.
- */
 const START = Date.parse('2026-10-20T10:00:00Z')
 const at = (seconds: number) => new Date(START + seconds * 1000).toISOString().replace('.000Z', 'Z')
 
@@ -155,7 +151,6 @@ function call(id: number, stepNo: number, attempt: number, outcome: string, stat
   }
 }
 
-/** A drawn stand-in for a screenshot: a window with the step number. */
 export function drawnShot(n: number): string {
   const canvas = document.createElement('canvas')
   canvas.width = 960

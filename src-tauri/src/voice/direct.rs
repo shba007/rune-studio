@@ -1,11 +1,3 @@
-//! Speech straight to meaning: one call to the omni model hears the utterance and says what it
-//! is, with no transcript in between (there is no separate speech-to-text model).
-//!
-//! The model answers with one `heard` tool call: a control word (stop, yes, no), a task or a
-//! steer in its own words (plus the goals when it starts a task, so no separate planning call is
-//! needed), or noise. The words it returns are only for display and for the agent loop; the
-//! safety gate still decides what is allowed, and a spoken yes still cannot approve a risky action.
-
 use serde_json::{Value, json};
 
 use crate::{
@@ -15,7 +7,6 @@ use crate::{
 
 use super::{intent::Intent, vad::RATE};
 
-/// A 16-bit mono PCM WAV file of 16 kHz audio.
 pub fn wav(samples: &[i16]) -> Vec<u8> {
     let data_len = (samples.len() * 2) as u32;
     let mut out = Vec::with_capacity(44 + samples.len() * 2);
@@ -23,11 +14,11 @@ pub fn wav(samples: &[i16]) -> Vec<u8> {
     out.extend_from_slice(&(36 + data_len).to_le_bytes());
     out.extend_from_slice(b"WAVEfmt ");
     out.extend_from_slice(&16_u32.to_le_bytes());
-    out.extend_from_slice(&1_u16.to_le_bytes()); // PCM
-    out.extend_from_slice(&1_u16.to_le_bytes()); // mono
+    out.extend_from_slice(&1_u16.to_le_bytes());
+    out.extend_from_slice(&1_u16.to_le_bytes());
     out.extend_from_slice(&RATE.to_le_bytes());
-    out.extend_from_slice(&(RATE * 2).to_le_bytes()); // bytes per second
-    out.extend_from_slice(&2_u16.to_le_bytes()); // bytes per frame
+    out.extend_from_slice(&(RATE * 2).to_le_bytes());
+    out.extend_from_slice(&2_u16.to_le_bytes());
     out.extend_from_slice(&16_u16.to_le_bytes());
     out.extend_from_slice(b"data");
     out.extend_from_slice(&data_len.to_le_bytes());
@@ -39,7 +30,6 @@ pub fn wav(samples: &[i16]) -> Vec<u8> {
 
 pub struct Listened {
     pub intent: Intent,
-    /// Goals for a new task, when the model gave them.
     pub goals: Option<Vec<String>>,
 }
 
@@ -67,13 +57,9 @@ fn describe(state: AgentState) -> &'static str {
     }
 }
 
-/// Most tokens the model may use to answer: a sentence and a few goals. A longer reply is the
-/// model running on (it loops on a repeated word when it has nothing to say).
 const MAX_TRANSCRIPT_TOKENS: u32 = 256;
-/// A word said more often than this in a row is the model looping, not a person talking.
 const MAX_REPEATS: usize = 3;
 
-/// Whether the same word comes more than `MAX_REPEATS` times in a row ("warn warn warn warn").
 pub fn repeats_a_word(text: &str) -> bool {
     let mut run = 0;
     let mut previous = String::new();
@@ -94,7 +80,6 @@ pub fn repeats_a_word(text: &str) -> bool {
     false
 }
 
-/// Why a `heard` call is ignored, or `None` when it is acted on. Every ignored result is logged with this.
 pub fn ignore_reason(arguments: &Value) -> Option<&'static str> {
     let text = arguments["text"].as_str().unwrap_or("").trim();
     match arguments["kind"].as_str() {
@@ -109,7 +94,6 @@ pub fn ignore_reason(arguments: &Value) -> Option<&'static str> {
     }
 }
 
-/// Reads the model's `heard` call. `None` means it is ignored (see `ignore_reason`).
 pub fn parse(arguments: &Value) -> Option<Listened> {
     if ignore_reason(arguments).is_some() {
         return None;

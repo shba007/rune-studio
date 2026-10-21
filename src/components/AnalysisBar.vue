@@ -7,11 +7,6 @@ import type { AnalysisStatus } from '@/types/protocol'
 import AgentMark from './AgentMark.vue'
 import OverlayBarShell from './OverlayBarShell.vue'
 
-/**
- * The status bar while Rune looks at the screen: Rune's mark, SCREEN ANALYSIS, the stage and the
- * elapsed time, and the key that cancels. The overlay ignores the mouse, so Cancel here is the
- * hotkey (shown), plus the Cancel button on the pill card.
- */
 const props = defineProps<{ status: AnalysisStatus; elapsedMs: number; hotkey: string }>()
 
 const stage = computed(() => stageWord(props.status))

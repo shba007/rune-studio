@@ -15,7 +15,6 @@ const BUTTON =
 const x = ref(500)
 const y = ref(500)
 const text = ref('hello')
-/** Time to switch to the app you want to act on before the action fires. */
 const delaySeconds = ref(3)
 
 const busy = ref<'capture' | 'click' | 'type' | null>(null)

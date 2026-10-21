@@ -1,9 +1,3 @@
-//! Where other agents keep their MCP settings, and how to add or remove Rune Studio there.
-//!
-//! Claude Code has its own command (`claude mcp add`); Antigravity reads a JSON file. The JSON
-//! edits are pure functions on text, so they are tested without touching a real config, and they
-//! keep everything else in the file as it was.
-
 use std::{
     fs, io,
     path::{Path, PathBuf},
@@ -13,13 +7,9 @@ use serde_json::{Map, Value, json};
 
 const SERVER: &str = "rune-studio";
 
-/// Antigravity's global settings and skills (the App and IDE read these).
 pub struct Antigravity {
-    /// `~/.gemini/config/mcp_config.json`
     pub config: PathBuf,
-    /// `~/.gemini/config/skills/rune-studio`
     pub skill: PathBuf,
-    /// The command-line version keeps skills elsewhere; present only if it is installed.
     pub cli_skill: Option<PathBuf>,
 }
 
@@ -39,8 +29,6 @@ pub fn antigravity() -> Option<Antigravity> {
     })
 }
 
-/// Adds (or replaces) Rune Studio in an MCP settings file's text. Everything else is kept.
-/// An empty file counts as `{}`. A file that is not a JSON object is refused, never overwritten.
 pub fn add_server(existing: &str, exe: &str) -> Result<String, String> {
     let mut root = parse_root(existing)?;
     let servers = root
@@ -56,7 +44,6 @@ pub fn add_server(existing: &str, exe: &str) -> Result<String, String> {
     to_text(root)
 }
 
-/// Removes Rune Studio from an MCP settings file's text. Returns `None` if it was not there.
 pub fn remove_server(existing: &str) -> Result<Option<String>, String> {
     let mut root = parse_root(existing)?;
     let removed = match root.get_mut("mcpServers") {
@@ -87,8 +74,6 @@ fn to_text(root: Map<String, Value>) -> Result<String, String> {
         .map_err(|err| err.to_string())
 }
 
-/// Reads a settings file, applies `edit`, and writes the result, keeping the old copy next to it
-/// as `<name>.bak`. A missing file is treated as empty. `edit` returning `None` means no change.
 pub fn edit_file(
     path: &Path,
     edit: impl FnOnce(&str) -> Result<Option<String>, String>,
@@ -184,16 +169,12 @@ mod tests {
     fn edit_file_writes_a_backup_and_skips_no_ops() {
         let dir = std::env::temp_dir().join(format!("rune-agents-test-{}", std::process::id()));
         let path = dir.join("nested").join("mcp_config.json");
-        // Missing file and folder: created, no backup (nothing to keep).
         assert!(edit_file(&path, |text| add_server(text, EXE).map(Some)).unwrap());
         assert!(!dir.join("nested").join("mcp_config.json.bak").exists());
-        // Same edit again: nothing to write.
         assert!(!edit_file(&path, |text| add_server(text, EXE).map(Some)).unwrap());
-        // A real change keeps the old content as .bak.
         assert!(edit_file(&path, |text| add_server(text, r"E:\other.exe").map(Some)).unwrap());
         let backup = fs::read_to_string(dir.join("nested").join("mcp_config.json.bak")).unwrap();
         assert!(backup.contains(r"C:\\Rune Studio\\rune-studio-cli.exe"));
-        // Broken JSON is refused and left alone.
         fs::write(&path, "oops").unwrap();
         assert!(edit_file(&path, |text| add_server(text, EXE).map(Some)).is_err());
         assert_eq!(fs::read_to_string(&path).unwrap(), "oops");

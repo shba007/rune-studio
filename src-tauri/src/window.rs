@@ -6,23 +6,16 @@ use crate::events::{OPEN_ARTIFACTS, OPEN_SETTINGS, SUMMON};
 
 pub const MAIN: &str = "main";
 
-/// Gap between the pill and the screen edges, in logical pixels.
 const EDGE_MARGIN: f64 = 16.0;
 
-/// The pill's discrete window sizes. The UI animates inside the window; the window itself
-/// only ever jumps between these. Widths are DOCK_WIDTH + DOCK_GAP + ORB_SIZE + PAGE_GAP + PAGE_WIDTH (32 + 0 + 64 + 8 + 272) from
-/// `src/config/layout.ts`; keep the two in sync.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Mode {
     Ambient,
     Open,
-    /// The composer with the task's progress panel above it.
     Task,
-    /// The screen analysis cards, growing upward from the orb (fits its content like `Task`).
     Analysis,
     Settings,
-    /// The list of recorded sessions, as tall as Settings.
     Artifacts,
 }
 
@@ -30,7 +23,6 @@ impl Mode {
     fn size(self) -> (f64, f64) {
         match self {
             Mode::Ambient => (64.0, 64.0),
-            // Open and Task start from these and then fit their content (see `fit_height`).
             Mode::Open => (376.0, 64.0),
             Mode::Task => (376.0, 336.0),
             Mode::Analysis => (376.0, 336.0),
@@ -44,7 +36,6 @@ fn main_window(app: &AppHandle) -> Option<WebviewWindow> {
     app.get_webview_window(MAIN)
 }
 
-/// Whether "Show Rune in screen recordings" is on.
 pub fn demo_mode(app: &AppHandle) -> bool {
     app.state::<crate::events::AppState>()
         .settings
@@ -52,15 +43,10 @@ pub fn demo_mode(app: &AppHandle) -> bool {
         .demo_mode
 }
 
-/// **The one place Rune's windows are excluded from (or opened to) screen capture.** By default every
-/// window is excluded, so recorders and the model never see Rune. In demo mode the exclusion is lifted
-/// so OBS, Game Bar and the Snipping Tool can record Rune; the model is kept from seeing it by
-/// painting the windows' rectangles over its screenshots instead (`observe::mask`).
 pub fn protect(window: &WebviewWindow) -> tauri::Result<()> {
     window.set_content_protected(!demo_mode(window.app_handle()))
 }
 
-/// Applies the setting to every window that is open (new windows call `protect` as they are made).
 pub fn apply_demo_mode(app: &AppHandle) {
     for window in app.webview_windows().values() {
         if let Err(err) = protect(window) {
@@ -72,8 +58,6 @@ pub fn apply_demo_mode(app: &AppHandle) {
     }
 }
 
-/// What the model's screenshots must not show while demo mode is on: the visible Rune windows (the
-/// pill, the analysis window) and the pieces of the full-screen overlay. Empty when demo mode is off.
 pub fn masked_rects(app: &AppHandle) -> Vec<crate::observe::mask::Rect> {
     use crate::observe::mask::{Rect, overlay_rects};
 
@@ -103,8 +87,6 @@ pub fn masked_rects(app: &AppHandle) -> Vec<crate::observe::mask::Rect> {
     rects
 }
 
-/// Puts the window in the bottom-right corner of the primary monitor's work area, so it
-/// sits above the taskbar.
 pub fn place_bottom_right(window: &WebviewWindow) -> tauri::Result<()> {
     let Some(monitor) = window.primary_monitor()? else {
         return Ok(());
@@ -117,17 +99,12 @@ pub fn place_bottom_right(window: &WebviewWindow) -> tauri::Result<()> {
     window.set_position(PhysicalPosition::new(x, y))
 }
 
-/// Resizes while keeping the bottom-right corner fixed, so the pill grows up and to the left
-/// from wherever the user has put it. The result is kept inside the monitor's work area.
 pub fn set_mode(app: &AppHandle, mode: Mode) -> tauri::Result<()> {
     let (width, height) = mode.size();
     resize_keeping_corner(app, Some(width), height)
 }
 
-/// Makes the window as tall as its content (`height` in logical pixels), keeping its width and the
-/// bottom-right corner. The composer grows with the text; the window follows.
 pub fn fit_height(app: &AppHandle, height: f64) -> tauri::Result<()> {
-    // Never taller than 90% of the work area (the taskbar is already outside it).
     let ceiling = main_window(app)
         .and_then(|window| {
             let area = window.current_monitor().ok()??.work_area().size.height;
@@ -140,8 +117,6 @@ pub fn fit_height(app: &AppHandle, height: f64) -> tauri::Result<()> {
     resize_keeping_corner(app, None, height.clamp(64.0, ceiling))
 }
 
-/// The tallest the pill may grow, in logical pixels: 90% of the monitor's work area (physical
-/// pixels in, `scale` is the display scale), and never more than 1200.
 pub fn max_pill_height(work_area_physical: f64, scale: f64) -> f64 {
     (0.9 * work_area_physical / scale.max(0.1)).clamp(200.0, 1_200.0)
 }
@@ -186,7 +161,6 @@ pub fn set_click_through(app: &AppHandle, enabled: bool) {
     }
 }
 
-/// Shows the window if needed and asks the UI to open (or, if already open, collapse) the capsule.
 pub fn summon(app: &AppHandle) {
     if let Some(window) = main_window(app) {
         let _ = window.show();
@@ -203,7 +177,6 @@ pub fn open_settings(app: &AppHandle) {
     }
 }
 
-/// Shows the pill on its Artifacts page (the recorded sessions).
 pub fn open_artifacts(app: &AppHandle) {
     if let Some(window) = main_window(app) {
         let _ = window.show();
@@ -223,12 +196,10 @@ pub fn toggle_visibility(app: &AppHandle) {
     }
 }
 
-/// Shows the window without activating it, so the app the user is working in keeps the keyboard.
 pub fn show_without_focus(window: &tauri::WebviewWindow) {
     #[cfg(windows)]
     if let Ok(hwnd) = window.hwnd() {
         use windows::Win32::UI::WindowsAndMessaging::{SW_SHOWNOACTIVATE, ShowWindow};
-        // SAFETY: the handle belongs to a live window of this process.
         let _ = unsafe { ShowWindow(hwnd, SW_SHOWNOACTIVATE) };
         return;
     }

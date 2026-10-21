@@ -11,12 +11,6 @@ import {
 } from '@/config/analysis'
 import type { AnalysisSnapshot } from '@/types/protocol'
 
-/**
- * The bounding boxes on the real screen: a dotted rectangle with a numbered badge at its top-left
- * corner for every finding that has a usable box. They are always drawn (there is no switch); the
- * only thing that removes them is the screen having changed (`snapshot.stale`). The picked finding is
- * at full strength, the others at 35%. A scan line sweeps the screen once when the capture happens.
- */
 const props = defineProps<{ snapshot: AnalysisSnapshot; view: OverlayView; scanKey: number }>()
 
 const reduced = usePreferredReducedMotion()
@@ -56,7 +50,6 @@ const markers = computed(() =>
       }"
       :data-marker="marker.n"
     >
-      <!-- A dark underlay so the white dashes read on light and dark windows alike. -->
       <div class="absolute inset-0 border-[3px] border-[#141414]/55" />
       <div class="absolute inset-0 border-2 border-dashed border-[#f1f1ef]" />
     </div>
@@ -82,7 +75,6 @@ const markers = computed(() =>
 </template>
 
 <style scoped>
-/* A row of dots on the orb's 5.4 px grid, scaled up, sweeping top to bottom once. */
 .scan-line {
   background-image: radial-gradient(circle, rgb(241 241 239 / 0.6) 1.2px, transparent 1.6px);
   background-size: 8px 8px;

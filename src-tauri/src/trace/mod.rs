@@ -1,13 +1,3 @@
-//! The flight recorder: every run, built-in or by an outside agent, leaves a queryable record in
-//! one SQLite file in the app's data folder (`trace.sqlite3`): what was asked, each step (what the
-//! model saw, what it chose, what the gate decided, what happened, how long each phase took) and
-//! how the run ended. Screenshots stay files in the session folders; rows keep their paths.
-//!
-//! The recorder must never slow a step, block the agent loop or fail a task (the opposite of the
-//! screenshot archive, which fails closed on purpose). So the database belongs to one writer
-//! thread, the rest of the app sends it small messages with `try_send`, and a message that cannot
-//! be queued is dropped and counted. A recorder that could not open its file is a no-op.
-
 pub mod schema;
 pub mod store;
 
@@ -23,39 +13,28 @@ use std::{
 
 use rusqlite::{Connection, types::Value};
 
-/// Messages waiting for the writer. A full queue drops new messages.
 const CHANNEL_CAPACITY: usize = 1024;
-/// Longest text of each kind kept in a row (characters).
 pub const ARGS_CAP: usize = 2_000;
 pub const PROMPT_CAP: usize = 8_000;
 pub const EVENT_CAP: usize = 2_000;
 const TEXT_CAP: usize = 2_000;
-/// How many queued messages the writer puts in one transaction.
 const BATCH: usize = 64;
-/// A warning about dropped or failed writes is logged at most this often.
 const WARN_EVERY: Duration = Duration::from_secs(60);
 
-/// What the settings snapshot, the model and the app version look like is the caller's business;
-/// this is only the shape of a run's row.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct RunInfo {
-    /// The archive session id, or `norun-<scope id>-<unix seconds>` when no session folder exists.
     pub id: String,
     pub scope_id: Option<i64>,
     pub task: String,
-    /// "built-in" or the outside agent's name.
     pub source: String,
     pub started_utc: String,
     pub plan_json: Option<String>,
     pub model: Option<String>,
     pub app_version: Option<String>,
-    /// A snapshot of a few settings; never the key, the base URL or the hotkeys.
     pub settings_json: Option<String>,
     pub session_dir: Option<String>,
 }
 
-/// One step of a run. Everything but the key is optional: the loop may send a step in pieces (the
-/// decision first, the result later) and each piece only overwrites what it carries.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct StepRecord {
     pub run_id: String,
@@ -68,9 +47,7 @@ pub struct StepRecord {
     pub risk_stated: Option<String>,
     pub risk_final: Option<String>,
     pub risk_reasons_json: Option<String>,
-    /// `allowed`, `approved`, `declined`, `no answer in time`, `stopped`, or `none`.
     pub gate: Option<String>,
-    /// `ok`, `failed`, `cancelled` or `skipped`.
     pub result: Option<String>,
     pub error: Option<String>,
     pub observation_path: Option<String>,
@@ -87,59 +64,42 @@ pub struct StepRecord {
     pub settle_ms: Option<i64>,
 }
 
-/// The independent check of a finished run (`agent::verify`). One per run.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct VerdictRecord {
     pub run_id: String,
-    /// `background` or `blocking`.
     pub mode: String,
-    /// `verified`, `contradicted`, `unsure`, `error` or `skipped`.
     pub result: String,
-    /// One short sentence naming what the checker saw on the screen (cut to 400 characters).
     pub evidence: Option<String>,
     pub error: Option<String>,
     pub model: Option<String>,
     pub latency_ms: Option<i64>,
-    /// Whether the agent claimed the task succeeded.
     pub claimed_success: bool,
-    /// Blocking mode asked the agent to keep going because the check contradicted it.
     pub challenged: bool,
     pub created_utc: String,
 }
 
-/// One model attempt (see `model::attempts`), as stored: bodies redacted and capped.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct CallRecord {
     pub run_id: String,
     pub step: Option<i64>,
-    /// `plan`, `decide`, `verify` or `analysis`.
     pub kind: String,
     pub attempt: i64,
     pub started_utc: String,
     pub duration_ms: i64,
-    /// The backoff that preceded this attempt (0 for the first).
     pub wait_before_ms: i64,
     pub status: Option<i64>,
-    /// `ok`, `retried`, `failed`, `cancelled` or `timeout`.
     pub outcome: String,
     pub error: Option<String>,
     pub request_json: String,
     pub response_json: String,
-    /// A body was cut at `BODY_CAP`.
     pub truncated: bool,
     pub model: String,
-    /// As the server said. **Unreliable** (it read 1 on every step with thinking off).
     pub prompt_tokens: Option<i64>,
     pub completion_tokens: Option<i64>,
 }
 
-/// Longest request or response body kept, in bytes.
 pub const BODY_CAP: usize = 64 * 1024;
 
-/// Makes a request body safe to keep: every `data:` URL (images) and base64 audio payload is replaced
-/// by a note of its size, anything that looks like a credential is dropped, and the text is cut at
-/// `BODY_CAP`. Returns the JSON text and whether it was cut. The `Authorization` header is not part of
-/// a body and is never stored.
 pub fn redact(value: &serde_json::Value) -> (String, bool) {
     fn walk(value: &serde_json::Value, key: &str) -> serde_json::Value {
         use serde_json::Value;
@@ -184,8 +144,6 @@ pub fn redact(value: &serde_json::Value) -> (String, bool) {
     (text[..end].to_string(), true)
 }
 
-/// Records the attempts a `ChatClient` reports into the `calls` table, tagged with the run, the kind
-/// of call and the step it belongs to (set before each call with [`CallLog::set`]).
 pub struct CallLog {
     recorder: Recorder,
     run_id: String,
@@ -201,7 +159,6 @@ impl CallLog {
         }
     }
 
-    /// What the next calls are for: a kind (`plan`, `decide`, `verify`, `analysis`) and, for a step, its number.
     pub fn set(&self, kind: &str, step: Option<u32>) {
         if let Ok(mut context) = self.context.lock() {
             *context = (kind.to_string(), step.map(i64::from));
@@ -241,45 +198,35 @@ impl crate::model::attempts::AttemptSink for CallLog {
     }
 }
 
-/// One idle reflection run (`reflect`). The job is a stub in R5.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ReflectionRecord {
     pub id: String,
     pub started_utc: String,
     pub ended_utc: Option<String>,
-    /// `completed`, `preempted` or `failed`.
     pub outcome: String,
-    /// How many stages it got through.
     pub stages: i64,
 }
 
-/// One visual analysis (`analysis`). The id is the archive session id of its folder.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct AnalysisRecord {
     pub id: String,
     pub created_utc: String,
     pub question: String,
     pub answer: String,
-    /// The findings as JSON (cut to `FINDINGS_CAP` characters).
     pub findings_json: String,
     pub model: Option<String>,
     pub latency_ms: Option<i64>,
-    /// `ok`, `error` or `cancelled`.
     pub status: String,
     pub error: Option<String>,
     pub screenshot_path: Option<String>,
     pub monitor_json: Option<String>,
-    /// How many boxes the quality guard dropped.
     pub boxes_rejected: i64,
 }
 
-/// Longest findings JSON kept in an analysis row.
 pub const FINDINGS_CAP: usize = 20_000;
 
-/// Longest evidence text kept.
 pub const EVIDENCE_CAP: usize = 400;
 
-/// The names of `steps` columns other than the key, in the order `StepRecord::values` lists them.
 pub const STEP_COLUMNS: [&str; 23] = [
     "started_utc",
     "goal",
@@ -315,7 +262,6 @@ impl StepRecord {
         }
     }
 
-    /// The values of `STEP_COLUMNS`; `NULL` for what this piece does not carry.
     pub fn values(&self) -> [Value; 23] {
         let text = |value: &Option<String>| value.clone().map_or(Value::Null, Value::Text);
         let number = |value: &Option<i64>| value.map_or(Value::Null, Value::Integer);
@@ -346,7 +292,6 @@ impl StepRecord {
         ]
     }
 
-    /// Cuts the free-text fields to their limits.
     fn capped(mut self) -> Self {
         self.args_json = self.args_json.map(|text| cap(&text, ARGS_CAP));
         self.prompt_text = self.prompt_text.map(|text| cap(&text, PROMPT_CAP));
@@ -357,7 +302,6 @@ impl StepRecord {
     }
 }
 
-/// `text` cut to at most `max` characters; a cut text ends with `…`.
 pub fn cap(text: &str, max: usize) -> String {
     if text.chars().count() <= max {
         return text.to_string();
@@ -367,12 +311,10 @@ pub fn cap(text: &str, max: usize) -> String {
     cut
 }
 
-/// `2026-10-19T07:59:12Z` for now.
 pub fn now_utc() -> String {
     crate::archive::iso(crate::archive::now())
 }
 
-/// Unix seconds for `2026-10-19T07:59:12Z`.
 pub fn parse_iso(text: &str) -> Option<u64> {
     let bytes = text.as_bytes();
     if bytes.len() != 20
@@ -396,7 +338,6 @@ pub fn parse_iso(text: &str) -> Option<u64> {
     {
         return None;
     }
-    // Howard Hinnant's days_from_civil.
     let year = if month <= 2 { year - 1 } else { year };
     let era = year.div_euclid(400);
     let year_of_era = year.rem_euclid(400);
@@ -407,8 +348,6 @@ pub fn parse_iso(text: &str) -> Option<u64> {
     u64::try_from(days * 86_400 + hour * 3_600 + minute * 60 + second).ok()
 }
 
-/// A short, stable fingerprint of a text (FNV-1a, 64 bits, in hex) for noticing that two control
-/// lists are the same without storing either. Not for security.
 pub fn text_hash(text: &str) -> String {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for byte in text.bytes() {
@@ -418,7 +357,6 @@ pub fn text_hash(text: &str) -> String {
     format!("{hash:016x}")
 }
 
-/// The few settings a run's row snapshots. Never the API key, the base URL or the hotkeys.
 pub fn settings_snapshot(settings: &crate::settings::Settings) -> String {
     serde_json::json!({
         "max_steps": settings.max_steps,
@@ -430,28 +368,21 @@ pub fn settings_snapshot(settings: &crate::settings::Settings) -> String {
     .to_string()
 }
 
-/// The model name and the settings snapshot a run's row records, read under **one** lock. Two
-/// `locked()` calls in one statement would hold two guards of the same mutex at once and the second
-/// would wait for the first forever (the freeze of every task start, found in the field test).
 pub fn model_and_snapshot(settings: &Mutex<crate::settings::Settings>) -> (String, String) {
     use crate::sync::LockExt;
     let settings = settings.locked();
     (settings.model.clone(), settings_snapshot(&settings))
 }
 
-/// Where the trace database lives, given the app's data folder.
 pub fn db_path(data_dir: &Path) -> std::path::PathBuf {
     data_dir.join("trace.sqlite3")
 }
 
-/// The database found without a running app (for the command line); the same folder as the
-/// settings file.
 #[cfg(feature = "agent-bridge")]
 pub fn db_path_without_app() -> Option<std::path::PathBuf> {
     crate::settings::path_without_app().and_then(|settings| settings.parent().map(db_path))
 }
 
-/// What the writer thread is asked to do.
 pub enum Msg {
     BeginRun(Box<RunInfo>),
     SetPlan {
@@ -471,31 +402,25 @@ pub enum Msg {
         outcome: String,
         summary: String,
     },
-    /// Delete the runs whose session folder is one of these (retention), with their steps and events.
     PurgeSessions(Vec<String>),
     Verdict(Box<VerdictRecord>),
     Analysis(Box<AnalysisRecord>),
     Reflection(Box<ReflectionRecord>),
     Call(Box<CallRecord>),
-    /// Answered once everything queued before it has been written.
     #[cfg(test)]
     Flush(std::sync::mpsc::Sender<()>),
 }
 
-/// A cheap-to-clone handle for recording. Every method returns at once and never fails.
 #[derive(Clone)]
 pub struct Recorder {
     tx: Option<SyncSender<Msg>>,
-    /// Where the database file is, for readers that open their own connection (the session video).
     path: Option<std::path::PathBuf>,
     dropped: Arc<AtomicU64>,
-    /// The run that has begun and not ended, so Stop and the idle timer can end it without knowing its id.
     open: Arc<Mutex<Option<String>>>,
 }
 
 static LAST_WARNING: Mutex<Option<Instant>> = Mutex::new(None);
 
-/// Logs `message` as a warning unless one was logged in the last minute.
 pub(crate) fn warn_rarely(message: impl FnOnce() -> String) {
     let mut last = LAST_WARNING
         .lock()
@@ -507,7 +432,6 @@ pub(crate) fn warn_rarely(message: impl FnOnce() -> String) {
 }
 
 impl Recorder {
-    /// A recorder that records nothing (the database could not be opened).
     pub fn noop() -> Self {
         Self {
             tx: None,
@@ -517,8 +441,6 @@ impl Recorder {
         }
     }
 
-    /// Opens (creating if needed) the database at `path` and starts its writer thread. If that
-    /// cannot be done the error is logged and the recorder does nothing.
     pub fn start(path: &Path) -> Self {
         Self::start_with(path, CHANNEL_CAPACITY)
     }
@@ -569,12 +491,10 @@ impl Recorder {
         }
     }
 
-    /// The database file, when the recorder is really recording.
     pub fn db_path(&self) -> Option<&Path> {
         self.path.as_deref()
     }
 
-    /// How many messages were dropped because the queue was full or the writer was gone.
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn dropped(&self) -> u64 {
         self.dropped.load(Ordering::Relaxed)
@@ -596,7 +516,6 @@ impl Recorder {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    /// The id of the run that has begun and not ended, if any.
     pub fn open_run_id(&self) -> Option<String> {
         self.open_run().clone()
     }
@@ -610,8 +529,6 @@ impl Recorder {
         self.send(Msg::BeginRun(Box::new(info)));
     }
 
-    /// Ends whichever run is open (Stop, the idle timer, an outside agent's `rune_done`). Does
-    /// nothing when none is.
     pub fn end_open_run(&self, outcome: &str, summary: &str) {
         let open = self.open_run().take();
         if let Some(id) = open {
@@ -626,7 +543,6 @@ impl Recorder {
         });
     }
 
-    /// Adds a piece of a step: only the fields it carries are written, the rest are kept.
     pub fn step(&self, record: StepRecord) {
         self.send(Msg::Step(Box::new(record.capped())));
     }
@@ -640,7 +556,6 @@ impl Recorder {
         });
     }
 
-    /// Ends a run. Only the first end counts, like the session folder's.
     pub fn end_run(&self, run_id: &str, outcome: &str, summary: &str) {
         let mut open = self.open_run();
         if open.as_deref() == Some(run_id) {
@@ -655,7 +570,6 @@ impl Recorder {
         });
     }
 
-    /// Stores the check of a finished run (the newest one for a run replaces an older one).
     pub fn verdict(&self, record: VerdictRecord) {
         let record = VerdictRecord {
             evidence: record.evidence.map(|text| cap(&text, EVIDENCE_CAP)),
@@ -665,7 +579,6 @@ impl Recorder {
         self.send(Msg::Verdict(Box::new(record)));
     }
 
-    /// Stores one visual analysis (the newest one for an id replaces an older one).
     pub fn analysis(&self, record: AnalysisRecord) {
         let record = AnalysisRecord {
             question: cap(&record.question, TEXT_CAP),
@@ -677,17 +590,14 @@ impl Recorder {
         self.send(Msg::Analysis(Box::new(record)));
     }
 
-    /// Stores one model attempt (fire and forget: a full queue drops it, like every other message).
     pub fn call(&self, record: CallRecord) {
         self.send(Msg::Call(Box::new(record)));
     }
 
-    /// Stores one reflection run (the newest write for an id replaces an older one).
     pub fn reflection(&self, record: ReflectionRecord) {
         self.send(Msg::Reflection(Box::new(record)));
     }
 
-    /// A sink for a `ChatClient`: its attempts go to the `calls` table under this run.
     pub fn call_log(&self, run_id: &str, kind: &str) -> CallLog {
         CallLog::new(self, run_id, kind)
     }
@@ -696,7 +606,6 @@ impl Recorder {
         self.send(Msg::PurgeSessions(session_dirs));
     }
 
-    /// Waits until everything queued so far is written (tests only).
     #[cfg(test)]
     pub(crate) fn flush(&self) {
         let (done, wait) = std::sync::mpsc::channel();
@@ -709,7 +618,6 @@ impl Recorder {
             .expect("the writer answers");
     }
 
-    /// A recorder whose queue nobody reads (tests only), to see what a full queue does.
     #[cfg(test)]
     fn undrained(capacity: usize) -> (Self, Receiver<Msg>) {
         let (tx, rx) = sync_channel(capacity);
@@ -725,8 +633,6 @@ impl Recorder {
     }
 }
 
-/// The writer thread: owns the connection and applies messages in small transactions until every
-/// sender is gone.
 fn writer(mut db: Connection, rx: Receiver<Msg>) {
     while let Ok(first) = rx.recv() {
         let mut batch = vec![first];

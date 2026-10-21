@@ -7,15 +7,9 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 import { fitBox, type ActionLayer } from '@/config/flight'
 
-/**
- * The picture: the session video in a Video.js v10 player (no packaged skin: the controls are the
- * player window's own), or, when there is no video, the step's screenshot. Over it, a light layer
- * drawn from the trace (a ripple at the click, the typed text, the keys), never burned into the video.
- */
 const props = defineProps<{
   videoSrc: string | null
   still: string | null
-  /** The screenshot exists in the record but its file is gone. */
   stillMissing: boolean
   layer: ActionLayer
   layerOn: boolean
@@ -96,7 +90,6 @@ onBeforeUnmount(() => {
   if (frameRequest) cancelAnimationFrame(frameRequest)
 })
 
-/** The store of the Video.js player, once its element has been defined. */
 async function store(): Promise<PlayerStore | null> {
   await customElements.whenDefined('video-player')
   return player.value?.store ?? null

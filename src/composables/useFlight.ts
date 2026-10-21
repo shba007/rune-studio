@@ -12,22 +12,16 @@ import {
   type FlightStep,
 } from '@/config/flight'
 
-/** A path from the backend as something an `<img>` or `<video>` can load. */
 export function fileUrl(path: string): string {
   return /^(data:|blob:|https?:|\/)/.test(path) ? path : convertFileSrc(path)
 }
 
-/** What went wrong, as one line for the person looking at the window. */
 export function problemText(error: unknown): string {
   const text =
     typeof error === 'string' ? error : error instanceof Error ? error.message : String(error)
   return text.trim() === '' ? 'Something went wrong while reading the record.' : text
 }
 
-/**
- * Everything the Flight Player knows about one run, read through the read-only `flight_*` commands.
- * Nothing here writes: the record is shown, never edited.
- */
 export function useFlight() {
   const runs = ref<FlightRun[]>([])
   const runsLoaded = ref(false)
@@ -37,9 +31,7 @@ export function useFlight() {
   const events = shallowRef<FlightEvent[]>([])
   const calls = shallowRef<FlightCall[]>([])
   const loading = ref(false)
-  /** One line: why there is nothing to show (no record, no such run, a damaged file). */
   const problem = ref<string | null>(null)
-  /** The url of the video, or why there is none (a missing file is not an error: the stills play). */
   const videoUrl = ref<string | null>(null)
   const videoNote = ref<string | null>(null)
 
@@ -48,7 +40,6 @@ export function useFlight() {
     header.value ? totalMs(starts.value, { durationSecs: header.value.durationSecs }) : 0,
   )
   const segments = computed(() => segmentsOf(starts.value, total.value))
-  /** The run is still open: the end is not known yet. */
   const live = computed(() => header.value !== null && header.value.endedUtc === null)
 
   async function loadRuns(): Promise<void> {
@@ -119,7 +110,6 @@ export function useFlight() {
     }
   }
 
-  /** The path of a file in the run's own folder as a url, or null when it is missing or refused. */
   async function fileOf(
     relative: string | null | undefined,
     id: string | null = runId.value,

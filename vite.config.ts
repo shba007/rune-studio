@@ -8,11 +8,8 @@ import { FileSystemIconLoader } from 'unplugin-icons/loaders'
 import Unfonts from 'unplugin-fonts/vite'
 import vueDevTools from 'vite-plugin-vue-devtools'
 
-// Video.js v10 is a set of custom elements. Only the tags used in our templates are listed, never a
-// wildcard (see node_modules/@videojs/html/docs/guides/vue.md).
 const VIDEOJS_TAGS = new Set(['video-player', 'media-container'])
 
-// https://vite.dev/config/
 export default defineConfig({
   staged: {
     '*': 'vp check --fix',
@@ -42,7 +39,6 @@ export default defineConfig({
       'typescript/no-unnecessary-type-constraint': 'error',
       'typescript/no-unsafe-function-type': 'error',
       'vite-plus/prefer-vite-plus-imports': 'error',
-      // Icons are requested by meaning through <AppIcon>; only src/icons may name an icon set.
       'no-restricted-imports': [
         'error',
         {
@@ -125,16 +121,12 @@ export default defineConfig({
     vue({
       template: { compilerOptions: { isCustomElement: (tag) => VIDEOJS_TAGS.has(tag) } },
     }),
-    // Development only: the plugin does nothing in a production build.
     vueDevTools(),
     tailwindcss(),
-    // Ready-made icons come from Phosphor Fill ('~icons/ph/<name>-fill') and hand-made SVGs from
-    // src/assets/icons ('~icons/custom/<file-name>'). Both are imported only in src/icons/index.ts.
     Icons({
       compiler: 'vue3',
       customCollections: { custom: FileSystemIconLoader('./src/assets/icons') },
     }),
-    // Oxanium comes from its @fontsource-variable package, so it is bundled, never fetched.
     Unfonts({
       fontsource: { families: [{ name: 'Oxanium', variable: { wght: true }, subset: 'latin' }] },
     }),

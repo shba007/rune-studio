@@ -1,39 +1,23 @@
-//! The reflection prompt as a state machine: shown, denied, timed out, started, pre-empted. Pure:
-//! the caller passes the time and does the side effects (events, the job).
-
-/// How long the prompt waits for an answer before reflection starts by itself.
 pub const ANSWER_SECS: u64 = 30;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
-    /// Nothing is shown and nothing is reflecting.
     Hidden,
-    /// The prompt is up until `deadline` (the same clock as the idle clock, in milliseconds).
     Shown { deadline: u64 },
-    /// The stub job (and later the real one) is running.
     Reflecting,
 }
 
-/// What the caller must do after a step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Do {
     Nothing,
-    /// Tell the pill to show the prompt (with this deadline).
-    ShowPrompt {
-        deadline: u64,
-    },
-    /// Hide the prompt; the user said no. The idle clock restarts.
+    ShowPrompt { deadline: u64 },
     Denied,
-    /// Hide the prompt and start the job (the user said Start, or the time ran out).
     Start,
-    /// The job was cut short (a task, Stop or an outside agent); the state is free again.
     Preempted,
-    /// The job ended on its own.
     Finished,
 }
 
 impl Phase {
-    /// The idle clock says it is time.
     pub fn show(self, now: u64) -> (Phase, Do) {
         match self {
             Phase::Hidden => {
@@ -44,7 +28,6 @@ impl Phase {
         }
     }
 
-    /// The user pressed Start or Deny.
     pub fn answer(self, start: bool) -> (Phase, Do) {
         match self {
             Phase::Shown { .. } if start => (Phase::Reflecting, Do::Start),
@@ -53,7 +36,6 @@ impl Phase {
         }
     }
 
-    /// Called every tick: the timeout starts reflection (decided: the default is yes).
     pub fn tick(self, now: u64) -> (Phase, Do) {
         match self {
             Phase::Shown { deadline } if now >= deadline => (Phase::Reflecting, Do::Start),
@@ -61,17 +43,14 @@ impl Phase {
         }
     }
 
-    /// A task start, Stop or an outside agent: whatever reflection was doing ends.
     pub fn preempt(self) -> (Phase, Do) {
         match self {
             Phase::Reflecting => (Phase::Hidden, Do::Preempted),
-            // A prompt that is still up is simply withdrawn.
             Phase::Shown { .. } => (Phase::Hidden, Do::Denied),
             Phase::Hidden => (Phase::Hidden, Do::Nothing),
         }
     }
 
-    /// The job ended by itself.
     pub fn finish(self) -> (Phase, Do) {
         match self {
             Phase::Reflecting => (Phase::Hidden, Do::Finished),

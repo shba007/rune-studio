@@ -10,10 +10,6 @@ import AnalysisAnswer from './AnalysisAnswer.vue'
 import AnalysisFindingRow from './AnalysisFindingRow.vue'
 import AppIcon from './AppIcon.vue'
 
-/**
- * The screen analysis cards, stacked above the orb: header, question, answer, findings, and an error
- * card with Retry. Compact, monochrome; red only for the error and for Cancel (the Stop circle).
- */
 const props = defineProps<{ analysis: ReturnType<typeof useAnalysis> }>()
 const { snapshot, busy, notice } = props.analysis
 
@@ -41,13 +37,11 @@ function retry() {
     : props.analysis.capture(failedQuestion))
 }
 
-/** Tapping a row opens it (one at a time) and picks its marker on the screen. */
 function onToggle(n: number) {
   open.value = toggleOpen(open.value, n)
   void props.analysis.select(open.value)
 }
 
-// A new analysis starts with everything collapsed.
 watch(
   () => snapshot.value.id,
   () => (open.value = null),

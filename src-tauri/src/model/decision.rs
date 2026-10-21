@@ -1,20 +1,3 @@
-//! Quick yes/no and pick-one questions for rune-infer's decision model (`POST /v1/decisions`).
-//!
-//! The decision model reads a text (and optionally screenshots) and answers a fixed list of
-//! questions in a single forward pass: no tokens are generated, so an answer takes a fraction of
-//! a chat completion. That makes it good for gating and skipping work, and the limits shape how
-//! the app uses it:
-//!
-//! - It can only pick from what it is offered: yes or no, one of a few options, a level. It
-//!   cannot write text, coordinates or tool arguments, so it never replaces the model that
-//!   chooses the actions.
-//! - It is a small model. Its answers come with a probability, and callers act only on a
-//!   confident answer in the direction where a mistake is cheap: skipping work (a wrong yes
-//!   costs a retry), or asking the user (a wrong yes costs a click). It never relaxes a safety
-//!   check.
-//! - It is optional. When it is off, missing, slow or failing, `ask` returns `None` and the
-//!   caller does exactly what it did before; after a failure it is left alone for a minute.
-
 use crate::sync::LockExt;
 use std::{
     collections::HashMap,
@@ -27,15 +10,12 @@ use tauri::{AppHandle, Manager};
 
 use crate::{events::AppState, settings};
 
-/// A text-only question is a single short pass; one with a screenshot reads a few hundred image tokens.
 const TEXT_TIMEOUT: Duration = Duration::from_secs(4);
 const IMAGE_TIMEOUT: Duration = Duration::from_secs(8);
-/// After a failure the decision model is not asked again for this long.
 const COOLDOWN: Duration = Duration::from_secs(60);
 
 static FAILED_AT: Mutex<Option<Instant>> = Mutex::new(None);
 
-/// One question for the decision model.
 pub struct Question {
     name: &'static str,
     instruction: String,
@@ -43,7 +23,6 @@ pub struct Question {
 }
 
 impl Question {
-    /// A yes or no question. Word it so that "yes" is the answer you can act on.
     pub fn yes_no(name: &'static str, instruction: impl Into<String>) -> Self {
         Self {
             name,
@@ -52,7 +31,6 @@ impl Question {
         }
     }
 
-    /// Pick one of `options`.
     pub fn choice(
         name: &'static str,
         instruction: impl Into<String>,
@@ -66,7 +44,6 @@ impl Question {
     }
 
     fn to_json(&self) -> Value {
-        // The server calls a yes/no question "noul".
         match self.options {
             Some(options) => {
                 json!({ "name": self.name, "type": "choice", "instruction": self.instruction, "criteria": options })
@@ -76,15 +53,9 @@ impl Question {
     }
 }
 
-/// The model's answers, by question name.
 #[derive(Debug, Default)]
 pub struct Answers(HashMap<String, Value>);
 
-/// The two answer shapes of `/v1/decisions`: the one the running server returns (`Source`,
-/// `{ "decision": .., "probability" | "confidence": .. }`, confirmed by the rune-infer maintainer on
-/// 2026-10-19) and the one the old API spec / Postman collection documents (`Spec`,
-/// `{ "type": "noul" | "choice" | "score", "value": .., "confidence": .. }`). The spec shape is
-/// legacy; it is still read because that is harmless.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Shape {
     Source,
@@ -118,7 +89,6 @@ impl Answers {
             }
         }
         let answers = Self(answers);
-        // Data for setting thresholds later: what the model says, and how sure it is.
         let mut names: Vec<&String> = answers.0.keys().collect();
         names.sort();
         for name in names {
@@ -145,8 +115,6 @@ impl Answers {
         answers
     }
 
-    /// True only when the model said yes and was at least `min_probability` sure. Anything else,
-    /// including a missing answer, is "not sure", never "no".
     pub fn confident_yes(&self, name: &str, min_probability: f64) -> bool {
         let Some(answer) = self.0.get(name) else {
             return false;
@@ -164,7 +132,6 @@ impl Answers {
                         || answer["value"]
                             .as_str()
                             .is_some_and(|value| value.eq_ignore_ascii_case("yes")));
-                // NOT CERTAIN: that `confidence` is the probability of `value` for a yes/no answer.
                 yes && answer["confidence"]
                     .as_f64()
                     .is_some_and(|p| p >= min_probability)
@@ -172,19 +139,11 @@ impl Answers {
         }
     }
 
-    /// The probability the model gave to the option it picked for a `choice` question
-    /// (`probabilities[decision]`), which is not what `confidence` reports. For recording only.
     pub fn picked_probability(&self, name: &str) -> Option<f64> {
         let answer = self.0.get(name)?;
         answer["probabilities"][answer["decision"].as_str()?].as_f64()
     }
 
-    /// The option picked for a `choice` question and how sure the model is of it.
-    ///
-    /// For the server's own shape the number is the probability of the picked option
-    /// (`probabilities[decision]`), because `confidence` is not that: "click Pay now" came back
-    /// high with probability 0.587 and confidence 0.38. A reply without `probabilities` falls back
-    /// to `confidence`.
     pub fn choice(&self, name: &str) -> Option<(String, f64)> {
         let answer = self.0.get(name)?;
         match shape_of(answer) {
@@ -211,7 +170,6 @@ fn request_body(model: &str, text: &str, images: &[String], questions: &[Questio
     json!({ "model": model, "state": state, "questions": questions.iter().map(Question::to_json).collect::<Vec<_>>() })
 }
 
-/// The decision endpoint: the Decision URL, or the chat server's when it is empty (one server is the usual setup).
 fn endpoint(decision_url: &str, base_url: &str) -> String {
     let url = if decision_url.trim().is_empty() {
         base_url
@@ -235,8 +193,6 @@ fn note_failure() {
     }
 }
 
-/// Asks the decision model. `None` means "no answer, do it the usual way": the feature is off,
-/// the model is cooling down after a failure, or the call failed.
 pub async fn ask(
     app: &AppHandle,
     text: &str,
@@ -436,17 +392,14 @@ mod tests {
 
     #[test]
     fn a_choice_is_as_sure_as_its_picked_probability_not_its_confidence() {
-        // The field test's "click Pay now": high, probability 0.587, confidence 0.38.
         let pay = answers_of(
             json!({"decision":"high","confidence":0.38,"probabilities":{"low":0.2,"medium":0.213,"high":0.587}}),
         );
         assert_eq!(pay.choice("q"), Some(("high".to_string(), 0.587)));
-        // Shift+Delete: 0.92.
         let delete = answers_of(
             json!({"decision":"high","confidence":0.8,"probabilities":{"low":0.02,"medium":0.06,"high":0.92}}),
         );
         assert_eq!(delete.choice("q"), Some(("high".to_string(), 0.92)));
-        // No probabilities in the reply: confidence is all there is.
         let bare = answers_of(json!({"decision":"low","confidence":0.7}));
         assert_eq!(bare.choice("q"), Some(("low".to_string(), 0.7)));
     }

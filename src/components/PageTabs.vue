@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { Agent } from '@/composables/useAgent'
 
-/** The two full pages beside the orb, one tap apart: Settings and Artifacts (the recorded sessions). */
 defineProps<{ agent: Agent; current: 'settings' | 'artifacts' }>()
 </script>
 

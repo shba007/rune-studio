@@ -1,10 +1,3 @@
-//! Puts `rune-studio-cli` on the user's PATH on macOS and Linux.
-//!
-//! The Windows installer does this itself. A macOS app bundle and an AppImage have no install
-//! step, so the app links the CLI that sits next to it into `~/.local/bin` the first time it runs
-//! (and again if the app is moved). A deb or rpm install puts the CLI in `/usr/bin` and needs
-//! nothing. An existing file of that name that is not our link is never touched.
-
 use std::{
     fs,
     os::unix::fs::symlink,
@@ -13,20 +6,18 @@ use std::{
 
 const NAME: &str = "rune-studio-cli";
 
-/// Where the link goes, given the user's home directory.
 fn link_path(home: &Path) -> PathBuf {
     home.join(".local").join("bin").join(NAME)
 }
 
-/// Makes `link` point at `target`. Returns whether it changed anything.
 fn point_link_at(link: &Path, target: &Path) -> std::io::Result<bool> {
     if let Ok(existing) = fs::read_link(link) {
         if existing == target {
             return Ok(false);
         }
-        fs::remove_file(link)?; // our own link, left over from where the app used to be
+        fs::remove_file(link)?;
     } else if link.exists() {
-        return Ok(false); // somebody else's file: leave it alone
+        return Ok(false);
     }
     if let Some(dir) = link.parent() {
         fs::create_dir_all(dir)?;
@@ -36,7 +27,6 @@ fn point_link_at(link: &Path, target: &Path) -> std::io::Result<bool> {
 }
 
 pub fn ensure() {
-    // An AppImage runs from a temporary mount that changes every launch; a link would go stale.
     if std::env::var_os("APPIMAGE").is_some() {
         return;
     }
@@ -44,7 +34,6 @@ pub fn ensure() {
         return;
     };
     let cli = app.with_file_name(NAME);
-    // A package install already put it in /usr/bin.
     if !cli.exists() || cli.starts_with("/usr/") {
         return;
     }

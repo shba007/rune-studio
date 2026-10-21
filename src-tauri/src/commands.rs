@@ -14,7 +14,6 @@ use crate::{
 
 #[tauri::command]
 pub fn get_settings(app: AppHandle, state: State<'_, AppState>) -> Settings {
-    // The command line (`rune-studio-cli enable`) can change the outside-agent switch behind our back.
     let on_disk = settings::load(&app).external_agent;
     let mut settings = state.settings.locked();
     settings.external_agent = on_disk;
@@ -31,7 +30,6 @@ pub fn save_settings(
     settings::save(&app, &settings)?;
 
     let next = Hotkeys::from_settings(&settings);
-    // Turning the switch back on is how the user re-arms an agent that Stop locked out.
     let was_on = state.settings.locked().external_agent;
     if settings.external_agent && !was_on {
         state.lease.locked().rearm();
@@ -74,8 +72,6 @@ pub fn set_mode(app: AppHandle, mode: window::Mode) -> AppResult<()> {
     Ok(window::set_mode(&app, mode)?)
 }
 
-/// Where the pill is on the desktop (physical pixels), so the full-screen overlay can put the
-/// speech bubble at the orb's head. `None` if the window is hidden.
 #[derive(serde::Serialize)]
 pub struct PillRect {
     pub x: i32,
@@ -102,9 +98,7 @@ pub fn pill_rect(app: AppHandle) -> Option<PillRect> {
 
 #[tauri::command]
 pub fn stop(app: AppHandle) {
-    // Always cancel, even from Idle: Stop must interrupt typing the instant it is pressed.
     app.state::<AppState>().stop_current();
-    // An outside agent loses control and may not simply start again.
     let had_agent = {
         let state = app.state::<AppState>();
         let mut lease = state.lease.locked();
@@ -115,7 +109,6 @@ pub fn stop(app: AppHandle) {
     if had_agent {
         events::set_external(&app, None);
     }
-    // Whatever task was running is over: close its session folder (a no-op when none is open).
     crate::archive::end_session(None, "stopped", "");
     app.state::<AppState>().trace.end_open_run("stopped", "");
     if events::agent_state(&app) != AgentState::Idle {
@@ -129,13 +122,10 @@ pub fn start_task(app: AppHandle, text: String) -> AppResult<()> {
     begin_task(&app, &text, false)
 }
 
-/// Starts a task. `keep_mic` leaves the microphone open (a task started by voice stays
-/// listening, so the user can say stop, answer a question or steer); typing a task closes it.
 pub fn begin_task(app: &AppHandle, text: &str, keep_mic: bool) -> AppResult<()> {
     begin_task_planned(app, text, keep_mic, None)
 }
 
-/// `begin_task` with the plan already made (see `agent::start_planned`).
 pub fn begin_task_planned(
     app: &AppHandle,
     text: &str,
@@ -155,13 +145,11 @@ pub fn begin_task_planned(
     if state.lease.locked().is_held() {
         return Err(AppError::Invalid("An outside agent is in control".into()));
     }
-    // One thing looks at the screen at a time: a task would act while the analysis is still reading it.
     if crate::analysis::state::in_flight(state.analysis.locked().status) {
         return Err(AppError::Invalid(
             "A screen analysis is still running".into(),
         ));
     }
-    // Starting a task ends listening: the microphone must not stay open behind it.
     if !keep_mic {
         drop(state.mic.locked().take());
     }
@@ -169,8 +157,6 @@ pub fn begin_task_planned(
     Ok(())
 }
 
-/// Words for the running agent: it reads them before its next step. Returns false if there was
-/// nothing worth keeping.
 pub fn push_steer(app: &AppHandle, text: &str) -> bool {
     let text = text.trim();
     if text.is_empty() {
@@ -199,7 +185,6 @@ pub fn steer(app: AppHandle, text: String) -> AppResult<()> {
     }
 }
 
-/// Closes the microphone (and leaves the listening state).
 pub fn close_microphone(app: &AppHandle) {
     let state = app.state::<AppState>();
     let was_open = state.mic.locked().take().is_some();
@@ -208,8 +193,6 @@ pub fn close_microphone(app: &AppHandle) {
     }
 }
 
-/// Opens or closes the microphone. Only the live level is wired up so far; speech
-/// segmentation and transcription arrive with M5.
 #[tauri::command]
 pub async fn toggle_listening(app: AppHandle, state: State<'_, AppState>) -> AppResult<()> {
     if state.mic.locked().take().is_some() {
@@ -225,8 +208,6 @@ pub async fn toggle_listening(app: AppHandle, state: State<'_, AppState>) -> App
         ));
     }
 
-    // Voice goes to the omni model as audio. If the server says the model cannot hear, say so in the
-    // log; this runs in the background so opening the microphone is not delayed by the probe.
     let (settings, http) = (state.settings.locked().clone(), state.http.clone());
     tauri::async_runtime::spawn(async move {
         let status = backend::check(&http, &settings, settings::api_key().as_deref()).await;
@@ -256,15 +237,12 @@ pub fn confirm(app: AppHandle, id: String, approved: bool) -> AppResult<()> {
     }
 }
 
-/// Dev-only: drives the state machine by hand so the UI states and click-through
-/// can be checked before the agent loop exists.
 #[cfg(debug_assertions)]
 #[tauri::command]
 pub fn debug_set_state(app: AppHandle, state: AgentState) {
     events::preview_agent_state(&app, state);
 }
 
-/// Name of the outside agent currently in control, for the overlay's label.
 #[tauri::command]
 pub fn get_control_label(state: State<'_, AppState>) -> Option<String> {
     state.lease.locked().agent().map(str::to_string)
@@ -273,21 +251,16 @@ pub fn get_control_label(state: State<'_, AppState>) -> Option<String> {
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BridgeInfo {
-    /// Whether this build has the bridge at all.
     pub available: bool,
     pub url: String,
-    /// A ready-to-paste command that connects Claude Code. It carries no secret: the app itself
-    /// supplies the token when an agent connects.
     pub command: String,
 }
 
-/// What Settings shows for the External agent group.
 #[tauri::command]
 pub fn bridge_info() -> BridgeInfo {
     #[cfg(feature = "agent-bridge")]
     {
         let url = crate::bridge::server::url();
-        // The `rune-studio-cli` command sits next to this windowed app.
         let exe = std::env::current_exe()
             .map(|path| {
                 path.with_file_name(crate::bridge::exe_name("rune-studio-cli"))
@@ -313,20 +286,16 @@ pub fn bridge_info() -> BridgeInfo {
     }
 }
 
-/// Captures the current screen and asks the model about it (no question: what is on it). The
-/// result arrives in the analysis window through `analysis_updated`.
 #[tauri::command]
 pub async fn analyze_screen(app: AppHandle, question: Option<String>) -> AppResult<()> {
     crate::analysis::run::run(&app, question.as_deref().unwrap_or(""), true).await
 }
 
-/// Asks a new question about the screen the window already shows (no new capture).
 #[tauri::command]
 pub async fn analyze_again(app: AppHandle, question: String) -> AppResult<()> {
     crate::analysis::run::run(&app, &question, false).await
 }
 
-/// Where the analysis is now, so a window that opens late catches up.
 #[tauri::command]
 pub fn analysis_state(state: State<'_, AppState>) -> crate::analysis::state::Snapshot {
     state.analysis.locked().snapshot()
@@ -337,25 +306,21 @@ pub fn cancel_analysis(app: AppHandle) {
     crate::analysis::run::cancel(&app);
 }
 
-/// Closes the analysis cards: cancels what runs and clears the findings and the boxes on the screen.
 #[tauri::command]
 pub fn close_analysis(app: AppHandle) {
     crate::analysis::run::close(&app);
 }
 
-/// Picks a finding in the cards (`None` clears it); the overlay draws that marker at full strength.
 #[tauri::command]
 pub fn select_finding(app: AppHandle, n: Option<u8>) {
     crate::analysis::run::select(&app, n);
 }
 
-/// What an overlay page needs: who owns the overlay, and whether this window is on the primary monitor.
 #[tauri::command]
 pub fn overlay_info(window: tauri::WebviewWindow) -> crate::overlay::OverlayInfo {
     crate::overlay::info(&window)
 }
 
-/// Who is in control from outside right now, so a window that opens late shows the right identity.
 #[tauri::command]
 pub fn external_agent(state: State<'_, AppState>) -> events::ExternalAgent {
     state
@@ -365,35 +330,26 @@ pub fn external_agent(state: State<'_, AppState>) -> events::ExternalAgent {
         .map_or_else(events::ExternalAgent::none, events::ExternalAgent::of)
 }
 
-/// The user's answer to the idle reflection prompt: Start (true) or Deny (false).
 #[tauri::command]
 pub fn reflection_answer(app: AppHandle, start: bool) {
     crate::reflect::answer(&app, start);
 }
 
-/// What the user says about how a finished session went: whether it really completed their task and,
-/// if not, why. It goes into the run's record as an event, next to the independent check's verdict.
 #[tauri::command]
-pub fn session_feedback(
-    app: AppHandle,
-    run_id: String,
-    complete: bool,
-    reason: Option<String>,
-) {
-    let reason = reason.map(|text| text.trim().to_string()).filter(|text| !text.is_empty());
+pub fn session_feedback(app: AppHandle, run_id: String, complete: bool, reason: Option<String>) {
+    let reason = reason
+        .map(|text| text.trim().to_string())
+        .filter(|text| !text.is_empty());
     let data = serde_json::json!({ "complete": complete, "reason": reason });
     app.state::<AppState>()
         .trace
         .event(&run_id, "user_feedback", &data.to_string());
 }
 
-/// The pill was used (clicked, typed in, opened): the user is here, so the idle clock restarts.
 #[tauri::command]
 pub fn pill_activity(app: AppHandle) {
     crate::reflect::touch(&app, crate::reflect::idle::Input::Pill);
 }
-
-// ------------------------------------------------------------ the Flight Player's read-only data
 
 fn trace_db(app: &AppHandle) -> AppResult<std::path::PathBuf> {
     app.state::<AppState>()
@@ -445,14 +401,11 @@ pub fn flight_calls(
     crate::flight::calls(&trace_db(&app)?, &id, step).map_err(read_error)
 }
 
-/// One attempt's request and response as `[request, response]` (redacted and capped when stored).
 #[tauri::command]
 pub fn flight_call_body(app: AppHandle, call_id: i64) -> AppResult<Option<(String, String)>> {
     crate::flight::call_bodies(&trace_db(&app)?, call_id).map_err(read_error)
 }
 
-/// A file of the run's own session folder (a screenshot, the video) as an absolute path the player
-/// can load. Absolute paths, `..` and links leading out of the folder are refused.
 #[tauri::command]
 pub fn flight_file(app: AppHandle, id: String, relative: String) -> AppResult<String> {
     let dir = crate::flight::session_dir(&trace_db(&app)?, &id)
@@ -461,22 +414,18 @@ pub fn flight_file(app: AppHandle, id: String, relative: String) -> AppResult<St
     let path = crate::flight::files::resolve(&dir, &relative).map_err(|refused| {
         AppError::Invalid(format!("That file cannot be opened: {}.", refused.why()))
     })?;
-    // The asset protocol starts with an empty scope: only files checked here become loadable.
     app.asset_protocol_scope()
         .allow_file(&path)
         .map_err(|err| AppError::Invalid(format!("Could not open the file: {err}")))?;
     Ok(path.to_string_lossy().into_owned())
 }
 
-/// Opens the Flight Player on a run (or on its picker when no id is given).
 #[tauri::command]
-// Async on purpose: a window built from a synchronous command runs on the main thread and opens blank.
 pub async fn open_flight(app: AppHandle, run_id: Option<String>) -> AppResult<()> {
     crate::flight::open(&app, run_id.as_deref())
         .map_err(|err| AppError::Invalid(format!("Could not open the Flight Player: {err}")))
 }
 
-/// Shows the run's session folder in the file manager.
 #[tauri::command]
 pub fn flight_reveal(app: AppHandle, id: String) -> AppResult<()> {
     let dir = crate::flight::session_dir(&trace_db(&app)?, &id)

@@ -1,23 +1,11 @@
-//! The chat call to the omni model: the task (a screenshot and/or what the user just said) in,
-//! one tool call out. Every model role goes through this one call.
-//!
-//! Two modes. By default thinking is off: the M1.5 probe showed grounding does not need it, and it
-//! only adds latency. The switch is sent two ways, `thinking: {"type": "disabled" | "enabled"}`
-//! (which rune-infer honours) and `chat_template_kwargs.enable_thinking` (which it does not, but
-//! other servers read). With `think` on, the reply is streamed so the model's thinking can be shown
-//! while it happens. Audio goes as an `input_audio` part (base64 WAV), the only form rune-infer reads.
-
 use std::{collections::BTreeMap, time::Duration};
 
 use super::attempts::{Attempt, AttemptSink, Guard};
 use serde_json::{Value, json};
 
-/// A turn can take half a minute on a 27B model that has to read a fresh screenshot.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
 const MAX_OUTPUT_TOKENS: u32 = 512;
-/// Thinking uses tokens before the tool call, so it needs room or the call would be cut off.
 const MAX_OUTPUT_TOKENS_THINKING: u32 = 3000;
-/// `call_retrying` tries this many times in all, waiting `RETRY_WAITS` (plus up to 20% jitter) between tries.
 const MAX_ATTEMPTS: u32 = 3;
 const RETRY_WAITS: [Duration; 2] = [Duration::from_millis(500), Duration::from_millis(1500)];
 
@@ -31,12 +19,10 @@ pub enum ModelError {
     Reply(String),
     #[error("the model did not call a tool: {0}")]
     NoToolCall(String),
-    /// The tool call's arguments were not JSON, even after the one conservative repair.
     #[error("the model's tool arguments were not valid JSON: {0}")]
     BadArguments(String),
 }
 
-/// A tool call as the model wrote it, before it is checked against the protocol.
 #[derive(Debug, Clone)]
 pub struct ToolCall {
     pub name: String,
@@ -46,7 +32,6 @@ pub struct ToolCall {
 pub struct Reply {
     pub call: ToolCall,
     pub completion_tokens: Option<u64>,
-    /// What the model thought before answering (empty when thinking was off).
     pub thinking: String,
 }
 
@@ -55,29 +40,19 @@ pub struct ChatClient<'a> {
     pub base_url: &'a str,
     pub api_key: Option<&'a str>,
     pub model: &'a str,
-    /// Told about every attempt (retries included); `None` records nothing.
     pub sink: Option<&'a dyn AttemptSink>,
 }
 
-/// One question for the model.
 pub struct Request<'a> {
     pub system: &'a str,
     pub user_text: &'a str,
-    /// The screen as a data URI. The planning call has none.
     pub screenshot: Option<&'a str>,
-    /// What the user just said, as base64 WAV (16 kHz mono).
     pub audio: Option<&'a str>,
     pub tools: &'a Value,
-    /// Let the model think, and stream that thinking to `on_thinking`.
     pub think: bool,
-    /// Longest answer to ask for. `None` keeps the default (512, or 3000 when thinking), which is
-    /// what every call but the screen analysis uses.
     pub max_tokens: Option<u32>,
 }
 
-/// Whether trying the same request again can help: the server was not reachable or was briefly
-/// overloaded. A reply we could not understand, a model that chose no tool, and every other
-/// error status would come back the same.
 pub fn is_retryable(error: &ModelError) -> bool {
     match error {
         ModelError::Request(_) => true,
@@ -86,11 +61,8 @@ pub fn is_retryable(error: &ModelError) -> bool {
     }
 }
 
-/// How long to wait after failed attempt number `attempt` (1-based): 500 ms, then 1500 ms, each
-/// plus a random 0 to 20%.
 pub fn backoff(attempt: u32) -> Duration {
     let base = RETRY_WAITS[(attempt.max(1) as usize - 1).min(RETRY_WAITS.len() - 1)];
-    // No random-number crate for this: the clock's nanoseconds are random enough to spread retries.
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |since| since.subsec_nanos());
@@ -101,12 +73,10 @@ fn snippet(text: &str) -> String {
     text.chars().take(300).collect()
 }
 
-/// The JSON body of one chat completion request.
 pub(crate) fn chat_body(model: &str, request: &Request<'_>) -> Value {
     let content = if request.screenshot.is_none() && request.audio.is_none() {
         json!(request.user_text)
     } else {
-        // Audio and image first, text last, like the probe: the screenshot is the expensive part.
         let mut parts = Vec::new();
         if let Some(audio) = request.audio {
             parts.push(
@@ -130,7 +100,6 @@ pub(crate) fn chat_body(model: &str, request: &Request<'_>) -> Value {
         "tools": request.tools,
         "tool_choice": "required",
     });
-    // The server's reasoning parser keeps the thinking out of `content`.
     body["thinking"] = json!({ "type": if request.think { "enabled" } else { "disabled" } });
     body["chat_template_kwargs"] = json!({ "enable_thinking": request.think });
     if request.think {
@@ -139,7 +108,6 @@ pub(crate) fn chat_body(model: &str, request: &Request<'_>) -> Value {
     body
 }
 
-/// What one exchange with the server produced, besides the reply.
 struct Exchange {
     result: Result<Reply, ModelError>,
     status: Option<u16>,
@@ -147,10 +115,6 @@ struct Exchange {
 }
 
 impl ChatClient<'_> {
-    /// `call`, tried again when the failure is transient (see `is_retryable`), at most
-    /// `MAX_ATTEMPTS` times. The waits are plain sleeps inside this future, so a caller that races
-    /// it against Stop (`unless_stopped`) abandons them by dropping it. Every attempt is reported to
-    /// the sink: a failed one that is followed by another is `retried`, with the wait before the next.
     pub async fn call_retrying(
         &self,
         request: &Request<'_>,
@@ -187,8 +151,6 @@ impl ChatClient<'_> {
         }
     }
 
-    /// Asks for a tool call, once. `on_thinking` receives the thinking so far (all of it, each time) as
-    /// it streams in; it is never called when `think` is off.
     pub async fn call(
         &self,
         request: &Request<'_>,
@@ -201,8 +163,6 @@ impl ChatClient<'_> {
         result
     }
 
-    /// One attempt and its report (when there is a sink). Dropping the future before it ends reports
-    /// the attempt as `cancelled`.
     async fn attempt(
         &self,
         request: &Request<'_>,
@@ -347,8 +307,6 @@ impl ChatClient<'_> {
     }
 }
 
-/// The model's thinking in a message or stream delta: servers call the field `reasoning` (vLLM)
-/// or `reasoning_content` (older ones).
 fn reasoning_of(message: &Value) -> &str {
     ["reasoning", "reasoning_content"]
         .iter()
@@ -357,7 +315,6 @@ fn reasoning_of(message: &Value) -> &str {
         .unwrap_or("")
 }
 
-/// Pulls the first tool call out of a chat completion.
 pub fn parse_reply(value: &Value) -> Result<Reply, ModelError> {
     let message = &value["choices"][0]["message"];
     let Some(call) = message["tool_calls"].get(0) else {
@@ -376,7 +333,6 @@ pub fn parse_reply(value: &Value) -> Result<Reply, ModelError> {
     })
 }
 
-/// Arguments arrive as a JSON string; a few servers send an object instead.
 fn parse_arguments(arguments: &Value) -> Result<Value, ModelError> {
     match arguments {
         Value::String(text) => match serde_json::from_str(text) {
@@ -389,9 +345,6 @@ fn parse_arguments(arguments: &Value) -> Result<Value, ModelError> {
     }
 }
 
-/// The one repair tried on arguments that are not JSON: take the first `{ ... }` object that closes
-/// properly and drop whatever follows it (a stray quote, a second copy, prose). Nothing inside the
-/// object is changed or guessed, and anything that still does not parse is left as an error.
 pub(crate) fn repair_arguments(text: &str) -> Option<Value> {
     let start = text.find('{')?;
     let (mut depth, mut in_string, mut escaped) = (0_u32, false, false);
@@ -421,21 +374,16 @@ pub(crate) fn repair_arguments(text: &str) -> Option<Value> {
     None
 }
 
-/// A streamed reply being assembled from server-sent events.
 #[derive(Default)]
 struct Stream {
-    /// Bytes not yet split into whole lines (a chunk can end in the middle of one).
     pending: Vec<u8>,
     thinking: String,
     content: String,
-    /// Tool calls by index: name, and the arguments text so far.
     calls: BTreeMap<u64, (String, String)>,
     completion_tokens: Option<u64>,
 }
 
 impl Stream {
-    /// What the stream collected, as JSON for the record: the reasoning text, the content, each tool
-    /// call's name and arguments text, and the usage.
     fn summary(&self) -> Value {
         json!({
             "streamed": true,
@@ -446,7 +394,6 @@ impl Stream {
         })
     }
 
-    /// Takes the next bytes from the server. Returns whether the thinking grew.
     fn feed(&mut self, bytes: &[u8]) -> bool {
         self.pending.extend_from_slice(bytes);
         let mut grew = false;
@@ -619,7 +566,6 @@ mod tests {
             json!({ "tool_calls": [{ "index": 0, "function": { "arguments": "\"Type\"]}" } }] }),
         ));
         text.push_str("data: [DONE]\n\n");
-        // Feed it in awkward pieces, including a split in the middle of a line and of a word.
         let bytes = text.as_bytes();
         let mut grew = 0;
         for piece in bytes.chunks(37) {
@@ -655,7 +601,7 @@ mod tests {
         let mut stream = Stream::default();
         let line = event(json!({ "reasoning_content": "héllo 你好" }));
         let bytes = line.as_bytes();
-        let split = bytes.iter().position(|byte| *byte == 0xC3).unwrap() + 1; // in the middle of "é"
+        let split = bytes.iter().position(|byte| *byte == 0xC3).unwrap() + 1;
         stream.feed(&bytes[..split]);
         stream.feed(&bytes[split..]);
         assert_eq!(stream.thinking, "héllo 你好");
@@ -708,9 +654,6 @@ mod tests {
         );
     }
 
-    /// A one-connection-at-a-time HTTP server on a free port. Each connection gets the next canned
-    /// answer as `(status line, body)`; the request is read in full first so the client does not
-    /// see a reset. Returns its base URL and how many requests it has served.
     fn serve(
         answers: Vec<(&'static str, String)>,
     ) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
@@ -877,7 +820,6 @@ mod tests {
             ["failed"]
         );
 
-        // A server that never answers, and a caller that gives up (Stop).
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let silent = format!("http://{}", listener.local_addr().unwrap());
         let sink = Collect::default();
@@ -936,9 +878,7 @@ mod tests {
                 .set_read_timeout(Some(std::time::Duration::from_secs(5)))
                 .unwrap();
             let mut chunk = [0_u8; 4096];
-            // The request arrives, and the server never answers (a model that keeps generating).
             let _ = stream.read(&mut chunk);
-            // Then read until the client hangs up: Ok(0) or a reset is "closed"; a timeout is "left open".
             let outcome = loop {
                 match stream.read(&mut chunk) {
                     Ok(0) => break "closed",
@@ -965,7 +905,6 @@ mod tests {
             sink: None,
         };
         let tools = json!([]);
-        // What Stop and closing the analysis window do: drop the future (see `agent::unless_stopped`).
         let cancelled = tokio::time::timeout(
             std::time::Duration::from_millis(300),
             client.call(&a_click_request(&tools), &mut |_| {}),
@@ -975,7 +914,6 @@ mod tests {
             cancelled.is_err(),
             "the server never answers, so the call is still pending when it is dropped"
         );
-        // Wait off the runtime's thread: it must stay free to close the connection.
         let outcome = tokio::task::spawn_blocking(move || {
             wait.recv_timeout(std::time::Duration::from_secs(8))
                 .unwrap()

@@ -72,7 +72,6 @@ function readMonitor(value: unknown): MonitorInfo | null {
   }
 }
 
-/** Reads what the backend sent, whatever it is: unknown fields are ignored, missing ones get defaults. */
 export function readSnapshot(raw: unknown): AnalysisSnapshot {
   if (typeof raw !== 'object' || raw === null) return { ...EMPTY_SNAPSHOT }
   const value = raw as Record<string, unknown>
@@ -93,9 +92,6 @@ export function readSnapshot(raw: unknown): AnalysisSnapshot {
   }
 }
 
-// ---------------------------------------------------------------- the screen markers
-
-/** The overlay window as the page knows it: its size in physical pixels and the display scale. */
 export interface OverlayView {
   width: number
   height: number
@@ -109,12 +105,6 @@ export interface CssRect {
   height: number
 }
 
-/**
- * A finding's box (0..1000 across the whole captured screen) as CSS pixels inside the overlay window,
- * which covers its monitor. The window's CSS size is its physical size over the display scale, so the
- * result is right at 100, 125 and 150 percent; the monitor's origin on the desktop does not matter
- * (the window sits at it).
- */
 export function boxToCss(box: Box, view: OverlayView): CssRect {
   const scale = view.scaleFactor > 0 ? view.scaleFactor : 1
   const cssWidth = view.width / scale
@@ -128,7 +118,6 @@ export function boxToCss(box: Box, view: OverlayView): CssRect {
   }
 }
 
-/** Where the numbered badge goes: centred on the box's top-left corner, kept inside the window. */
 export function badgePosition(
   rect: CssRect,
   view: OverlayView,
@@ -143,22 +132,17 @@ export function badgePosition(
   }
 }
 
-/** The findings that have a box to draw on the screen (a finding without one has no marker). */
 export function drawable(snapshot: AnalysisSnapshot): Finding[] {
   if (snapshot.stale) return []
   return snapshot.findings.filter((finding) => finding.box !== null)
 }
 
-/** How strongly a marker is drawn: full for the picked one (or when nothing is picked), dimmed otherwise. */
 export function markerOpacity(n: number, selected: number | null): number {
   return selected === null || selected === n ? 1 : 0.35
 }
 
-// ---------------------------------------------------------------- the status bar and the cards
-
 export type StageWord = 'LOOKING' | 'READING' | 'DONE' | 'CANCELLED' | 'FAILED'
 
-/** The stage chip of the status bar; null when there is nothing to say. */
 export function stageWord(status: AnalysisStatus): StageWord | null {
   switch (status) {
     case 'capturing':
@@ -176,28 +160,22 @@ export function stageWord(status: AnalysisStatus): StageWord | null {
   }
 }
 
-/** Elapsed time as `mm:ss`, the way the bar shows it (`00:14`). */
 export function formatElapsed(ms: number): string {
   const seconds = Math.max(0, Math.floor(ms / 1000))
   const minutes = Math.floor(seconds / 60)
   return `${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
 }
 
-/** The accordion: one finding open at a time; opening the open one closes it. */
 export function toggleOpen(open: number | null, clicked: number): number | null {
   return open === clicked ? null : clicked
 }
 
 export interface CardsState {
-  /** The finding row that is expanded. */
   open: number | null
-  /** The finding whose marker is picked. */
   selected: number | null
-  /** The cards are showing. */
   shown: boolean
 }
 
-/** What Escape does: collapse the expanded finding, then clear the selection, then close the cards. */
 export function escape(state: CardsState): CardsState {
   if (state.open !== null) return { ...state, open: null }
   if (state.selected !== null) return { ...state, selected: null }

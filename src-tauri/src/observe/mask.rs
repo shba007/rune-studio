@@ -1,17 +1,7 @@
-//! Demo mode: with "Show Rune in screen recordings" on, Rune's windows are no longer excluded from
-//! capture, so an external recorder (OBS, Game Bar) can see them. The model must still never see
-//! Rune's own UI (it could read the pill or click it), so the rectangles of Rune's windows are
-//! painted over in the screenshot **before** it is cropped or downscaled. The frame keeps its size,
-//! so no coordinate shifts.
-//!
-//! Rectangles are in physical desktop pixels (the unit the window APIs report). Nothing here touches
-//! Tauri; the source of the rectangles is registered once at startup (`set_source`).
-
 use std::sync::Mutex;
 
 use image::RgbaImage;
 
-/// A rectangle on the virtual desktop, physical pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rect {
     pub x: i32,
@@ -20,21 +10,13 @@ pub struct Rect {
     pub h: u32,
 }
 
-/// What a masked area is painted with: neutral grey, so it reads as "nothing here".
 const FILL: [u8; 4] = [128, 128, 128, 255];
 
-/// Where the overlay's pieces sit, in logical pixels (they scale with the display): the top bar
-/// (`top-6`, `h-10`, centred; the width is a ceiling for a long action caption) and the dot frame
-/// along every edge (`DEPTH` 4 rows of `STEP` 8). **Estimates from the stylesheet, not measured**:
-/// a margin is added so a pixel of the pieces is never left uncovered.
 const BAR_TOP: f64 = 24.0 - 4.0;
 const BAR_HEIGHT: f64 = 40.0 + 8.0;
 const BAR_WIDTH: f64 = 1000.0;
 const EDGE_DEPTH: f64 = 4.0 * 8.0 + 4.0;
 
-/// The pieces of the full-screen overlay on a monitor at `scale` (1.0 at 100%): the top bar and the
-/// four edge strips. The overlay is click-through and covers the whole screen, so masking all of it
-/// would blank the desktop.
 pub fn overlay_rects(monitor: Rect, scale: f64) -> Vec<Rect> {
     let px = |logical: f64| (logical * scale).round().max(1.0) as u32;
     let (edge, bar_h, bar_w) = (px(EDGE_DEPTH), px(BAR_HEIGHT), px(BAR_WIDTH).min(monitor.w));
@@ -73,8 +55,6 @@ pub fn overlay_rects(monitor: Rect, scale: f64) -> Vec<Rect> {
     ]
 }
 
-/// `rect` in the pixels of an image whose top-left is at (`origin_x`, `origin_y`) on the desktop,
-/// clipped to the image. `None` when nothing of it is inside.
 pub fn to_image(
     rect: Rect,
     origin_x: i32,
@@ -94,7 +74,6 @@ pub fn to_image(
     ))
 }
 
-/// Paints every rectangle grey. The image keeps its size.
 pub fn apply(image: &mut RgbaImage, rects: &[Rect], origin_x: i32, origin_y: i32) {
     let (width, height) = (image.width(), image.height());
     for rect in rects {
@@ -112,14 +91,12 @@ pub fn apply(image: &mut RgbaImage, rects: &[Rect], origin_x: i32, origin_y: i32
 type Source = Box<dyn Fn() -> Vec<Rect> + Send + Sync>;
 static SOURCE: Mutex<Option<Source>> = Mutex::new(None);
 
-/// Registers where the rectangles to mask come from (set once at startup, by the app).
 pub fn set_source(source: impl Fn() -> Vec<Rect> + Send + Sync + 'static) {
     if let Ok(mut slot) = SOURCE.lock() {
         *slot = Some(Box::new(source));
     }
 }
 
-/// The rectangles to mask right now: none unless demo mode is on and the app registered a source.
 pub fn current() -> Vec<Rect> {
     SOURCE
         .lock()
@@ -142,7 +119,6 @@ mod tests {
             to_image(rect(100, 50, 40, 20), 0, 0, 1920, 1080),
             Some((100, 50, 40, 20))
         );
-        // A monitor to the left of the primary one starts at -1920.
         assert_eq!(
             to_image(rect(-1900, 10, 100, 30), -1920, 0, 1920, 1080),
             Some((20, 10, 100, 30))
@@ -201,9 +177,7 @@ mod tests {
                 "edge depth at {scale}"
             );
             assert_eq!(pieces[0].h, bar_h, "bar height at {scale}");
-            // The bar is centred.
             assert_eq!(pieces[0].x * 2 + pieces[0].w as i32, 1920);
-            // The middle of the screen is not masked.
             let mut screen = RgbaImage::from_pixel(1920, 1080, image::Rgba([9, 9, 9, 255]));
             apply(&mut screen, &pieces, 0, 0);
             assert_eq!(screen.get_pixel(960, 540).0, [9, 9, 9, 255]);

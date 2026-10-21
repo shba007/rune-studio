@@ -1,8 +1,3 @@
-//! The session video: after a session ends, a background job turns its screenshots into `session.mp4`
-//! (a storyboard, see `schedule`), writes `video` into `session.json` and tells the player it exists.
-//! It never runs while a task runs, stops when one starts, runs one job at a time, and any failure is
-//! logged and changes nothing about the task.
-
 pub mod encode;
 pub mod schedule;
 
@@ -24,13 +19,9 @@ use crate::{
 use encode::EncodeError;
 use schedule::{schedule, total_ms};
 
-/// How often the worker looks for a finished session without a video.
 const EVERY: Duration = Duration::from_secs(5);
-/// Only this many of the newest runs are considered (older ones are left as they are).
 const LOOK_BACK: usize = 10;
 
-/// Whether the video worker may encode now: never while a task runs, an outside agent holds the
-/// lease, an analysis works or the idle review runs. One job at a time is the worker's loop itself.
 pub fn may_encode(
     task_running: bool,
     lease_held: bool,
@@ -50,8 +41,6 @@ fn idle(app: &AppHandle) -> bool {
     )
 }
 
-/// The frames of a finished run: each step's screenshot and when it was taken (milliseconds since the
-/// run started; step times have one-second resolution, plus the observe time), and the run's length.
 pub fn frames_of(detail: &store::RunDetail) -> (Vec<(String, u64)>, Option<u64>) {
     let start = trace::parse_iso(&detail.run.info.started_utc);
     let at = |text: &str| trace::parse_iso(text);
@@ -84,7 +73,6 @@ pub fn frames_of(detail: &store::RunDetail) -> (Vec<(String, u64)>, Option<u64>)
     (frames, end)
 }
 
-/// Writes `video` into the session's `session.json`.
 pub fn set_manifest(dir: &Path, video: Value) -> std::io::Result<()> {
     let path = dir.join("session.json");
     let mut manifest: Value = std::fs::read_to_string(&path)
@@ -98,7 +86,6 @@ pub fn set_manifest(dir: &Path, video: Value) -> std::io::Result<()> {
     )
 }
 
-/// What `session.json` says about the video of a finished session when it is (not) there.
 pub fn video_value(
     file: Option<&str>,
     frames: usize,
@@ -113,7 +100,6 @@ pub fn video_value(
     value
 }
 
-/// Whether this session already has a video, or a note that none can be made.
 fn has_video(dir: &Path) -> bool {
     dir.join("session.mp4").exists()
         || std::fs::read_to_string(dir.join("session.json"))
@@ -122,14 +108,10 @@ fn has_video(dir: &Path) -> bool {
             .is_some_and(|manifest| manifest.get("video").is_some())
 }
 
-/// Capture rate of the full-motion mode, in milliseconds between frames (2 per second).
 const MOTION_EVERY: Duration = Duration::from_millis(500);
-/// Frames of the motion mode are at most this wide and this good (the video is 1920 wide at most).
 const MOTION_EDGE: u32 = 1920;
 const MOTION_QUALITY: u8 = 60;
 
-/// The motion frames saved in a session folder (`motion/<unix ms>.jpg`) as (path, milliseconds since
-/// the first one), oldest first. Empty when the mode was off.
 pub fn motion_frames(dir: &Path) -> Vec<(String, u64)> {
     let mut found: Vec<(u64, String)> = std::fs::read_dir(dir.join("motion"))
         .map(|entries| {
@@ -151,8 +133,6 @@ pub fn motion_frames(dir: &Path) -> Vec<(String, u64)> {
         .collect()
 }
 
-/// While a task runs and the setting is `motion`, saves the primary monitor twice a second into the
-/// session folder. Off by default; its cost (CPU, disk, effect on the observe time) is **unmeasured**.
 pub fn start_motion_recorder(app: &AppHandle) {
     let app = app.clone();
     std::thread::Builder::new()
@@ -187,8 +167,6 @@ pub fn start_motion_recorder(app: &AppHandle) {
         .ok();
 }
 
-/// Starts the worker. It looks every few seconds for a run that ended without a video and encodes it
-/// when the PC is idle.
 pub fn start_worker(app: &AppHandle) {
     let app = app.clone();
     let tried: Mutex<HashSet<String>> = Mutex::new(HashSet::new());
@@ -218,7 +196,6 @@ pub fn start_worker(app: &AppHandle) {
         .ok();
 }
 
-/// The newest finished run since the app started whose session folder has no video yet.
 fn next_candidate(
     db: &Path,
     tried: &Mutex<HashSet<String>>,
@@ -249,7 +226,6 @@ fn work(app: &AppHandle, db: &Path, id: &str, dir: &Path, tried: &Mutex<HashSet<
         return;
     };
     let (mut frames, end) = frames_of(&detail);
-    // Full motion was recorded: those frames replace the storyboard (each is held for its own gap).
     let motion = motion_frames(dir);
     let kind = if motion.is_empty() {
         "storyboard"
@@ -274,7 +250,6 @@ fn work(app: &AppHandle, db: &Path, id: &str, dir: &Path, tried: &Mutex<HashSet<
             let mut value = video_value(Some("session.mp4"), shown.len(), seconds, None);
             value["kind"] = json!(kind);
             let _ = set_manifest(dir, value);
-            // The raw frames are not kept once they are in the video.
             let _ = std::fs::remove_dir_all(dir.join("motion"));
             log::info!(
                 "session video for {id}: {} frames, {seconds:.1} s",
@@ -282,7 +257,6 @@ fn work(app: &AppHandle, db: &Path, id: &str, dir: &Path, tried: &Mutex<HashSet<
             );
         }
         Err(EncodeError::Cancelled) => {
-            // A task started: try this one again when the PC is idle.
             let _ = std::fs::remove_file(&out);
             tried.locked().remove(id);
             log::info!("session video for {id} stopped: the PC is busy again");

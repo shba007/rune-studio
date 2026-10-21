@@ -42,14 +42,12 @@ watch(
   { immediate: true },
 )
 
-/** Opening the developer section would otherwise leave its buttons below the fold. */
 async function revealDeveloper() {
   if (!developer.value?.open) return
   await nextTick()
   developer.value.scrollIntoView({ block: 'end', behavior: 'smooth' })
 }
 
-/** Something was changed and not saved yet: the footer says so, and the button saves. */
 const dirty = computed(
   () =>
     apiKeyDraft.value.trim().length > 0 ||
@@ -57,11 +55,6 @@ const dirty = computed(
       agent.settings.value !== null &&
       JSON.stringify(draft.value) !== JSON.stringify(agent.settings.value)),
 )
-/**
- * Saves and goes back to the card, telling there how it went: Save is the end of editing, so the page
- * does not stay open. An empty key field means "leave the stored key alone"; removing it is its own
- * action.
- */
 async function save() {
   if (apiKeyDraft.value.trim()) {
     await agent.saveApiKey(apiKeyDraft.value)
@@ -76,7 +69,6 @@ async function save() {
   await agent.setMode(agent.home())
 }
 
-/** With changes the button saves them and goes back; without, it only checks the backend again. */
 const footerLabel = computed(() => (dirty.value ? 'Save' : 'Check the backend'))
 function footerAction() {
   if (dirty.value) void save()

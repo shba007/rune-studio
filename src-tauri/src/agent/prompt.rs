@@ -1,21 +1,15 @@
-//! What the model is told: its role, the rules, and the per-turn message with plan and history.
-
-/// How many past steps are repeated to the model. Older ones are dropped to keep the prompt short.
 const HISTORY_WINDOW: usize = 12;
 
 pub fn plan_user_message(task: &str) -> String {
     format!("Task: {task}")
 }
 
-/// One finished step, as the model sees it next turn.
 #[derive(Debug, Clone)]
 pub struct Entry {
     pub action: String,
     pub outcome: String,
 }
 
-/// The history as the model is shown it: a note if older steps were left out, then the last
-/// `HISTORY_WINDOW` steps, one per line, `n. action -> outcome`. Empty when nothing happened yet.
 pub fn history_lines(history: &[Entry]) -> Vec<String> {
     let mut lines = Vec::new();
     let skipped = history.len().saturating_sub(HISTORY_WINDOW);
@@ -39,11 +33,7 @@ pub fn history_lines(history: &[Entry]) -> Vec<String> {
     lines
 }
 
-/// The text part of a turn: the task, the plan, what has happened so far, and the step budget.
-/// `current` is the 0-based goal being worked on.
-/// `elements` is the listing of the front window's controls (may be empty) and `warning` a note
-/// about the run going nowhere (see `stuck`).
-#[allow(clippy::too_many_arguments)] // one line of prompt per input; a struct would only rename them
+#[allow(clippy::too_many_arguments)]
 pub fn user_message(
     task: &str,
     plan: &[String],

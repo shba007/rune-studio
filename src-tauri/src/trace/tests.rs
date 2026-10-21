@@ -8,7 +8,6 @@ use rusqlite::Connection;
 
 use super::{store::*, *};
 
-/// A fresh empty folder for one test's database, removed when dropped.
 struct TempDir(PathBuf);
 
 impl TempDir {
@@ -387,7 +386,6 @@ fn iso_times_parse_back_to_the_seconds_they_came_from() {
     assert_eq!(parse_iso("not a time at all!"), None);
 }
 
-/// The bundled SQLite builds and works: open in memory, create, insert, read.
 #[test]
 fn sqlite_opens_and_stores_a_row() {
     let db = Connection::open_in_memory().unwrap();
@@ -480,7 +478,6 @@ fn verdict(run_id: &str, mode: &str, result: &str) -> VerdictRecord {
 fn a_version_1_database_is_migrated_without_losing_a_run() {
     let dir = TempDir::new();
     {
-        // A database exactly as the first release of the recorder made it.
         let db = Connection::open(dir.db()).unwrap();
         db.execute_batch(&format!("{} PRAGMA user_version = 1;", schema::CREATE_V1))
             .unwrap();
@@ -491,7 +488,6 @@ fn a_version_1_database_is_migrated_without_losing_a_run() {
         )
         .unwrap();
     }
-    // Read before the app has opened it: no verdicts table yet, and that is fine.
     let before = get_run(&dir.db(), "old")
         .unwrap()
         .expect("the old run reads");
@@ -733,7 +729,6 @@ fn the_model_and_the_snapshot_are_read_under_one_lock_without_waiting_on_themsel
         json["max_steps"],
         crate::settings::Settings::default().max_steps
     );
-    // The lock is free again afterwards.
     assert!(settings.try_lock().is_ok());
 }
 
@@ -965,7 +960,6 @@ fn bodies_lose_images_audio_and_secrets_and_are_cut_at_64_kb() {
             && text.contains("[audio 3000 bytes]")
             && text.contains("hello")
     );
-    // A 200 KB prompt is cut, and the cut is on a character boundary.
     let (long, cut) = redact(&serde_json::json!({ "prompt": "é".repeat(100_000) }));
     assert!(cut);
     assert!(long.len() <= BODY_CAP);

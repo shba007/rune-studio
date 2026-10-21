@@ -1,7 +1,3 @@
-//! One analysis from the button to the stored row: claim the slot, capture (or reuse the stored
-//! frame), ask the model for the `report`, show it, record it. Cancelling (Stop, the Cancel button,
-//! closing the cards) drops the model call the same way the agent loop does.
-
 use std::{
     sync::Arc,
     time::{Duration, Instant},
@@ -27,10 +23,8 @@ use crate::{
     trace::{self, AnalysisRecord},
 };
 
-/// The whole model call, retries included.
 const CALL_TIMEOUT: Duration = Duration::from_secs(60);
 
-/// How an analysis ended.
 enum Ended {
     Done {
         answer: String,
@@ -40,7 +34,6 @@ enum Ended {
     Cancelled,
 }
 
-/// Tells the cards and the screen overlay, and brings the overlay up or down for the new state.
 fn publish(app: &AppHandle) {
     let (snapshot, wanted) = {
         let state = app.state::<AppState>();
@@ -58,7 +51,6 @@ fn publish(app: &AppHandle) {
     let _ = app.emit(events::ANALYSIS_UPDATED, snapshot);
 }
 
-/// Moves the shown status along and tells the window.
 fn set_status(app: &AppHandle, status: Status) {
     {
         let state = app.state::<AppState>();
@@ -74,9 +66,6 @@ fn set_status(app: &AppHandle, status: Status) {
     publish(app);
 }
 
-/// Runs one analysis. `fresh` captures the screen first; otherwise the stored frame is asked about
-/// again. Returns when it has ended, whatever way (the window learns the result from events); the
-/// `Err` is only a refusal to start.
 pub async fn run(app: &AppHandle, question: &str, fresh: bool) -> AppResult<()> {
     crate::reflect::touch(app, crate::reflect::idle::Input::Analysis);
     let state = app.state::<AppState>();
@@ -131,7 +120,6 @@ pub async fn run(app: &AppHandle, question: &str, fresh: bool) -> AppResult<()> 
     Ok(())
 }
 
-/// Captures if asked, then asks the model. Returns how it ended and where the screenshot was stored.
 async fn work(
     app: &AppHandle,
     question: &str,
@@ -160,7 +148,6 @@ async fn work(
             Some(Err(err)) => return (Ended::Failed(err.to_string()), None),
         };
         path = Some(frame.path.display().to_string()).filter(|path| !path.is_empty());
-        // For the screen-changed watcher: a small grey picture now, and the window in front now (if it is not Rune's).
         let signature = frame.signature();
         let front = crate::safety::foreground::remember();
         state.analysis.locked().frame = Some(StoredFrame {
@@ -177,7 +164,6 @@ async fn work(
         );
     };
     if !fresh {
-        // A new session folder, so the screenshot sits next to the row that is about to describe it.
         match archive::save(archive::Kind::Screenshots, "screen", "jpg", &frame.jpeg) {
             Ok(saved) => path = Some(saved.display().to_string()).filter(|path| !path.is_empty()),
             Err(err) => {
@@ -237,7 +223,6 @@ fn base64_of(bytes: &[u8]) -> String {
     STANDARD.encode(bytes)
 }
 
-/// Shows the end, stores the row and closes the session folder.
 fn finish(
     app: &AppHandle,
     question: &str,
@@ -257,7 +242,6 @@ fn finish(
                 answer,
                 mut findings,
             } => {
-                // Boxes cannot be hidden, so a box that is plainly unusable never reaches the screen.
                 analysis.boxes_rejected = super::boxes::guard(&mut findings);
                 analysis.answer = answer;
                 analysis.findings = findings;
@@ -303,12 +287,10 @@ fn finish(
     watch_for_change(app, id.to_string());
 }
 
-/// Cancels the analysis in flight, if any.
 pub fn cancel(app: &AppHandle) {
     app.state::<AppState>().analysis.locked().cancel.cancel();
 }
 
-/// Picks a finding (or none): its marker is drawn at full strength, the others dimmed.
 pub fn select(app: &AppHandle, n: Option<u8>) {
     {
         let state = app.state::<AppState>();
@@ -318,15 +300,11 @@ pub fn select(app: &AppHandle, n: Option<u8>) {
     publish(app);
 }
 
-/// Closes the cards: cancels what runs, clears the findings and with them the boxes on the screen.
 pub fn close(app: &AppHandle) {
     app.state::<AppState>().analysis.locked().close();
     publish(app);
 }
 
-/// While boxes are on the real screen, looks every 1.5 s at whether the screen is still the one that
-/// was analysed (`stale::decide`). The first change makes the boxes disappear for good; the findings
-/// text stays. Ends when the analysis is replaced or closed.
 fn watch_for_change(app: &AppHandle, id: String) {
     let has_boxes = {
         let state = app.state::<AppState>();
@@ -347,7 +325,6 @@ fn watch_for_change(app: &AppHandle, id: String) {
             let (thumbnail, then) = {
                 let state = app.state::<AppState>();
                 let analysis = state.analysis.locked();
-                // Replaced, closed or already stale: this watcher is done.
                 if analysis.id != id || analysis.status != Status::Done || analysis.stale {
                     return;
                 }

@@ -14,25 +14,19 @@ pub const AUDIO_LEVEL: &str = "audio_level";
 const EMIT_EVERY: Duration = Duration::from_millis(33);
 const OPEN_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Level meter range: -55 dBFS (room noise) maps to 0 and -10 dBFS (loud speech) to 1.
 const FLOOR_DB: f32 = -55.0;
 const CEILING_DB: f32 = -10.0;
 
-/// An open microphone stream. cpal streams are not `Send`, so a dedicated thread owns the
-/// stream for its whole life; dropping this value stops the stream and joins the thread.
 pub struct Capture {
     stop: Option<mpsc::Sender<()>>,
     thread: Option<JoinHandle<()>>,
 }
 
 impl Capture {
-    /// Opens the default microphone, emits `audio_level` (0..1) events and hands every spoken
-    /// utterance to the voice pipeline (hear, interpret, act).
     pub fn start(app: AppHandle) -> Result<Self, String> {
         let (utterances, mut heard) = unbounded_channel::<Vec<i16>>();
         let pipeline = app.clone();
         tauri::async_runtime::spawn(async move {
-            // Ends when the stream is dropped (the sender goes with it).
             while let Some(utterance) = heard.recv().await {
                 super::handle(&pipeline, utterance).await;
             }

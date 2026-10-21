@@ -1,16 +1,9 @@
-/** When the task started, and when the goal being worked on started (ms, on the window's clock). */
 export interface TaskTiming {
   startedAt: number
   goalStartedAt: number
-  /** Goals finished when `goalStartedAt` was taken. */
   doneGoals: number
 }
 
-/**
- * Time left, from how long the finished goals took on average. Null until one goal is done (there is
- * nothing to go on before that). The time already spent on the current goal is taken off, so as the
- * clock moves this counts down; it stops at 0 when a goal takes longer than the others did.
- */
 export function remainingMs(
   timing: TaskTiming,
   goals: number,

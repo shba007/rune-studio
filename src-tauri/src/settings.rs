@@ -6,7 +6,6 @@ use tauri::{AppHandle, Manager};
 
 use crate::{error::AppResult, hotkeys};
 
-/// The app identifier from tauri.conf.json: names the settings folder and the credential entries.
 pub(crate) const KEYRING_SERVICE: &str = "dev.shirsendu-bairagi.rune-studio";
 const KEYRING_USER: &str = "rune-infer-api-key";
 
@@ -14,86 +13,51 @@ const KEYRING_USER: &str = "rune-infer-api-key";
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
     pub base_url: String,
-    /// The one omni model behind every call: it sees the screen, hears the user, plans and acts.
-    /// (Older settings files had separate vision, speech and voice models; those keys are ignored.)
     pub model: String,
     pub max_steps: u32,
     pub toggle_hotkey: String,
     pub stop_hotkey: String,
-    /// Whether an outside agent may connect (only has an effect in `agent-bridge` builds).
     pub external_agent: bool,
-    /// When `rune-studio-cli enable` last ran (Unix seconds). A newer value re-arms an agent that Stop
-    /// locked out: running the command again is the user saying "yes, let it back in".
     pub external_agent_since: u64,
-    /// Let the model think and show that thinking (slower: thinking is off by default).
     pub show_thinking: bool,
-    /// Ask before every action, not only the risky ones.
     pub ask_every_action: bool,
     pub developer_mode: bool,
-    /// Optional helper, off by default: the decision model takes quick checks (skip planning on simple tasks, spot a finished
-    /// task, a second opinion on risk). Everything still works without it, only slower.
     pub fast_checks: bool,
     pub decision_model: String,
-    /// Where the decision model is served (it is a rune-infer endpoint, not part of the omni
-    /// model's server). Empty means unavailable.
     pub decision_url: String,
-    /// Delete session folders (screenshots, recordings) older than this many days, and their rows in
-    /// the trace database, at startup. 0 keeps everything.
     pub archive_keep_days: u32,
-    /// What happens with the independent check of a finished task: `off`, `background` (the default:
-    /// the user sees Done at once and the check runs afterwards) or `blocking` (the agent gets one more
-    /// chance when the check contradicts it). No UI yet: it is edited in `settings.json`.
     pub verify_mode: VerifyMode,
-    /// Whether the session video also records the screen between steps (`motion`, 2 frames per second)
-    /// instead of only the step screenshots. **Off by default**: it records everything on the screen
-    /// during a task and costs CPU and disk; its cost is unmeasured (see docs/ARCHITECTURE.md).
     pub record_session_video: RecordVideo,
-    /// When the pill offers to review a finished session in the Flight Player.
     pub offer_review: OfferReview,
-    /// Let screen recorders (OBS, Game Bar, the Snipping Tool) capture Rune's windows. The model still
-    /// never sees them: they are painted over in its screenshots (`observe::mask`).
     pub demo_mode: bool,
-    /// Self reflect: offer an idle review of recent tasks (see `reflect`). On by default; Rune asks first.
     pub reflection_enabled: bool,
-    /// Minutes with no activity before the prompt (1 to 120).
     pub idle_minutes: u32,
 }
 
-/// How the session video is recorded.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RecordVideo {
-    /// Also capture the primary monitor twice a second while a task runs.
     Motion,
-    /// A storyboard of the step screenshots, made after the task. Also what any unknown word reads as.
     #[default]
     #[serde(other)]
     Off,
 }
 
-/// When the review card is offered after a session.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum OfferReview {
     Failures,
     Never,
-    /// Also what any unknown word reads as.
     #[default]
     #[serde(other)]
     Always,
 }
 
-/// What happens with the independent check of a finished task (`agent::verify`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum VerifyMode {
-    /// Nothing runs.
     Off,
-    /// Before the agent finishes a task it claims succeeded, the check runs; a contradiction gives
-    /// the agent one more chance. Adds a model call to the task's time.
     Blocking,
-    /// The user sees "Done" at once and the check runs afterwards. It never changes the outcome.
-    /// Also what any value this build does not know reads as.
     #[default]
     #[serde(other)]
     Background,
@@ -126,7 +90,6 @@ impl Default for Settings {
     }
 }
 
-/// The settings file, found without a running app (for the command line).
 #[cfg(feature = "agent-bridge")]
 pub fn path_without_app() -> Option<PathBuf> {
     Some(
@@ -136,7 +99,6 @@ pub fn path_without_app() -> Option<PathBuf> {
     )
 }
 
-/// Reads settings from a file; missing or unreadable means defaults.
 #[cfg(feature = "agent-bridge")]
 pub fn read_file(path: &std::path::Path) -> Settings {
     fs::read_to_string(path)
@@ -160,7 +122,6 @@ fn settings_path(app: &AppHandle) -> AppResult<PathBuf> {
     Ok(app.path().app_config_dir()?.join("settings.json"))
 }
 
-/// Missing or unreadable settings fall back to defaults so a bad file never blocks startup.
 pub fn load(app: &AppHandle) -> Settings {
     settings_path(app)
         .ok()
@@ -182,7 +143,6 @@ fn key_entry() -> keyring::Result<keyring::Entry> {
     keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
 }
 
-/// The credential store wins; `RUNE_API_KEY` (from `.env`) is a dev-only fallback.
 pub fn api_key() -> Option<String> {
     key_entry()
         .and_then(|entry| entry.get_password())
@@ -235,7 +195,6 @@ mod tests {
 
     #[test]
     fn an_old_file_with_analysis_boxes_still_loads_and_the_key_is_ignored() {
-        // The setting was removed: boxes are always drawn. Old files keep it, and must not fail.
         let loaded: Settings =
             serde_json::from_str(r#"{ "analysisBoxes": true, "maxSteps": 7 }"#).unwrap();
         assert_eq!(loaded.max_steps, 7);
@@ -311,7 +270,6 @@ mod tests {
             assert_eq!(settings.verify_mode, mode, "{text}");
             assert_eq!(serde_json::to_value(mode).unwrap(), text);
         }
-        // A typo must not throw the rest of the settings away.
         let typo: Settings = serde_json::from_str(r#"{ "verifyMode": "blokcing", "maxSteps": 7 }"#)
             .expect("still loads");
         assert_eq!(

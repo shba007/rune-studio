@@ -1,22 +1,12 @@
-//! Our own opinion of how risky an action is, from the action itself, the agent's stated reason
-//! and the window that has the keyboard. Pure functions: no screen, no input, easy to test.
-//!
-//! The rules lean towards asking: a needless question costs a click, a missed one can cost the
-//! user's work. They are not a security boundary against a determined attacker (a model can word
-//! a reason innocently); they catch the honest mistakes and the obvious dangers.
-
 use super::{Assessment, Risk};
 use crate::agent::protocol::Action;
 
-/// The window that has the keyboard right now.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Foreground {
     pub title: String,
-    /// Lower-case program name without ".exe", for example "notepad" or "explorer".
     pub process: String,
 }
 
-/// Words that, in what an agent says it is doing, mean something hard to undo.
 const HIGH_WORDS: &[&str] = &[
     "delete",
     "remove",
@@ -42,7 +32,6 @@ const HIGH_WORDS: &[&str] = &[
     "credit",
 ];
 
-/// Words in a window's title that suggest a dialog about something irreversible.
 const DIALOG_WORDS: &[&str] = &[
     "delete",
     "remove",
@@ -74,7 +63,6 @@ const SHELLS: &[&str] = &[
     "mintty",
 ];
 
-/// Things that are dangerous to type into a shell.
 const SHELL_DANGER: &[&str] = &[
     "del ",
     "erase ",
@@ -101,7 +89,6 @@ const SHELL_DANGER: &[&str] = &[
     "wget ",
 ];
 
-/// Programs that can change the whole system, or run arbitrary things.
 const POWER_TOOLS_HIGH: &[&str] = &[
     "regedit", "diskpart", "format", "msiexec", "bcdedit", "gpedit", "secpol", "wmic",
 ];
@@ -136,7 +123,6 @@ fn mentions_any(text: &str, list: &[&str]) -> Option<String> {
         .map(|word| (*word).to_string())
 }
 
-/// Whether an action is harmless by nature: waiting and finishing never ask.
 pub fn is_harmless(action: &Action) -> bool {
     matches!(
         action,
@@ -144,14 +130,12 @@ pub fn is_harmless(action: &Action) -> bool {
     )
 }
 
-/// Assesses one action. `reason` is the agent's one-sentence explanation (may be empty).
 pub fn assess(action: &Action, reason: &str, foreground: &Foreground) -> Assessment {
     let mut result = Assessment::low();
     if is_harmless(action) {
         return result;
     }
 
-    // The folder that holds the record of what the agent saw and heard is not the agent's to touch.
     if foreground.process == "explorer"
         && contains_phrase(&foreground.title, &crate::archive::FOLDER.to_lowercase())
     {
@@ -161,7 +145,6 @@ pub fn assess(action: &Action, reason: &str, foreground: &Foreground) -> Assessm
         );
     }
 
-    // What the agent says it is doing is the cheapest and most reliable signal.
     if let Some(word) = mentions_any(reason, HIGH_WORDS) {
         result.raise(Risk::High, format!("The agent describes it as \"{word}\""));
     }
@@ -217,7 +200,6 @@ fn assess_keys(keys: &[String], foreground: &Foreground, result: &mut Assessment
     if ctrl && (has("w") || has("f4")) {
         result.raise(Risk::Medium, "Closes the current tab or window");
     }
-    // Enter, Space or Y inside a dialog about something irreversible is the same as clicking Yes.
     if (has("enter") || has("return") || has("space") || has("y"))
         && dialog_is_dangerous(foreground)
     {
@@ -288,7 +270,6 @@ fn assess_click(foreground: &Foreground, result: &mut Assessment) {
     }
 }
 
-/// A control called "Delete" or "Send" is as telling as the agent's own words.
 fn assess_control(name: &str, result: &mut Assessment) {
     if let Some(word) = mentions_any(name, HIGH_WORDS) {
         result.raise(Risk::High, format!("The control is called \"{word}\""));
@@ -440,7 +421,6 @@ mod tests {
         ] {
             assert_eq!(risk(&click(), reason, &any), Risk::High, "{reason}");
         }
-        // Whole words only: "sender" or "postal" are not "send" or "post".
         assert_eq!(
             risk(&click(), "Open the sender list in the postal app", &any),
             Risk::Low
@@ -550,7 +530,7 @@ mod tests {
         assert_eq!(launch("cmd"), Risk::Medium);
         assert_eq!(launch("powershell"), Risk::Medium);
         assert_eq!(launch(r"C:\Users\me\Downloads\setup.exe"), Risk::High);
-        assert_eq!(launch("setup.exe"), Risk::Low); // a bare name resolves through the system, not a downloaded file
+        assert_eq!(launch("setup.exe"), Risk::Low);
         assert_eq!(launch("calc"), Risk::Low);
     }
 

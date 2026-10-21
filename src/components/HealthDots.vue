@@ -1,14 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-/**
- * The model server's health as three tiny dots at the bottom of the orb's face, like one more
- * line of its dot matrix: all lit when fine, two when it needs attention, one in red when it is
- * down, and a travelling light while it is being checked. Red is only ever for trouble.
- */
 const props = defineProps<{ tone: 'ok' | 'warn' | 'down' | 'checking' }>()
 
-/** Brightness of each of the three dots (0..1). */
 const lit = computed(() => {
   switch (props.tone) {
     case 'ok':

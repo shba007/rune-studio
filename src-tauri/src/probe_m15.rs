@@ -1,13 +1,3 @@
-//! M1.5: can a local vision model click what it is asked to click?
-//!
-//! For each synthetic scene (see scripts/m15) and each sampled target, ask rune-infer to click it
-//! by name, under one or more prompt conventions, and record whether the point it returns lands
-//! inside the element's real bounds, and how long that took. Results go to a JSONL file that
-//! scripts/m15/report.mjs summarises.
-//!
-//! Screenshots go through `observe::screenshot::prepare`, the same code path the agent will use.
-//! Run through `pwsh scripts/m15/run-probe.ps1`; it sets the environment variables read below.
-
 use std::{
     collections::HashMap,
     env, fs,
@@ -22,10 +12,8 @@ use serde_json::{Value, json};
 
 use crate::observe::screenshot::{MODEL_JPEG_QUALITY, MODEL_MAX_EDGE, prepare};
 
-/// The scenes are rendered at this size; ground truth is in these pixels.
 const STAGE_W: f64 = 1920.0;
 const STAGE_H: f64 = 1080.0;
-/// A click within this many pixels of the element still counts as "near".
 const NEAR_MARGIN: f64 = 12.0;
 
 #[derive(Deserialize)]
@@ -45,24 +33,14 @@ struct Target {
     size: String,
 }
 
-/// How the model is told to express a point.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Convention {
-    /// 0..1000 across the screenshot, through a `click` tool.
     Norm,
-    /// As `Norm`, but the model is told not to explain itself (to cut reasoning tokens and latency).
     Brief,
-    /// Pixels of the (downscaled) screenshot, through a `click` tool.
     Pixels,
-    /// rune-infer's dedicated `/v1/images/grounding` endpoint (0..1000).
     Ground,
-    /// The bounding box `[x0, y0, x1, y1]` of the named element, 0..1000, through a `locate` tool.
-    /// This is what visual analysis (R4) depends on; the others only ever measured points.
     Box,
-    /// The app's own `report` request (its system prompt and tool), asked about one named element;
-    /// the finding that names it (else the first with a box) is scored like a `box` answer. Box only.
     Analysis,
-    /// As `Analysis`, with the optional `point` per finding (`report::tool_with(true)`).
     AnalysisPoint,
 }
 
@@ -70,9 +48,7 @@ enum Convention {
 struct Mode {
     model: String,
     convention: Convention,
-    /// Longest edge of the screenshot sent, in pixels.
     edge: u32,
-    /// Ask the server not to think (`chat_template_kwargs.enable_thinking: false`).
     no_think: bool,
 }
 
@@ -149,10 +125,8 @@ fn system_prompt(convention: Convention, width: u32, height: u32) -> String {
     )
 }
 
-/// A box as `[x0, y0, x1, y1]`.
 type Rect = [f64; 4];
 
-/// Puts the corners in order (top-left first) and keeps the box inside 0..1000.
 fn normalize_rect(rect: Rect) -> Rect {
     let clamp = |v: f64| v.clamp(0.0, 1000.0);
     [
@@ -163,8 +137,6 @@ fn normalize_rect(rect: Rect) -> Rect {
     ]
 }
 
-/// Reads the `box` of a `locate` call: four numbers (or numeric strings). A model that gives the
-/// corners the wrong way round still gets a box.
 fn parse_box(value: &Value) -> Option<Rect> {
     let list = value.as_array()?;
     if list.len() != 4 {
@@ -177,7 +149,6 @@ fn parse_box(value: &Value) -> Option<Rect> {
     Some(normalize_rect(numbers))
 }
 
-/// A scene rectangle (pixels of the 1920x1080 stage) in the same 0..1000 space the model answers in.
 fn truth_rect(target: &Target) -> Rect {
     [
         target.l / STAGE_W * 1000.0,
@@ -191,7 +162,6 @@ fn rect_area(rect: Rect) -> f64 {
     (rect[2] - rect[0]).max(0.0) * (rect[3] - rect[1]).max(0.0)
 }
 
-/// Intersection over union of two boxes: 1 for the same box, 0 for boxes that do not overlap.
 fn iou(a: Rect, b: Rect) -> f64 {
     let overlap = rect_area([
         a[0].max(b[0]),
@@ -203,8 +173,6 @@ fn iou(a: Rect, b: Rect) -> f64 {
     if union <= 0.0 { 0.0 } else { overlap / union }
 }
 
-/// Whether the centre of the predicted box lies inside the true one: a click at the middle of the
-/// answer would land on the element.
 fn centre_inside(predicted: Rect, truth: Rect) -> bool {
     let (cx, cy) = (
         (predicted[0] + predicted[2]) / 2.0,
@@ -213,7 +181,6 @@ fn centre_inside(predicted: Rect, truth: Rect) -> bool {
     cx >= truth[0] && cx <= truth[2] && cy >= truth[1] && cy <= truth[3]
 }
 
-/// What the probe records about one predicted box: IoU, the centre test, and the 0.5 threshold.
 fn score_box(predicted: Rect, truth: Rect) -> (f64, bool, bool) {
     let overlap = iou(predicted, truth);
     (overlap, centre_inside(predicted, truth), overlap >= 0.5)
@@ -221,13 +188,11 @@ fn score_box(predicted: Rect, truth: Rect) -> (f64, bool, bool) {
 
 struct Reply {
     point: Option<(f64, f64)>,
-    /// Set by the `box` convention.
     rect: Option<Rect>,
     completion_tokens: Option<u64>,
     reasoning_chars: usize,
     finish: String,
     note: String,
-    /// Findings whose box the app's guard dropped (`Analysis` modes only).
     rejected: Option<u32>,
 }
 
@@ -237,7 +202,6 @@ fn number(value: &Value) -> Option<f64> {
         .or_else(|| value.as_str().and_then(|text| text.trim().parse().ok()))
 }
 
-/// Picks `k` targets that mix sizes: small, medium and large in turn, so small ones are not crowded out.
 fn pick(targets: &[Target], k: usize) -> Vec<Target> {
     let mut groups: Vec<Vec<&Target>> = ["small", "medium", "large"]
         .iter()
@@ -293,7 +257,11 @@ async fn ask(
         use crate::analysis::report;
         let points = mode.convention == Convention::AnalysisPoint;
         let system = if points {
-            format!("{} {}", crate::prompts::analysis_system(), crate::prompts::analysis_point())
+            format!(
+                "{} {}",
+                crate::prompts::analysis_system(),
+                crate::prompts::analysis_point()
+            )
         } else {
             crate::prompts::analysis_system().to_string()
         };
@@ -316,7 +284,6 @@ async fn ask(
             .unwrap_or("");
         let parsed: Value = serde_json::from_str(arguments).unwrap_or(Value::Null);
         let findings = report::parse(&parsed).findings;
-        // Boxes the guard would drop: a raw four-number box that did not survive parsing.
         let raw = parsed["findings"].as_array().cloned().unwrap_or_default();
         let rejected = raw
             .iter()
@@ -423,8 +390,6 @@ async fn ask(
         "max_tokens": 1024,
         "messages": [
             { "role": "system", "content": system_prompt(mode.convention, width, height) },
-            // Image first, question last: the screenshot is the shared prefix, so the server can
-            // reuse it between questions about the same scene.
             { "role": "user", "content": [
                 { "type": "image_url", "image_url": { "url": data_uri } },
                 { "type": "text", "text": format!("Click {description}.") },
@@ -586,7 +551,6 @@ fn m15_probe() {
             for mode in &modes {
                 let (data_uri, dims) = &prepared_by_edge[&mode.edge];
                 let (data_uri, dims) = (data_uri.as_str(), *dims);
-                // The first request to a model includes loading it; measure and report that apart.
                 if !warmed.contains(&mode.model) {
                     let started = Instant::now();
                     let warm = ask(&client, &base, &key, mode, data_uri, dims, &targets[0]).await;
@@ -634,7 +598,6 @@ fn m15_probe() {
                                     ((sx - cx).powi(2) + (sy - cy).powi(2)).sqrt(),
                                 )
                             });
-                            // The `box` convention answers a rectangle; the others a point.
                             record["ok"] = json!(reply.point.is_some() || reply.rect.is_some());
                             record["raw"] = json!(reply.point);
                             if let Some(rect) = reply.rect {
@@ -646,10 +609,8 @@ fn m15_probe() {
                                 record["iou"] = json!((overlap * 1000.0).round() / 1000.0);
                                 record["centre_inside"] = json!(centre);
                                 record["iou50"] = json!(half);
-                                // For the older tables: a click at the middle of the box is a hit or not.
                                 record["hit"] = json!(centre);
                                 record["near"] = json!(false);
-                                // How far the middle of the answer is from the middle of the element, in stage pixels.
                                 let middle = |r: Rect| {
                                     (
                                         (r[0] + r[2]) / 2.0 / 1000.0 * STAGE_W,
@@ -742,21 +703,16 @@ mod tests {
 
     #[test]
     fn iou_matches_hand_worked_overlaps() {
-        // 10x10 and 10x10 shifted by 5: overlap 5x10 = 50, union 100 + 100 - 50 = 150.
         assert!((iou([0.0, 0.0, 10.0, 10.0], [5.0, 0.0, 15.0, 10.0]) - 1.0 / 3.0).abs() < 1e-12);
-        // A small box wholly inside a large one: 36 / 100.
         assert!((iou([0.0, 0.0, 10.0, 10.0], [2.0, 2.0, 8.0, 8.0]) - 0.36).abs() < 1e-12);
-        // Symmetric.
         let (a, b) = ([10.0, 20.0, 110.0, 70.0], [60.0, 40.0, 160.0, 120.0]);
         assert_eq!(iou(a, b), iou(b, a));
-        // A box with no area never scores, and never divides by zero.
         assert_eq!(iou([5.0, 5.0, 5.0, 5.0], [5.0, 5.0, 5.0, 5.0]), 0.0);
         assert_eq!(iou([5.0, 5.0, 5.0, 9.0], [0.0, 0.0, 10.0, 10.0]), 0.0);
     }
 
     #[test]
     fn a_scene_rectangle_becomes_zero_to_a_thousand() {
-        // The 1920x1080 stage: 960 is half the width, 540 half the height.
         assert_eq!(
             truth_rect(&target(960.0, 540.0, 192.0, 108.0)),
             [500.0, 500.0, 600.0, 600.0]
@@ -840,15 +796,12 @@ mod tests {
         let truth = [100.0, 100.0, 200.0, 200.0];
         let (exact, centre, half) = score_box(truth, truth);
         assert_eq!((exact, centre, half), (1.0, true, true));
-        // 80 wide shifted by 20: overlap 80x100... the numbers below are hand worked: pred [120,100,220,200], overlap 80x100 = 8000, union 12000.
         let (shifted, centre, half) = score_box([120.0, 100.0, 220.0, 200.0], truth);
         assert!((shifted - 8_000.0 / 12_000.0).abs() < 1e-12);
         assert!(centre && half);
-        // Exactly 0.5 counts: pred [100,100,200,150] is half the area of the truth, wholly inside it.
         let (half_area, _, at_half) = score_box([100.0, 100.0, 200.0, 150.0], truth);
         assert_eq!(half_area, 0.5);
         assert!(at_half, ">= 0.5");
-        // Centre inside but a poor fit: the point-style hit and the box-style score differ.
         let (poor, centre, half) = score_box([100.0, 100.0, 200.0, 120.0], truth);
         assert!((poor - 0.2).abs() < 1e-12);
         assert!(

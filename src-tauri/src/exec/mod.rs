@@ -1,5 +1,3 @@
-//! Executing actions on the desktop: mouse, keyboard, launching apps and the Stop token.
-
 pub mod apps;
 pub mod caret;
 pub mod input;
@@ -15,9 +13,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// Set by the Stop hotkey, the tray's Stop and the Stop button. Every executor action checks it
-/// between its steps, so Stop interrupts typing mid-sentence instead of after it.
-/// A token is never un-cancelled: each run gets its own (see `RunScope`).
 #[derive(Clone, Default)]
 pub struct CancelToken(Arc<AtomicBool>);
 
@@ -30,7 +25,6 @@ impl CancelToken {
         self.0.load(Ordering::SeqCst)
     }
 
-    /// Fails with `Cancelled` if Stop was pressed.
     pub fn check(&self) -> Result<(), ExecError> {
         if self.is_cancelled() {
             Err(ExecError::Cancelled)
@@ -39,7 +33,6 @@ impl CancelToken {
         }
     }
 
-    /// Sleeps in short slices so Stop is noticed within milliseconds, not at the end.
     pub fn sleep(&self, total: Duration) -> Result<(), ExecError> {
         let deadline = Instant::now() + total;
         loop {
@@ -55,9 +48,6 @@ impl CancelToken {
 
 static NEXT_RUN_ID: AtomicU64 = AtomicU64::new(1);
 
-/// One run's cancellation scope: the built-in agent's task, an outside agent's lease, or a debug
-/// command. Stop cancels the current scope; starting the next run cancels the previous one and
-/// installs a fresh scope, so a run that is still winding down can never be revived by its successor.
 #[derive(Clone)]
 pub struct RunScope {
     pub id: u64,
@@ -79,7 +69,6 @@ impl Default for RunScope {
     }
 }
 
-/// Cancels the scope in `slot` (the run that is ending or being replaced), installs a fresh one and returns it.
 pub fn begin_run(slot: &Mutex<RunScope>) -> RunScope {
     let mut current = slot.locked();
     current.token.cancel();
@@ -88,20 +77,15 @@ pub fn begin_run(slot: &Mutex<RunScope>) -> RunScope {
     next
 }
 
-/// Cancels the scope in `slot` and nothing else. Works from any state, so Stop interrupts typing at once.
 pub fn stop_current(slot: &Mutex<RunScope>) {
     slot.locked().token.cancel();
 }
 
-/// The scope a call to Stop would cancel right now.
 #[cfg(any(test, feature = "agent-bridge"))]
 pub fn current_scope(slot: &Mutex<RunScope>) -> RunScope {
     slot.locked().clone()
 }
 
-/// Waits for `lock`, but gives up with `Cancelled` as soon as `cancel` is set (also if it already
-/// is). Outside agents' actions take turns through this: a call that is queued behind another one
-/// must not outlive Stop.
 #[cfg(any(test, feature = "agent-bridge"))]
 pub async fn lock_unless_stopped<'a>(
     lock: &'a tokio::sync::Mutex<()>,
@@ -154,7 +138,6 @@ mod tests {
         stop_current(&slot);
         assert!(b.token.is_cancelled());
         assert!(current_scope(&slot).token.is_cancelled());
-        // A scope installed afterwards is unaffected by the earlier Stop.
         let c = begin_run(&slot);
         assert!(!c.token.is_cancelled());
         assert!(
@@ -220,7 +203,6 @@ mod tests {
             "released by Stop, not by the first holder"
         );
         drop(first);
-        // And a token that is already cancelled never takes the lock, even when it is free.
         assert!(matches!(
             lock_unless_stopped(&lock, &stop).await,
             Err(ExecError::Cancelled)
