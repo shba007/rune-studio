@@ -12,11 +12,10 @@ import SettingsAbout from './SettingsAbout.vue'
 import SettingsAgents from './SettingsAgents.vue'
 import SettingsArtifacts from './SettingsArtifacts.vue'
 import SettingsGeneral from './SettingsGeneral.vue'
-import SettingsLife from './SettingsLife.vue'
 import SettingsShortcuts from './SettingsShortcuts.vue'
 import TitleBar from './TitleBar.vue'
 
-type Section = 'general' | 'shortcuts' | 'agents' | 'artifacts' | 'life' | 'about'
+type Section = 'general' | 'shortcuts' | 'agents' | 'artifacts' | 'about'
 
 const agent = useAgent()
 
@@ -45,12 +44,6 @@ const SECTIONS: { id: Section; label: string; subtitle: string; icon: IconName }
     subtitle: 'Recorded sessions. Pick one to play it in Rune Preview.',
     icon: 'history',
   },
-  {
-    id: 'life',
-    label: 'Life data',
-    subtitle: 'Consents, evidence store, retention and export.',
-    icon: 'shield',
-  },
   { id: 'about', label: 'About', subtitle: 'Version and updates.', icon: 'logo' },
 ]
 
@@ -68,7 +61,10 @@ let unlisten: (() => void) | null = null
 onMounted(async () => {
   try {
     unlisten = await listen<{ section?: Section }>('settings_section', (event) => {
-      if (event.payload?.section) section.value = event.payload.section
+      const requested = event.payload?.section
+      if (requested && SECTIONS.some((item) => item.id === requested)) {
+        section.value = requested
+      }
     })
   } catch {
     unlisten = null
@@ -180,7 +176,6 @@ onBeforeUnmount(() => {
           />
           <SettingsShortcuts v-else-if="section === 'shortcuts'" :draft="draft" />
           <SettingsAgents v-else-if="section === 'agents'" :agent="agent" :draft="draft" />
-          <SettingsLife v-else-if="section === 'life'" :draft="draft" />
         </template>
         <SettingsArtifacts v-if="section === 'artifacts'" :agent="agent" />
         <SettingsAbout v-else-if="section === 'about'" :agent="agent" />

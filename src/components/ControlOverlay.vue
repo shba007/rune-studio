@@ -5,9 +5,9 @@ import { useEventListener, usePreferredReducedMotion, useRafFn } from '@vueuse/c
 import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 
 import { KIND_ICON, TOOL_LABEL, kindOf, type ActionKind } from '@/config/actions'
+import { OVERLAY_MODE } from '@/types/protocol'
 import type {
   AgentState,
-  OVERLAY_MODE,
   ObserveStartedPayload,
   OverlayInfo,
   OverlayOwner,
@@ -343,7 +343,7 @@ function showObserve({ region, continuous }: ObserveStartedPayload) {
   action.value = {
     key: -++observeCount,
     kind: 'screen',
-    label: region ? 'Zoom' : TOOL_LABEL.observe,
+    label: region ? 'Zoom' : (TOOL_LABEL.observe ?? 'Observe'),
     detail: '',
     typing: null,
   }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useNow } from '@vueuse/core'
+import { useIntervalFn, useNow } from '@vueuse/core'
 import { computed, onMounted, useTemplateRef } from 'vue'
 
 import { clock, secondsLeft } from '@/config/reflection'
@@ -8,7 +8,7 @@ import type { Agent } from '@/composables/useAgent'
 const props = defineProps<{ agent: Agent }>()
 const agent = props.agent
 
-const now = useNow({ interval: 250 })
+const now = useNow({ scheduler: (update) => useIntervalFn(update, 250) })
 const left = computed(() => {
   const ends = agent.reflectionPrompt.value?.endsAt
   return ends === undefined ? 0 : secondsLeft(now.value.getTime(), ends)

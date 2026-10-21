@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useNow } from '@vueuse/core'
+import { useIntervalFn, useNow } from '@vueuse/core'
 import { computed, watch } from 'vue'
 
 import type { Agent } from '@/composables/useAgent'
@@ -8,7 +8,7 @@ import { REVIEW_SECONDS, dotsLeft, reviewMeta } from '@/config/review'
 const props = defineProps<{ agent: Agent }>()
 const agent = props.agent
 
-const now = useNow({ interval: 250 })
+const now = useNow({ scheduler: (update) => useIntervalFn(update, 250) })
 const offer = computed(() => agent.reviewOffer.value)
 const lit = computed(() => (offer.value ? dotsLeft(now.value.getTime(), offer.value.endsAt) : 0))
 watch(

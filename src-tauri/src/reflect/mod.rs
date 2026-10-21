@@ -19,6 +19,9 @@ use crate::{
 use idle::{IdleClock, Input};
 use prompt::{ANSWER_SECS, Do, Phase};
 
+/// No real reflection job is implemented in this release.
+pub const AVAILABLE: bool = false;
+
 pub const PROMPT: &str = "reflection_prompt";
 pub const RESOLVED: &str = "reflection_resolved";
 pub const PROGRESS: &str = "reflection_progress";
@@ -75,6 +78,9 @@ pub fn touch(app: &AppHandle, input: Input) {
 }
 
 pub fn start_watcher(app: &AppHandle) {
+    if !AVAILABLE {
+        return;
+    }
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         loop {
@@ -141,6 +147,9 @@ fn tick(app: &AppHandle) {
 }
 
 pub fn answer(app: &AppHandle, start: bool) {
+    if !AVAILABLE {
+        return;
+    }
     let state = app.state::<AppState>();
     let mut reflect = state.reflect.locked();
     let (phase, action) = reflect.phase.answer(start);
@@ -196,7 +205,7 @@ async fn run(app: &AppHandle, cancel: CancelToken) {
     };
     let outcome = job::run(&cancel, STAGE_TIME, emit_progress).await;
     let (label, stages) = match outcome {
-        job::Outcome::Completed => ("completed", job::STAGES.len() as i64),
+        job::Outcome::Rehearsed => ("rehearsed", job::STAGES.len() as i64),
         job::Outcome::Preempted { stages } => ("preempted", i64::from(stages)),
     };
     let state = app.state::<AppState>();
@@ -209,7 +218,7 @@ async fn run(app: &AppHandle, cancel: CancelToken) {
     });
     {
         let mut reflect = state.reflect.locked();
-        let (phase, _) = if label == "completed" {
+        let (phase, _) = if label == "rehearsed" {
             reflect.phase.finish()
         } else {
             reflect.phase.preempt()
