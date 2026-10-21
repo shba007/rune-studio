@@ -179,12 +179,14 @@ async fn work(
     let (settings, api_key) = (state.settings.locked().clone(), settings::api_key());
     let analysis_id = state.analysis.locked().id.clone();
     let call_log = state.trace.call_log(&analysis_id, "analysis");
+    let analysis_model = settings.model_for_role(crate::model::role::ModelRole::Analysis);
+    let profile = crate::model::profile::resolve_profile(analysis_model, None, None);
     let client = ChatClient {
         http: &state.http,
         base_url: &settings.base_url,
         api_key: api_key.as_deref(),
-        model: &settings.model,
-        profile: None,
+        model: analysis_model,
+        profile: Some(&profile),
         sink: Some(&call_log),
     };
     let image = format!("data:image/jpeg;base64,{}", base64_of(&frame.jpeg));

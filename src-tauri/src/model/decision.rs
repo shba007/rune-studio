@@ -205,7 +205,7 @@ pub async fn ask(
         (
             settings.fast_checks,
             endpoint(&settings.decision_url, &settings.base_url),
-            settings.decision_model.clone(),
+            settings.model_for_role(crate::model::role::ModelRole::Decision).to_string(),
         )
     };
     if !enabled || url.starts_with("/v1") || model.trim().is_empty() || cooling_down() {

@@ -134,6 +134,14 @@ export function installTauriMock() {
           return {
             baseUrl: 'http://127.0.0.1:8080',
             model: 'gemma-4-12b-it',
+            models: {
+              agent: 'gemma-4-12b-it',
+              verifier: '',
+              analysis: '',
+              voice: '',
+              decision: 'liquid-d1-3b',
+              advisor: '',
+            },
             maxSteps: 30,
             toggleHotkey: 'Alt+Q',
             stopHotkey: 'Ctrl+Alt+Escape',

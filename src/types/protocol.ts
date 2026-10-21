@@ -10,6 +10,37 @@ export type AgentState =
   | 'failed'
   | 'stopped'
 
+export type TriState = 'yes' | 'no' | 'unknown'
+export type Locality = 'local' | 'cloud' | 'unknown'
+
+export interface ModelCapabilities {
+  id: string
+  modalitiesIn: string[]
+  modalitiesOut: string[]
+  audioIn: TriState
+  imageIn: TriState
+  speechOut: TriState
+  toolCalls: TriState
+  thinkingControl: TriState
+  maxImageEdgePx: number | null
+  contextTokens: number | null
+  locality: Locality
+  resident: TriState
+  vramMbEstimate: number | null
+  loadMsEstimate: number | null
+  status: string | null
+  rawCapabilities: string[]
+}
+
+export interface ModelRoles {
+  agent: string
+  verifier: string
+  analysis: string
+  voice: string
+  decision: string
+  advisor: string
+}
+
 export interface Settings {
   verifyMode: 'off' | 'background' | 'blocking'
   demoMode: boolean
@@ -20,6 +51,7 @@ export interface Settings {
   archiveKeepDays: number
   baseUrl: string
   model: string
+  models: ModelRoles
   maxSteps: number
   toggleHotkey: string
   stopHotkey: string
@@ -40,6 +72,7 @@ export interface BackendStatus {
   modelCapabilities: string[]
   latencyMs: number | null
   error: string | null
+  models?: ModelCapabilities[]
 }
 
 export interface MonitorInfo {

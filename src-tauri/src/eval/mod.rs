@@ -333,6 +333,7 @@ async fn execute(app: &AppHandle, suite_path: &Path, out: &Path) -> i32 {
             settings.show_thinking = show_thinking;
         }
         if let Some(model) = &suite.config.model {
+            settings.models.agent = model.clone();
             settings.model = model.clone();
         }
         settings.max_steps = suite.defaults.max_steps;

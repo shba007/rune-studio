@@ -391,7 +391,12 @@ pub fn settings_snapshot(settings: &crate::settings::Settings) -> String {
 pub fn model_and_snapshot(settings: &Mutex<crate::settings::Settings>) -> (String, String) {
     use crate::sync::LockExt;
     let settings = settings.locked();
-    (settings.model.clone(), settings_snapshot(&settings))
+    (
+        settings
+            .model_for_role(crate::model::role::ModelRole::Agent)
+            .to_string(),
+        settings_snapshot(&settings),
+    )
 }
 
 pub fn db_path(data_dir: &Path) -> std::path::PathBuf {

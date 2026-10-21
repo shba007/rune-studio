@@ -106,16 +106,25 @@ pub async fn check(
     let body = response.text().await.unwrap_or_default();
     let models = parse_models_response(&body);
 
-    let configured_model = &settings.model;
-    let missing_models = [configured_model]
+    let configured_roles = [
+        settings.model_for_role(crate::model::role::ModelRole::Agent),
+        settings.model_for_role(crate::model::role::ModelRole::Verifier),
+        settings.model_for_role(crate::model::role::ModelRole::Analysis),
+        settings.model_for_role(crate::model::role::ModelRole::Voice),
+        settings.model_for_role(crate::model::role::ModelRole::Decision),
+    ];
+    let missing_models = configured_roles
         .into_iter()
-        .filter(|wanted| !models.iter().any(|m| &m.id == *wanted))
-        .cloned()
+        .filter(|wanted| !wanted.is_empty() && !models.iter().any(|m| &m.id == *wanted))
+        .map(|s| s.to_string())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
         .collect();
 
+    let agent_model = settings.model_for_role(crate::model::role::ModelRole::Agent);
     let model_capabilities = models
         .iter()
-        .find(|m| &m.id == configured_model)
+        .find(|m| m.id == agent_model)
         .map(|m| m.raw_capabilities.clone())
         .unwrap_or_default();
 

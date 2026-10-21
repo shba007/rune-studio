@@ -278,12 +278,14 @@ fn spawn_background_check(app: &AppHandle, run_id: String, evidence: Option<Evid
         let state = app.state::<AppState>();
         let (settings, api_key) = (state.settings.locked().clone(), settings::api_key());
         let call_log = state.trace.call_log(&run_id, "verify");
+        let verify_model = settings.model_for_role(crate::model::role::ModelRole::Verifier);
+        let profile = crate::model::profile::resolve_profile(verify_model, None, None);
         let client = ChatClient {
             http: &state.http,
             base_url: &settings.base_url,
             api_key: api_key.as_deref(),
-            model: &settings.model,
-            profile: None,
+            model: verify_model,
+            profile: Some(&profile),
             sink: Some(&call_log),
         };
         let started = Instant::now();
@@ -321,7 +323,7 @@ fn spawn_background_check(app: &AppHandle, run_id: String, evidence: Option<Evid
         state.trace.verdict(verdict_record(
             &run_id,
             VerifyMode::Background,
-            &settings.model,
+            verify_model,
             &checked,
             millis(started),
             false,
@@ -527,12 +529,24 @@ async fn run(
     let tools = protocol::tools();
     let think = settings.show_thinking;
     let call_log = trace.call_log(run_id, "plan");
+    let agent_model = settings.model_for_role(crate::model::role::ModelRole::Agent);
+    let agent_profile = crate::model::profile::resolve_profile(agent_model, None, None);
     let client = ChatClient {
         http: &state.http,
         base_url: &settings.base_url,
         api_key: api_key.as_deref(),
-        model: &settings.model,
-        profile: None,
+        model: agent_model,
+        profile: Some(&agent_profile),
+        sink: Some(&call_log),
+    };
+    let verifier_model = settings.model_for_role(crate::model::role::ModelRole::Verifier);
+    let verifier_profile = crate::model::profile::resolve_profile(verifier_model, None, None);
+    let verifier_client = ChatClient {
+        http: &state.http,
+        base_url: &settings.base_url,
+        api_key: api_key.as_deref(),
+        model: verifier_model,
+        profile: Some(&verifier_profile),
         sink: Some(&call_log),
     };
 
@@ -742,7 +756,7 @@ async fn run(
                     };
                     call_log.set("verify", Some(step));
                     match blocking_check(
-                        &client, &cancel, &trace, run_id, &handoff, challenged, input,
+                        &verifier_client, &cancel, &trace, run_id, &handoff, challenged, input,
                     )
                     .await
                     {
@@ -906,7 +920,7 @@ async fn run(
                 };
                 call_log.set("verify", Some(step));
                 match blocking_check(
-                    &client, &cancel, &trace, run_id, &handoff, challenged, input,
+                    &verifier_client, &cancel, &trace, run_id, &handoff, challenged, input,
                 )
                 .await
                 {

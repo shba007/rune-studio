@@ -62,9 +62,14 @@ pub fn note_stop() {
 pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
     crate::reflect::touch(app, crate::reflect::idle::Input::Voice);
     let state = app.state::<AppState>();
-    let (base_url, model) = {
+    let (base_url, voice_model) = {
         let settings = state.settings.locked();
-        (settings.base_url.clone(), settings.model.clone())
+        (
+            settings.base_url.clone(),
+            settings
+                .model_for_role(crate::model::role::ModelRole::Voice)
+                .to_string(),
+        )
     };
     let api_key = settings::api_key();
     let wav = direct::wav(&utterance);
@@ -76,12 +81,13 @@ pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
             return;
         }
     };
+    let profile = crate::model::profile::resolve_profile(&voice_model, None, None);
     let client = ChatClient {
         http: &state.http,
         base_url: &base_url,
         api_key: api_key.as_deref(),
-        model: &model,
-        profile: None,
+        model: &voice_model,
+        profile: Some(&profile),
         sink: None,
     };
     let audio = BASE64.encode(&wav);

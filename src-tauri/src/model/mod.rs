@@ -4,3 +4,4 @@ pub mod client;
 pub mod coords;
 pub mod decision;
 pub mod profile;
+pub mod role;

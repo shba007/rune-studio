@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, useTemplateRef } from 'vue'
+import { nextTick, useTemplateRef, watch } from 'vue'
 
 import type { Agent } from '@/composables/useAgent'
 import type { AgentState, Settings } from '@/types/protocol'
@@ -10,9 +10,35 @@ import HubGroup from './HubGroup.vue'
 import HubInput from './HubInput.vue'
 import HubRow from './HubRow.vue'
 import HubToggle from './HubToggle.vue'
+import ModelRoleRow from './ModelRoleRow.vue'
 import AppIcon from './AppIcon.vue'
 
-defineProps<{ agent: Agent; draft: Settings }>()
+const props = defineProps<{ agent: Agent; draft: Settings }>()
+
+if (!props.draft.models) {
+  props.draft.models = {
+    agent: props.draft.model || 'gemma-4-12b-it',
+    verifier: '',
+    analysis: '',
+    voice: '',
+    decision: props.draft.decisionModel || 'liquid-d1-3b',
+    advisor: '',
+  }
+}
+
+watch(
+  () => props.draft.models.agent,
+  (val) => {
+    props.draft.model = val
+  },
+)
+
+watch(
+  () => props.draft.models.decision,
+  (val) => {
+    props.draft.decisionModel = val
+  },
+)
 
 const apiKey = defineModel<string>('apiKey', { required: true })
 defineEmits<{ 'commit-key': [] }>()
@@ -73,13 +99,59 @@ async function revealDeveloper() {
     </HubGroup>
 
     <HubGroup title="Models">
-      <HubInput v-model="draft.model" label="Model" />
+      <datalist id="discovered-models-list">
+        <option v-for="m in agent.backend.value?.models ?? []" :key="m.id" :value="m.id" />
+      </datalist>
+
+      <ModelRoleRow
+        v-model="draft.models.agent"
+        role-label="Agent"
+        role-key="agent"
+        :agent-model="draft.models.agent"
+        :models="agent.backend.value?.models ?? []"
+        placeholder="e.g. gemma-4-12b-it"
+      />
+      <ModelRoleRow
+        v-model="draft.models.verifier"
+        role-label="Verifier"
+        role-key="verifier"
+        :agent-model="draft.models.agent"
+        :models="agent.backend.value?.models ?? []"
+      />
+      <ModelRoleRow
+        v-model="draft.models.analysis"
+        role-label="Screen Analysis"
+        role-key="analysis"
+        :agent-model="draft.models.agent"
+        :models="agent.backend.value?.models ?? []"
+      />
+      <ModelRoleRow
+        v-model="draft.models.voice"
+        role-label="Voice"
+        role-key="voice"
+        :agent-model="draft.models.agent"
+        :models="agent.backend.value?.models ?? []"
+      />
+      <ModelRoleRow
+        v-model="draft.models.decision"
+        role-label="Decision"
+        role-key="decision"
+        :agent-model="draft.models.agent"
+        :models="agent.backend.value?.models ?? []"
+      />
+      <ModelRoleRow
+        v-model="draft.models.advisor"
+        role-label="Advisor"
+        role-key="advisor"
+        :agent-model="draft.models.agent"
+        :models="agent.backend.value?.models ?? []"
+      />
+
       <HubToggle
         v-model="draft.fastChecks"
         label="Fast checks"
         hint="A server that loads one model at a time swaps models for every fast check, which can add 10 seconds or more. Leave this off there."
       />
-      <HubInput v-if="draft.fastChecks" v-model="draft.decisionModel" label="Decision" />
       <HubInput v-if="draft.fastChecks" v-model="draft.decisionUrl" label="Decision URL" />
       <HubToggle v-model="draft.showThinking" label="Show thinking" />
     </HubGroup>

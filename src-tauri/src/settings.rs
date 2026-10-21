@@ -4,16 +4,113 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
-use crate::{error::AppResult, hotkeys};
+use crate::{
+    error::AppResult,
+    hotkeys,
+    model::{
+        attempts::AttemptSink,
+        client::ChatClient,
+        profile::ModelProfile,
+        role::ModelRole,
+    },
+};
 
 pub(crate) const KEYRING_SERVICE: &str = "dev.shirsendu-bairagi.rune-studio";
 const KEYRING_USER: &str = "rune-infer-api-key";
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelRoles {
+    #[serde(default = "default_agent_model")]
+    pub agent: String,
+    #[serde(default)]
+    pub verifier: String,
+    #[serde(default)]
+    pub analysis: String,
+    #[serde(default)]
+    pub voice: String,
+    #[serde(default = "default_decision_model")]
+    pub decision: String,
+    #[serde(default)]
+    pub advisor: String,
+}
+
+fn default_agent_model() -> String {
+    "gemma-4-12b-it".into()
+}
+
+fn default_decision_model() -> String {
+    "liquid-d1-3b".into()
+}
+
+impl Default for ModelRoles {
+    fn default() -> Self {
+        Self {
+            agent: default_agent_model(),
+            verifier: String::new(),
+            analysis: String::new(),
+            voice: String::new(),
+            decision: default_decision_model(),
+            advisor: String::new(),
+        }
+    }
+}
+
+impl ModelRoles {
+    pub fn model_for_role(&self, role: ModelRole) -> &str {
+        match role {
+            ModelRole::Agent => {
+                if !self.agent.is_empty() {
+                    &self.agent
+                } else {
+                    "gemma-4-12b-it"
+                }
+            }
+            ModelRole::Verifier => {
+                if !self.verifier.is_empty() {
+                    &self.verifier
+                } else {
+                    self.model_for_role(ModelRole::Agent)
+                }
+            }
+            ModelRole::Analysis => {
+                if !self.analysis.is_empty() {
+                    &self.analysis
+                } else {
+                    self.model_for_role(ModelRole::Agent)
+                }
+            }
+            ModelRole::Voice => {
+                if !self.voice.is_empty() {
+                    &self.voice
+                } else {
+                    self.model_for_role(ModelRole::Agent)
+                }
+            }
+            ModelRole::Decision => {
+                if !self.decision.is_empty() {
+                    &self.decision
+                } else {
+                    self.model_for_role(ModelRole::Agent)
+                }
+            }
+            ModelRole::Advisor => {
+                if !self.advisor.is_empty() {
+                    &self.advisor
+                } else {
+                    self.model_for_role(ModelRole::Agent)
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Settings {
     pub base_url: String,
     pub model: String,
+    pub models: ModelRoles,
     pub max_steps: u32,
     pub toggle_hotkey: String,
     pub stop_hotkey: String,
@@ -32,6 +129,130 @@ pub struct Settings {
     pub demo_mode: bool,
     pub reflection_enabled: bool,
     pub idle_minutes: u32,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct SettingsDeHelper {
+    pub base_url: String,
+    pub model: Option<String>,
+    pub models: Option<ModelRoles>,
+    pub max_steps: u32,
+    pub toggle_hotkey: String,
+    pub stop_hotkey: String,
+    pub external_agent: bool,
+    pub external_agent_since: u64,
+    pub show_thinking: bool,
+    pub ask_every_action: bool,
+    pub developer_mode: bool,
+    pub fast_checks: bool,
+    pub decision_model: Option<String>,
+    pub decision_url: String,
+    pub archive_keep_days: u32,
+    pub verify_mode: VerifyMode,
+    pub record_session_video: RecordVideo,
+    pub offer_review: OfferReview,
+    pub demo_mode: bool,
+    pub reflection_enabled: bool,
+    pub idle_minutes: u32,
+}
+
+impl Default for SettingsDeHelper {
+    fn default() -> Self {
+        let def = Settings::default();
+        Self {
+            base_url: def.base_url,
+            model: None,
+            models: None,
+            max_steps: def.max_steps,
+            toggle_hotkey: def.toggle_hotkey,
+            stop_hotkey: def.stop_hotkey,
+            external_agent: def.external_agent,
+            external_agent_since: def.external_agent_since,
+            show_thinking: def.show_thinking,
+            ask_every_action: def.ask_every_action,
+            developer_mode: def.developer_mode,
+            fast_checks: def.fast_checks,
+            decision_model: None,
+            decision_url: def.decision_url,
+            archive_keep_days: def.archive_keep_days,
+            verify_mode: def.verify_mode,
+            record_session_video: def.record_session_video,
+            offer_review: def.offer_review,
+            demo_mode: def.demo_mode,
+            reflection_enabled: def.reflection_enabled,
+            idle_minutes: def.idle_minutes,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Settings {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let helper = SettingsDeHelper::deserialize(deserializer)?;
+        let mut models = helper.models.unwrap_or_default();
+        if let Some(ref m) = helper.model {
+            if !m.is_empty() && (models.agent.is_empty() || models.agent == "gemma-4-12b-it") {
+                models.agent = m.clone();
+            }
+        }
+        if let Some(ref d) = helper.decision_model {
+            if !d.is_empty() && (models.decision.is_empty() || models.decision == "liquid-d1-3b") {
+                models.decision = d.clone();
+            }
+        }
+        let synced_model = models.agent.clone();
+        let synced_decision = models.decision.clone();
+        Ok(Settings {
+            base_url: helper.base_url,
+            model: synced_model,
+            models,
+            max_steps: helper.max_steps,
+            toggle_hotkey: helper.toggle_hotkey,
+            stop_hotkey: helper.stop_hotkey,
+            external_agent: helper.external_agent,
+            external_agent_since: helper.external_agent_since,
+            show_thinking: helper.show_thinking,
+            ask_every_action: helper.ask_every_action,
+            developer_mode: helper.developer_mode,
+            fast_checks: helper.fast_checks,
+            decision_model: synced_decision,
+            decision_url: helper.decision_url,
+            archive_keep_days: helper.archive_keep_days,
+            verify_mode: helper.verify_mode,
+            record_session_video: helper.record_session_video,
+            offer_review: helper.offer_review,
+            demo_mode: helper.demo_mode,
+            reflection_enabled: helper.reflection_enabled,
+            idle_minutes: helper.idle_minutes,
+        })
+    }
+}
+
+impl Settings {
+    pub fn model_for_role(&self, role: ModelRole) -> &str {
+        self.models.model_for_role(role)
+    }
+
+    pub fn client_for_role<'a>(
+        &'a self,
+        role: ModelRole,
+        http: &'a reqwest::Client,
+        api_key: Option<&'a str>,
+        profile: &'a ModelProfile,
+        sink: Option<&'a dyn AttemptSink>,
+    ) -> ChatClient<'a> {
+        ChatClient {
+            http,
+            base_url: &self.base_url,
+            api_key,
+            model: self.model_for_role(role),
+            profile: Some(profile),
+            sink,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -65,9 +286,11 @@ pub enum VerifyMode {
 
 impl Default for Settings {
     fn default() -> Self {
+        let models = ModelRoles::default();
         Self {
             base_url: "http://127.0.0.1:8080".into(),
-            model: "gemma-4-12b-it".into(),
+            model: models.agent.clone(),
+            models,
             max_steps: 30,
             toggle_hotkey: hotkeys::DEFAULT_TOGGLE.into(),
             stop_hotkey: hotkeys::DEFAULT_STOP.into(),
@@ -166,6 +389,58 @@ pub fn set_api_key(key: &str) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn migration_from_old_settings_with_model_and_decision_model() {
+        let old_fixture = r#"{
+            "baseUrl": "http://127.0.0.1:8080",
+            "model": "my-custom-agent",
+            "decisionModel": "my-custom-decision",
+            "maxSteps": 25,
+            "fastChecks": true
+        }"#;
+
+        let settings: Settings = serde_json::from_str(old_fixture).unwrap();
+        assert_eq!(settings.models.agent, "my-custom-agent");
+        assert_eq!(settings.models.decision, "my-custom-decision");
+        assert_eq!(settings.model, "my-custom-agent");
+        assert_eq!(settings.decision_model, "my-custom-decision");
+        assert_eq!(settings.model_for_role(ModelRole::Agent), "my-custom-agent");
+        assert_eq!(settings.model_for_role(ModelRole::Decision), "my-custom-decision");
+        // Empty role falls back to agent
+        assert_eq!(settings.model_for_role(ModelRole::Verifier), "my-custom-agent");
+        assert_eq!(settings.model_for_role(ModelRole::Analysis), "my-custom-agent");
+        assert_eq!(settings.model_for_role(ModelRole::Voice), "my-custom-agent");
+
+        // Downgrade serialization check: both old keys are preserved in JSON
+        let serialized = serde_json::to_string(&settings).unwrap();
+        let json_val: serde_json::Value = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(json_val["model"], "my-custom-agent");
+        assert_eq!(json_val["decisionModel"], "my-custom-decision");
+        assert_eq!(json_val["models"]["agent"], "my-custom-agent");
+    }
+
+    #[test]
+    fn role_resolution_with_explicit_roles() {
+        let new_fixture = r#"{
+            "models": {
+                "agent": "agent-model",
+                "verifier": "verifier-model",
+                "analysis": "",
+                "voice": "voice-model",
+                "decision": "",
+                "advisor": ""
+            }
+        }"#;
+
+        let settings: Settings = serde_json::from_str(new_fixture).unwrap();
+        assert_eq!(settings.model_for_role(ModelRole::Agent), "agent-model");
+        assert_eq!(settings.model_for_role(ModelRole::Verifier), "verifier-model");
+        assert_eq!(settings.model_for_role(ModelRole::Analysis), "agent-model");
+        assert_eq!(settings.model_for_role(ModelRole::Voice), "voice-model");
+        assert_eq!(settings.model_for_role(ModelRole::Decision), "agent-model");
+        assert_eq!(settings.model_for_role(ModelRole::Advisor), "agent-model");
+    }
 
     #[test]
     fn self_reflect_is_on_by_default_with_ten_idle_minutes() {
