@@ -60,7 +60,7 @@ pub fn set_api_key(app: AppHandle, key: String) -> AppResult<()> {
 }
 
 #[tauri::command]
-pub fn open_settings_window(app: AppHandle, section: Option<String>) -> AppResult<()> {
+pub async fn open_settings_window(app: AppHandle, section: Option<String>) -> AppResult<()> {
     crate::hub::open(&app, section.as_deref())
         .map_err(|err| AppError::Invalid(format!("Could not open Settings: {err}")))
 }

@@ -8,7 +8,7 @@ defineProps<{ label: string; hint?: string }>()
       <span class="text-body text-zinc-100">{{ label }}</span>
       <span v-if="hint" class="text-label text-zinc-500">{{ hint }}</span>
     </div>
-    <div class="flex shrink-0 items-center gap-2">
+    <div class="flex min-w-0 shrink-0 items-center gap-2">
       <slot />
     </div>
   </div>

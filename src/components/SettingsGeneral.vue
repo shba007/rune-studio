@@ -40,7 +40,7 @@ async function revealDeveloper() {
   <div class="flex flex-col gap-8">
     <HubGroup title="Connection">
       <HubRow label="Backend">
-        <BackendBadge :status="agent.backend.value" />
+        <div class="max-w-96 min-w-0"><BackendBadge :status="agent.backend.value" /></div>
         <button
           type="button"
           class="grid size-8 cursor-pointer place-items-center rounded-full border-0 bg-transparent text-zinc-300 transition hover:bg-white/8 hover:text-white"
