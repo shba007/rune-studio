@@ -62,6 +62,7 @@ pub struct StepRecord {
     pub gate_ms: Option<i64>,
     pub act_ms: Option<i64>,
     pub settle_ms: Option<i64>,
+    pub served_model: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -96,6 +97,8 @@ pub struct CallRecord {
     pub model: String,
     pub prompt_tokens: Option<i64>,
     pub completion_tokens: Option<i64>,
+    pub served_model: Option<String>,
+    pub swap_ms: Option<i64>,
 }
 
 pub const BODY_CAP: usize = 64 * 1024;
@@ -194,6 +197,8 @@ impl crate::model::attempts::AttemptSink for CallLog {
             completion_tokens: attempt
                 .completion_tokens
                 .and_then(|n| i64::try_from(n).ok()),
+            served_model: attempt.served_model,
+            swap_ms: attempt.swap_ms.and_then(|n| i64::try_from(n).ok()),
         });
     }
 }
@@ -227,7 +232,7 @@ pub const FINDINGS_CAP: usize = 20_000;
 
 pub const EVIDENCE_CAP: usize = 400;
 
-pub const STEP_COLUMNS: [&str; 23] = [
+pub const STEP_COLUMNS: [&str; 24] = [
     "started_utc",
     "goal",
     "tool",
@@ -251,6 +256,7 @@ pub const STEP_COLUMNS: [&str; 23] = [
     "gate_ms",
     "act_ms",
     "settle_ms",
+    "served_model",
 ];
 
 impl StepRecord {
@@ -262,7 +268,7 @@ impl StepRecord {
         }
     }
 
-    pub fn values(&self) -> [Value; 23] {
+    pub fn values(&self) -> [Value; 24] {
         let text = |value: &Option<String>| value.clone().map_or(Value::Null, Value::Text);
         let number = |value: &Option<i64>| value.map_or(Value::Null, Value::Integer);
         [
@@ -289,6 +295,7 @@ impl StepRecord {
             number(&self.gate_ms),
             number(&self.act_ms),
             number(&self.settle_ms),
+            text(&self.served_model),
         ]
     }
 

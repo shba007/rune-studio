@@ -6,6 +6,7 @@ export type AgentState =
   | 'acting'
   | 'observing'
   | 'reflecting'
+  | 'loading_model'
   | 'done'
   | 'failed'
   | 'stopped'
@@ -63,6 +64,8 @@ export interface Settings {
   fastChecks: boolean
   decisionModel: string
   decisionUrl: string
+  skipSwapForOptionalRoles?: boolean
+  firstCallIdleAllowanceSecs?: number
 }
 
 export interface BackendStatus {

@@ -88,6 +88,8 @@ export interface FlightCall {
   model: string
   promptTokens: number | null
   completionTokens: number | null
+  servedModel?: string | null
+  swapMs?: number | null
 }
 
 export function parseIso(text: string | null | undefined): number | null {

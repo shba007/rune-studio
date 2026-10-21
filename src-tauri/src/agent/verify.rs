@@ -479,6 +479,7 @@ mod tests {
             model: "m",
             profile: None,
             sink: None,
+            on_loading: None,
         }
     }
 

@@ -188,6 +188,7 @@ async fn work(
         model: analysis_model,
         profile: Some(&profile),
         sink: Some(&call_log),
+        on_loading: None,
     };
     let image = format!("data:image/jpeg;base64,{}", base64_of(&frame.jpeg));
     let tools = report::tools();

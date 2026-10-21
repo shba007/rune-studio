@@ -1,6 +1,6 @@
 use rusqlite::Connection;
 
-pub const VERSION: i64 = 6;
+pub const VERSION: i64 = 7;
 
 pub const CREATE_V1: &str = "
 CREATE TABLE runs (
@@ -134,6 +134,12 @@ ALTER TABLE runs ADD COLUMN retry_count INTEGER;
 ALTER TABLE runs ADD COLUMN duration_ms INTEGER;
 ";
 
+const CREATE_V7: &str = "
+ALTER TABLE calls ADD COLUMN served_model TEXT;
+ALTER TABLE calls ADD COLUMN swap_ms INTEGER;
+ALTER TABLE steps ADD COLUMN served_model TEXT;
+";
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Opened {
     Ready,
@@ -157,6 +163,7 @@ pub fn open(db: &Connection) -> rusqlite::Result<Opened> {
         (4, CREATE_V4),
         (5, CREATE_V5),
         (6, CREATE_V6),
+        (7, CREATE_V7),
     ] {
         if found < version {
             batch.push_str(ddl);

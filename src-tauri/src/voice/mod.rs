@@ -89,6 +89,7 @@ pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
         model: &voice_model,
         profile: Some(&profile),
         sink: None,
+        on_loading: None,
     };
     let audio = BASE64.encode(&wav);
     match direct::listen(&client, &audio, events::agent_state(app)).await {

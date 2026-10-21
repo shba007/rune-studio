@@ -131,17 +131,23 @@ pub fn parse_model_entry(entry: &Value) -> Option<ModelCapabilities> {
         })
         .unwrap_or_default();
 
-    let modalities_in: Option<Vec<String>> = obj.get("modalities_in").and_then(|v| v.as_array()).map(|arr| {
-        arr.iter()
-            .filter_map(|v| v.as_str().map(|s| s.to_lowercase()))
-            .collect()
-    });
+    let modalities_in: Option<Vec<String>> = obj
+        .get("modalities_in")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_lowercase()))
+                .collect()
+        });
 
-    let modalities_out: Option<Vec<String>> = obj.get("modalities_out").and_then(|v| v.as_array()).map(|arr| {
-        arr.iter()
-            .filter_map(|v| v.as_str().map(|s| s.to_lowercase()))
-            .collect()
-    });
+    let modalities_out: Option<Vec<String>> = obj
+        .get("modalities_out")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_lowercase()))
+                .collect()
+        });
 
     let audio_in = if let Some(ref in_mods) = modalities_in {
         if in_mods.iter().any(|m| m == "audio" || m == "voice") {
@@ -179,7 +185,10 @@ pub fn parse_model_entry(entry: &Value) -> Option<ModelCapabilities> {
     };
 
     let speech_out = if let Some(ref out_mods) = modalities_out {
-        if out_mods.iter().any(|m| m == "audio" || m == "speech" || m == "voice") {
+        if out_mods
+            .iter()
+            .any(|m| m == "audio" || m == "speech" || m == "voice")
+        {
             TriState::Yes
         } else {
             TriState::No
@@ -215,7 +224,8 @@ pub fn parse_model_entry(entry: &Value) -> Option<ModelCapabilities> {
     let thinking_control = if let Some(val) = obj.get("thinking_control") {
         parse_tri_state(Some(val))
     } else if !raw_capabilities.is_empty() {
-        if contains_ci(&raw_capabilities, "thinking") || contains_ci(&raw_capabilities, "reasoning") {
+        if contains_ci(&raw_capabilities, "thinking") || contains_ci(&raw_capabilities, "reasoning")
+        {
             TriState::Yes
         } else {
             TriState::Unknown

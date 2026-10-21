@@ -30,6 +30,7 @@ pub enum AgentState {
     Acting,
     Observing,
     Reflecting,
+    LoadingModel,
     Done,
     Failed,
     Stopped,
@@ -39,7 +40,11 @@ impl AgentState {
     pub fn is_running(self) -> bool {
         matches!(
             self,
-            Self::Planning | Self::AwaitingConfirm | Self::Acting | Self::Observing
+            Self::Planning
+                | Self::AwaitingConfirm
+                | Self::Acting
+                | Self::Observing
+                | Self::LoadingModel
         )
     }
 }
@@ -61,6 +66,7 @@ pub struct AppState {
     pub act_turn: tokio::sync::Mutex<()>,
     pub trace: crate::trace::Recorder,
     pub http: reqwest::Client,
+    pub capabilities: crate::model::capabilities::SharedCapabilityCache,
 }
 
 impl AppState {
@@ -320,6 +326,9 @@ mod tests {
             act_turn: Default::default(),
             trace: crate::trace::Recorder::noop(),
             http: reqwest::Client::new(),
+            capabilities: std::sync::Arc::new(
+                crate::model::capabilities::CapabilityCache::default(),
+            ),
         }
     }
 

@@ -92,4 +92,26 @@ describe('FlightDrawer', () => {
     await wrapper.find('[data-testid="call"]').trigger('click')
     await vi.waitFor(() => expect(wrapper.find('[data-testid="truncated"]').exists()).toBe(true))
   })
+
+  it('shows served model and swap warning when model differs from requested', async () => {
+    const wrapper = mountDrawer({
+      tab: 'api',
+      calls: [
+        makeCall(1, 2, {
+          model: 'requested-model',
+          servedModel: 'different-served-model',
+          swapMs: 1250,
+        }),
+      ],
+      loadBodies: vi.fn<Loader>(async () => ({ request: '{}', response: '{}' })),
+    })
+    await wrapper.find('[data-testid="call"]').trigger('click')
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="call-model-info"]').exists()).toBe(true),
+    )
+    expect(wrapper.find('[data-testid="model-mismatch-warning"]').text()).toContain(
+      'Served by different-served-model (requested requested-model)',
+    )
+    expect(wrapper.find('[data-testid="call-model-info"]').text()).toContain('Swap: 1250 ms')
+  })
 })

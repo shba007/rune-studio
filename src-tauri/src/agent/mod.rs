@@ -279,6 +279,29 @@ fn spawn_background_check(app: &AppHandle, run_id: String, evidence: Option<Evid
         let (settings, api_key) = (state.settings.locked().clone(), settings::api_key());
         let call_log = state.trace.call_log(&run_id, "verify");
         let verify_model = settings.model_for_role(crate::model::role::ModelRole::Verifier);
+        if settings.skip_swap_for_optional_roles {
+            let is_resident = state
+                .capabilities
+                .get_model(verify_model)
+                .map(|c| c.resident);
+            if is_resident == Some(crate::model::capabilities::TriState::No) {
+                log::info!(
+                    "skipping optional verification for run {run_id}: model '{verify_model}' is not resident"
+                );
+                state.trace.verdict(verdict_record(
+                    &run_id,
+                    VerifyMode::Background,
+                    verify_model,
+                    &Err(
+                        "skipped: model not resident and skip_swap_for_optional_roles is set"
+                            .into(),
+                    ),
+                    Some(0),
+                    false,
+                ));
+                return;
+            }
+        }
         let profile = crate::model::profile::resolve_profile(verify_model, None, None);
         let client = ChatClient {
             http: &state.http,
@@ -287,6 +310,7 @@ fn spawn_background_check(app: &AppHandle, run_id: String, evidence: Option<Evid
             model: verify_model,
             profile: Some(&profile),
             sink: Some(&call_log),
+            on_loading: None,
         };
         let started = Instant::now();
         let checked: Result<verify::Verdict, String> = match &evidence {
@@ -531,6 +555,10 @@ async fn run(
     let call_log = trace.call_log(run_id, "plan");
     let agent_model = settings.model_for_role(crate::model::role::ModelRole::Agent);
     let agent_profile = crate::model::profile::resolve_profile(agent_model, None, None);
+    let app_for_loading = app.clone();
+    let on_loading = move || {
+        events::set_agent_state(&app_for_loading, AgentState::LoadingModel);
+    };
     let client = ChatClient {
         http: &state.http,
         base_url: &settings.base_url,
@@ -538,6 +566,7 @@ async fn run(
         model: agent_model,
         profile: Some(&agent_profile),
         sink: Some(&call_log),
+        on_loading: Some(&on_loading),
     };
     let verifier_model = settings.model_for_role(crate::model::role::ModelRole::Verifier);
     let verifier_profile = crate::model::profile::resolve_profile(verifier_model, None, None);
@@ -548,6 +577,7 @@ async fn run(
         model: verifier_model,
         profile: Some(&verifier_profile),
         sink: Some(&call_log),
+        on_loading: Some(&on_loading),
     };
 
     let simple = if think || preset_plan.is_some() {
@@ -756,7 +786,13 @@ async fn run(
                     };
                     call_log.set("verify", Some(step));
                     match blocking_check(
-                        &verifier_client, &cancel, &trace, run_id, &handoff, challenged, input,
+                        &verifier_client,
+                        &cancel,
+                        &trace,
+                        run_id,
+                        &handoff,
+                        challenged,
+                        input,
                     )
                     .await
                     {
@@ -821,7 +857,10 @@ async fn run(
         };
         row.rec.decide_ms = millis(started);
         let reply = match reply {
-            Ok(reply) => reply,
+            Ok(reply) => {
+                row.rec.served_model = reply.served_model.clone();
+                reply
+            }
             Err(err @ (ModelError::NoToolCall(_) | ModelError::BadArguments(_))) => {
                 invalid_in_a_row += 1;
                 trace.event(
@@ -920,7 +959,13 @@ async fn run(
                 };
                 call_log.set("verify", Some(step));
                 match blocking_check(
-                    &verifier_client, &cancel, &trace, run_id, &handoff, challenged, input,
+                    &verifier_client,
+                    &cancel,
+                    &trace,
+                    run_id,
+                    &handoff,
+                    challenged,
+                    input,
                 )
                 .await
                 {
@@ -1423,6 +1468,7 @@ mod live {
             model: "ternary-bonsai-2-27b-pq2-0",
             profile: None,
             sink: None,
+            on_loading: None,
         };
         let tools = protocol::plan_tools();
         let request = Request {

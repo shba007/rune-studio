@@ -17,6 +17,8 @@ pub struct Attempt {
     pub model: String,
     pub prompt_tokens: Option<u64>,
     pub completion_tokens: Option<u64>,
+    pub served_model: Option<String>,
+    pub swap_ms: Option<u64>,
 }
 
 pub trait AttemptSink: Send + Sync {

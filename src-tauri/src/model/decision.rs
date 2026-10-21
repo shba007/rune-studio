@@ -200,27 +200,46 @@ pub async fn ask(
     questions: &[Question],
 ) -> Option<Answers> {
     let state = app.state::<AppState>();
-    let (enabled, url, model) = {
+    let (enabled, url, model, skip_swap, allowance_secs) = {
         let settings = state.settings.locked();
         (
             settings.fast_checks,
             endpoint(&settings.decision_url, &settings.base_url),
-            settings.model_for_role(crate::model::role::ModelRole::Decision).to_string(),
+            settings
+                .model_for_role(crate::model::role::ModelRole::Decision)
+                .to_string(),
+            settings.skip_swap_for_optional_roles,
+            settings.first_call_idle_allowance_secs,
         )
     };
     if !enabled || url.starts_with("/v1") || model.trim().is_empty() || cooling_down() {
         return None;
     }
 
+    if skip_swap
+        && state
+            .capabilities
+            .get_model(&model)
+            .is_some_and(|caps| caps.resident == crate::model::capabilities::TriState::No)
+    {
+        log::info!("skipping optional decision call: model '{model}' is not resident");
+        return None;
+    }
+
+    let is_first_or_idle = crate::model::swap::is_idle_or_first_call(Duration::from_secs(60));
+    let timeout = if is_first_or_idle {
+        Duration::from_secs(allowance_secs.max(30) as u64)
+    } else if images.is_empty() {
+        TEXT_TIMEOUT
+    } else {
+        IMAGE_TIMEOUT
+    };
+
     let started = Instant::now();
     let mut request = state
         .http
         .post(url)
-        .timeout(if images.is_empty() {
-            TEXT_TIMEOUT
-        } else {
-            IMAGE_TIMEOUT
-        })
+        .timeout(timeout)
         .json(&request_body(&model, text, images, questions));
     if let Some(key) = settings::api_key() {
         request = request.bearer_auth(key);
@@ -247,6 +266,7 @@ pub async fn ask(
                 answers.0.len(),
                 started.elapsed().as_millis()
             );
+            crate::model::swap::record_call_activity();
             Some(answers)
         }
         Err(err) => {

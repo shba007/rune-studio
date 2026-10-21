@@ -46,6 +46,7 @@ const KIND: Record<AgentState, Kind> = {
   reflecting: 'reflecting',
   listening: 'listening',
   planning: 'thinking',
+  loading_model: 'thinking',
   observing: 'thinking',
   acting: 'acting',
   awaiting_confirm: 'attention',

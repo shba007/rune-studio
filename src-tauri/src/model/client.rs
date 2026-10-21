@@ -19,6 +19,8 @@ pub enum ModelError {
     Request(String),
     #[error("the model server answered {status}: {body}")]
     Status { status: u16, body: String },
+    #[error("model is loading (estimated {estimated_ms:?} ms)")]
+    Loading { estimated_ms: Option<u64> },
     #[error("the model's reply was not understood: {0}")]
     Reply(String),
     #[error("the model did not call a tool: {0}")]
@@ -37,6 +39,8 @@ pub struct Reply {
     pub call: ToolCall,
     pub completion_tokens: Option<u64>,
     pub thinking: String,
+    pub served_model: Option<String>,
+    pub swap_ms: Option<u64>,
 }
 
 pub struct ChatClient<'a> {
@@ -46,6 +50,7 @@ pub struct ChatClient<'a> {
     pub model: &'a str,
     pub profile: Option<&'a ModelProfile>,
     pub sink: Option<&'a dyn AttemptSink>,
+    pub on_loading: Option<&'a (dyn Fn() + Send + Sync)>,
 }
 
 pub struct Request<'a> {
@@ -62,7 +67,15 @@ pub fn is_retryable(error: &ModelError) -> bool {
     match error {
         ModelError::Request(_) => true,
         ModelError::Status { status, .. } => matches!(status, 429 | 502 | 503 | 504),
+        ModelError::Loading { .. } => true,
         ModelError::Reply(_) | ModelError::NoToolCall(_) | ModelError::BadArguments(_) => false,
+    }
+}
+
+pub fn is_loading(error: &ModelError) -> Option<Option<u64>> {
+    match error {
+        ModelError::Loading { estimated_ms } => Some(*estimated_ms),
+        _ => None,
     }
 }
 
@@ -120,7 +133,8 @@ pub(crate) fn chat_body(model: &str, profile: &ModelProfile, request: &Request<'
             for style in styles {
                 match style {
                     ThinkingStyle::ThinkingType => {
-                        body["thinking"] = json!({ "type": if request.think { "enabled" } else { "disabled" } });
+                        body["thinking"] =
+                            json!({ "type": if request.think { "enabled" } else { "disabled" } });
                     }
                     ThinkingStyle::ChatTemplateKwargs => {
                         body["chat_template_kwargs"] = json!({ "enable_thinking": request.think });
@@ -146,6 +160,9 @@ struct Exchange {
     result: Result<Reply, ModelError>,
     status: Option<u16>,
     response: Value,
+    signal: crate::model::swap::SwapSignal,
+    served_model: Option<String>,
+    swap_ms: Option<u64>,
 }
 
 impl ChatClient<'_> {
@@ -156,11 +173,36 @@ impl ChatClient<'_> {
     ) -> Result<Reply, ModelError> {
         let mut attempt = 1;
         let mut wait_before = Duration::ZERO;
+        let max_loading_attempts = 15;
+        let mut loading_attempts = 0;
         loop {
             let (result, mut report) = self
                 .attempt(request, on_thinking, attempt, wait_before)
                 .await;
             match result {
+                Err(ref error)
+                    if is_loading(error).is_some() && loading_attempts < max_loading_attempts =>
+                {
+                    loading_attempts += 1;
+                    if let Some(cb) = self.on_loading {
+                        cb();
+                    }
+                    let estimated_ms = is_loading(error).unwrap();
+                    let wait = estimated_ms
+                        .map(Duration::from_millis)
+                        .unwrap_or(Duration::from_millis(1500))
+                        .clamp(Duration::from_millis(500), Duration::from_secs(15));
+                    log::info!(
+                        "model is loading/swapping (attempt {loading_attempts}/{max_loading_attempts}), waiting {} ms",
+                        wait.as_millis()
+                    );
+                    if let (Some(sink), Some(report)) = (self.sink, report.as_mut()) {
+                        report.outcome = "loading";
+                        sink.record(report.clone());
+                    }
+                    tokio::time::sleep(wait).await;
+                    wait_before = wait;
+                }
                 Err(error) if attempt < MAX_ATTEMPTS && is_retryable(&error) => {
                     let wait = backoff(attempt);
                     log::warn!(
@@ -176,6 +218,7 @@ impl ChatClient<'_> {
                     wait_before = wait;
                 }
                 other => {
+                    crate::model::swap::record_call_activity();
                     if let (Some(sink), Some(report)) = (self.sink, report) {
                         sink.record(report);
                     }
@@ -191,6 +234,7 @@ impl ChatClient<'_> {
         on_thinking: &mut (dyn FnMut(&str) + Send),
     ) -> Result<Reply, ModelError> {
         let (result, report) = self.attempt(request, on_thinking, 1, Duration::ZERO).await;
+        crate::model::swap::record_call_activity();
         if let (Some(sink), Some(report)) = (self.sink, report) {
             sink.record(report);
         }
@@ -230,6 +274,8 @@ impl ChatClient<'_> {
                 model: self.model.to_string(),
                 prompt_tokens: None,
                 completion_tokens: None,
+                served_model: None,
+                swap_ms: None,
             }),
         };
         let exchange = self.exchange(request, &body, on_thinking).await;
@@ -239,8 +285,25 @@ impl ChatClient<'_> {
             report.response = exchange.response.clone();
             report.prompt_tokens = exchange.response["usage"]["prompt_tokens"].as_u64();
             report.completion_tokens = exchange.response["usage"]["completion_tokens"].as_u64();
+            report.served_model = exchange.served_model.clone().or_else(|| {
+                exchange
+                    .response
+                    .get("model")
+                    .and_then(|v| v.as_str())
+                    .map(ToString::to_string)
+            });
+            report.swap_ms = exchange.swap_ms;
+            if let Some(ref served) = report.served_model {
+                if served != self.model {
+                    log::warn!(
+                        "served model '{served}' differs from requested model '{}'",
+                        self.model
+                    );
+                }
+            }
             match &exchange.result {
                 Ok(_) => report.outcome = "ok",
+                Err(ModelError::Loading { .. }) => report.outcome = "loading",
                 Err(error) => {
                     let text = error.to_string();
                     report.outcome = if text.contains("timed out") {
@@ -280,22 +343,47 @@ impl ChatClient<'_> {
                     result: Err(ModelError::Request(err.to_string())),
                     status: None,
                     response: Value::Null,
+                    signal: crate::model::swap::SwapSignal::None,
+                    served_model: None,
+                    swap_ms: None,
                 };
             }
         };
+        let headers = response.headers().clone();
         let status = response.status();
         let code = Some(status.as_u16());
         if !status.is_success() {
             let text = response.text().await.unwrap_or_default();
+            let body_val = serde_json::from_str::<Value>(&text).ok();
+            let signal = crate::model::swap::detect_swap_signal(
+                &headers,
+                status.as_u16(),
+                body_val.as_ref(),
+            );
+            let err = match &signal {
+                crate::model::swap::SwapSignal::Loading { estimated_ms } => ModelError::Loading {
+                    estimated_ms: *estimated_ms,
+                },
+                _ => ModelError::Status {
+                    status: status.as_u16(),
+                    body: snippet(&text),
+                },
+            };
             return Exchange {
                 response: Value::String(text.chars().take(4_000).collect()),
                 status: code,
-                result: Err(ModelError::Status {
-                    status: status.as_u16(),
-                    body: snippet(&text),
-                }),
+                result: Err(err),
+                signal,
+                served_model: None,
+                swap_ms: None,
             };
         }
+
+        let header_signal = crate::model::swap::detect_swap_signal(&headers, status.as_u16(), None);
+        let header_swap_ms = match header_signal {
+            crate::model::swap::SwapSignal::Swapped { swap_ms } => swap_ms,
+            _ => None,
+        };
 
         if !request.think {
             let text = match response.text().await {
@@ -305,20 +393,55 @@ impl ChatClient<'_> {
                         result: Err(ModelError::Request(err.to_string())),
                         status: code,
                         response: Value::Null,
+                        signal: header_signal,
+                        served_model: None,
+                        swap_ms: header_swap_ms,
                     };
                 }
             };
-            return match serde_json::from_str::<Value>(&text) {
-                Ok(value) => Exchange {
-                    result: parse_reply(&value),
-                    status: code,
-                    response: value,
+            let value = match serde_json::from_str::<Value>(&text) {
+                Ok(val) => val,
+                Err(err) => {
+                    return Exchange {
+                        result: Err(ModelError::Reply(format!("{err}: {}", snippet(&text)))),
+                        status: code,
+                        response: Value::String(text.chars().take(4_000).collect()),
+                        signal: header_signal,
+                        served_model: None,
+                        swap_ms: header_swap_ms,
+                    };
+                }
+            };
+            let body_signal =
+                crate::model::swap::detect_swap_signal(&headers, status.as_u16(), Some(&value));
+            let swap_ms = header_swap_ms.or_else(|| match body_signal {
+                crate::model::swap::SwapSignal::Swapped { swap_ms } => swap_ms,
+                _ => value.get("swap_ms").and_then(|v| v.as_u64()),
+            });
+            let served_model = value
+                .get("model")
+                .and_then(|v| v.as_str())
+                .map(ToString::to_string);
+            let mut result = parse_reply(&value);
+            if let Ok(ref mut reply) = result {
+                if reply.served_model.is_none() {
+                    reply.served_model = served_model.clone();
+                }
+                if reply.swap_ms.is_none() {
+                    reply.swap_ms = swap_ms;
+                }
+            }
+            return Exchange {
+                result,
+                status: code,
+                response: value,
+                signal: if header_swap_ms.is_some() {
+                    header_signal
+                } else {
+                    body_signal
                 },
-                Err(err) => Exchange {
-                    result: Err(ModelError::Reply(format!("{err}: {}", snippet(&text)))),
-                    status: code,
-                    response: Value::String(text.chars().take(4_000).collect()),
-                },
+                served_model,
+                swap_ms,
             };
         }
 
@@ -336,15 +459,22 @@ impl ChatClient<'_> {
                         result: Err(ModelError::Request(err.to_string())),
                         status: code,
                         response: stream.summary(),
+                        signal: header_signal,
+                        served_model: stream.model.clone(),
+                        swap_ms: header_swap_ms,
                     };
                 }
             }
         }
         let summary = stream.summary();
+        let served_model = stream.model.clone();
         Exchange {
-            result: stream.finish(),
+            result: stream.finish(header_swap_ms),
             status: code,
             response: summary,
+            signal: header_signal,
+            served_model,
+            swap_ms: header_swap_ms,
         }
     }
 }
@@ -365,6 +495,11 @@ pub fn parse_reply(value: &Value) -> Result<Reply, ModelError> {
         )));
     };
     let name = call["function"]["name"].as_str().unwrap_or("").to_string();
+    let served_model = value
+        .get("model")
+        .and_then(|v| v.as_str())
+        .map(ToString::to_string);
+    let swap_ms = value.get("swap_ms").and_then(|v| v.as_u64());
     Ok(Reply {
         call: ToolCall {
             name,
@@ -372,6 +507,8 @@ pub fn parse_reply(value: &Value) -> Result<Reply, ModelError> {
         },
         completion_tokens: value["usage"]["completion_tokens"].as_u64(),
         thinking: reasoning_of(message).to_string(),
+        served_model,
+        swap_ms,
     })
 }
 
@@ -423,12 +560,14 @@ struct Stream {
     content: String,
     calls: BTreeMap<u64, (String, String)>,
     completion_tokens: Option<u64>,
+    model: Option<String>,
 }
 
 impl Stream {
     fn summary(&self) -> Value {
         json!({
             "streamed": true,
+            "model": self.model,
             "reasoning": self.thinking,
             "content": self.content,
             "tool_calls": self.calls.values().map(|(name, arguments)| json!({ "name": name, "arguments": arguments })).collect::<Vec<_>>(),
@@ -463,6 +602,12 @@ impl Stream {
         {
             self.completion_tokens = Some(tokens);
         }
+        if self.model.is_none() {
+            self.model = event
+                .get("model")
+                .and_then(|v| v.as_str())
+                .map(ToString::to_string);
+        }
         let delta = &event["choices"][0]["delta"];
         for call in delta["tool_calls"].as_array().into_iter().flatten() {
             let entry = self
@@ -493,7 +638,7 @@ impl Stream {
         }
     }
 
-    fn finish(self) -> Result<Reply, ModelError> {
+    fn finish(self, swap_ms: Option<u64>) -> Result<Reply, ModelError> {
         let Some((name, arguments)) = self.calls.into_values().next() else {
             return Err(ModelError::NoToolCall(snippet(&self.content)));
         };
@@ -502,6 +647,8 @@ impl Stream {
             call: ToolCall { name, arguments },
             completion_tokens: self.completion_tokens,
             thinking: self.thinking,
+            served_model: self.model,
+            swap_ms,
         })
     }
 }
@@ -616,7 +763,7 @@ mod tests {
             }
         }
         assert!(grew >= 1);
-        let reply = stream.finish().unwrap();
+        let reply = stream.finish(None).unwrap();
         assert_eq!(reply.thinking, "The user wants Notepad");
         assert_eq!(reply.call.name, "set_plan");
         assert_eq!(reply.call.arguments["goals"], json!(["Open", "Type"]));
@@ -634,7 +781,7 @@ mod tests {
         let mut stream = Stream::default();
         stream.feed(event(json!({ "content": "I would click it" })).as_bytes());
         assert!(
-            matches!(stream.finish(), Err(ModelError::NoToolCall(text)) if text.contains("click it"))
+            matches!(stream.finish(None), Err(ModelError::NoToolCall(text)) if text.contains("click it"))
         );
     }
 
@@ -774,6 +921,7 @@ mod tests {
             model: "m",
             profile: None,
             sink: None,
+            on_loading: None,
         };
         let tools = json!([]);
         let reply = client
@@ -801,6 +949,7 @@ mod tests {
             model: "m",
             profile: None,
             sink: Some(&sink),
+            on_loading: None,
         };
         let tools = json!([]);
         client
@@ -848,6 +997,7 @@ mod tests {
             model: "m",
             profile: None,
             sink: Some(&sink),
+            on_loading: None,
         };
         let tools = json!([]);
         client
@@ -875,6 +1025,7 @@ mod tests {
             model: "m",
             profile: None,
             sink: Some(&sink),
+            on_loading: None,
         };
         let gave_up = tokio::time::timeout(
             Duration::from_millis(200),
@@ -902,6 +1053,7 @@ mod tests {
             model: "m",
             profile: None,
             sink: None,
+            on_loading: None,
         };
         let tools = json!([]);
         let error = client
@@ -951,6 +1103,7 @@ mod tests {
             model: "m",
             profile: None,
             sink: None,
+            on_loading: None,
         };
         let tools = json!([]);
         let cancelled = tokio::time::timeout(
@@ -1106,5 +1259,157 @@ mod tests {
         p_req.tool_choice_required = TriState::Yes;
         let b_req = chat_body("m", &p_req, &request);
         assert_eq!(b_req["tool_choice"], "required");
+    }
+
+    fn serve_with_headers(
+        answers: Vec<(&'static str, Vec<(&'static str, &'static str)>, String)>,
+    ) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        use std::{
+            io::{Read, Write},
+            net::TcpListener,
+            sync::{
+                Arc,
+                atomic::{AtomicUsize, Ordering},
+            },
+        };
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let served = Arc::new(AtomicUsize::new(0));
+        let counter = served.clone();
+        std::thread::spawn(move || {
+            for (status, headers, body) in answers {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut received = Vec::new();
+                let mut chunk = [0_u8; 4096];
+                let (header_end, length) = loop {
+                    let read = stream.read(&mut chunk).unwrap();
+                    received.extend_from_slice(&chunk[..read]);
+                    if let Some(end) = received.windows(4).position(|window| window == b"\r\n\r\n")
+                    {
+                        let head = String::from_utf8_lossy(&received[..end]).to_lowercase();
+                        let length = head
+                            .lines()
+                            .find_map(|line| line.strip_prefix("content-length:"))
+                            .and_then(|value| value.trim().parse::<usize>().ok())
+                            .unwrap_or(0);
+                        break (end + 4, length);
+                    }
+                    assert!(read > 0, "the client hung up before sending its request");
+                };
+                while received.len() < header_end + length {
+                    let read = stream.read(&mut chunk).unwrap();
+                    assert!(read > 0);
+                    received.extend_from_slice(&chunk[..read]);
+                }
+                counter.fetch_add(1, Ordering::SeqCst);
+                let mut header_str = String::new();
+                for (k, v) in headers {
+                    header_str.push_str(&format!("{k}: {v}\r\n"));
+                }
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\n{header_str}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+        });
+        (url, served)
+    }
+
+    #[tokio::test]
+    async fn swap_signals_trigger_loading_and_record_swap_ms() {
+        use crate::model::attempts::Collect;
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        };
+
+        let ok = json!({
+            "model": "served-model-v2",
+            "choices": [{ "message": { "tool_calls": [{ "function": { "name": "click", "arguments": "{\"x\": 10}" } }] } }],
+            "swap_ms": 3200
+        });
+        let loading_body = json!({
+            "status": "loading",
+            "load_ms_estimate": 50
+        });
+        let (url, served) = serve_with_headers(vec![
+            (
+                "503 Service Unavailable",
+                vec![("x-model-loading", "50")],
+                loading_body.to_string(),
+            ),
+            ("200 OK", vec![("x-model-swap-ms", "3200")], ok.to_string()),
+        ]);
+        let http = reqwest::Client::builder().no_proxy().build().unwrap();
+        let sink = Collect::default();
+        let loaded = Arc::new(AtomicBool::new(false));
+        let loaded_flag = loaded.clone();
+        let on_loading = move || {
+            loaded_flag.store(true, Ordering::SeqCst);
+        };
+        let client = ChatClient {
+            http: &http,
+            base_url: &url,
+            api_key: None,
+            model: "requested-model-v1",
+            profile: None,
+            sink: Some(&sink),
+            on_loading: Some(&on_loading),
+        };
+        let tools = json!([]);
+        let reply = client
+            .call_retrying(&a_click_request(&tools), &mut |_| {})
+            .await
+            .expect("succeeds after loading");
+        assert!(loaded.load(Ordering::SeqCst), "on_loading was called");
+        assert_eq!(reply.served_model.as_deref(), Some("served-model-v2"));
+        assert_eq!(reply.swap_ms, Some(3200));
+        assert_eq!(served.load(Ordering::SeqCst), 2);
+
+        let attempts = sink.0.lock().unwrap();
+        assert_eq!(attempts.len(), 2);
+        assert_eq!(attempts[0].outcome, "loading");
+        assert_eq!(attempts[1].outcome, "ok");
+        assert_eq!(attempts[1].served_model.as_deref(), Some("served-model-v2"));
+        assert_eq!(attempts[1].swap_ms, Some(3200));
+    }
+
+    #[tokio::test]
+    async fn server_that_refuses_swap_fails_call() {
+        use std::sync::atomic::Ordering;
+        let (url, served) = serve_with_headers(vec![
+            (
+                "503 Service Unavailable",
+                vec![],
+                json!({ "error": "swap_refused", "status": "refused" }).to_string(),
+            ),
+            (
+                "503 Service Unavailable",
+                vec![],
+                json!({ "error": "swap_refused", "status": "refused" }).to_string(),
+            ),
+            (
+                "503 Service Unavailable",
+                vec![],
+                json!({ "error": "swap_refused", "status": "refused" }).to_string(),
+            ),
+        ]);
+        let http = reqwest::Client::builder().no_proxy().build().unwrap();
+        let client = ChatClient {
+            http: &http,
+            base_url: &url,
+            api_key: None,
+            model: "model-refused",
+            profile: None,
+            sink: None,
+            on_loading: None,
+        };
+        let tools = json!([]);
+        let result = client
+            .call_retrying(&a_click_request(&tools), &mut |_| {})
+            .await;
+        assert!(result.is_err());
+        assert_eq!(served.load(Ordering::SeqCst), 3);
     }
 }

@@ -62,6 +62,8 @@ pub struct FlightCall {
     pub model: String,
     pub prompt_tokens: Option<i64>,
     pub completion_tokens: Option<i64>,
+    pub served_model: Option<String>,
+    pub swap_ms: Option<i64>,
 }
 
 fn has_table(db: &rusqlite::Connection, name: &str) -> bool {
@@ -189,10 +191,17 @@ pub fn calls(db: &Path, id: &str, step: Option<i64>) -> Result<Vec<FlightCall>, 
     if !has_table(&conn, "calls") {
         return Ok(Vec::new());
     }
-    let mut statement = conn.prepare(
-        "SELECT id, step, kind, attempt, started_utc, duration_ms, wait_before_ms, status, outcome, error, truncated, model, prompt_tokens, completion_tokens
-         FROM calls WHERE run_id = ?1 AND (?2 IS NULL OR step = ?2) ORDER BY id",
-    )?;
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap_or(0);
+    let sql = if version >= 7 {
+        "SELECT id, step, kind, attempt, started_utc, duration_ms, wait_before_ms, status, outcome, error, truncated, model, prompt_tokens, completion_tokens, served_model, swap_ms
+         FROM calls WHERE run_id = ?1 AND (?2 IS NULL OR step = ?2) ORDER BY id"
+    } else {
+        "SELECT id, step, kind, attempt, started_utc, duration_ms, wait_before_ms, status, outcome, error, truncated, model, prompt_tokens, completion_tokens, NULL, NULL
+         FROM calls WHERE run_id = ?1 AND (?2 IS NULL OR step = ?2) ORDER BY id"
+    };
+    let mut statement = conn.prepare(sql)?;
     let rows = statement.query_map(params![id, step], |row| {
         Ok(FlightCall {
             id: row.get(0)?,
@@ -209,6 +218,8 @@ pub fn calls(db: &Path, id: &str, step: Option<i64>) -> Result<Vec<FlightCall>, 
             model: row.get::<_, Option<String>>(11)?.unwrap_or_default(),
             prompt_tokens: row.get(12)?,
             completion_tokens: row.get(13)?,
+            served_model: row.get(14)?,
+            swap_ms: row.get(15)?,
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)

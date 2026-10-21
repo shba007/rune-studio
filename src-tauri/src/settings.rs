@@ -7,12 +7,7 @@ use tauri::{AppHandle, Manager};
 use crate::{
     error::AppResult,
     hotkeys,
-    model::{
-        attempts::AttemptSink,
-        client::ChatClient,
-        profile::ModelProfile,
-        role::ModelRole,
-    },
+    model::{attempts::AttemptSink, client::ChatClient, profile::ModelProfile, role::ModelRole},
 };
 
 pub(crate) const KEYRING_SERVICE: &str = "dev.shirsendu-bairagi.rune-studio";
@@ -129,6 +124,8 @@ pub struct Settings {
     pub demo_mode: bool,
     pub reflection_enabled: bool,
     pub idle_minutes: u32,
+    pub skip_swap_for_optional_roles: bool,
+    pub first_call_idle_allowance_secs: u32,
 }
 
 #[derive(Deserialize)]
@@ -155,6 +152,8 @@ struct SettingsDeHelper {
     pub demo_mode: bool,
     pub reflection_enabled: bool,
     pub idle_minutes: u32,
+    pub skip_swap_for_optional_roles: bool,
+    pub first_call_idle_allowance_secs: u32,
 }
 
 impl Default for SettingsDeHelper {
@@ -182,6 +181,8 @@ impl Default for SettingsDeHelper {
             demo_mode: def.demo_mode,
             reflection_enabled: def.reflection_enabled,
             idle_minutes: def.idle_minutes,
+            skip_swap_for_optional_roles: def.skip_swap_for_optional_roles,
+            first_call_idle_allowance_secs: def.first_call_idle_allowance_secs,
         }
     }
 }
@@ -227,6 +228,8 @@ impl<'de> Deserialize<'de> for Settings {
             demo_mode: helper.demo_mode,
             reflection_enabled: helper.reflection_enabled,
             idle_minutes: helper.idle_minutes,
+            skip_swap_for_optional_roles: helper.skip_swap_for_optional_roles,
+            first_call_idle_allowance_secs: helper.first_call_idle_allowance_secs,
         })
     }
 }
@@ -251,6 +254,7 @@ impl Settings {
             model: self.model_for_role(role),
             profile: Some(profile),
             sink,
+            on_loading: None,
         }
     }
 }
@@ -309,6 +313,8 @@ impl Default for Settings {
             demo_mode: true,
             reflection_enabled: true,
             idle_minutes: 10,
+            skip_swap_for_optional_roles: true,
+            first_call_idle_allowance_secs: 30,
         }
     }
 }
@@ -406,10 +412,19 @@ mod tests {
         assert_eq!(settings.model, "my-custom-agent");
         assert_eq!(settings.decision_model, "my-custom-decision");
         assert_eq!(settings.model_for_role(ModelRole::Agent), "my-custom-agent");
-        assert_eq!(settings.model_for_role(ModelRole::Decision), "my-custom-decision");
+        assert_eq!(
+            settings.model_for_role(ModelRole::Decision),
+            "my-custom-decision"
+        );
         // Empty role falls back to agent
-        assert_eq!(settings.model_for_role(ModelRole::Verifier), "my-custom-agent");
-        assert_eq!(settings.model_for_role(ModelRole::Analysis), "my-custom-agent");
+        assert_eq!(
+            settings.model_for_role(ModelRole::Verifier),
+            "my-custom-agent"
+        );
+        assert_eq!(
+            settings.model_for_role(ModelRole::Analysis),
+            "my-custom-agent"
+        );
         assert_eq!(settings.model_for_role(ModelRole::Voice), "my-custom-agent");
 
         // Downgrade serialization check: both old keys are preserved in JSON
@@ -435,7 +450,10 @@ mod tests {
 
         let settings: Settings = serde_json::from_str(new_fixture).unwrap();
         assert_eq!(settings.model_for_role(ModelRole::Agent), "agent-model");
-        assert_eq!(settings.model_for_role(ModelRole::Verifier), "verifier-model");
+        assert_eq!(
+            settings.model_for_role(ModelRole::Verifier),
+            "verifier-model"
+        );
         assert_eq!(settings.model_for_role(ModelRole::Analysis), "agent-model");
         assert_eq!(settings.model_for_role(ModelRole::Voice), "voice-model");
         assert_eq!(settings.model_for_role(ModelRole::Decision), "agent-model");

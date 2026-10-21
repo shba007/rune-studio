@@ -40,7 +40,13 @@ import {
 } from '@/types/protocol'
 import { friendly, noticeMillis } from '@/config/errors'
 
-const RUNNING: AgentState[] = ['planning', 'awaiting_confirm', 'acting', 'observing']
+const RUNNING: AgentState[] = [
+  'planning',
+  'awaiting_confirm',
+  'acting',
+  'observing',
+  'loading_model',
+]
 
 const STATE_LABELS: Record<AgentState, string> = {
   idle: 'Ready',
@@ -50,6 +56,7 @@ const STATE_LABELS: Record<AgentState, string> = {
   acting: 'Acting',
   observing: 'Looking',
   reflecting: 'Reflecting',
+  loading_model: 'Loading model',
   done: 'Done',
   failed: 'Failed',
   stopped: 'Stopped',

@@ -133,6 +133,9 @@ pub fn run() {
                 act_turn: Default::default(),
                 trace,
                 http: reqwest::Client::new(),
+                capabilities: std::sync::Arc::new(
+                    crate::model::capabilities::CapabilityCache::default(),
+                ),
             });
 
             {

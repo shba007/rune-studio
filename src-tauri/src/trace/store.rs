@@ -134,9 +134,9 @@ fn apply(db: &Connection, message: &Msg) -> rusqlite::Result<()> {
         }
         Msg::Call(record) => {
             db.execute(
-                "INSERT INTO calls (run_id, step, kind, attempt, started_utc, duration_ms, wait_before_ms, status, outcome, error, request_json, response_json, truncated, model, prompt_tokens, completion_tokens)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
-                params![record.run_id, record.step, record.kind, record.attempt, record.started_utc, record.duration_ms, record.wait_before_ms, record.status, record.outcome, record.error, record.request_json, record.response_json, record.truncated, record.model, record.prompt_tokens, record.completion_tokens],
+                "INSERT INTO calls (run_id, step, kind, attempt, started_utc, duration_ms, wait_before_ms, status, outcome, error, request_json, response_json, truncated, model, prompt_tokens, completion_tokens, served_model, swap_ms)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+                params![record.run_id, record.step, record.kind, record.attempt, record.started_utc, record.duration_ms, record.wait_before_ms, record.status, record.outcome, record.error, record.request_json, record.response_json, record.truncated, record.model, record.prompt_tokens, record.completion_tokens, record.served_model, record.swap_ms],
             )?;
         }
         Msg::Reflection(record) => {
@@ -286,10 +286,20 @@ pub fn get_run_in(db: &Connection, id: &str) -> Result<Option<RunDetail>, StoreE
         Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(None),
         Err(err) => return Err(err.into()),
     };
-    let sql = format!(
-        "SELECT run_id, step, {} FROM steps WHERE run_id = ?1 ORDER BY step",
-        STEP_COLUMNS.join(", ")
-    );
+    let version: i64 = db
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap_or(0);
+    let sql = if version >= 7 {
+        format!(
+            "SELECT run_id, step, {} FROM steps WHERE run_id = ?1 ORDER BY step",
+            STEP_COLUMNS.join(", ")
+        )
+    } else {
+        format!(
+            "SELECT run_id, step, {} FROM steps WHERE run_id = ?1 ORDER BY step",
+            STEP_COLUMNS[..STEP_COLUMNS.len() - 1].join(", ")
+        )
+    };
     let steps = db
         .prepare(&sql)?
         .query_map([id], step_from_row)?
@@ -433,6 +443,11 @@ fn analysis_from_row(row: &Row<'_>) -> rusqlite::Result<AnalysisRecord> {
 }
 
 fn step_from_row(row: &Row<'_>) -> rusqlite::Result<StepRecord> {
+    let served_model = if row.as_ref().column_count() > 25 {
+        row.get(25)?
+    } else {
+        None
+    };
     Ok(StepRecord {
         run_id: row.get(0)?,
         step: row.get(1)?,
@@ -459,5 +474,6 @@ fn step_from_row(row: &Row<'_>) -> rusqlite::Result<StepRecord> {
         gate_ms: row.get(22)?,
         act_ms: row.get(23)?,
         settle_ms: row.get(24)?,
+        served_model,
     })
 }

@@ -463,6 +463,25 @@ const rawText = computed(() => {
           </div>
         </div>
         <div v-if="pickedCall" class="mt-3 space-y-2" data-testid="bodies">
+          <div
+            v-if="pickedCall.servedModel || pickedCall.swapMs"
+            class="flex flex-wrap items-center gap-2 text-status"
+            data-testid="call-model-info"
+          >
+            <span
+              v-if="pickedCall.servedModel && pickedCall.servedModel !== pickedCall.model"
+              class="rounded bg-amber-500/20 px-1.5 py-0.5 font-medium text-amber-300"
+              data-testid="model-mismatch-warning"
+            >
+              ⚠ Served by {{ pickedCall.servedModel }} (requested {{ pickedCall.model }})
+            </span>
+            <span v-else-if="pickedCall.servedModel" class="text-zinc-400">
+              Model: {{ pickedCall.servedModel }}
+            </span>
+            <span v-if="pickedCall.swapMs" class="text-zinc-400">
+              Swap: {{ pickedCall.swapMs }} ms
+            </span>
+          </div>
           <p v-if="pickedCall.error" class="m-0 text-status text-[#ff6b72]">
             {{ mask(pickedCall.error) }}
           </p>
