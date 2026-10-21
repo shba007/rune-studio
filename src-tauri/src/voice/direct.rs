@@ -239,7 +239,8 @@ mod tests {
             think: false,
             max_tokens: Some(MAX_TRANSCRIPT_TOKENS),
         };
-        let body = crate::model::client::chat_body("m", &request);
+        let profile = crate::model::profile::resolve_profile("m", None, None);
+        let body = crate::model::client::chat_body("m", &profile, &request);
         assert_eq!(body["max_tokens"], 256);
         assert_eq!(body["messages"][0]["role"], "system");
     }

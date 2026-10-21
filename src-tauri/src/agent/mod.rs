@@ -283,6 +283,7 @@ fn spawn_background_check(app: &AppHandle, run_id: String, evidence: Option<Evid
             base_url: &settings.base_url,
             api_key: api_key.as_deref(),
             model: &settings.model,
+            profile: None,
             sink: Some(&call_log),
         };
         let started = Instant::now();
@@ -531,6 +532,7 @@ async fn run(
         base_url: &settings.base_url,
         api_key: api_key.as_deref(),
         model: &settings.model,
+        profile: None,
         sink: Some(&call_log),
     };
 
@@ -1405,6 +1407,7 @@ mod live {
             base_url: "http://127.0.0.1:8080",
             api_key: Some(&key),
             model: "ternary-bonsai-2-27b-pq2-0",
+            profile: None,
             sink: None,
         };
         let tools = protocol::plan_tools();

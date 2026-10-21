@@ -1,6 +1,10 @@
 use std::{collections::BTreeMap, time::Duration};
 
 use super::attempts::{Attempt, AttemptSink, Guard};
+use crate::model::{
+    capabilities::TriState,
+    profile::{ModelProfile, ThinkingStyle, ThinkingSwitch},
+};
 use serde_json::{Value, json};
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
@@ -40,6 +44,7 @@ pub struct ChatClient<'a> {
     pub base_url: &'a str,
     pub api_key: Option<&'a str>,
     pub model: &'a str,
+    pub profile: Option<&'a ModelProfile>,
     pub sink: Option<&'a dyn AttemptSink>,
 }
 
@@ -73,7 +78,16 @@ fn snippet(text: &str) -> String {
     text.chars().take(300).collect()
 }
 
-pub(crate) fn chat_body(model: &str, request: &Request<'_>) -> Value {
+pub(crate) fn chat_body(model: &str, profile: &ModelProfile, request: &Request<'_>) -> Value {
+    let max_output_tokens = request.max_tokens.unwrap_or(if request.think {
+        profile.max_tokens.agent_thinking
+    } else {
+        profile.max_tokens.agent
+    });
+    let tool_choice = match profile.tool_choice_required {
+        TriState::Yes => "required",
+        TriState::No | TriState::Unknown => "auto",
+    };
     let content = if request.screenshot.is_none() && request.audio.is_none() {
         json!(request.user_text)
     } else {
@@ -92,16 +106,36 @@ pub(crate) fn chat_body(model: &str, request: &Request<'_>) -> Value {
     let mut body = json!({
         "model": model,
         "temperature": 0,
-        "max_tokens": request.max_tokens.unwrap_or(if request.think { MAX_OUTPUT_TOKENS_THINKING } else { MAX_OUTPUT_TOKENS }),
+        "max_tokens": max_output_tokens,
         "messages": [
             { "role": "system", "content": request.system },
             { "role": "user", "content": content },
         ],
         "tools": request.tools,
-        "tool_choice": "required",
+        "tool_choice": tool_choice,
     });
-    body["thinking"] = json!({ "type": if request.think { "enabled" } else { "disabled" } });
-    body["chat_template_kwargs"] = json!({ "enable_thinking": request.think });
+    match &profile.thinking {
+        ThinkingSwitch::None => {}
+        ThinkingSwitch::Styles(styles) => {
+            for style in styles {
+                match style {
+                    ThinkingStyle::ThinkingType => {
+                        body["thinking"] = json!({ "type": if request.think { "enabled" } else { "disabled" } });
+                    }
+                    ThinkingStyle::ChatTemplateKwargs => {
+                        body["chat_template_kwargs"] = json!({ "enable_thinking": request.think });
+                    }
+                    ThinkingStyle::BudgetTokens => {
+                        if request.think {
+                            body["thinking"] = json!({ "type": "enabled", "budget_tokens": 2048 });
+                        } else {
+                            body["thinking"] = json!({ "type": "disabled" });
+                        }
+                    }
+                }
+            }
+        }
+    }
     if request.think {
         body["stream"] = json!(true);
     }
@@ -170,7 +204,15 @@ impl ChatClient<'_> {
         attempt: u32,
         wait_before: Duration,
     ) -> (Result<Reply, ModelError>, Option<Attempt>) {
-        let body = chat_body(self.model, request);
+        let default_profile;
+        let profile = match self.profile {
+            Some(p) => p,
+            None => {
+                default_profile = crate::model::profile::resolve_profile(self.model, None, None);
+                &default_profile
+            }
+        };
+        let body = chat_body(self.model, profile, request);
         let started = std::time::Instant::now();
         let mut guard = Guard {
             sink: self.sink,
@@ -730,6 +772,7 @@ mod tests {
             base_url: &url,
             api_key: None,
             model: "m",
+            profile: None,
             sink: None,
         };
         let tools = json!([]);
@@ -756,6 +799,7 @@ mod tests {
             base_url: &url,
             api_key: Some("sk-secret"),
             model: "m",
+            profile: None,
             sink: Some(&sink),
         };
         let tools = json!([]);
@@ -802,6 +846,7 @@ mod tests {
             base_url: &url,
             api_key: None,
             model: "m",
+            profile: None,
             sink: Some(&sink),
         };
         let tools = json!([]);
@@ -828,6 +873,7 @@ mod tests {
             base_url: &silent,
             api_key: None,
             model: "m",
+            profile: None,
             sink: Some(&sink),
         };
         let gave_up = tokio::time::timeout(
@@ -854,6 +900,7 @@ mod tests {
             base_url: &url,
             api_key: None,
             model: "m",
+            profile: None,
             sink: None,
         };
         let tools = json!([]);
@@ -902,6 +949,7 @@ mod tests {
             base_url: &url,
             api_key: None,
             model: "m",
+            profile: None,
             sink: None,
         };
         let tools = json!([]);
@@ -938,7 +986,8 @@ mod tests {
             think: false,
             max_tokens: None,
         };
-        let body = chat_body("m", &request);
+        let profile = ModelProfile::conservative("m");
+        let body = chat_body("m", &profile, &request);
         let parts = body["messages"][1]["content"].as_array().expect("parts");
         assert_eq!(parts.len(), 3);
         assert_eq!(
@@ -968,7 +1017,8 @@ mod tests {
             think: false,
             max_tokens: None,
         };
-        let off = chat_body("m", &request);
+        let profile = ModelProfile::conservative("m");
+        let off = chat_body("m", &profile, &request);
         assert_eq!(off["thinking"], json!({ "type": "disabled" }));
         assert_eq!(
             off["chat_template_kwargs"],
@@ -979,7 +1029,7 @@ mod tests {
         assert!(off.get("reasoning_effort").is_none());
 
         request.think = true;
-        let on = chat_body("m", &request);
+        let on = chat_body("m", &profile, &request);
         assert_eq!(on["thinking"], json!({ "type": "enabled" }));
         assert_eq!(
             on["chat_template_kwargs"],
@@ -1001,7 +1051,9 @@ mod tests {
             think: false,
             max_tokens: None,
         };
-        let body = chat_body("the-model", &request);
+        let mut profile = ModelProfile::conservative("the-model");
+        profile.tool_choice_required = TriState::Yes;
+        let body = chat_body("the-model", &profile, &request);
         assert_eq!(body["model"], "the-model");
         assert_eq!(
             body["messages"][0],
@@ -1014,5 +1066,45 @@ mod tests {
         assert_eq!(body["tools"], tools);
         assert_eq!(body["tool_choice"], "required");
         assert_eq!(body["temperature"], 0);
+    }
+
+    #[test]
+    fn profile_controls_thinking_style_and_tool_choice() {
+        let tools = json!([]);
+        let request = Request {
+            system: "sys",
+            user_text: "test",
+            screenshot: None,
+            audio: None,
+            tools: &tools,
+            think: true,
+            max_tokens: None,
+        };
+
+        // Thinking None
+        let mut p_none = ModelProfile::conservative("m");
+        p_none.thinking = ThinkingSwitch::None;
+        let b_none = chat_body("m", &p_none, &request);
+        assert!(b_none.get("thinking").is_none());
+        assert!(b_none.get("chat_template_kwargs").is_none());
+
+        // Thinking only ThinkingType
+        let mut p_type = ModelProfile::conservative("m");
+        p_type.thinking = ThinkingSwitch::Styles(vec![ThinkingStyle::ThinkingType]);
+        let b_type = chat_body("m", &p_type, &request);
+        assert_eq!(b_type["thinking"], json!({ "type": "enabled" }));
+        assert!(b_type.get("chat_template_kwargs").is_none());
+
+        // Tool choice unknown -> auto
+        let mut p_auto = ModelProfile::conservative("m");
+        p_auto.tool_choice_required = TriState::Unknown;
+        let b_auto = chat_body("m", &p_auto, &request);
+        assert_eq!(b_auto["tool_choice"], "auto");
+
+        // Tool choice yes -> required
+        let mut p_req = ModelProfile::conservative("m");
+        p_req.tool_choice_required = TriState::Yes;
+        let b_req = chat_body("m", &p_req, &request);
+        assert_eq!(b_req["tool_choice"], "required");
     }
 }

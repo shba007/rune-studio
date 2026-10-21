@@ -81,6 +81,7 @@ pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
         base_url: &base_url,
         api_key: api_key.as_deref(),
         model: &model,
+        profile: None,
         sink: None,
     };
     let audio = BASE64.encode(&wav);

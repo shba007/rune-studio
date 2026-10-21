@@ -276,7 +276,8 @@ async fn ask(
             think: !mode.no_think && false,
             max_tokens: Some(1500),
         };
-        let body = crate::model::client::chat_body(&mode.model, &request);
+        let profile = crate::model::profile::resolve_profile(&mode.model, None, None);
+        let body = crate::model::client::chat_body(&mode.model, &profile, &request);
         let value = post(client, &format!("{base}/v1/chat/completions"), key, &body).await?;
         let message = &value["choices"][0]["message"];
         let arguments = message["tool_calls"][0]["function"]["arguments"]

@@ -184,6 +184,7 @@ async fn work(
         base_url: &settings.base_url,
         api_key: api_key.as_deref(),
         model: &settings.model,
+        profile: None,
         sink: Some(&call_log),
     };
     let image = format!("data:image/jpeg;base64,{}", base64_of(&frame.jpeg));

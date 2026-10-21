@@ -497,8 +497,10 @@ mod tests {
         let list = tools.as_array().expect("tools must be a JSON array");
         assert_eq!(list.len(), 1);
         assert_eq!(list[0]["type"], "function");
+        let profile = crate::model::profile::resolve_profile("m", None, None);
         let body = crate::model::client::chat_body(
             "m",
+            &profile,
             &request("q", "data:image/jpeg;base64,AA==", &tools),
         );
         assert_eq!(body["tools"][0]["type"], "function");
@@ -568,8 +570,11 @@ mod tests {
     #[test]
     fn the_analysis_asks_for_1500_tokens_and_every_other_call_still_asks_for_512() {
         let tools = json!([tool()]);
+        let mut profile = crate::model::profile::resolve_profile("m", None, None);
+        profile.tool_choice_required = crate::model::capabilities::TriState::Yes;
         let body = chat_body(
             "m",
+            &profile,
             &request("what is this?", "data:image/jpeg;base64,AA", &tools),
         );
         assert_eq!(body["max_tokens"], 1_500);
@@ -591,11 +596,11 @@ mod tests {
             think: false,
             max_tokens: None,
         };
-        assert_eq!(chat_body("m", &plain)["max_tokens"], 512);
+        assert_eq!(chat_body("m", &profile, &plain)["max_tokens"], 512);
         let thinking = Request {
             think: true,
             ..plain
         };
-        assert_eq!(chat_body("m", &thinking)["max_tokens"], 3_000);
+        assert_eq!(chat_body("m", &profile, &thinking)["max_tokens"], 3_000);
     }
 }

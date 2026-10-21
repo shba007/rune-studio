@@ -1,0 +1,28 @@
+{
+  "gemma-4-12b-it": {
+    "id": "gemma-4-12b-it",
+    "thinking": {
+      "styles": ["thinking_type", "chat_template_kwargs"]
+    },
+    "audioIn": {
+      "supported": "yes",
+      "format": "wav"
+    },
+    "images": {
+      "maxEdgePx": 1280,
+      "screenshotAtAppSize": true
+    },
+    "pointing": "norm1000",
+    "toolChoiceRequired": "yes",
+    "maxTokens": {
+      "agent": 512,
+      "agentThinking": 3000,
+      "verifier": 512,
+      "analysis": 1500,
+      "voice": 256,
+      "decision": 512,
+      "advisor": 1024
+    },
+    "locality": "local"
+  }
+}
