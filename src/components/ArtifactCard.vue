@@ -36,7 +36,7 @@ const TONE = {
   <button
     ref="card"
     type="button"
-    class="group flex w-full cursor-pointer flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#101010] p-0 text-left text-zinc-100 transition hover:border-white/30"
+    class="group flex w-full shrink-0 cursor-pointer flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#101010] p-0 text-left text-zinc-100 transition hover:border-white/30"
     data-testid="artifact"
     @click="$emit('open')"
   >
