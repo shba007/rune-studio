@@ -3,6 +3,7 @@ pub mod capabilities;
 pub mod client;
 pub mod coords;
 pub mod decision;
+pub mod probe;
 pub mod profile;
 pub mod role;
 pub mod swap;

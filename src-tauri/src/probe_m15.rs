@@ -672,6 +672,140 @@ fn m15_probe() {
     });
 }
 
+#[test]
+#[ignore = "talks to a local rune-infer server; run through scripts/m15/run-probe.ps1 -Profile"]
+fn m15_calibrate_profile() {
+    let dir = PathBuf::from(env::var("RUNE_PROBE_DIR").expect("RUNE_PROBE_DIR is not set"));
+    let out_path = PathBuf::from(
+        env::var("RUNE_PROBE_PROFILE_OUT").expect("RUNE_PROBE_PROFILE_OUT is not set"),
+    );
+    let model = env::var("RUNE_PROBE_MODEL").unwrap_or_else(|_| "gemma-4-12b-it".into());
+    let base = env::var("RUNE_PROBE_BASE").unwrap_or_else(|_| "http://127.0.0.1:8080".into());
+    let key = env::var("RUNE_API_KEY").unwrap_or_else(|_| "sk-rune-local-test-key".into());
+
+    let scenes = load_scenes(&dir, &None);
+    assert!(!scenes.is_empty(), "no scenes found in {}", dir.display());
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(900))
+        .build()
+        .unwrap();
+
+    tauri::async_runtime::block_on(async {
+        use crate::model::probe::*;
+        println!("Starting profile calibration probe for model: {model}");
+
+        let mut point_observations = Vec::new();
+        let mut thinking_probes = Vec::new();
+        let mut baseline_duration = Duration::from_secs(10);
+        let mut baseline_reasoning = 0;
+        let mut tool_observations = Vec::new();
+        let mut res_observations = Vec::new();
+
+        for (scene, png) in scenes.iter().take(2) {
+            let rgba = image::open(png).expect("cannot read scene PNG").to_rgba8();
+            for &edge in &[1280, 1920] {
+                let started = Instant::now();
+                match prepare(rgba.clone(), edge, MODEL_JPEG_QUALITY) {
+                    Ok(_) => {
+                        res_observations.push(ImageResolutionObservation {
+                            max_edge: edge,
+                            success: true,
+                            latency: started.elapsed(),
+                        });
+                    }
+                    Err(_) => {
+                        res_observations.push(ImageResolutionObservation {
+                            max_edge: edge,
+                            success: false,
+                            latency: started.elapsed(),
+                        });
+                    }
+                }
+            }
+
+            let prep =
+                prepare(rgba.clone(), 1280, MODEL_JPEG_QUALITY).expect("cannot prepare scene");
+            let data_uri = format!("data:image/jpeg;base64,{}", BASE64.encode(&prep.jpeg));
+            let dims = (prep.width, prep.height);
+            let targets = pick(&scene.targets, 2);
+
+            for target in &targets {
+                let truth = truth_rect(target);
+                let default_mode = Mode {
+                    model: model.clone(),
+                    convention: Convention::Norm,
+                    edge: 1280,
+                    no_think: false,
+                };
+                let started = Instant::now();
+                if let Ok(reply) =
+                    ask(&client, &base, &key, &default_mode, &data_uri, dims, target).await
+                {
+                    baseline_duration = started.elapsed();
+                    baseline_reasoning = reply.reasoning_chars;
+                    if let Some(pt) = reply.point {
+                        point_observations.push(PointObservation {
+                            raw_point: pt,
+                            image_dims: dims,
+                            target_norm1000: truth,
+                        });
+                    }
+                    tool_observations.push(ToolCallObservation {
+                        called: reply.point.is_some() || reply.rect.is_some(),
+                        valid_arguments: reply.note.is_empty(),
+                    });
+                }
+
+                let no_think_mode = Mode {
+                    model: model.clone(),
+                    convention: Convention::Norm,
+                    edge: 1280,
+                    no_think: true,
+                };
+                let started = Instant::now();
+                if let Ok(reply) = ask(
+                    &client,
+                    &base,
+                    &key,
+                    &no_think_mode,
+                    &data_uri,
+                    dims,
+                    target,
+                )
+                .await
+                {
+                    thinking_probes.push(ThinkingProbeObservation {
+                        style: crate::model::profile::ThinkingStyle::ChatTemplateKwargs,
+                        duration: started.elapsed(),
+                        reasoning_chars: reply.reasoning_chars,
+                    });
+                }
+            }
+        }
+
+        let best_pointing = score_pointing_conventions(&point_observations);
+        let best_thinking =
+            score_thinking_styles(baseline_duration, baseline_reasoning, &thinking_probes);
+        let tool_choice = score_tool_choice(&tool_observations);
+        let max_edge = score_max_image_edge(&res_observations);
+
+        let suggested =
+            build_suggested_profile(&model, best_thinking, best_pointing, tool_choice, max_edge);
+        println!(
+            "Calibration complete. Suggested profile:\n{}",
+            serde_json::to_string_pretty(&suggested).unwrap()
+        );
+
+        if let Some(parent) = out_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        fs::write(&out_path, serde_json::to_string_pretty(&suggested).unwrap())
+            .expect("cannot write suggested profile JSON");
+        println!("Wrote profile to {}", out_path.display());
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

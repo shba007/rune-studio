@@ -16,9 +16,11 @@ param(
     [string]$Modes = 'qwen3.8-27b:norm',
     [int]$PerScene = 4,
     [string]$Scenes = '',
-    [string]$Out = 'temp/m15/results.jsonl',
+    [string]$Out = '',
     [string]$Base = 'http://127.0.0.1:8080',
-    [switch]$Fresh
+    [switch]$Fresh,
+    [switch]$Profile,
+    [string]$Model = ''
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
@@ -30,7 +32,30 @@ try { $health = Invoke-RestMethod "$Base/health" -TimeoutSec 5 } catch { throw "
 $sceneDir = Join-Path $root 'temp/m15/scenes'
 if (-not (Test-Path (Join-Path $sceneDir 'index.json'))) { node scripts/m15/make-scenes.mjs $sceneDir; if ($LASTEXITCODE) { throw 'rendering the scenes failed' } }
 
-$outPath = Join-Path $root $Out
+if ($Profile) {
+    $targetModel = if ($Model) { $Model } else { $Modes.Split(':')[0] }
+    if (-not $targetModel) { throw 'Please specify a model using -Model <name> for profile calibration.' }
+    $profileOut = if ($Out) { $Out } else { "temp/m15/$targetModel-profile.json" }
+    $outPath = Join-Path $root $profileOut
+    New-Item -ItemType Directory -Force -Path (Split-Path $outPath) | Out-Null
+    if ($Fresh -and (Test-Path $outPath)) { Remove-Item $outPath }
+
+    $env:RUNE_PROBE_DIR = $sceneDir
+    $env:RUNE_PROBE_BASE = $Base
+    $env:RUNE_PROBE_MODEL = $targetModel
+    $env:RUNE_PROBE_PROFILE_OUT = $outPath
+
+    Push-Location (Join-Path $root 'src-tauri')
+    cargo test --lib m15_calibrate_profile -- --ignored --nocapture --test-threads=1
+    $code = $LASTEXITCODE
+    Pop-Location
+    if ($code -ne 0) { throw 'Profile calibration failed' }
+    "Suggested profile saved to: $outPath"
+    return
+}
+
+$defaultOut = if ($Out) { $Out } else { 'temp/m15/results.jsonl' }
+$outPath = Join-Path $root $defaultOut
 New-Item -ItemType Directory -Force -Path (Split-Path $outPath) | Out-Null
 if ($Fresh -and (Test-Path $outPath)) { Remove-Item $outPath }
 
