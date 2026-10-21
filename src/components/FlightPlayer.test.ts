@@ -36,12 +36,15 @@ interface World {
   calls?: unknown[]
   file?: (relative: string) => Promise<unknown>
   fail?: string
+  developer?: boolean
 }
 
 function world(w: World) {
   invoke.mockImplementation(async (command, args) => {
     if (w.fail) throw w.fail
     switch (command) {
+      case 'get_settings':
+        return { developerMode: w.developer ?? true }
       case 'flight_runs':
         return w.runs ?? [RUN]
       case 'flight_run':
@@ -160,16 +163,16 @@ describe('FlightPlayer states', () => {
 })
 
 describe('FlightPlayer controls', () => {
-  it('moves between steps and words the caption from the step', async () => {
+  it('moves between steps', async () => {
     world({})
     const wrapper = await open()
-    expect(wrapper.find('[data-testid="caption"]').text()).toBe('Reason 1')
+    expect(wrapper.find('[data-testid="badge"]').text()).toMatch(/1 \/ 3/)
     await wrapper.find('[data-testid="next"]').trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-testid="caption"]').text()).toBe('Reason 2')
+    expect(wrapper.find('[data-testid="badge"]').text()).toMatch(/2 \/ 3/)
     await wrapper.find('[data-testid="prev"]').trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-testid="caption"]').text()).toBe('Reason 1')
+    expect(wrapper.find('[data-testid="badge"]').text()).toMatch(/1 \/ 3/)
   })
 
   it('keys: Right and Left change step, D opens the drawer, Esc closes it, T cycles the tabs', async () => {
@@ -180,9 +183,9 @@ describe('FlightPlayer controls', () => {
       await flushPromises()
     }
     await press('ArrowRight')
-    expect(wrapper.find('[data-testid="caption"]').text()).toBe('Reason 2')
+    expect(wrapper.find('[data-testid="badge"]').text()).toMatch(/2 \/ 2/)
     await press('ArrowLeft')
-    expect(wrapper.find('[data-testid="caption"]').text()).toBe('Reason 1')
+    expect(wrapper.find('[data-testid="badge"]').text()).toMatch(/1 \/ 2/)
     await press('d')
     expect(wrapper.find('[data-testid="drawer"]').attributes('aria-hidden')).toBe('false')
     await press('t')
@@ -191,7 +194,7 @@ describe('FlightPlayer controls', () => {
     expect(wrapper.find('[data-testid="drawer"]').attributes('aria-hidden')).toBe('true')
   })
 
-  it('hides typed text in the caption until it is shown', async () => {
+  it('masks typed text by default and the Mask secrets toggle shows it', async () => {
     world({
       steps: [
         makeStep(1, 0, {
@@ -202,10 +205,25 @@ describe('FlightPlayer controls', () => {
       ],
     })
     const wrapper = await open()
-    expect(wrapper.find('[data-testid="caption"]').text()).not.toContain('hunter2')
-    expect(wrapper.find('[data-testid="typed-toggle"]').text()).toContain('hidden')
-    await wrapper.find('[data-testid="typed-toggle"]').trigger('click')
-    expect(wrapper.find('[data-testid="caption"]').text()).toContain('hunter2')
+    const toggle = wrapper.find('[data-testid="typed-toggle"]')
+    expect(toggle.text()).toContain('Mask secrets')
+    expect(toggle.attributes('aria-pressed')).toBe('true')
+    expect(wrapper.text()).not.toContain('hunter2')
+    await toggle.trigger('click')
+    expect(toggle.attributes('aria-pressed')).toBe('false')
+  })
+
+  it('has no Actions button, and hides the API tab outside developer mode', async () => {
+    world({
+      developer: false,
+      steps: [makeStep(1, 0)],
+      calls: [makeCall(1, 1)],
+    })
+    const wrapper = await open()
+    expect(wrapper.find('[data-testid="layer-toggle"]').exists()).toBe(false)
+    await wrapper.find('[data-testid="details"]').trigger('click')
+    expect(wrapper.find('[data-testid="tab-api"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="raw-toggle"]').exists()).toBe(false)
   })
 
   it('shows the API tab only for a step that has model calls, with retries listed', async () => {
@@ -236,7 +254,6 @@ describe('FlightPlayer controls', () => {
       frames.shift()?.(500)
       await flushPromises()
       expect(wrapper.find('[data-testid="time"]').text()).toMatch(/^0:02 /)
-      expect(wrapper.find('[data-testid="caption"]').text()).toBe('Reason 1')
       await wrapper.find('[data-testid="play"]').trigger('click')
     } finally {
       vi.unstubAllGlobals()

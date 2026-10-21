@@ -27,6 +27,7 @@ function mountDrawer(over: Record<string, unknown> = {}) {
       calls: [],
       events: [],
       show: false,
+      developer: true,
       screenshot: null,
       loadBodies: vi.fn<Loader>(async () => null),
       ...over,

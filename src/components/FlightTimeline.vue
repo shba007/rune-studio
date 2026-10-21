@@ -135,22 +135,6 @@ watch(
 watch(viewport, () => setScroll(scrollLeft.value))
 
 const playheadLeft = computed(() => props.timeMs * pxPerMs.value - scrollLeft.value)
-
-const mapLeft = computed(() =>
-  props.total > 0 ? (scrollLeft.value / (props.total * pxPerMs.value)) * 100 : 0,
-)
-const mapWidth = computed(() =>
-  props.total > 0 && pxPerMs.value > 0
-    ? Math.min(100, (viewport.value / (props.total * pxPerMs.value)) * 100)
-    : 100,
-)
-function onMap(event: MouseEvent) {
-  const box = (event.currentTarget as HTMLElement).getBoundingClientRect()
-  emit(
-    'seek',
-    Math.min(props.total, Math.max(0, ((event.clientX - box.left) / box.width) * props.total)),
-  )
-}
 </script>
 
 <template>
@@ -228,27 +212,6 @@ function onMap(event: MouseEvent) {
         class="pointer-events-none absolute top-0 bottom-0 w-px bg-[#f1f1ef]"
         :style="{ left: `${playheadLeft}px` }"
         data-testid="playhead"
-      />
-    </div>
-    <div
-      class="relative h-2 cursor-pointer rounded-full bg-white/[0.06]"
-      aria-hidden="true"
-      data-testid="minimap"
-      @click="onMap"
-    >
-      <span
-        v-for="(start, index) in starts"
-        :key="index"
-        class="absolute top-0 h-full w-px bg-white/30"
-        :style="{ left: `${total > 0 ? (start / total) * 100 : 0}%` }"
-      />
-      <span
-        class="absolute top-0 h-full rounded-full border border-white/40"
-        :style="{ left: `${mapLeft}%`, width: `${mapWidth}%` }"
-      />
-      <span
-        class="absolute top-0 h-full w-0.5 bg-[#f1f1ef]"
-        :style="{ left: `${total > 0 ? (timeMs / total) * 100 : 0}%` }"
       />
     </div>
   </section>

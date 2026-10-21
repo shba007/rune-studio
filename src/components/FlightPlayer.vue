@@ -1,18 +1,20 @@
 <script setup lang="ts">
+import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import AppIcon from '@/components/AppIcon.vue'
 import TitleBar from '@/components/TitleBar.vue'
+import WhenText from '@/components/WhenText.vue'
 import FlightDrawer from '@/components/FlightDrawer.vue'
 import FlightStage from '@/components/FlightStage.vue'
 import FlightTimeline from '@/components/FlightTimeline.vue'
 import { useFlight } from '@/composables/useFlight'
+import { durationText } from '@/config/artifacts'
 import {
   SPEEDS,
   actionLayer,
-  caption,
   clock,
   eventsOfStep,
   faster,
@@ -40,7 +42,7 @@ const playing = ref(false)
 const rate = ref(1)
 const drawerOpen = ref(false)
 const tab = ref<TabId>('step')
-const layerOn = ref(true)
+const developer = ref(false)
 const showTyped = ref(false)
 const videoFailed = ref<string | null>(null)
 const notice = ref<string | null>(null)
@@ -79,14 +81,13 @@ const tabs = computed(() =>
     calls: stepCalls.value,
     hasFiles: step.value !== undefined,
     toolEvents: outside.value ? 1 : 0,
-  }),
+  }).filter((id) => developer.value || (id !== 'api' && id !== 'prompt')),
 )
 watch(tabs, (list) => {
   if (!list.includes(tab.value)) tab.value = list[0] ?? 'step'
 })
 
 const layer = computed(() => actionLayer(step.value, showTyped.value))
-const line = computed(() => caption(step.value, showTyped.value))
 const badge = computed(() => stepBadge(index.value, steps.value.length, step.value))
 
 // ---- the picture for a step (when there is no video)
@@ -212,7 +213,6 @@ function onKey(event: KeyboardEvent) {
   else if (key === 'j' || key === 'J') void setRate(slower(rate.value))
   else if (key === 'k' || key === 'K') void setRate(faster(rate.value))
   else if (key === 'd' || key === 'D') drawerOpen.value = !drawerOpen.value
-  else if (key === 'a' || key === 'A') layerOn.value = !layerOn.value
   else if (key === 't' || key === 'T') {
     drawerOpen.value = true
     const following = nextTab(tabs.value, tab.value)
@@ -225,6 +225,12 @@ let unlisten: (() => void) | null = null
 onMounted(async () => {
   window.addEventListener('keydown', onKey)
   const asked = new URLSearchParams(location.search).get('run')
+  try {
+    developer.value =
+      (await invoke<{ developerMode?: boolean }>('get_settings')).developerMode === true
+  } catch {
+    developer.value = false
+  }
   await flight.loadRuns()
   if (asked) await openRun(asked)
   try {
@@ -244,12 +250,8 @@ onBeforeUnmount(() => {
 })
 
 const duration = computed(() =>
-  header.value?.durationSecs == null ? null : clock(header.value.durationSecs * 1000),
+  header.value?.durationSecs == null ? null : durationText(header.value.durationSecs),
 )
-const dateText = computed(() => {
-  const at = header.value ? Date.parse(header.value.startedUtc) : Number.NaN
-  return Number.isFinite(at) ? new Date(at).toLocaleString() : ''
-})
 const outcomeClass = computed(() =>
   header.value?.outcome === 'failed' ? 'text-[#ff6b72]' : 'text-zinc-100',
 )
@@ -345,14 +347,10 @@ function runDate(text: string | null): string {
                 header.verdict?.result
               }}</span>
             </template>
-            <span>· {{ dateText }}</span>
+            <span>· <WhenText :iso="header.startedUtc" /></span>
           </p>
         </div>
         <dl class="m-0 flex flex-wrap gap-x-6 gap-y-1 text-caption uppercase" data-testid="meta">
-          <div v-if="outside" class="flex flex-col">
-            <dt class="text-zinc-500">Agent</dt>
-            <dd class="m-0 text-zinc-100">{{ header.source }}</dd>
-          </div>
           <div class="flex flex-col">
             <dt class="text-zinc-500">Duration</dt>
             <dd class="m-0 text-zinc-100 tabular-nums">{{ duration ?? '—' }}</dd>
@@ -365,9 +363,13 @@ function runDate(text: string | null): string {
             <dt class="text-zinc-500">Retries</dt>
             <dd class="m-0 text-zinc-100 tabular-nums">{{ header.retries }}</dd>
           </div>
-          <div v-if="header.model" class="flex flex-col">
+          <div v-if="outside" class="flex flex-col">
+            <dt class="text-zinc-500">Agent</dt>
+            <dd class="m-0 text-zinc-100 tabular-nums">{{ header.source }}</dd>
+          </div>
+          <div v-if="!outside && header.model" class="flex flex-col">
             <dt class="text-zinc-500">Model</dt>
-            <dd class="m-0 text-zinc-100">{{ header.model }}</dd>
+            <dd class="m-0 text-zinc-100 tabular-nums">{{ header.model }}</dd>
           </div>
         </dl>
       </header>
@@ -387,7 +389,7 @@ function runDate(text: string | null): string {
             :still="still"
             :still-missing="stillMissing"
             :layer="layer"
-            :layer-on="layerOn"
+            :layer-on="true"
             :badge="badge"
             :note="videoFailed ?? flight.videoNote.value"
             @time="timeMs = $event"
@@ -450,26 +452,17 @@ function runDate(text: string | null): string {
             <span class="ml-auto flex items-center gap-1">
               <button
                 type="button"
-                class="inline-flex h-6 cursor-pointer items-center gap-1 rounded-full border border-white/20 px-3 text-label uppercase hover:bg-white/10"
-                :aria-pressed="layerOn"
-                data-testid="layer-toggle"
-                @click="layerOn = !layerOn"
-              >
-                <AppIcon :name="layerOn ? 'eye' : 'hide'" size="sm" /> Actions
-              </button>
-              <button
-                type="button"
-                class="h-6 cursor-pointer rounded-full border border-white/20 px-3 text-label uppercase hover:bg-white/10"
-                :aria-pressed="showTyped"
-                :title="
-                  showTyped
-                    ? 'Hide typed text'
-                    : 'Typed text is hidden. Show it only if nobody else can see this window.'
-                "
+                class="inline-flex h-6 cursor-pointer items-center gap-2 rounded-full border border-white/20 bg-transparent px-3 text-label text-zinc-100 uppercase hover:bg-white/10"
+                :aria-pressed="!showTyped"
+                title="Hide what was typed (passwords, messages) in the player"
                 data-testid="typed-toggle"
                 @click="showTyped = !showTyped"
               >
-                Typed text: {{ showTyped ? 'shown' : 'hidden' }}
+                <span
+                  class="size-1.5 rounded-full"
+                  :class="showTyped ? 'border border-zinc-400' : 'bg-[#f1f1ef]'"
+                />
+                Mask secrets
               </button>
               <button
                 v-if="hasVideo"
@@ -504,13 +497,6 @@ function runDate(text: string | null): string {
             @seek="seek"
           />
 
-          <p
-            class="m-0 min-h-10 shrink-0 px-4 py-2 text-body text-zinc-300"
-            aria-live="polite"
-            data-testid="caption"
-          >
-            {{ line }}
-          </p>
           <p v-if="notice" class="m-0 px-4 pb-2 text-status text-zinc-400" role="status">
             {{ notice }}
           </p>
@@ -527,6 +513,7 @@ function runDate(text: string | null): string {
           :calls="stepCalls"
           :events="stepEvents"
           :show="showTyped"
+          :developer="developer"
           :screenshot="still"
           :load-bodies="flight.bodies"
           @update:tab="tab = $event"

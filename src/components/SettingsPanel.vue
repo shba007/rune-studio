@@ -184,6 +184,13 @@ function footerAction() {
         />
       </SettingsGroup>
 
+      <SettingsGroup title="Developer">
+        <SettingsToggle v-model="draft.developerMode" label="Developer mode" icon="app" />
+        <p v-if="draft.developerMode" class="m-0 px-1 text-label opacity-70">
+          Rune Preview shows the raw record, prompts and model calls of each step.
+        </p>
+      </SettingsGroup>
+
       <SettingsGroup title="Shortcuts">
         <SettingsRow v-model="draft.toggleHotkey" label="Open and close" icon="shortcut" />
         <SettingsRow v-model="draft.stopHotkey" label="Stop" icon="stop" />

@@ -137,6 +137,7 @@ export function installTauriMock() {
             externalAgentSince: 0,
             showThinking: false,
             askEveryAction: false,
+            developerMode: false,
             fastChecks: false,
             decisionModel: 'liquid-d1-3b',
             decisionUrl: '',

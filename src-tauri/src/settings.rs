@@ -29,6 +29,7 @@ pub struct Settings {
     pub show_thinking: bool,
     /// Ask before every action, not only the risky ones.
     pub ask_every_action: bool,
+    pub developer_mode: bool,
     /// Optional helper, off by default: the decision model takes quick checks (skip planning on simple tasks, spot a finished
     /// task, a second opinion on risk). Everything still works without it, only slower.
     pub fast_checks: bool,
@@ -110,6 +111,7 @@ impl Default for Settings {
             external_agent_since: 0,
             show_thinking: false,
             ask_every_action: false,
+            developer_mode: false,
             fast_checks: false,
             decision_model: "liquid-d1-3b".into(),
             decision_url: String::new(),

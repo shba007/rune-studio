@@ -39,6 +39,7 @@ const props = defineProps<{
   calls: FlightCall[]
   events: FlightEvent[]
   show: boolean
+  developer: boolean
   screenshot: string | null
   loadBodies: (callId: number) => Promise<{ request: string; response: string } | null>
 }>()
@@ -182,6 +183,7 @@ const rawText = computed(() => {
     <header class="flex h-10 shrink-0 items-center gap-2 border-b border-white/10 px-3">
       <span class="text-caption text-zinc-400 uppercase">Details</span>
       <button
+        v-if="developer"
         type="button"
         class="ml-auto h-6 cursor-pointer rounded-full border border-white/20 px-3 text-label text-zinc-300 uppercase hover:bg-white/10"
         :aria-pressed="raw"
@@ -193,6 +195,7 @@ const rawText = computed(() => {
       <button
         type="button"
         class="grid size-6 cursor-pointer place-items-center rounded-full text-zinc-300 hover:bg-white/10"
+        :class="developer ? '' : 'ml-auto'"
         aria-label="Close details"
         @click="emit('close')"
       >
@@ -227,7 +230,7 @@ const rawText = computed(() => {
     <div class="min-h-0 flex-1 overflow-y-auto p-3 text-body" role="tabpanel">
       <p v-if="!step" class="m-0 text-zinc-500">No step is selected.</p>
 
-      <template v-else-if="raw">
+      <template v-else-if="raw && developer">
         <div class="mb-2 flex justify-end">
           <button
             type="button"
