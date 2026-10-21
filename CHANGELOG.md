@@ -1,5 +1,41 @@
 # Changelog
 
+## v0.0.20
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.0.19...v0.0.20)
+
+### 🚀 Enhancements
+
+- **model:** Tolerant capability client for /v1/models (WP1) ([4e163c0](https://github.com/shba007/rune-studio/commit/4e163c0))
+- **model:** Model profiles and coordinate adapters (WP2) ([67abdff](https://github.com/shba007/rune-studio/commit/67abdff))
+- **model:** Per-role model configuration, migration, and UI (WP3) ([44cd2db](https://github.com/shba007/rune-studio/commit/44cd2db))
+- **model:** Swap-aware calls, loading states, and served model tracing (WP4) ([d0fe1c8](https://github.com/shba007/rune-studio/commit/d0fe1c8))
+- **eval:** Per-model baselines and cross-model comparison (WP5) ([68ec046](https://github.com/shba007/rune-studio/commit/68ec046))
+- **probe:** Model calibration probe for profile generation (WP6) ([3924343](https://github.com/shba007/rune-studio/commit/3924343))
+- **voice:** Transcriber seam and audio-in capability check (WP7) ([adcd3c2](https://github.com/shba007/rune-studio/commit/adcd3c2))
+- **life:** Store, schema migrations, and evidence records (WP1) ([7e60e06](https://github.com/shba007/rune-studio/commit/7e60e06))
+- **life:** Consent management, retention, export, and delete (WP2) ([217947a](https://github.com/shba007/rune-studio/commit/217947a))
+- **life:** Authenticated encryption at rest for sensitive classes (WP3) ([0cb76b5](https://github.com/shba007/rune-studio/commit/0cb76b5))
+- **credentials:** Implement in-memory keyring for testing and update keyring usage across modules ([3c5368b](https://github.com/shba007/rune-studio/commit/3c5368b))
+
+### 🩹 Fixes
+
+- **studio:** Close C1 contracts and settings with local-only policy ([944985b](https://github.com/shba007/rune-studio/commit/944985b))
+
+### 💅 Refactors
+
+- Clean up codebase by renaming modules, removing commented code, and optimizing imports ([e9a0535](https://github.com/shba007/rune-studio/commit/e9a0535))
+
+### 📖 Documentation
+
+- Architecture updates and M1 milestone handoff report (WP8) ([7fd7d5b](https://github.com/shba007/rune-studio/commit/7fd7d5b))
+- Orchestrator handoff and the ecosystem plans, handoffs and follow-ups ([fcd082e](https://github.com/shba007/rune-studio/commit/fcd082e))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi <shirsendu2001@gmail.com>
+- Claude <noreply@anthropic.com>
+
 ## v0.0.19
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.0.18...v0.0.19)
