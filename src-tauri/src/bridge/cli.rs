@@ -25,6 +25,22 @@ const START_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_RUNS: usize = 20;
 
 #[derive(Debug, PartialEq, Eq)]
+pub enum LifeCommand {
+    Status,
+    Export {
+        class: Option<String>,
+        folder: String,
+    },
+    Delete {
+        class: Option<String>,
+        yes: bool,
+    },
+    Audit {
+        limit: usize,
+    },
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub enum Command {
     App,
     Mcp(Option<String>),
@@ -40,6 +56,7 @@ pub enum Command {
     Analyses(usize),
     Analysis(String),
     Reflections(usize),
+    Life(LifeCommand),
     Help,
     Unknown(String),
 }
@@ -104,6 +121,52 @@ pub fn parse(args: &[String]) -> Command {
             Some(other) => Command::Unknown(format!("reflections {other}")),
         },
         "analysis" => Command::Analysis(args.get(1).cloned().unwrap_or_default()),
+        "life" => {
+            let sub = args.get(1).map(String::as_str);
+            match sub {
+                Some("status") => Command::Life(LifeCommand::Status),
+                Some("export") => {
+                    let target = args.get(2).cloned().unwrap_or_default();
+                    let folder = args.get(3).cloned().unwrap_or_default();
+                    if target.is_empty() || folder.is_empty() {
+                        Command::Unknown("life export <class|all> <folder>".into())
+                    } else {
+                        let class = if target.eq_ignore_ascii_case("all") {
+                            None
+                        } else {
+                            Some(target)
+                        };
+                        Command::Life(LifeCommand::Export { class, folder })
+                    }
+                }
+                Some("delete") => {
+                    let target = args.get(2).cloned().unwrap_or_default();
+                    let yes = args.iter().any(|arg| arg == "--yes");
+                    if target.is_empty() {
+                        Command::Unknown("life delete <class|all> --yes".into())
+                    } else {
+                        let class = if target.eq_ignore_ascii_case("all") {
+                            None
+                        } else {
+                            Some(target)
+                        };
+                        Command::Life(LifeCommand::Delete { class, yes })
+                    }
+                }
+                Some("audit") => {
+                    let limit = match args.get(2).map(String::as_str) {
+                        Some("--limit") => args
+                            .get(3)
+                            .and_then(|n| n.parse::<usize>().ok())
+                            .unwrap_or(20),
+                        _ => 20,
+                    };
+                    Command::Life(LifeCommand::Audit { limit })
+                }
+                Some(other) => Command::Unknown(format!("life {other}")),
+                None => Command::Unknown("life <status|export|delete|audit>".into()),
+            }
+        }
         "help" | "--help" | "-h" => Command::Help,
         "connect" => Command::Connect(args.get(1).cloned().unwrap_or_default()),
         other => Command::Unknown(other.to_string()),
@@ -129,6 +192,10 @@ Rune Studio
   rune-studio-cli analyses [--limit N]  List the newest screen analyses (default 20).
   rune-studio-cli reflections [--limit N]  List the newest idle reflection runs (default 20).
   rune-studio-cli analysis <id>    Show one screen analysis: question, answer and findings.
+  rune-studio-cli life status      Show life module status, consents, and counts.
+  rune-studio-cli life export <class|all> <folder>  Export records as JSON and Markdown.
+  rune-studio-cli life delete <class|all> --yes     Permanently delete records and vacuum.
+  rune-studio-cli life audit [--limit N]            List life audit trail.
   rune-studio-cli mcp              Used by agents: speaks MCP on stdin/stdout and opens the app if needed.
 
 You are always in control: press Stop in the app (Ctrl+Alt+Esc) and the agent loses control at once.
@@ -150,6 +217,7 @@ pub fn run() -> i32 {
         Command::Analyses(limit) => analyses_command(limit),
         Command::Analysis(id) => analysis_command(&id),
         Command::Reflections(limit) => reflections_command(limit),
+        Command::Life(cmd) => life_command(cmd),
         Command::Guide => {
             say(GUIDE);
             0
@@ -288,6 +356,177 @@ fn lookup_outcome(
             1,
         ),
         Err(err) => (format!("Could not read the trace database: {err}"), 1),
+    }
+}
+
+fn with_life_store<F>(show: F) -> i32
+where
+    F: FnOnce(&crate::life::LifeStore, &std::path::Path) -> i32,
+{
+    let Some(path) = crate::life::db_path_without_app() else {
+        say("Cannot tell where Rune Studio keeps its data on this system (no APPDATA folder).");
+        return 1;
+    };
+    let crypto = match crate::life::LifeCrypto::from_keyring_or_create() {
+        Ok(c) => c,
+        Err(err) => {
+            say(&format!("Could not access life encryption key: {err}"));
+            return 1;
+        }
+    };
+    match crate::life::LifeStore::open(&path, crypto) {
+        Ok(store) => show(&store, &path),
+        Err(err) => {
+            say(&format!("Could not open life database: {err}"));
+            1
+        }
+    }
+}
+
+fn life_command(cmd: LifeCommand) -> i32 {
+    match cmd {
+        LifeCommand::Status => with_life_store(|store, path| {
+            let settings = settings::path_without_app()
+                .map(|p| settings::read_file(&p))
+                .unwrap_or_default();
+
+            say("Rune Life Harness Status");
+            say(&format!(
+                "  Master switch:   {}",
+                if settings.life_enabled {
+                    "enabled"
+                } else {
+                    "disabled (off by default)"
+                }
+            ));
+            say("  Consents:");
+            for class in [
+                crate::life::DataClass::General,
+                crate::life::DataClass::Health,
+                crate::life::DataClass::Mind,
+                crate::life::DataClass::Finance,
+            ] {
+                let name = class.as_str();
+                let consent =
+                    store.get_consent(class).unwrap_or(false) || settings.life_consent(name);
+                let ret = settings.retention_days_for(name);
+                let ret_str = if ret == 0 {
+                    "forever".to_string()
+                } else {
+                    format!("{ret} days")
+                };
+                let recs = store
+                    .list_records(Some(class), false)
+                    .map(|r| r.len())
+                    .unwrap_or(0);
+                say(&format!(
+                    "    {:<8}: consent={:<5} retention={:<10} records={}",
+                    name,
+                    if consent { "yes" } else { "no" },
+                    ret_str,
+                    recs
+                ));
+            }
+            let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+            say(&format!(
+                "  Database:        {} ({size} bytes)",
+                path.display()
+            ));
+            say("  Encryption:      AES-256-GCM (key in OS keyring)");
+            0
+        }),
+        LifeCommand::Export { class, folder } => with_life_store(|store, _path| {
+            let data_class = match class.as_deref() {
+                Some(name) => match name.parse::<crate::life::DataClass>() {
+                    Ok(c) => Some(c),
+                    Err(err) => {
+                        say(&format!("Invalid data class '{name}': {err}"));
+                        return 2;
+                    }
+                },
+                None => None,
+            };
+            let out_path = std::path::Path::new(&folder);
+            match store.export_class(data_class, out_path) {
+                Ok(summary) => {
+                    say(&format!(
+                        "Exported {} records and {} assumptions to {}\nFiles written: {}",
+                        summary.records_count,
+                        summary.assumptions_count,
+                        out_path.display(),
+                        summary.files_written.join(", ")
+                    ));
+                    0
+                }
+                Err(err) => {
+                    say(&format!("Export failed: {err}"));
+                    1
+                }
+            }
+        }),
+        LifeCommand::Delete { class, yes } => {
+            if !yes {
+                say(
+                    "Refused: permanent deletion requires '--yes' (e.g. rune-studio-cli life delete all --yes)",
+                );
+                return 2;
+            }
+            with_life_store(|store, _path| {
+                let data_class = match class.as_deref() {
+                    Some(name) => match name.parse::<crate::life::DataClass>() {
+                        Ok(c) => Some(c),
+                        Err(err) => {
+                            say(&format!("Invalid data class '{name}': {err}"));
+                            return 2;
+                        }
+                    },
+                    None => None,
+                };
+                match store.hard_delete_class(data_class, "cli") {
+                    Ok(count) => {
+                        say(&format!(
+                            "Deleted {count} records and associated content audit rows. Database checkpointed and vacuumed."
+                        ));
+                        0
+                    }
+                    Err(err) => {
+                        say(&format!("Delete failed: {err}"));
+                        1
+                    }
+                }
+            })
+        }
+        LifeCommand::Audit { limit } => {
+            with_life_store(|store, _path| match store.list_audit(limit) {
+                Ok(rows) if rows.is_empty() => {
+                    say("No audit entries yet.");
+                    0
+                }
+                Ok(rows) => {
+                    say(&format!(
+                        "{:<6} {:<24} {:<12} {:<20} {:<20} DETAIL",
+                        "ID", "AT_UTC", "ACTOR", "ACTION", "SUBJECT"
+                    ));
+                    say(&"-".repeat(95));
+                    for r in rows {
+                        say(&format!(
+                            "{:<6} {:<24} {:<12} {:<20} {:<20} {}",
+                            r.id,
+                            r.at_utc,
+                            r.actor,
+                            r.action,
+                            r.subject,
+                            r.detail.unwrap_or_default()
+                        ));
+                    }
+                    0
+                }
+                Err(err) => {
+                    say(&format!("Could not read audit log: {err}"));
+                    1
+                }
+            })
+        }
     }
 }
 
@@ -1554,6 +1793,66 @@ Events (1)
         assert!(
             report.contains("  Verdict:   error (timed out)   [background]\n"),
             "{report}"
+        );
+    }
+
+    #[test]
+    fn parse_life_subcommands() {
+        assert_eq!(
+            parse(&["life".into(), "status".into()]),
+            Command::Life(LifeCommand::Status)
+        );
+
+        assert_eq!(
+            parse(&[
+                "life".into(),
+                "export".into(),
+                "all".into(),
+                "/tmp/life".into()
+            ]),
+            Command::Life(LifeCommand::Export {
+                class: None,
+                folder: "/tmp/life".into()
+            })
+        );
+
+        assert_eq!(
+            parse(&[
+                "life".into(),
+                "export".into(),
+                "health".into(),
+                "./out".into()
+            ]),
+            Command::Life(LifeCommand::Export {
+                class: Some("health".into()),
+                folder: "./out".into()
+            })
+        );
+
+        assert_eq!(
+            parse(&[
+                "life".into(),
+                "delete".into(),
+                "finance".into(),
+                "--yes".into()
+            ]),
+            Command::Life(LifeCommand::Delete {
+                class: Some("finance".into()),
+                yes: true
+            })
+        );
+
+        assert_eq!(
+            parse(&["life".into(), "delete".into(), "all".into()]),
+            Command::Life(LifeCommand::Delete {
+                class: None,
+                yes: false
+            })
+        );
+
+        assert_eq!(
+            parse(&["life".into(), "audit".into(), "--limit".into(), "50".into()]),
+            Command::Life(LifeCommand::Audit { limit: 50 })
         );
     }
 }

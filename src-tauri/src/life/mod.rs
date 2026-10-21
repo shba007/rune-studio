@@ -12,6 +12,15 @@ pub use record::{
 pub use schema::{Opened, VERSION as SCHEMA_VERSION};
 pub use store::{ExportSummary, LifeStore};
 
+pub fn db_path(app_data_dir: &std::path::Path) -> std::path::PathBuf {
+    app_data_dir.join("life.sqlite3")
+}
+
+#[cfg(feature = "agent-bridge")]
+pub fn db_path_without_app() -> Option<std::path::PathBuf> {
+    crate::settings::path_without_app().and_then(|settings| settings.parent().map(db_path))
+}
+
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum LifeError {
     #[error("the life database is written by a newer version (schema {0})")]

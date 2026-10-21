@@ -12,10 +12,11 @@ import SettingsAbout from './SettingsAbout.vue'
 import SettingsAgents from './SettingsAgents.vue'
 import SettingsArtifacts from './SettingsArtifacts.vue'
 import SettingsGeneral from './SettingsGeneral.vue'
+import SettingsLife from './SettingsLife.vue'
 import SettingsShortcuts from './SettingsShortcuts.vue'
 import TitleBar from './TitleBar.vue'
 
-type Section = 'general' | 'shortcuts' | 'agents' | 'artifacts' | 'about'
+type Section = 'general' | 'shortcuts' | 'agents' | 'artifacts' | 'life' | 'about'
 
 const agent = useAgent()
 
@@ -43,6 +44,12 @@ const SECTIONS: { id: Section; label: string; subtitle: string; icon: IconName }
     label: 'Sessions',
     subtitle: 'Recorded sessions. Pick one to play it in Rune Preview.',
     icon: 'history',
+  },
+  {
+    id: 'life',
+    label: 'Life data',
+    subtitle: 'Consents, evidence store, retention and export.',
+    icon: 'shield',
   },
   { id: 'about', label: 'About', subtitle: 'Version and updates.', icon: 'logo' },
 ]
@@ -173,6 +180,7 @@ onBeforeUnmount(() => {
           />
           <SettingsShortcuts v-else-if="section === 'shortcuts'" :draft="draft" />
           <SettingsAgents v-else-if="section === 'agents'" :agent="agent" :draft="draft" />
+          <SettingsLife v-else-if="section === 'life'" :draft="draft" />
         </template>
         <SettingsArtifacts v-if="section === 'artifacts'" :agent="agent" />
         <SettingsAbout v-else-if="section === 'about'" :agent="agent" />

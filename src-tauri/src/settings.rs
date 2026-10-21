@@ -126,6 +126,9 @@ pub struct Settings {
     pub idle_minutes: u32,
     pub skip_swap_for_optional_roles: bool,
     pub first_call_idle_allowance_secs: u32,
+    pub life_enabled: bool,
+    pub life_consents: std::collections::HashMap<String, bool>,
+    pub retention_days: std::collections::HashMap<String, u32>,
 }
 
 #[derive(Deserialize)]
@@ -154,6 +157,9 @@ struct SettingsDeHelper {
     pub idle_minutes: u32,
     pub skip_swap_for_optional_roles: bool,
     pub first_call_idle_allowance_secs: u32,
+    pub life_enabled: bool,
+    pub life_consents: std::collections::HashMap<String, bool>,
+    pub retention_days: std::collections::HashMap<String, u32>,
 }
 
 impl Default for SettingsDeHelper {
@@ -183,6 +189,9 @@ impl Default for SettingsDeHelper {
             idle_minutes: def.idle_minutes,
             skip_swap_for_optional_roles: def.skip_swap_for_optional_roles,
             first_call_idle_allowance_secs: def.first_call_idle_allowance_secs,
+            life_enabled: def.life_enabled,
+            life_consents: def.life_consents,
+            retention_days: def.retention_days,
         }
     }
 }
@@ -232,6 +241,9 @@ impl<'de> Deserialize<'de> for Settings {
             idle_minutes: helper.idle_minutes,
             skip_swap_for_optional_roles: helper.skip_swap_for_optional_roles,
             first_call_idle_allowance_secs: helper.first_call_idle_allowance_secs,
+            life_enabled: helper.life_enabled,
+            life_consents: helper.life_consents,
+            retention_days: helper.retention_days,
         })
     }
 }
@@ -317,7 +329,34 @@ impl Default for Settings {
             idle_minutes: 10,
             skip_swap_for_optional_roles: true,
             first_call_idle_allowance_secs: 30,
+            life_enabled: false,
+            life_consents: {
+                let mut m = std::collections::HashMap::new();
+                m.insert("general".into(), false);
+                m.insert("health".into(), false);
+                m.insert("mind".into(), false);
+                m.insert("finance".into(), false);
+                m
+            },
+            retention_days: {
+                let mut m = std::collections::HashMap::new();
+                m.insert("general".into(), 0);
+                m.insert("health".into(), 0);
+                m.insert("mind".into(), 0);
+                m.insert("finance".into(), 0);
+                m
+            },
         }
+    }
+}
+
+impl Settings {
+    pub fn life_consent(&self, class: &str) -> bool {
+        self.life_enabled && self.life_consents.get(class).copied().unwrap_or(false)
+    }
+
+    pub fn retention_days_for(&self, class: &str) -> u32 {
+        self.retention_days.get(class).copied().unwrap_or(0)
     }
 }
 
@@ -575,5 +614,34 @@ mod tests {
             serde_json::to_value(Settings::default()).unwrap()["verifyMode"],
             "background"
         );
+    }
+
+    #[test]
+    fn life_settings_defaults_and_backward_compatibility() {
+        let defaults = Settings::default();
+        assert!(!defaults.life_enabled);
+        assert!(!defaults.life_consent("health"));
+        assert_eq!(defaults.retention_days_for("health"), 0);
+
+        // Old settings without life fields loads safely
+        let old_json = r#"{ "baseUrl": "http://127.0.0.1:8080", "model": "gemma" }"#;
+        let loaded: Settings = serde_json::from_str(old_json).unwrap();
+        assert!(!loaded.life_enabled);
+        assert!(!loaded.life_consent("general"));
+        assert!(!loaded.life_consent("finance"));
+        assert_eq!(loaded.retention_days_for("general"), 0);
+
+        // With explicit life fields
+        let custom_json = r#"{
+            "lifeEnabled": true,
+            "lifeConsents": { "health": true, "mind": false },
+            "retentionDays": { "health": 30, "mind": 90 }
+        }"#;
+        let custom: Settings = serde_json::from_str(custom_json).unwrap();
+        assert!(custom.life_enabled);
+        assert!(custom.life_consent("health"));
+        assert!(!custom.life_consent("mind"));
+        assert_eq!(custom.retention_days_for("health"), 30);
+        assert_eq!(custom.retention_days_for("mind"), 90);
     }
 }

@@ -66,6 +66,9 @@ export interface Settings {
   decisionUrl: string
   skipSwapForOptionalRoles?: boolean
   firstCallIdleAllowanceSecs?: number
+  lifeEnabled?: boolean
+  lifeConsents?: Record<string, boolean>
+  retentionDays?: Record<string, number>
 }
 
 export interface BackendStatus {
