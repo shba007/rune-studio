@@ -74,4 +74,10 @@ describe('FlightTimeline', () => {
     expect(marks[0]!.classes().join(' ')).not.toContain('ff6b72')
     expect(marks[1]!.classes().join(' ')).toContain('ff6b72')
   })
+  it('ignores a segment without a corresponding step', async () => {
+    const input = props(2)
+    const wrapper = mount(FlightTimeline, { props: { ...input, steps: input.steps.slice(0, 1) } })
+    await flushPromises()
+    expect(wrapper.findAll('[data-testid="segment"]')).toHaveLength(1)
+  })
 })

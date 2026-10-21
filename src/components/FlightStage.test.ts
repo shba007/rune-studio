@@ -19,6 +19,7 @@ async function mountStage(over: Record<string, unknown> = {}) {
       stillMissing: false,
       layer: { kind: 'none' } as ActionLayer,
       layerOn: true,
+      cursor: null,
       badge: 'STEP 1 / 3 · CLICK',
       note: null,
       ...over,

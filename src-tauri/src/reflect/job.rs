@@ -10,7 +10,7 @@ pub const STAGES: [&str; 3] = [
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Outcome {
-    Completed,
+    Rehearsed,
     Preempted { stages: u32 },
 }
 
@@ -35,7 +35,7 @@ pub async fn run(
         }
         report(stage, done + 1, total);
     }
-    Outcome::Completed
+    Outcome::Rehearsed
 }
 
 #[cfg(test)]
@@ -51,7 +51,7 @@ mod tests {
             |stage, done, total| seen.push((stage.to_string(), done, total)),
         )
         .await;
-        assert_eq!(outcome, Outcome::Completed);
+        assert_eq!(outcome, Outcome::Rehearsed);
         assert_eq!(
             seen.first(),
             Some(&("Reading recent tasks".to_string(), 0, 3))

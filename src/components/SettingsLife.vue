@@ -120,7 +120,8 @@ function triggerExport(classKey: string) {
     </div>
     <HubGroup>
       <HubToggle
-        v-model="draft.lifeEnabled"
+        :model-value="draft.lifeEnabled ?? false"
+        @update:model-value="draft.lifeEnabled = $event"
         label="Life Harness module"
         data-testid="life-enabled-toggle"
       />

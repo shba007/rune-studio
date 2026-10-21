@@ -162,11 +162,7 @@ async function revealDeveloper() {
     </HubGroup>
 
     <HubGroup title="Reflection">
-      <HubToggle
-        v-model="draft.reflectionEnabled"
-        label="Self reflect"
-        :hint="`After ${draft.idleMinutes} idle minutes Rune asks first; no answer in 30 seconds starts it. Right now it only rehearses: it does not read anything yet.`"
-      />
+      <p class="m-0 text-label text-zinc-500">Self reflection is unavailable in this release.</p>
     </HubGroup>
 
     <HubGroup title="Recording">

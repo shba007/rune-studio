@@ -44,13 +44,20 @@ const pxPerMs = computed(() => basePx.value * zoom.value)
 const contentWidth = computed(() => Math.max(viewport.value, props.total * pxPerMs.value))
 const current = computed(() => stepAtTime(props.starts, props.timeMs))
 const drawn = computed(() =>
-  visibleSegments(props.segments, pxPerMs.value, scrollLeft.value, viewport.value),
+  visibleSegments(props.segments, pxPerMs.value, scrollLeft.value, viewport.value).flatMap(
+    (segment) => {
+      const step = props.steps[segment.index]
+      return step ? [{ ...segment, step }] : []
+    },
+  ),
 )
 
 const OPACITY = { observe: 0.35, decide: 0.55, gate: 0.75, act: 1, settle: 0.22 } as const
 
 function bars(index: number, length: number) {
-  const phases = phaseTimes(props.steps[index].phases).filter((item) => item.ms > 0)
+  const step = props.steps[index]
+  if (!step) return []
+  const phases = phaseTimes(step.phases).filter((item) => item.ms > 0)
   const sum = phases.reduce((all, item) => all + item.ms, 0)
   const scale = sum > 0 ? Math.min(1, length / sum) : 0
   return phases.map((item) => ({
@@ -152,7 +159,7 @@ const playheadLeft = computed(() => props.timeMs * pxPerMs.value - scrollLeft.va
         class="absolute top-0 bottom-0 border-l border-white/10"
         :class="[
           segment.index === current ? 'bg-white/[0.07]' : '',
-          failedStep(steps[segment.index]) ? 'text-[#ff6b72]' : 'text-zinc-200',
+          failedStep(segment.step) ? 'text-[#ff6b72]' : 'text-zinc-200',
         ]"
         :style="{
           left: `${segment.start * pxPerMs - scrollLeft}px`,
@@ -163,7 +170,7 @@ const playheadLeft = computed(() => props.timeMs * pxPerMs.value - scrollLeft.va
       >
         <AppIcon
           v-if="segment.length * pxPerMs >= 18"
-          :name="toolIcon(steps[segment.index].tool)"
+          :name="toolIcon(segment.step.tool)"
           size="sm"
           class="absolute top-2 left-1.5 opacity-80"
         />

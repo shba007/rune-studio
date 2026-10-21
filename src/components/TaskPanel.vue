@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useNow } from '@vueuse/core'
+import { useIntervalFn, useNow } from '@vueuse/core'
 import { computed } from 'vue'
 
 import type { Agent } from '@/composables/useAgent'
@@ -18,7 +18,7 @@ const done = computed(() =>
   finished.value ? goals.value.length : Math.min(current.value, goals.value.length),
 )
 
-const now = useNow({ interval: 1000 })
+const now = useNow({ scheduler: (update) => useIntervalFn(update, 1000) })
 const eta = computed(() => {
   if (!agent.isRunning.value || !agent.timing.value) return null
   const left = remainingMs(agent.timing.value, goals.value.length, done.value, now.value.getTime())

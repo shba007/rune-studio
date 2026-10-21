@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.0.21
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.0.20...v0.0.21)
+
+### 🩹 Fixes
+
+- **release:** Typecheck desktop UI and gate unfinished features ([832bbfc](https://github.com/shba007/rune-studio/commit/832bbfc))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+
 ## v0.0.20
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.0.19...v0.0.20)
