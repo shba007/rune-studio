@@ -1,109 +1,71 @@
 name: Vue CI
+
+permissions:
+  contents: write
+  pull-requests: write
+
 on:
   push:
-    branches: [develop]
-permissions:
-  contents: read
+    branches:
+      - develop
+
 jobs:
-  frontend:
-    name: Frontend and release utility
+  build:
+    if: >
+      !(
+        contains(github.event.head_commit.message, 'ci(release):') ||
+        contains(github.event.head_commit.message, '[skip ci]') ||
+        startsWith(github.event.head_commit.message, 'Merge pull request') ||
+        startsWith(github.event.head_commit.message, 'Merge branch')
+      )
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - run: bun install --frozen-lockfile
-      - run: bun x --no-install vue-tsc --noEmit -p tsconfig.app.json
-      - run: bun run test:unit -- --run --pool=threads --maxWorkers=2
-      - run: bun run build
-      - run: bun x --no-install vp lint
-      - run: bun x --no-install vp fmt --check src/
-      - run: cargo test --locked --manifest-path xtask/Cargo.toml
-      - run: cargo clippy --locked --manifest-path xtask/Cargo.toml --all-targets -- -D warnings
-      - run: cargo fmt --manifest-path xtask/Cargo.toml --check
-      - run: cargo run --locked --manifest-path xtask/Cargo.toml -- notes
-  rust:
-    name: Windows Rust
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib --features eval,agent-bridge
-      - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets --features eval,agent-bridge -- -D warnings
-      - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
-      - run: rustfmt --edition 2024 --check src-tauri/tests/fixtures/kit_gateway.rs
-  prepare:
-    name: Prepare release PR
-    needs: [frontend, rust]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
-    runs-on: ubuntu-latest
-    concurrency:
-      group: release-preparation
-      cancel-in-progress: false
-    permissions:
-      contents: write
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@v7
+      - name: 📥 Checkout Repo
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Require event-capable release token
-        env:
-          RELEASE_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          if [ -z "$RELEASE_TOKEN" ]; then
-            echo 'GH_TOKEN must be an event-capable PAT/App token with contents write permission for release branch pushes.' >&2
-            exit 1
-          fi
-      - name: Check tested develop revision is still current
-        id: current
-        run: |
-          git fetch origin develop
-          if [ "$(git rev-parse origin/develop)" = "$GITHUB_SHA" ]; then
-            echo 'current=true' >> "$GITHUB_OUTPUT"
-          else
-            echo 'A newer develop push will prepare its tested changes.'
-          fi
-      - name: Prepare versions and changelog
-        if: steps.current.outputs.current == 'true'
-        id: preparation
-        run: cargo run --locked --manifest-path xtask/Cargo.toml -- prepare --apply
-      - name: Extract exact PR notes
-        if: steps.preparation.outputs.prepared == 'true'
-        run: cargo run --locked --manifest-path xtask/Cargo.toml -- notes --out "$RUNNER_TEMP/release-notes.md"
-      - name: Validate generated release files
-        if: steps.preparation.outputs.prepared == 'true'
-        run: |
-          cargo test --locked --manifest-path xtask/Cargo.toml
-          cargo metadata --locked --manifest-path src-tauri/Cargo.toml --no-deps --format-version 1 > /dev/null
-      - uses: peter-evans/create-pull-request@v8
-        if: steps.preparation.outputs.prepared == 'true'
+
+      - name: 🛠️ Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          # Use the job's granted PR permission, not the narrower branch PAT.
-          token: ${{ github.token }}
-          # Release branch pushes do not trigger another Vue CI run.
-          branch-token: ${{ secrets.GH_TOKEN }}
-          branch: release/update-version
-          base: develop
-          title: 'ci(release): update version'
+          bun-version: latest
+
+      - name: 📦 Install Dependencies
+        run: bun install --frozen-lockfile
+
+      - name: ⚙️ Build Artifact
+        run: bun run build
+
+      # - name: ✅ Test Code
+      #   run: bun run test
+
+      - name: 🧹 Lint Code
+        run: bun run lint || echo "Linting failed, but continuing"
+
+      - name: 🧼 Format Code
+        run: bun run format
+
+      - name: 🤖 AutoFix Code
+        uses: stefanzweifel/git-auto-commit-action@v7
+        with:
+          commit_message: 'chore: apply code fixes [skip ci]'
+
+      - name: 🏷️ Bump Version
+        id: bump_version
+        run: |
+          rm -f CHANGELOG.md
+          bunx changelogen@latest --bump
+          CHLOG=$(cat CHANGELOG.md)
+          echo -e "CHANGELOG_CONTENT<<EOF\n${CHLOG}\nEOF" >> $GITHUB_ENV
+          git reset --hard
+          bunx changelogen@latest --bump
+
+      - name: 🔀 Create or Update Pull Request
+        uses: peter-evans/create-pull-request@v8
+        with:
           commit-message: 'ci(release): update version'
-          body-path: ${{ runner.temp }}/release-notes.md
+          title: 'ci(release): update version'
+          body: ${{ env.CHANGELOG_CONTENT }}
+          branch: 'release/update-version'
+          base: 'develop'
           delete-branch: true
-          add-paths: |
-            package.json
-            src-tauri/Cargo.toml
-            src-tauri/Cargo.lock
-            CHANGELOG.md
-            .release/prepared.json

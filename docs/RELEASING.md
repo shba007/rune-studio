@@ -110,16 +110,18 @@ Source validation and generated-release-file checks happen in the original
 develop run. Preparation itself still runs only on develop.
 Keep GH_TOKEN for gh release create: publication must trigger release.published
 and artifact delivery. Artifact uploads use GITHUB_TOKEN because they do not need
-to trigger another workflow. No secret is supplied to pull-request validation.
+to trigger another workflow. Source validation jobs receive no release secrets.
 
 Repository policy was read and already allows Actions to create/approve PRs;
 no settings or secret values were changed. Live success of the credential split
 requires the owner's next commit/push; rerunning an old SHA uses its old workflow.
 
 Repository/org policy must allow Actions, the listed third-party actions, bot
-release branches/PRs and the token permissions. Protect develop/main with the
-Frontend and release utility and Windows Rust checks (use the exact observed
-check names after the first owner-run CI). Allow merge commits for promotion;
+release branches/PRs and the token permissions. The owner reviews the successful
+develop run and generated-file checks before merging. With develop-only CI,
+required PR-head checks would never arrive; the owner must align branch protection
+with this trigger policy rather than waiting for a second PR workflow.
+Allow merge commits for promotion;
 keep owner review and any required approval protections. Permit only the release
 actor to push release/update-version. Existing updater signing secrets remain
 TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD. This change

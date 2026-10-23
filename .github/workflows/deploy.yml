@@ -64,83 +64,83 @@ jobs:
   #       id: deployment
   #       uses: actions/deploy-pages@v5
 
-  # build-web:
-  #   runs-on: ubuntu-latest
+  build-web:
+    runs-on: ubuntu-latest
 
-  #   outputs:
-  #     image_name: ${{ steps.metadata.outputs.image_name }}
-  #     image_title: ${{ steps.metadata.outputs.image_title }}
-  #     buildtime: ${{ steps.metadata.outputs.buildtime }}
-  #     version: ${{ steps.metadata.outputs.version }}
+    outputs:
+      image_name: ${{ steps.metadata.outputs.image_name }}
+      image_title: ${{ steps.metadata.outputs.image_title }}
+      buildtime: ${{ steps.metadata.outputs.buildtime }}
+      version: ${{ steps.metadata.outputs.version }}
 
-  #   steps:
-  #     - name: 📥 Checkout Repo
-  #       uses: actions/checkout@v7
-  #       with:
-  #         fetch-depth: 0
+    steps:
+      - name: 📥 Checkout Repo
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
-  #     - name: 🐋 Set up QEMU
-  #       uses: docker/setup-qemu-action@v4
+      - name: 🐋 Set up QEMU
+        uses: docker/setup-qemu-action@v4
 
-  #     - name: 🐋 Set up Docker Buildx
-  #       uses: docker/setup-buildx-action@v4
+      - name: 🐋 Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
 
-  #     - name: 🐋 Extract Docker metadata
-  #       id: meta
-  #       uses: docker/metadata-action@v6
-  #       with:
-  #         images: |
-  #           ghcr.io/${{ env.REPO }}
-  #         # docker.io/${{ env.REPO }}
-  #         tags: |
-  #           type=semver,pattern={{version}}
-  #           type=semver,pattern={{major}}.{{minor}}
-  #           type=sha,prefix=sha-,format=short
+      - name: 🐋 Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: |
+            ghcr.io/${{ env.REPO }}
+          # docker.io/${{ env.REPO }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-,format=short
 
-  #     - name: 🏷️ Set tags as environment variable
-  #       id: metadata
-  #       run: |
-  #         echo "Setting metadata to env variables"
-  #         echo "image_name=${{ fromJSON(steps.meta.outputs.json).tags[0] }}" >> $GITHUB_OUTPUT
-  #         echo "image_title=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.title'] }}" >> $GITHUB_OUTPUT
-  #         echo "buildtime=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}" >> $GITHUB_OUTPUT
-  #         echo "version=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}" >> $GITHUB_OUTPUT
+      - name: 🏷️ Set tags as environment variable
+        id: metadata
+        run: |
+          echo "Setting metadata to env variables"
+          echo "image_name=${{ fromJSON(steps.meta.outputs.json).tags[0] }}" >> $GITHUB_OUTPUT
+          echo "image_title=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.title'] }}" >> $GITHUB_OUTPUT
+          echo "buildtime=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}" >> $GITHUB_OUTPUT
+          echo "version=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}" >> $GITHUB_OUTPUT
 
-  #     - name: 🐋 Log in to Github Container Registry
-  #       uses: docker/login-action@v4
-  #       with:
-  #         registry: ghcr.io
-  #         username: ${{ vars.USERNAME }}
-  #         password: ${{ secrets.GITHUB_TOKEN }}
+      - name: 🐋 Log in to Github Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ vars.USERNAME }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-  #     # - name: Log in to DockerHub
-  #     #   uses: docker/login-action@v3
-  #     #   with:
-  #     #     registry: docker.io
-  #     #     username: ${{ vars.USERNAME }}
-  #     #     password: ${{ secrets.DOCKERHUB_TOKEN }}
+      # - name: Log in to DockerHub
+      #   uses: docker/login-action@v3
+      #   with:
+      #     registry: docker.io
+      #     username: ${{ vars.USERNAME }}
+      #     password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-  #     - name: ⚙️ Build and Upload to Registries
-  #       id: push
-  #       uses: docker/build-push-action@v7
-  #       with:
-  #         context: .
-  #         push: true
-  #         tags: ${{ steps.meta.outputs.tags }}
-  #         labels: ${{ steps.meta.outputs.labels }}
-  #         build-args: |
-  #           VERSION=${{ steps.metadata.outputs.version }}
-  #           BUILD_TIME=${{ steps.metadata.outputs.buildtime }}
-  #           SITE_URL=${{ vars.SITE_URL }}
-  #         cache-from: type=gha
-  #         cache-to: type=gha,mode=max
+      - name: ⚙️ Build and Upload to Registries
+        id: push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.metadata.outputs.version }}
+            BUILD_TIME=${{ steps.metadata.outputs.buildtime }}
+            SITE_URL=${{ vars.SITE_URL }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-  #     - name: 📝 Generate artifact attestation
-  #       uses: actions/attest-build-provenance@v4
-  #       with:
-  #         subject-name: ghcr.io/${{ env.REPO }}
-  #         subject-digest: ${{ steps.push.outputs.digest }}
-  #         push-to-registry: false
+      - name: 📝 Generate artifact attestation
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ghcr.io/${{ env.REPO }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: false
 
   build-desktop:
     env:
@@ -151,34 +151,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The rune-studio-cli command only exists in agent-bridge builds, and it talks to the app
-          # over that bridge, so every app is built with the feature. Tauri bundles every binary the
-          # package builds, so the installers carry the CLI next to the app by themselves (Windows
-          # installer and macOS bundle: next to the app; deb/rpm: /usr/bin). `target` is the Rust
-          # target, `cli` the CLI's file name on this OS and `asset` its name on the release.
           - platform: 'macos-latest' # for Arm based macs (M1 and above).
-            args: '--target aarch64-apple-darwin --features agent-bridge'
-            target: 'aarch64-apple-darwin'
-            cli: 'rune-studio-cli'
-            asset: 'macos_aarch64'
+            args: '--target aarch64-apple-darwin'
 
           - platform: 'macos-latest' # for Intel based macs.
-            args: '--target x86_64-apple-darwin --features agent-bridge'
-            target: 'x86_64-apple-darwin'
-            cli: 'rune-studio-cli'
-            asset: 'macos_x64'
+            args: '--target x86_64-apple-darwin'
 
           - platform: 'ubuntu-latest'
-            args: '--features agent-bridge'
-            target: ''
-            cli: 'rune-studio-cli'
-            asset: 'linux_x64'
+            args: ''
 
           - platform: 'windows-latest'
-            args: '--features agent-bridge'
-            target: ''
-            cli: 'rune-studio-cli.exe'
-            asset: 'x64.exe'
+            args: ''
 
     runs-on: ${{ matrix.platform }}
 
@@ -192,20 +175,13 @@ jobs:
         if: matrix.platform == 'ubuntu-latest' # This must match the platform value defined above.
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
-            libpipewire-0.3-dev libspa-0.2-dev libclang-dev libgbm-dev libegl1-mesa-dev libxcb1-dev libxcb-randr0-dev libxcb-shm0-dev libxdo-dev libasound2-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - name: 🛠️ Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           # Those targets are only used on macos runners so it's in an `if` to slightly speed up windows and linux builds.
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-
-      - name: 🛠️ Setup Vite-Plus
-        uses: voidzero-dev/setup-vp@v1.21.2
-        with:
-          node-version: 'lts/*'
-          cache: true
 
       - name: 🛠️ Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -215,10 +191,7 @@ jobs:
       - name: 📦 Install Dependencies
         run: bun install --frozen-lockfile
 
-      - name: Validate exact prepared release body
-        run: cargo run --locked --manifest-path xtask/Cargo.toml -- verify-event
-
-      - name: ⚙️ Build and Upload App Artifact
+      - name: ⚙️ Build and Upload Artifact
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -226,115 +199,97 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           args: ${{ matrix.args }}
-          releaseId: ${{ github.event.release.id }}
-          generateReleaseNotes: false
+          tagName: v__VERSION__
+          releaseName: 'v__VERSION__'
           releaseDraft: false
           prerelease: false
-
-      - name: ⚙️ Build and Upload CLI Artifact
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          file="rune-studio-cli_${VERSION}_${{ matrix.asset }}"
-          if [ -n "${{ matrix.target }}" ]; then dir="src-tauri/target/${{ matrix.target }}/release"; else dir="src-tauri/target/release"; fi
-          cp "$dir/${{ matrix.cli }}" "$file"
-          gh release upload "$VERSION" "$file" --clobber --repo "$REPO"
 
   # deploy-desktop:
   #   needs: build-desktop
   #   runs-on: ubuntu-latest
 
-  # build-mobile:
-  #   env:
-  #     ANDROID_HOME:
-  #     PLATFORM_ENV: native
-  #     NUXT_PUBLIC_SITE_URL: ${{ vars.SITE_URL }}
+  build-mobile:
+    env:
+      ANDROID_HOME:
+      PLATFORM_ENV: native
+      NUXT_PUBLIC_SITE_URL: ${{ vars.SITE_URL }}
 
-  #   strategy:
-  #     fail-fast: false
-  #     matrix:
-  #       include:
-  #         - platform: 'ubuntu-latest'
-  #           os: 'android'
-  #         # - platform: 'ubuntu-latest'
-  #         #   name: 'ios'
-  #         #   args: ''
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'ubuntu-latest'
+            os: 'android'
+          # - platform: 'ubuntu-latest'
+          #   name: 'ios'
+          #   args: ''
 
-  #   runs-on: ${{ matrix.platform }}
+    runs-on: ${{ matrix.platform }}
 
-  #   steps:
-  #     - name: 📥 Checkout Repo
-  #       uses: actions/checkout@v7
-  #       with:
-  #         fetch-depth: 0
+    steps:
+      - name: 📥 Checkout Repo
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
-  #     - name: Install OS Dependencies
-  #       run: |
-  #         sudo apt-get update
-  #         sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - name: Install OS Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
-  #     - name: Setup Java
-  #       uses: actions/setup-java@v6
-  #       with:
-  #         distribution: 'temurin'
-  #         java-version: '17'
+      - name: Setup Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: 'temurin'
+          java-version: '17'
 
-  #     - name: Setup Android SDK
-  #       uses: android-actions/setup-android@v4
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
 
-  #     - name: Setup Android NDK
-  #       run: |
-  #         sdkmanager "ndk;29.0.13846066"
-  #         echo "NDK_HOME=${{ env.ANDROID_HOME }}/ndk/29.0.13846066" >> $GITHUB_ENV
+      - name: Setup Android NDK
+        run: |
+          sdkmanager "ndk;29.0.13846066"
+          echo "NDK_HOME=${{ env.ANDROID_HOME }}/ndk/29.0.13846066" >> $GITHUB_ENV
 
-  #     - name: 🛠️ Setup Rust
-  #       uses: dtolnay/rust-toolchain@stable
-  #       with:
-  #         targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+      - name: Setup Android Signing
+        run: |
+          cd src-tauri/gen/android
+          echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" > keystore.properties
+          echo "password=${{ secrets.ANDROID_KEY_PASSWORD }}" >> keystore.properties
+          base64 -d <<< "${{ secrets.ANDROID_KEY_BASE64 }}" > ./release-keystore.jks
+          echo "storeFile=../release-keystore.jks" >> keystore.properties
 
-  #     - name: 🛠️ Setup Node
-  #       uses: actions/setup-node@v7
-  #       with:
-  #         node-version: 'lts/*'
+      - name: 🛠️ Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
 
-  #     - name: 🛠️ Setup Bun
-  #       uses: oven-sh/setup-bun@v2
-  #       with:
-  #         bun-version: latest
+      - name: 🛠️ Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
 
-  #     - name: 📦 Install Dependencies
-  #       run: bun install --frozen-lockfile
+      - name: 📦 Install Dependencies
+        run: bun install --frozen-lockfile
 
-  #     - name: 📱 Init Android Project
-  #       run: bunx tauri android init --ci
+      - name: ⚙️ Build Artifact
+        run: bun run tauri:build:mobile
 
-  #     - name: Setup Android Signing
-  #       run: |
-  #         cd src-tauri/gen/android
-  #         echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" > keystore.properties
-  #         echo "password=${{ secrets.ANDROID_KEY_PASSWORD }}" >> keystore.properties
-  #         base64 -d <<< "${{ secrets.ANDROID_KEY_BASE64 }}" > ./release-keystore.jks
-  #         echo "storeFile=../release-keystore.jks" >> keystore.properties
+      - name: ⚙️ Upload Artifact
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
+          asset_name: vuetemplate_${{ env.VERSION }}_arm64.apk
+          tag: ${{ env.VERSION }}
 
-  #     - name: ⚙️ Build Artifact
-  #       run: bun run tauri:build:mobile
-
-  #     - name: ⚙️ Upload Artifact
-  #       uses: svenstaro/upload-release-action@v2
-  #       with:
-  #         repo_token: ${{ secrets.GITHUB_TOKEN }}
-  #         file: src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
-  #         asset_name: rune-studio_${{ env.VERSION }}_arm64.apk
-  #         tag: ${{ env.VERSION }}
-
-  #     - name: ⚙️ Upload Artifact
-  #       uses: svenstaro/upload-release-action@v2
-  #       with:
-  #         repo_token: ${{ secrets.GITHUB_TOKEN }}
-  #         file: src-tauri/gen/android/app/build/outputs/bundle/universalRelease/app-universal-release.aab
-  #         asset_name: rune-studio_${{ env.VERSION }}_arm64.aab
-  #         tag: ${{ env.VERSION }}
-  # # deploy-mobile:
+      - name: ⚙️ Upload Artifact
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: src-tauri/gen/android/app/build/outputs/bundle/universalRelease/app-universal-release.aab
+          asset_name: vuetemplate_${{ env.VERSION }}_arm64.aab
+          tag: ${{ env.VERSION }}
+  # deploy-mobile:
   #   needs: build-mobile
   #   runs-on: ubuntu-latest

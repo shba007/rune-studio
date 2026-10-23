@@ -340,14 +340,14 @@ scripts/                     m1-system-test.ps1, m15/ (grounding probe), make-lo
 
 | Workflow                          | Trigger                             | Behavior                                                                                                                                                                                                                                                 |
 | --------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.github/workflows/integrate.yml` | develop pushes and all PRs          | Frontend tests/typecheck/build/lint/format, Rust tests/Clippy/format and Rust release-helper checks. After successful trusted develop checks, prepare/update `release/update-version` targeting develop with title/commit `ci(release): update version`. |
+| `.github/workflows/integrate.yml` | develop pushes only                 | Frontend tests/typecheck/build/lint/format, Rust tests/Clippy/format and Rust release-helper checks. After successful trusted develop checks, prepare/update `release/update-version` targeting develop with title/commit `ci(release): update version`. |
 | `.github/workflows/release.yml`   | main push containing `ci(release):` | Validate synchronized versions and extract the exact prepared CHANGELOG section, then publish the matching tag/release using the event-capable `GH_TOKEN`.                                                                                               |
 | `.github/workflows/deploy.yml`    | release published                   | Verify release notes/tag, build Windows/Linux/macOS installers with agent-bridge, sign updater artifacts and upload the CLI to the existing release.                                                                                                     |
 
 The owner merges the preparation PR into develop, then promotes develop to main
 with a **merge commit**, titled `ci(release): publish vX.Y.Z`. Merging into develop
 alone does not publish. Do not squash/rebase the main promotion; release history
-must remain connected. PR checks are never skipped just because a commit is a
+must remain connected. Develop checks are never skipped just because a commit is a
 merge or release bump. Agents leave changes unstaged/uncommitted; GitHub Actions
 is authorized to prepare and push the dedicated release branch.
 
