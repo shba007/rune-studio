@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.0.22
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.0.20...v0.0.22)
+
+### 🚀 Enhancements
+
+- **kit:** Integrate selected read-only tools into desktop agent ([a6213a0](https://github.com/shba007/rune-studio/commit/a6213a0))
+
+### 🩹 Fixes
+
+- **release:** Typecheck desktop UI and gate unfinished features ([832bbfc](https://github.com/shba007/rune-studio/commit/832bbfc))
+
+### 🤖 CI
+
+- **release:** Update version ([4d02a46](https://github.com/shba007/rune-studio/commit/4d02a46))
+- **release:** Update version ([fd9cffa](https://github.com/shba007/rune-studio/commit/fd9cffa))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+- Shba007 ([@shba007](https://github.com/shba007))
+
 ## v0.0.21
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.0.20...v0.0.21)

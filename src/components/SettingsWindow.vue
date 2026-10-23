@@ -14,8 +14,9 @@ import SettingsArtifacts from './SettingsArtifacts.vue'
 import SettingsGeneral from './SettingsGeneral.vue'
 import SettingsShortcuts from './SettingsShortcuts.vue'
 import TitleBar from './TitleBar.vue'
+import SettingsTools from './SettingsTools.vue'
 
-type Section = 'general' | 'shortcuts' | 'agents' | 'artifacts' | 'about'
+type Section = 'general' | 'shortcuts' | 'agents' | 'artifacts' | 'about' | 'tools'
 
 const agent = useAgent()
 
@@ -44,6 +45,7 @@ const SECTIONS: { id: Section; label: string; subtitle: string; icon: IconName }
     subtitle: 'Recorded sessions. Pick one to play it in Rune Preview.',
     icon: 'history',
   },
+  { id: 'tools', label: 'Tools', subtitle: 'Selected read-only Kit tools.', icon: 'plug' },
   { id: 'about', label: 'About', subtitle: 'Version and updates.', icon: 'logo' },
 ]
 
@@ -173,6 +175,14 @@ onBeforeUnmount(() => {
             :agent="agent"
             :draft="draft"
             @commit-key="commitKey"
+          />
+          <SettingsTools
+            v-else-if="section === 'tools'"
+            :tool-calls="
+              agent.backend.value?.models?.find(
+                (model) => model.id === agent.settings.value?.models.agent,
+              )?.toolCalls
+            "
           />
           <SettingsShortcuts v-else-if="section === 'shortcuts'" :draft="draft" />
           <SettingsAgents v-else-if="section === 'agents'" :agent="agent" :draft="draft" />

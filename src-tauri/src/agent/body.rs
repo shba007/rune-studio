@@ -71,6 +71,7 @@ fn visual(action: &Action, monitor: &Monitor) -> (String, Option<Point>, bool, &
             let (px, py) = model_to_pixels(monitor, from.0, from.1);
             (String::new(), Some(Point { x: px, y: py }), false, "left")
         }
+        Action::External { name, .. } => (name.clone(), None, false, "left"),
         Action::AskUser { question } => (question.clone(), None, false, "left"),
         Action::TypeText { text } => (text.clone(), None, false, "left"),
         Action::PressKeys { keys } => (keys.join(" + "), None, false, "left"),
@@ -195,6 +196,9 @@ pub fn execute(action: &Action, monitor: &Monitor, cancel: &CancelToken) -> Resu
             let end = model_to_pixels(monitor, to.0, to.1);
             Input::new()?.drag(start, end, cancel)
         }
+        Action::External { .. } => Err(ExecError::Input(
+            "External actions require the asynchronous Kit dispatcher".into(),
+        )),
         Action::AskUser { .. } => Ok(()),
         Action::TypeText { text } => Input::new()?.type_text(text, cancel),
         Action::PressKeys { keys } => Input::new()?.press_keys(keys, cancel),

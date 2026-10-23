@@ -18,6 +18,7 @@ mod exec;
 mod flight;
 mod hotkeys;
 mod hub;
+mod kit;
 pub mod life;
 mod model;
 mod observe;
@@ -189,6 +190,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            kit::client::kit_settings,
+            kit::client::kit_save,
+            kit::client::kit_discover,
             commands::get_settings,
             commands::save_settings,
             commands::has_api_key,
@@ -242,6 +246,7 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|_, event| {
             if let tauri::RunEvent::Exit = event {
+                kit::client::shutdown();
                 cursor::reset();
             }
         });
