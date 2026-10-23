@@ -29,7 +29,9 @@ New public notes/suggested commit subjects must omit internal planning IDs.
 Preserve historical sections, commits, tags and published releases. Publication
 extracts the exact prepared CHANGELOG version section, never fresh history prose.
 
-Every PR and develop push runs validation, including merge/release commits.
+Every PR, develop push and release/update-version push runs validation, including merge/release commits.
+Use GITHUB_TOKEN for release PR API operations and GH_TOKEN for branch pushes;
+branch push validation does not depend on approval-gated bot PR events.
 Only trusted develop pushes can prepare releases after all checks pass. One fixed
 release branch/PR is reused. No releasable commits means no preparation PR.
 .release/prepared.json records the consumed source head to stop preparation loops.

@@ -1,7 +1,7 @@
 name: Vue CI
 on:
   push:
-    branches: [develop]
+    branches: [develop, release/update-version]
   pull_request:
 permissions:
   contents: read
@@ -65,7 +65,7 @@ jobs:
           RELEASE_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           if [ -z "$RELEASE_TOKEN" ]; then
-            echo 'GH_TOKEN must be an event-capable PAT/App token with contents and pull-requests write permissions.' >&2
+            echo 'GH_TOKEN must be an event-capable PAT/App token with contents write permission for release branch pushes.' >&2
             exit 1
           fi
       - name: Check tested develop revision is still current
@@ -87,7 +87,11 @@ jobs:
       - uses: peter-evans/create-pull-request@v8
         if: steps.preparation.outputs.prepared == 'true'
         with:
-          token: ${{ secrets.GH_TOKEN }}
+          # Use the job's granted PR permission, not the narrower branch PAT.
+          token: ${{ github.token }}
+          # This push triggers validation on release/update-version independently
+          # of approval-gated PR events created using GITHUB_TOKEN.
+          branch-token: ${{ secrets.GH_TOKEN }}
           branch: release/update-version
           base: develop
           title: 'ci(release): update version'

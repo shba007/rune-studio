@@ -8,7 +8,7 @@ release branch and publish after owner review/promotion. No AI service is used.
 
 1. Owner pushes develop. Vue CI runs frontend typecheck/tests/build/lint/format,
    release utility tests/Clippy/format, and Windows app Rust tests/Clippy/format.
-   All PRs (including release and promotion PRs) get the same checks; there is no
+   All PRs and release/update-version branch pushes get the same checks; there is no
    blanket skip for merges or release commits. PR jobs have read-only permissions.
 2. After both validation jobs pass, a trusted develop push prepares release files.
    It checks the tested SHA is still current, then uses the Rust utility to update
@@ -89,7 +89,11 @@ a promised actual release version.
 
 GH_TOKEN already exists in the repository workflow contract. It MUST be a usable
 PAT or GitHub App installation token whose events trigger downstream workflows,
-with repository Contents and Pull requests write access. A stored short-lived App
+with repository Contents write access for branch pushes and release publication.
+PR API operations use the job's GITHUB_TOKEN with explicit Pull requests write
+permission. The observed PAT could push the release branch but PR creation failed
+with Resource not accessible by personal access token; the two credentials now
+have separate roles. A stored short-lived App
 installation token must be refreshed by the repository's App integration; do not
 assume an expired static token works. A classic PAT needs repo access (and workflow
 scope if GitHub requires it for branch ancestry containing workflow changes).
@@ -97,11 +101,18 @@ Fine-grained PAT/App access must include this repository and required organizati
 approval/SSO. Never print token values. Both preparation and publication fail
 clearly if the secret is missing; actual scopes/expiry require owner verification.
 
-Do not replace GH_TOKEN with the default GITHUB_TOKEN: bot-created PR/release events
-have special triggering/approval restrictions, so validation/artifact delivery
-cannot be assumed. The explicit event-capable token is used for create-pull-request
-and gh release create. Artifact uploads can use GITHUB_TOKEN because they do not
-need to trigger another workflow. No secret is supplied to pull-request validation.
+create-pull-request uses token=GITHUB_TOKEN for PR operations and
+branch-token=GH_TOKEN for Git pushes. The event-capable branch push triggers full
+validation on release/update-version even if the bot-created PR workflow requires
+owner approval. Approve that PR workflow if GitHub displays an approval banner;
+no validation checks are bypassed. Preparation itself still runs only on develop.
+Keep GH_TOKEN for gh release create: publication must trigger release.published
+and artifact delivery. Artifact uploads use GITHUB_TOKEN because they do not need
+to trigger another workflow. No secret is supplied to pull-request validation.
+
+Repository policy was read and already allows Actions to create/approve PRs;
+no settings or secret values were changed. Live success of the credential split
+requires the owner's next commit/push; rerunning an old SHA uses its old workflow.
 
 Repository/org policy must allow Actions, the listed third-party actions, bot
 release branches/PRs and the token permissions. Protect develop/main with the
