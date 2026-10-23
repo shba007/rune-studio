@@ -145,7 +145,7 @@ export interface ConfirmRequestPayload {
   risk: 'low' | 'medium' | 'high'
   reasons: string[]
   timeoutSecs: number
-  kind: 'approval' | 'question'
+  kind: 'approval' | 'question' | 'restart'
 }
 export const THINKING = 'thinking'
 

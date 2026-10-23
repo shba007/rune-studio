@@ -96,6 +96,8 @@ export function useAgent() {
   const isRunning = computed(() => RUNNING.includes(state.value))
 
   const health = computed<{ tone: 'ok' | 'warn' | 'down' | 'checking'; title: string }>(() => {
+    if (settings.value?.externalAgent)
+      return { tone: 'ok', title: 'External agent mode — use your host to start a session' }
     const status = backend.value
     const model = settings.value?.model ?? ''
     if (!status) return { tone: 'checking', title: 'Checking the model server' }
@@ -276,6 +278,8 @@ export function useAgent() {
   const debugCapture = (monitor?: number) => call<CaptureReport>('debug_capture', { monitor })
   const debugClick = (args: { x: number; y: number; delayMs?: number; monitor?: number }) =>
     call<ClickReport>('debug_click', args)
+  const debugMove = (x: number, y: number, delayMs?: number) =>
+    call('debug_move', { x, y, delayMs })
   const debugType = (text: string, delayMs?: number) => call('debug_type', { text, delayMs })
 
   watch(isRunning, (running) => {
@@ -442,6 +446,7 @@ export function useAgent() {
     debugSetState,
     debugCapture,
     debugClick,
+    debugMove,
     debugType,
   }
 }

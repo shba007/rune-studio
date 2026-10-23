@@ -1,4 +1,5 @@
 use std::io::{self, BufRead, Write};
+const PROTOCOL: &str = include_str!("../../../docs/mcp-kit-version.txt");
 fn main() {
     if std::env::args().any(|a| a == "--version") {
         println!("rune-kit 0.5.0");
@@ -22,7 +23,7 @@ fn main() {
             .collect();
         assert!(
             line.contains("io.modelcontextprotocol/protocolVersion")
-                && line.contains("2026-07-28")
+                && line.contains(PROTOCOL)
                 && line.contains("io.modelcontextprotocol/clientCapabilities")
         );
         assert!(!line.contains("\"initialize\""));
@@ -43,7 +44,7 @@ fn main() {
             continue;
         }
         let result = if line.contains("\"server/discover\"") {
-            r#"{"supportedVersions":["2026-07-28"],"capabilities":{"tools":{}},"ttlMs":0,"cacheScope":"private"}"#.to_string()
+            format!(r#"{{"supportedVersions":["{PROTOCOL}"],"capabilities":{{"tools":{{}}}},"ttlMs":0,"cacheScope":"private"}}"#)
         } else if line.contains("\"tools/list\"") {
             r#"{"tools":[{"name":"time__get_current_time","description":"time","annotations":{"readOnlyHint":true,"destructiveHint":false},"inputSchema":{"type":"object","properties":{"timezone":{"type":"string"}},"additionalProperties":false,"x-rune-rules":{"read_only":true,"risk":"low","effects":["read"]}}}]}"#.to_string()
         } else if line.contains("\"tools/call\"") {

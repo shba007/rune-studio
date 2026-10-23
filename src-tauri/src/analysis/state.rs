@@ -129,10 +129,12 @@ pub fn in_flight(status: Status) -> bool {
 }
 
 pub fn refusal(status: Status, task_running: bool, outside_agent: bool) -> Option<&'static str> {
-    if task_running {
+    if outside_agent {
+        Some(
+            "An outside agent is in control. Ask it to call rune_analyze; this button cannot start a turn in its host.",
+        )
+    } else if task_running {
         Some("A task is running. Wait for it to finish, or stop it, before analysing the screen.")
-    } else if outside_agent {
-        Some("An outside agent is in control of this PC. Analyse the screen when it is done.")
     } else if in_flight(status) {
         Some("Another analysis is still running. Cancel it or wait for it.")
     } else {
@@ -205,8 +207,8 @@ mod tests {
         assert!(
             refusal(Asking, true, true)
                 .unwrap()
-                .starts_with("A task is running"),
-            "the task is named first"
+                .contains("rune_analyze"),
+            "external control explains how to request analysis"
         );
     }
 

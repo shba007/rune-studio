@@ -15,7 +15,9 @@ interface Tool {
 }
 const config = ref<Config>({ enabled: false, executable: '', selected: [], root: '' })
 const tools = ref<Tool[]>([])
-const status = ref('Not connected. rune-kit 0.5.0 or newer with MCP 2026-07-28 is required.')
+const status = ref(
+  'Not connected. rune-kit 0.5.0 or newer with a compatible MCP protocol is required.',
+)
 const busy = ref(false)
 async function save() {
   try {

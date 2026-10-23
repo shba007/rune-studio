@@ -8,7 +8,6 @@ mod bridge;
 mod commands;
 mod credentials;
 mod cursor;
-#[cfg(debug_assertions)]
 mod debug;
 mod error;
 #[cfg(feature = "eval")]
@@ -229,17 +228,12 @@ pub fn run() {
             commands::flight_file,
             commands::flight_reveal,
             commands::open_flight,
-            #[cfg(debug_assertions)]
             commands::debug_set_state,
-            #[cfg(debug_assertions)]
             debug::debug_monitors,
-            #[cfg(debug_assertions)]
             debug::debug_capture,
-            #[cfg(debug_assertions)]
             debug::debug_click,
-            #[cfg(debug_assertions)]
+            debug::debug_move,
             debug::debug_type,
-            #[cfg(debug_assertions)]
             debug::debug_keys,
         ])
         .build(tauri::generate_context!())

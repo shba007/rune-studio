@@ -74,8 +74,19 @@ fn switch_is_on(app: &AppHandle) -> bool {
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     static WAS_ON: AtomicBool = AtomicBool::new(false);
     static LAST_SINCE: AtomicU64 = AtomicU64::new(0);
+    let state = app.state::<AppState>();
+    let analysis = state.analysis.locked();
+    if events::agent_state(app).is_running()
+        || state.lease.locked().is_held()
+        || state.mic.locked().is_some()
+        || crate::analysis::state::in_flight(analysis.status)
+    {
+        // CLI/file setting edits take effect between sessions, never during one.
+        return state.settings.locked().external_agent;
+    }
     let settings = crate::settings::load(app);
     let on = settings.external_agent;
+    state.settings.locked().external_agent = on;
     let was_on = WAS_ON.swap(on, Ordering::SeqCst);
     let enabled_again = settings.external_agent_since
         > LAST_SINCE.swap(settings.external_agent_since, Ordering::SeqCst);

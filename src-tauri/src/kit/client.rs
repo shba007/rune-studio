@@ -24,7 +24,7 @@ pub fn shutdown() {
     }
 }
 const LIMIT: usize = 65536;
-const PROTOCOL: &str = "2026-07-28";
+const PROTOCOL: &str = include_str!("../../../docs/mcp-kit-version.txt");
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Config {

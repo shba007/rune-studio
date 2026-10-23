@@ -90,6 +90,7 @@ const save = useDebounceFn(async () => {
   if (!draft.value) return
   await agent.saveSettings(draft.value)
   saved.value = true
+  if (agent.settings.value) draft.value = { ...agent.settings.value }
 }, 600)
 
 watch(

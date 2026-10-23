@@ -28,8 +28,10 @@ const action = computed(() => {
   } as const
 })
 
+const external = computed(() => agent.settings.value?.externalAgent === true)
 const offline = computed(() => agent.health.value.tone === 'down')
 const placeholder = computed(() => {
+  if (external.value) return 'Start tasks in your external agent host'
   if (needsConfirm.value) return 'Needs your OK'
   if (agent.isRunning.value) return 'Working…'
   if (isListening.value) return 'Listening…'
@@ -44,7 +46,7 @@ watch(agent.focusTick, async () => {
 
 async function submit() {
   const text = command.value.trim()
-  if (!text || agent.isRunning.value) return
+  if (!text || agent.isRunning.value || external.value) return
   if (await agent.startTask(text)) command.value = ''
 }
 </script>
@@ -71,6 +73,7 @@ async function submit() {
         ref="field"
         v-model="command"
         rows="1"
+        :disabled="external"
         :placeholder="placeholder"
         class="max-h-[152px] min-h-8 min-w-0 flex-1 resize-none bg-transparent px-1 py-1 text-body leading-6 outline-none [--scrollbar-thumb-hover:rgb(0_0_0/0.4)] [--scrollbar-thumb:rgb(0_0_0/0.22)] dark:[--scrollbar-thumb-hover:rgb(255_255_255/0.32)] dark:[--scrollbar-thumb:rgb(255_255_255/0.16)]"
         :class="
@@ -89,6 +92,7 @@ async function submit() {
             ? 'bg-[#d71921] hover:bg-[#b9151c]'
             : 'bg-[#111] hover:bg-black dark:bg-[#f1f1ef] dark:text-[#111] dark:hover:bg-white'
         "
+        :disabled="external && !agent.isRunning.value"
         :aria-label="action.label"
         :aria-pressed="action.icon === 'mic' ? isListening : undefined"
         @click="action.run()"

@@ -130,3 +130,14 @@ src-tauri/Cargo.toml and Cargo.lock; src-tauri/src/kit/client.rs, mod.rs and
 schema.rs; src-tauri/tests/fixtures/kit_gateway.rs; src/components/SettingsTools.vue
 and SettingsTools.test.ts; the Rust release utility under xtask and docs/RELEASING.md;
 .github/workflows/integrate.yml, release.yml and deploy.yml.
+
+## Protocol revision sources
+
+The Kit wire revision is stored in `mcp-kit-version.txt` (the exact identifier,
+without surrounding whitespace). Studio embeds this file when compiled; the
+standalone Kit gateway test fixture reads the same documented revision.
+
+The external-agent bridge uses `mcp-bridge-versions.txt`, one supported revision
+per line, preferred revision first. That bridge and Studio's Kit client are
+separate protocol boundaries. Their wire behaviour and supported revisions are
+unchanged by moving the identifiers out of source code.

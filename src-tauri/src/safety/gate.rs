@@ -61,10 +61,14 @@ pub enum VoiceAnswer {
 pub fn answer_by_voice(app: &AppHandle, approved: bool) -> VoiceAnswer {
     let state = app.state::<AppState>();
     let mut slot = state.confirm.locked();
+    answer_pending_by_voice(&mut slot, approved)
+}
+
+fn answer_pending_by_voice(slot: &mut Option<Pending>, approved: bool) -> VoiceAnswer {
     let Some(pending) = slot.take() else {
         return VoiceAnswer::NothingWaiting;
     };
-    if approved && pending.kind == "approval" {
+    if approved && matches!(pending.kind, "approval" | "restart") {
         *slot = Some(pending);
         return VoiceAnswer::NeedsClick;
     }
@@ -100,6 +104,12 @@ fn new_id() -> String {
     use std::sync::atomic::{AtomicU64, Ordering};
     static NEXT: AtomicU64 = AtomicU64::new(1);
     format!("q{}", NEXT.fetch_add(1, Ordering::Relaxed))
+}
+
+fn clear_pending(slot: &mut Option<Pending>, id: &str) {
+    if slot.as_ref().is_some_and(|pending| pending.id == id) {
+        slot.take();
+    }
 }
 
 #[derive(Debug)]
@@ -222,6 +232,25 @@ pub async fn ask_question(
     .await
 }
 
+pub async fn ask_restart(
+    app: &AppHandle,
+    cancel: &CancelToken,
+    source: &str,
+    task: &str,
+) -> Verdict {
+    ask_user(
+        app,
+        cancel,
+        source,
+        "restart the stopped external-agent session",
+        task,
+        Risk::Medium,
+        &["You pressed Stop. Allowing starts a new session; old actions are not replayed.".into()],
+        "restart",
+    )
+    .await
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn ask_user(
     app: &AppHandle,
@@ -271,12 +300,18 @@ async fn ask_user(
         () = tokio::time::sleep(ANSWER_TIMEOUT) => Verdict::Denied("no answer in time"),
     };
 
-    app.state::<AppState>().confirm.locked().take();
+    {
+        let state = app.state::<AppState>();
+        let mut pending = state.confirm.locked();
+        clear_pending(&mut pending, &id);
+    }
     let outcome = match outcome {
-        Verdict::Allow if kind == "approval" => match foreground::give_back(target).await {
-            Ok(()) => Verdict::Allow,
-            Err(why) => Verdict::Denied(why),
-        },
+        Verdict::Allow if matches!(kind, "approval" | "restart") => {
+            match foreground::give_back(target).await {
+                Ok(()) => Verdict::Allow,
+                Err(why) => Verdict::Denied(why),
+            }
+        }
         other => {
             if !matches!(other, Verdict::Stopped) {
                 let _ = foreground::give_back(target).await;
@@ -297,6 +332,49 @@ async fn ask_user(
 #[cfg(test)]
 mod wire_tests {
     use super::*;
+
+    #[test]
+    fn resolving_a_cancelled_prompt_cannot_remove_a_new_restart_request() {
+        let (sender, _receiver) = oneshot::channel();
+        let mut pending = Some(Pending {
+            id: "new-restart".into(),
+            kind: "restart",
+            #[cfg(feature = "eval")]
+            text: "restart".into(),
+            sender,
+        });
+        clear_pending(&mut pending, "old-action");
+        assert_eq!(pending.as_ref().unwrap().id, "new-restart");
+        clear_pending(&mut pending, "new-restart");
+        assert!(pending.is_none());
+    }
+
+    #[test]
+    fn restart_acceptance_needs_a_click_but_voice_can_keep_it_stopped() {
+        let (sender, mut receiver) = oneshot::channel();
+        let mut pending = Some(Pending {
+            id: "restart".into(),
+            kind: "restart",
+            #[cfg(feature = "eval")]
+            text: "restart".into(),
+            sender,
+        });
+        assert_eq!(
+            answer_pending_by_voice(&mut pending, true),
+            VoiceAnswer::NeedsClick
+        );
+        assert!(pending.is_some());
+        assert!(
+            receiver.try_recv().is_err(),
+            "voice yes must not approve restart"
+        );
+        assert_eq!(
+            answer_pending_by_voice(&mut pending, false),
+            VoiceAnswer::Answered
+        );
+        assert!(!receiver.try_recv().unwrap());
+        assert!(pending.is_none());
+    }
 
     #[test]
     fn the_confirm_request_is_sent_with_the_camel_case_names_the_card_reads() {

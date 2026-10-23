@@ -17,7 +17,7 @@ const y = ref(500)
 const text = ref('hello')
 const delaySeconds = ref(3)
 
-const busy = ref<'capture' | 'click' | 'type' | null>(null)
+const busy = ref<'capture' | 'click' | 'move' | 'type' | null>(null)
 const capture = ref<CaptureReport | null>(null)
 const click = ref<ClickReport | null>(null)
 
@@ -41,6 +41,12 @@ async function doClick() {
   busy.value = 'click'
   click.value = null
   click.value = (await agent.debugClick({ x: x.value, y: y.value, delayMs: delayMs.value })) ?? null
+  busy.value = null
+}
+
+async function doMove() {
+  busy.value = 'move'
+  await agent.debugMove(x.value, y.value, delayMs.value)
   busy.value = null
 }
 
@@ -106,6 +112,9 @@ async function doType() {
         {{ busy === 'click' ? 'Clicking…' : 'Click' }}
       </button>
     </div>
+    <button type="button" :class="[BUTTON, 'self-start']" :disabled="busy !== null" @click="doMove">
+      {{ busy === 'move' ? 'Moving…' : 'Move cursor' }}
+    </button>
     <p v-if="click" class="text-label text-zinc-500">
       pixel {{ click.pixelX }}, {{ click.pixelY }} · cursor {{ click.cursorX }}, {{ click.cursorY }}
     </p>

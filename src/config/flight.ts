@@ -328,7 +328,8 @@ export function tabsFor({ step, calls, hasFiles, toolEvents }: TabContext): TabI
   if (step.riskStated || step.riskFinal || step.gate) tabs.push('safety')
   if (calls.length > 0) tabs.push('api')
   if (phaseTimes(step.phases).some((item) => item.ms > 0)) tabs.push('timing')
-  if (toolEvents > 0 || step.tool?.startsWith('kit__')) tabs.push('tools')
+  if (toolEvents > 0 || step.tool?.startsWith('kit__') || step.tool === 'analyze')
+    tabs.push('tools')
   if (hasFiles) tabs.push('files')
   return tabs
 }

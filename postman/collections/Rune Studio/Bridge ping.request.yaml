@@ -1,0 +1,17 @@
+$kind: http-request
+id: e18ed2c89fbc291f5392467d
+name: Bridge ping
+method: POST
+url: '{{studio_url}}/mcp'
+body:
+  type: json
+  content: '{"jsonrpc":"2.0","method":"ping","id":"Bridge ping","params":{}}'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{studio_token}}'
+scripts:
+  - type: afterResponse
+    code: pm.test("JSON-RPC envelope", () => { pm.response.to.have.status(200); const r = pm.response.json(); pm.expect(r.jsonrpc).to.eql("2.0"); pm.expect(r.id).to.eql("Bridge ping"); }); pm.test("RPC success", () => pm.expect(pm.response.json()).not.to.have.property("error"));
+    language: text/javascript

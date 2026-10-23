@@ -62,6 +62,9 @@ pub fn note_stop() {
 pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
     crate::reflect::touch(app, crate::reflect::idle::Input::Voice);
     let state = app.state::<AppState>();
+    if state.settings.locked().external_agent {
+        return;
+    }
     let (base_url, voice_model) = {
         let settings = state.settings.locked();
         (

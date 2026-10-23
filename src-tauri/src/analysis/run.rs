@@ -29,6 +29,7 @@ enum Ended {
     Done {
         answer: String,
         findings: Vec<Finding>,
+        model: String,
     },
     Failed(String),
     Cancelled,
@@ -72,6 +73,9 @@ pub async fn run(app: &AppHandle, question: &str, fresh: bool) -> AppResult<()> 
     let question = report::question_or_default(question);
     let cancel = {
         let mut analysis = state.analysis.locked();
+        if state.settings.locked().external_agent {
+            return Err(AppError::Invalid("External agent mode is selected. Ask your agent to call rune_analyze; select API mode before starting standalone analysis.".into()));
+        }
         if let Some(why) = refusal(
             analysis.status,
             events::agent_state(app).is_running(),
@@ -176,9 +180,45 @@ async fn work(
     }
     set_status(app, Status::Asking);
 
-    let (settings, api_key) = (state.settings.locked().clone(), settings::api_key());
     let analysis_id = state.analysis.locked().id.clone();
-    let call_log = state.trace.call_log(&analysis_id, "analysis");
+    let image = format!("data:image/jpeg;base64,{}", base64_of(&frame.jpeg));
+    let ended = match analyze_image(app, question, &image, cancel, &analysis_id).await {
+        Ok(report) => Ended::Done {
+            answer: report.parsed.answer,
+            findings: report.parsed.findings,
+            model: report.model,
+        },
+        Err(AnalysisError::Cancelled) => Ended::Cancelled,
+        Err(AnalysisError::Failed(why)) => Ended::Failed(why),
+    };
+    (ended, path)
+}
+
+#[derive(Debug, thiserror::Error, PartialEq)]
+pub enum AnalysisError {
+    #[error("analysis cancelled")]
+    Cancelled,
+    #[error("{0}")]
+    Failed(String),
+}
+
+#[derive(Debug)]
+pub struct ModelAnalysis {
+    pub parsed: report::ParsedReport,
+    pub model: String,
+}
+
+/// Shared inference only: never begins/ends an archive session or changes UI state.
+pub async fn analyze_image(
+    app: &AppHandle,
+    question: &str,
+    image: &str,
+    cancel: &CancelToken,
+    run_id: &str,
+) -> Result<ModelAnalysis, AnalysisError> {
+    let state = app.state::<AppState>();
+    let (settings, api_key) = (state.settings.locked().clone(), settings::api_key());
+    let call_log = state.trace.call_log(run_id, "analysis");
     let analysis_model = settings.model_for_role(crate::model::role::ModelRole::Analysis);
     let profile = crate::model::profile::resolve_profile(analysis_model, None, None);
     let client = ChatClient {
@@ -191,36 +231,55 @@ async fn work(
         no_swap: false,
         on_loading: None,
     };
-    let image = format!("data:image/jpeg;base64,{}", base64_of(&frame.jpeg));
+    analyze_with_client(&client, question, image, cancel, CALL_TIMEOUT).await
+}
+
+async fn analyze_with_client(
+    client: &ChatClient<'_>,
+    question: &str,
+    image: &str,
+    cancel: &CancelToken,
+    timeout: Duration,
+) -> Result<ModelAnalysis, AnalysisError> {
+    if cancel.is_cancelled() {
+        return Err(AnalysisError::Cancelled);
+    }
     let tools = report::tools();
-    let request = report::request(question, &image, &tools);
+    let request = report::request(question, image, &tools);
     let call = async {
-        tokio::time::timeout(
-            CALL_TIMEOUT,
-            client.call_retrying(&request, &mut |_: &str| {}),
-        )
-        .await
+        tokio::time::timeout(timeout, client.call_retrying(&request, &mut |_: &str| {})).await
     };
-    let ended = match unless_stopped(cancel, call).await {
-        None => Ended::Cancelled,
-        Some(Err(_)) => Ended::Failed(format!(
+    match unless_stopped(cancel, call).await {
+        None => Err(AnalysisError::Cancelled),
+        Some(Err(_)) => Err(AnalysisError::Failed(format!(
             "the model did not answer within {} seconds",
-            CALL_TIMEOUT.as_secs()
-        )),
-        Some(Ok(Err(err))) => Ended::Failed(err.to_string()),
-        Some(Ok(Ok(reply))) if reply.call.name != "report" => Ended::Failed(format!(
+            timeout.as_secs()
+        ))),
+        Some(Ok(Err(err))) => Err(AnalysisError::Failed(err.to_string())),
+        Some(Ok(Ok(reply))) if reply.call.name != "report" => Err(AnalysisError::Failed(format!(
             "the model answered with \"{}\" instead of a report",
             reply.call.name
-        )),
+        ))),
         Some(Ok(Ok(reply))) => {
-            let parsed = report::parse(&reply.call.arguments);
-            Ended::Done {
-                answer: parsed.answer,
-                findings: parsed.findings,
+            if cancel.is_cancelled() {
+                return Err(AnalysisError::Cancelled);
             }
+            if !reply.call.arguments["answer"].is_string()
+                || !reply.call.arguments["findings"].is_array()
+            {
+                return Err(AnalysisError::Failed(
+                    "the model returned a malformed screen-analysis report".into(),
+                ));
+            }
+            let parsed = report::parse(&reply.call.arguments);
+            Ok(ModelAnalysis {
+                parsed,
+                model: reply
+                    .served_model
+                    .unwrap_or_else(|| client.model.to_string()),
+            })
         }
-    };
-    (ended, path)
+    }
 }
 
 fn base64_of(bytes: &[u8]) -> String {
@@ -237,7 +296,14 @@ fn finish(
     latency_ms: u64,
 ) {
     let state = app.state::<AppState>();
-    let model = state.settings.locked().model.clone();
+    let model = match &ended {
+        Ended::Done { model, .. } => model.clone(),
+        _ => state
+            .settings
+            .locked()
+            .model_for_role(crate::model::role::ModelRole::Analysis)
+            .to_owned(),
+    };
     let (status, label, error) = {
         let mut analysis = state.analysis.locked();
         analysis.model = model.clone();
@@ -246,6 +312,7 @@ fn finish(
             Ended::Done {
                 answer,
                 mut findings,
+                ..
             } => {
                 analysis.boxes_rejected = super::boxes::guard(&mut findings);
                 analysis.answer = answer;
@@ -359,4 +426,142 @@ fn watch_for_change(app: &AppHandle, id: String) {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod model_tests {
+    use super::*;
+    use serde_json::{Value, json};
+    use std::io::{BufRead, Read, Write};
+
+    fn server(
+        tool: &str,
+        arguments: Value,
+        delay: Duration,
+    ) -> (String, std::sync::mpsc::Receiver<Value>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let body = json!({"model":"vision-served","choices":[{"message":{"tool_calls":[{"id":"report-1","type":"function","function":{"name":tool,"arguments":arguments.to_string()}}]}}]}).to_string();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            let mut reader = std::io::BufReader::new(socket.try_clone().unwrap());
+            let mut length = 0;
+            loop {
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                if line == "\r\n" {
+                    break;
+                }
+                if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                    length = value.trim().parse().unwrap();
+                }
+            }
+            let mut bytes = vec![0; length];
+            reader.read_exact(&mut bytes).unwrap();
+            let _ = tx.send(serde_json::from_slice(&bytes).unwrap());
+            std::thread::sleep(delay);
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nX-Model-Served: vision-served\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = socket.write_all(response.as_bytes());
+        });
+        (url, rx)
+    }
+
+    async fn ask(
+        url: &str,
+        cancel: &CancelToken,
+        timeout: Duration,
+    ) -> Result<ModelAnalysis, AnalysisError> {
+        let http = reqwest::Client::builder().no_proxy().build().unwrap();
+        let client = ChatClient {
+            http: &http,
+            base_url: url,
+            api_key: None,
+            model: "chosen-analysis-role",
+            profile: None,
+            sink: None,
+            no_swap: false,
+            on_loading: None,
+        };
+        analyze_with_client(
+            &client,
+            "Where is Save?",
+            "data:image/jpeg;base64,AA",
+            cancel,
+            timeout,
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn shared_model_analysis_sends_question_image_and_role_then_bounds_findings() {
+        let (url, request) = server(
+            "report",
+            json!({"answer":"a".repeat(5000),"findings":(0..20).map(|_|json!({"label":"Save","kind":"control","description":"A button","evidence":"Save label","box":[10,10,100,60]})).collect::<Vec<_>>()}),
+            Duration::ZERO,
+        );
+        let report = ask(&url, &CancelToken::default(), Duration::from_secs(3))
+            .await
+            .unwrap();
+        assert_eq!(report.model, "vision-served");
+        assert_eq!(report.parsed.answer.chars().count(), report::ANSWER_CAP);
+        assert_eq!(report.parsed.findings.len(), report::MAX_FINDINGS);
+        let sent = request.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert_eq!(sent["model"], "chosen-analysis-role");
+        assert!(sent["messages"].to_string().contains("Where is Save?"));
+        assert!(
+            sent["messages"]
+                .to_string()
+                .contains("data:image/jpeg;base64,AA")
+        );
+        assert_eq!(sent["tools"][0]["function"]["name"], "report");
+    }
+
+    #[tokio::test]
+    async fn wrong_tool_and_malformed_reports_are_errors_not_empty_success() {
+        for (tool, arguments) in [
+            ("click", json!({"answer":"wrong tool","findings":[]})),
+            ("report", json!({"findings":[]})),
+            ("report", json!({"answer":"bad","findings":"not an array"})),
+        ] {
+            let (url, _) = server(tool, arguments, Duration::ZERO);
+            assert!(matches!(
+                ask(&url, &CancelToken::default(), Duration::from_secs(3)).await,
+                Err(AnalysisError::Failed(_))
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn timeout_and_stop_discard_late_model_replies() {
+        let response = json!({"answer":"late","findings":[]});
+        let (url, _) = server("report", response.clone(), Duration::from_millis(300));
+        assert!(matches!(
+            ask(&url, &CancelToken::default(), Duration::from_millis(50)).await,
+            Err(AnalysisError::Failed(_))
+        ));
+        let (url, _) = server("report", response, Duration::from_millis(300));
+        let cancel = CancelToken::default();
+        let remote = cancel.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            remote.cancel();
+        });
+        let start = Instant::now();
+        assert!(matches!(
+            ask(&url, &cancel, Duration::from_secs(2)).await,
+            Err(AnalysisError::Cancelled)
+        ));
+        assert!(start.elapsed() < Duration::from_millis(250));
+        assert!(matches!(
+            ask("invalid-url", &cancel, Duration::from_secs(1)).await,
+            Err(AnalysisError::Cancelled)
+        ));
+    }
 }

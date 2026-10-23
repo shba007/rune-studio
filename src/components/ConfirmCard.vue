@@ -9,6 +9,7 @@ const agent = props.agent
 
 const question = computed(() => agent.question.value)
 const asking = computed(() => question.value?.kind === 'question')
+const restarting = computed(() => question.value?.kind === 'restart')
 const left = ref(0)
 watch(question, (asked) => (left.value = asked?.timeoutSecs ?? 0), { immediate: true })
 useIntervalFn(() => (left.value = Math.max(0, left.value - 1)), 1000)
@@ -70,7 +71,7 @@ onMounted(() => no.value?.focus())
         class="h-8 flex-1 cursor-pointer rounded-full border border-white/25 text-label text-zinc-200 transition hover:bg-white/10"
         @click="agent.answer(false)"
       >
-        No
+        {{ restarting ? 'Keep stopped' : 'No' }}
       </button>
       <button
         type="button"
@@ -82,7 +83,7 @@ onMounted(() => no.value?.focus())
         "
         @click="agent.answer(true)"
       >
-        {{ asking ? 'Yes' : 'Yes, allow' }}
+        {{ restarting ? 'Restart session' : asking ? 'Yes' : 'Yes, allow' }}
       </button>
     </div>
     <p class="text-center text-caption text-zinc-500 uppercase">

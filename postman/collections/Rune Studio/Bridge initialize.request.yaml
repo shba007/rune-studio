@@ -1,0 +1,17 @@
+$kind: http-request
+id: 06fa5ebe133dad31bd8f0167
+name: Bridge initialize
+method: POST
+url: '{{studio_url}}/mcp'
+body:
+  type: json
+  content: '{"jsonrpc":"2.0","method":"initialize","id":"Bridge initialize","params":{"clientInfo":{"name":"postman-rune-studio","version":"1.0.0"},"capabilities":{},"protocolVersion":"2025-06-18"}}'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{studio_token}}'
+scripts:
+  - type: afterResponse
+    code: pm.test("JSON-RPC envelope", () => { pm.response.to.have.status(200); const r = pm.response.json(); pm.expect(r.jsonrpc).to.eql("2.0"); pm.expect(r.id).to.eql("Bridge initialize"); }); pm.test("RPC success", () => pm.expect(pm.response.json()).not.to.have.property("error"));pm.test("Studio identity", () => { pm.expect(pm.response.json().result.serverInfo.name).to.eql("rune-studio"); });
+    language: text/javascript

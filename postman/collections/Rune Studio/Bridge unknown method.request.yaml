@@ -1,0 +1,17 @@
+$kind: http-request
+id: 09785a29bf45f2f276ea298b
+name: Bridge unknown method
+method: POST
+url: '{{studio_url}}/mcp'
+body:
+  type: json
+  content: '{"jsonrpc":"2.0","method":"postman/unknown","id":"Bridge unknown method","params":{}}'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{studio_token}}'
+scripts:
+  - type: afterResponse
+    code: pm.test("JSON-RPC envelope", () => { pm.response.to.have.status(200); const r = pm.response.json(); pm.expect(r.jsonrpc).to.eql("2.0"); pm.expect(r.id).to.eql("Bridge unknown method"); });pm.test("Unknown method rejected", () => { pm.expect(pm.response.json().error.code).to.eql(-32601); });
+    language: text/javascript

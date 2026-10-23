@@ -24,8 +24,12 @@ const tool =
       type="button"
       :class="[tool, 'bottom-0']"
       aria-label="Analyse the screen"
-      title="Analyse the screen"
-      :disabled="agent.isRunning.value"
+      :title="
+        agent.settings.value?.externalAgent
+          ? 'Ask your external agent to call rune_analyze'
+          : 'Analyse the screen'
+      "
+      :disabled="agent.isRunning.value || agent.settings.value?.externalAgent"
       @click="agent.analyzeScreen()"
     >
       <AppIcon name="scan" />

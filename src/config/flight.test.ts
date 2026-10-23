@@ -214,6 +214,12 @@ describe('drawer tabs show only where there is data', () => {
     expect(tabsFor({ step: undefined, calls: [], hasFiles: true, toolEvents: 3 })).toEqual([])
   })
 
+  it('exposes analysis results in the existing Tools tab without requiring a separate event', () => {
+    expect(
+      tabsFor({ step: { ...bare, tool: 'analyze' }, calls: [], hasFiles: false, toolEvents: 0 }),
+    ).toContain('tools')
+  })
+
   it('adds a tab for each kind of data present', () => {
     const rich = step(1, null, {
       thinkingChars: 120,

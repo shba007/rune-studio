@@ -1,0 +1,11 @@
+$kind: collection
+name: Rune Studio
+description: >-
+  Diagnose Studio's local agent bridge and its Infer HTTP backend without
+  acquiring desktop control. Kit stdio is a separate protocol boundary.
+variables:
+  studio_url: http://127.0.0.1:47600
+  infer_url: http://127.0.0.1:8080
+  studio_token: ''
+  infer_token: ''
+  model: ''

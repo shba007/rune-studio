@@ -114,9 +114,10 @@ pub fn set_agent_state(app: &AppHandle, state: AgentState) {
     apply_state(app, state, true);
 }
 
-#[cfg(debug_assertions)]
 pub fn preview_agent_state(app: &AppHandle, state: AgentState) {
-    apply_state(app, state, false);
+    // Animation previews never take execution ownership or change the real state.
+    overlay::sync(app, state);
+    let _ = app.emit(STATE_CHANGED, StateChanged { state });
 }
 
 fn apply_state(app: &AppHandle, state: AgentState, allow_click_through: bool) {

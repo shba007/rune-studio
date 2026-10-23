@@ -15,8 +15,15 @@ use crate::{
 #[tauri::command]
 pub fn get_settings(app: AppHandle, state: State<'_, AppState>) -> Settings {
     let on_disk = settings::load(&app).external_agent;
+    let analysis = state.analysis.locked();
+    let busy = events::agent_state(&app).is_running()
+        || state.lease.locked().is_held()
+        || state.mic.locked().is_some()
+        || crate::analysis::state::in_flight(analysis.status);
     let mut settings = state.settings.locked();
-    settings.external_agent = on_disk;
+    if !busy {
+        settings.external_agent = on_disk;
+    }
     settings.clone()
 }
 
@@ -27,16 +34,30 @@ pub fn save_settings(
     settings: Settings,
 ) -> AppResult<()> {
     Hotkeys::validate(&settings).map_err(AppError::Invalid)?;
+    let analysis = state.analysis.locked();
+    let was_on = state.settings.locked().external_agent;
+    validate_mode_change(
+        was_on,
+        settings.external_agent,
+        events::agent_state(&app).is_running()
+            || state.lease.locked().is_held()
+            || state.mic.locked().is_some()
+            || crate::analysis::state::in_flight(analysis.status),
+    )?;
     settings::save(&app, &settings)?;
     crate::hub::changed(&app);
 
     let next = Hotkeys::from_settings(&settings);
-    let was_on = state.settings.locked().external_agent;
     if settings.external_agent && !was_on {
         state.lease.locked().rearm();
     }
     let demo_changed = state.settings.locked().demo_mode != settings.demo_mode;
+    let hide_previews = state.settings.locked().developer_mode && !settings.developer_mode;
     *state.settings.locked() = settings;
+    drop(analysis);
+    if hide_previews {
+        events::preview_agent_state(&app, events::agent_state(&app));
+    }
     if demo_changed {
         crate::window::apply_demo_mode(&app);
     }
@@ -45,6 +66,27 @@ pub fn save_settings(
         hotkeys::apply(&app, Some(&previous), &next).map_err(AppError::Invalid)?;
     }
     Ok(())
+}
+
+fn validate_mode_change(current: bool, next: bool, busy: bool) -> AppResult<()> {
+    if current != next && busy {
+        return Err(AppError::Invalid(
+            "Finish or stop the current session before changing execution mode".into(),
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod execution_tests {
+    #[test]
+    fn either_mode_is_fixed_until_the_session_ends() {
+        for external in [false, true] {
+            assert!(super::validate_mode_change(external, !external, true).is_err());
+            assert!(super::validate_mode_change(external, external, true).is_ok());
+            assert!(super::validate_mode_change(external, !external, false).is_ok());
+        }
+    }
 }
 
 #[tauri::command]
@@ -143,6 +185,10 @@ pub fn begin_task_planned(
 ) -> AppResult<()> {
     let state = app.state::<AppState>();
     let task = text.trim();
+    let analysis = state.analysis.locked();
+    if state.settings.locked().external_agent {
+        return Err(AppError::Invalid("External agent mode is selected. Start tasks in your agent host, or select API mode before a new session.".into()));
+    }
     crate::reflect::touch(app, crate::reflect::idle::Input::Task);
     state.steer.locked().clear();
     if task.is_empty() {
@@ -154,7 +200,7 @@ pub fn begin_task_planned(
     if state.lease.locked().is_held() {
         return Err(AppError::Invalid("An outside agent is in control".into()));
     }
-    if crate::analysis::state::in_flight(state.analysis.locked().status) {
+    if crate::analysis::state::in_flight(analysis.status) {
         return Err(AppError::Invalid(
             "A screen analysis is still running".into(),
         ));
@@ -211,6 +257,12 @@ pub async fn toggle_listening(app: AppHandle, state: State<'_, AppState>) -> App
         return Ok(());
     }
 
+    if state.settings.locked().external_agent {
+        return Err(AppError::Invalid(
+            "Use your external agent host for voice input in external agent mode".into(),
+        ));
+    }
+
     if events::agent_state(&app).is_running() {
         return Err(AppError::Invalid(
             "Stop the current task before listening".into(),
@@ -251,10 +303,11 @@ pub fn confirm(app: AppHandle, id: String, approved: bool) -> AppResult<()> {
     }
 }
 
-#[cfg(debug_assertions)]
 #[tauri::command]
-pub fn debug_set_state(app: AppHandle, state: AgentState) {
+pub fn debug_set_state(app: AppHandle, state: AgentState) -> AppResult<()> {
+    crate::debug::require_idle(&app)?;
     events::preview_agent_state(&app, state);
+    Ok(())
 }
 
 #[tauri::command]

@@ -1,0 +1,34 @@
+import { shallowMount } from '@vue/test-utils'
+import { reactive, ref } from 'vue'
+import { describe, expect, it, vi } from 'vite-plus/test'
+import SettingsGeneral from './SettingsGeneral.vue'
+import DevInputLab from './DevInputLab.vue'
+import type { Agent } from '@/composables/useAgent'
+import type { Settings } from '@/types/protocol'
+
+describe('developer controls', () => {
+  it('uses the saved developer setting rather than the development build flag', async () => {
+    const draft = reactive({
+      developerMode: false,
+      models: {},
+      model: '',
+      decisionModel: '',
+    }) as Settings
+    const debugSetState = vi.fn<(state: string) => void>()
+    const agent = { backend: ref(null), debugSetState } as unknown as Agent
+    const wrapper = shallowMount(SettingsGeneral, { props: { agent, draft, apiKey: '' } })
+    expect(wrapper.find('details').exists()).toBe(false)
+    expect(wrapper.findComponent(DevInputLab).exists()).toBe(false)
+    draft.developerMode = true
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('details').exists()).toBe(true)
+    expect(wrapper.findComponent(DevInputLab).exists()).toBe(true)
+    const acting = wrapper.findAll('details button').find((button) => button.text() === 'acting')!
+    await acting.trigger('click')
+    expect(debugSetState).toHaveBeenCalledWith('acting')
+    draft.developerMode = false
+    await wrapper.vm.$nextTick()
+    expect(wrapper.findComponent(DevInputLab).exists()).toBe(false)
+    wrapper.unmount()
+  })
+})

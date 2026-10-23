@@ -44,7 +44,6 @@ watch(
 const apiKey = defineModel<string>('apiKey', { required: true })
 defineEmits<{ 'commit-key': [] }>()
 
-const isDev = import.meta.env.DEV
 const DEBUG_STATES: AgentState[] = [
   'idle',
   'listening',
@@ -182,17 +181,19 @@ async function revealDeveloper() {
       <HubToggle
         v-model="draft.developerMode"
         label="Developer mode"
-        hint="Rune Preview shows the raw record, prompts and model calls of each step."
+        hint="Show screen capture, input tests, animation previews and raw session records."
       />
     </HubGroup>
 
     <details
-      v-if="isDev"
+      v-if="draft.developerMode"
       ref="developer"
       class="rounded-2xl bg-white/5 px-5 py-3"
       @toggle="revealDeveloper"
     >
-      <summary class="cursor-pointer text-caption text-zinc-500 uppercase">Debug</summary>
+      <summary class="cursor-pointer text-caption text-zinc-500 uppercase">
+        Capture, input and animation
+      </summary>
       <div class="flex flex-wrap gap-2 pt-3">
         <button
           v-for="s in DEBUG_STATES"
