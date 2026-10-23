@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.0.26
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.0.25...v0.0.26)
+
+### 🚀 Enhancements
+
+- Implement external agent mode with session management ([944af31](https://github.com/shba007/rune-studio/commit/944af31))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi <shirsendu2001@gmail.com>
+
 ## v0.0.25
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.0.22...v0.0.25)

@@ -1,6 +1,6 @@
 {
   "name": "rune-studio",
-  "version": "0.0.25",
+  "version": "0.0.26",
   "private": true,
   "description": "Voice and text driven desktop agent that controls the PC through rune-infer",
   "license": "MIT",
