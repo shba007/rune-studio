@@ -11,7 +11,7 @@
 
 ### Release preparation
 
-- Publish release notes from this exact versioned changelog section. CI validates prepared changes without committing fixes, pushing version branches or regenerating notes from commit history.
+- Restore automatic release preparation after successful validation, with synchronized versions and changelog notes in a reviewable release PR. Publication extracts this exact versioned changelog section.
 
 ### Compatibility
 

@@ -96,23 +96,25 @@ folder, enable/select tools, ask a tool-capable model to use all five, stop a ca
 and inspect Tools/Safety session review. Try an outside-root path and verify a
 visible refusal. Report exact Studio/Kit/plugin/Infer versions, model and session.
 
-## Owner-controlled release
+## Owner-reviewed automated release
 
-Prepared version: 0.0.23. Preview with `node scripts/release-notes.mjs`.
-CI now validates without auto-commits, auto-version bumps or branch pushes.
-The previous workflow did all three; those steps are removed. Owner reviews,
-commits and pushes develop, then promotes main using the existing release trigger
-(commit message containing ci(release):). release.yml extracts the exact matching
-CHANGELOG section and publishes; deploy.yml uploads artifacts after publication.
-There is no later source version bump or history-generated release description.
-Missing/empty/mismatched/placeholder sections fail before publication. Historical
-notes, tags and releases are preserved. No release workflow was dispatched here.
+Agents leave changes uncommitted and unstaged. After owner pushes develop and
+strict frontend/Rust checks pass, CI calculates versions and generates notes
+from reviewed conventional history. It updates one release/update-version PR;
+the owner reviews/merges it, then promotes develop to main with a merge commit
+whose title contains ci(release):. Merging into develop alone does not publish.
+Publication extracts the exact prepared changelog version section. No AI service
+or second history-based prose generator is used. Historical notes stay intact.
 
+Use `cargo run --locked --manifest-path xtask/Cargo.toml -- prepare` for a dry run
+and `cargo run --locked --manifest-path xtask/Cargo.toml -- notes` for exact notes.
+See [release rules and token/event requirements](RELEASING.md). The legacy Node
+release helper is superseded by Rust. No release workflow was dispatched here.
 Verification results on Windows: 483 Rust tests passed, 11 ignored; the separate
 real-Kit acceptance test passed; 160 frontend tests passed across 22 files.
 Typecheck, production build, lint, Clippy (-D warnings), cargo fmt, frontend
-formatting, diff whitespace and workflow YAML syntax checks passed. Two release
-preview tests passed (exact extraction plus rejection cases). Clippy reported
+formatting, diff whitespace and workflow YAML syntax checks passed. Eight Rust release
+utility tests passed, covering preparation, idempotence and exact extraction. Clippy reported
 only host incremental-cache hard-link fallback warnings. CI publication itself
 was not run, and Linux/macOS execution and live model/GUI trials remain untested.
 
@@ -126,5 +128,5 @@ Exact local artifact SHA-256 values:
 Changed files: AGENTS.md, README.md, docs/kit.md, CHANGELOG.md, package.json;
 src-tauri/Cargo.toml and Cargo.lock; src-tauri/src/kit/client.rs, mod.rs and
 schema.rs; src-tauri/tests/fixtures/kit_gateway.rs; src/components/SettingsTools.vue
-and SettingsTools.test.ts; scripts/release-notes.mjs and release-notes.test.mjs;
+and SettingsTools.test.ts; the Rust release utility under xtask and docs/RELEASING.md;
 .github/workflows/integrate.yml, release.yml and deploy.yml.
