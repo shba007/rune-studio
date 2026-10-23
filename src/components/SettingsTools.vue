@@ -6,15 +6,16 @@ interface Config {
   enabled: boolean
   executable: string
   selected: string[]
+  root: string
 }
 interface Tool {
   name: string
   description: string
   inputSchema: unknown
 }
-const config = ref<Config>({ enabled: false, executable: '', selected: [] })
+const config = ref<Config>({ enabled: false, executable: '', selected: [], root: '' })
 const tools = ref<Tool[]>([])
-const status = ref('Not connected. Kit 0.3.1 or newer is required.')
+const status = ref('Not connected. rune-kit 0.5.0 or newer with MCP 2026-07-28 is required.')
 const busy = ref(false)
 async function save() {
   try {
@@ -26,13 +27,17 @@ async function save() {
 async function refresh() {
   busy.value = true
   try {
-    const result = await invoke<{ version: string; tools: Tool[] }>('kit_discover', {
-      config: config.value,
-    })
+    const result = await invoke<{ version: string; tools: Tool[]; unavailable?: string[] }>(
+      'kit_discover',
+      {
+        config: config.value,
+      },
+    )
     tools.value = result.tools
     status.value = result.tools.length
       ? `${result.version}: ${result.tools.length} supported read-only tools available.`
-      : `${result.version}: no supported tools. Install time/git 0.3.0+ plugins separately; tools with unsafe metadata or unsupported schemas remain unavailable.`
+      : `${result.version}: no supported tools. Check installed time/git plugins and filesystem 0.4.1+. File tools require a folder below. Unsafe metadata or unsupported schemas remain unavailable.`
+    if (result.unavailable?.length) status.value += ` ${result.unavailable.join('; ')}`
   } catch (error) {
     tools.value = []
     status.value = String(error)
@@ -68,13 +73,27 @@ onMounted(async () => {
       <input
         v-model="config.executable"
         class="rounded-lg bg-zinc-900 p-3"
-        placeholder="rune-kit.exe or rune.exe"
+        placeholder="Default: ~/rune/rune-kit.exe (Windows) or ~/rune/rune-kit"
         @change="save"
       />
     </label>
     <p class="m-0 text-zinc-400">
-      Read-only tools only. Install Kit and plugins separately. File tools are not available in this
-      release.
+      Read-only tools only. Install rune-kit and plugins separately. Discovery checks ~/rune before
+      PATH.
+    </p>
+    <label class="flex flex-col gap-2"
+      >Filesystem folder (optional, absolute path)
+      <input
+        v-model="config.root"
+        class="rounded-lg bg-zinc-900 p-3"
+        placeholder="Choose a folder to expose to file tools"
+        @change="save"
+      />
+    </label>
+    <p class="m-0 text-zinc-400">
+      File contents are sent to the selected model. Choose a trusted folder; these tools do not
+      inherit Life protections. Folder changes stop owned gateways. Refresh discovery after changing
+      the folder.
     </p>
     <button class="rounded-lg bg-white/10 p-3" :disabled="busy" @click="refresh">
       {{ busy ? 'Discovering…' : 'Refresh / discover' }}

@@ -215,6 +215,20 @@ jobs:
       - name: 📦 Install Dependencies
         run: bun install --frozen-lockfile
 
+      - name: Validate owner-prepared release body
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          import { releaseNotes } from './scripts/release-notes.mjs';
+          const version = JSON.parse(readFileSync('package.json', 'utf8')).version;
+          const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
+          const notes = releaseNotes(readFileSync('CHANGELOG.md', 'utf8'), version);
+          if (event.release.tag_name !== `v${version}` || event.release.body.trim() !== notes.trim()) {
+            throw new Error('Published version/body does not match the prepared CHANGELOG section');
+          }
+          NODE
+
       - name: ⚙️ Build and Upload App Artifact
         uses: tauri-apps/tauri-action@v1
         env:
@@ -223,8 +237,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           args: ${{ matrix.args }}
-          tagName: v__VERSION__
-          releaseName: 'v__VERSION__'
+          releaseId: ${{ github.event.release.id }}
+          generateReleaseNotes: false
           releaseDraft: false
           prerelease: false
 

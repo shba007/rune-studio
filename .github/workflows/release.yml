@@ -24,7 +24,16 @@ jobs:
         with:
           bun-version: latest
 
-      - name: 📝 Create Release Note
-        run: bunx changelogen@latest gh release
+      - name: Extract prepared changelog section
+        run: node scripts/release-notes.mjs --out "$RUNNER_TEMP/release-notes.md"
+      - name: Publish owner-prepared release
+        shell: bash
+        run: |
+          version=$(bun -p "require('./package.json').version")
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version"; then
+            echo "Release tag v$version already exists; prepare a new version." >&2
+            exit 1
+          fi
+          gh release create "v$version" --target "$GITHUB_SHA" --title "v$version" --notes-file "$RUNNER_TEMP/release-notes.md"
         env:
-          GITHUB_TOKEN: ${{secrets.GH_TOKEN}}
+          GH_TOKEN: ${{secrets.GH_TOKEN}}

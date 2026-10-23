@@ -1,104 +1,130 @@
-# Selected Kit tools
+# Selected read-only Kit tools
 
-Cycle 2 adds a small read-only Kit integration to the existing desktop agent.
-Open Settings → Tools. Tools are off and unselected by default.
+Open Settings → Tools. Tools remain off and unselected by default.
 
-## Setup
+## Installation and discovery
 
-Install Kit and plugins yourself; Studio never downloads, installs or updates them.
-The tested baseline is **Kit 0.3.1**, **rune-time 0.3.0**, and **rune-git 0.3.0**.
-With a separately installed Kit, the manual plugin commands are:
+Use **rune-kit 0.5.0+** supporting MCP **2026-07-28**. Studio checks an explicit
+executable first, then the actual user's `~/rune/rune-kit.exe` on Windows
+(`~/rune/rune-kit` elsewhere), then PATH `rune-kit`. It never auto-selects `rune`.
+The shared-home lookup works even when a desktop launch inherits an old PATH.
+Missing/incompatible binaries show actionable guidance. Install Kit/plugins
+separately; Studio never downloads, updates, migrates or installs them.
 
-```text
-rune install rune-time --version 0.3.0
-rune install rune-git --version 0.3.0 --native
-```
+Shared ecosystem layout is `~/rune` for Kit/Infer executables, `~/rune/tools` for
+Kit storage, `~/rune/tools/plugins` for payloads, and `~/rune/infer/config` for
+Infer configuration. Kit/Infer installers own their storage migration, preserve
+originals until validation, refuse destination conflicts, avoid unrelated models
+and projects, preserve each other's files and add the shared root to user PATH
+at most once. Studio changes neither PATH nor those directories. Existing
+explicit Kit selection stays configured; an old selection must be updated by
+the owner. No legacy executable is renamed or deleted. Unresolvable home produces
+an error unless an explicit executable was supplied; it never falls back to CWD.
 
-Use the corresponding `rune-kit` command if your Kit release renamed the executable.
-Studio tries an explicit executable path first, otherwise PATH `rune-kit` then
-legacy `rune`. It accepts both CLI version titles, including a renamed executable
-that still reports `rune 0.3.1`. Versions before 0.3.1 are unavailable.
+Studio only uses Infer's configured HTTP URL. It has no Infer executable/config
+lookup or process management to migrate. Studio's app config, credentials and
+trace schema (version 8) stay unchanged. Existing kit.json gains an optional
+root field defaulting to empty; old enable/selection/executable fields survive.
 
-Press Refresh / discover, then select the tools you want. A failed discovery is
-shown as an error; an empty successful discovery is reported separately. Old
-plugins without safe annotations/rules, unknown tools, duplicate identities and
-unsupported schemas are not advertised. A missing Kit/plugin leaves desktop
-control available. A model reported not to support tool calling gets an explicit
-unavailable state in Tools settings.
+## Tools and folder boundary
 
-Supported operations:
+Refresh discovery and select the tools you want:
 
-- `get_current_time`: current UTC or an IANA timezone.
-- `convert_time`: conversion between IANA timezones.
-- `validate_commit_message`: validation only, never creating a commit.
+- time 0.3.0: get_current_time and convert_time.
+- git 0.3.0: validate_commit_message.
+- filesystem 0.4.1+: read_text_file and list_directory.
 
-The approved exact gateway identities are the `time__` / `rune-time__` and
-`git__` / `rune-git__` forms for those operations. Studio prefixes model-facing
-names with `kit__` and maps them back exactly. Tool schemas come from discovery.
-No write-mode or arbitrary-tool switch is provided.
+File tools additionally require an existing absolute folder entered by the owner
+in Tools settings. Refresh after changing it. Studio passes `-p allowed_dir=...`
+as a process argument, never from model arguments. The Kit WASI directory
+capability is the confinement boundary; Studio string checks are not a sandbox.
+File contents are sent to the selected model and do not inherit Life protections.
+Choose only a trusted folder and ancestors. Folder/config changes stop owned
+gateways. Missing root leaves file tools unavailable. Missing/conflicting rules,
+unsafe tools, unsupported schemas and duplicate identities never grant access.
+Discovery failure and empty success remain distinct; filtered approved tools
+include a reason in the status. Known tool-incapable models have a clear UI state.
 
-## Execution and review
+Only exact time/rune-time, git/rune-git and filesystem/rune-filesystem gateway
+identities for these five operations are approved. Actual discovered schemas
+become kit__-prefixed model tools. Every call rechecks selection and metadata and
+passes through the existing gate, including Ask before every action. There is no
+write, network or arbitrary command option.
 
-The existing agent receives selected Kit tools alongside desktop tools. Every
-external action uses Studio's existing gate, including Ask before every action.
-Tool output is untrusted data and cannot change selection or settings. Arguments
-are validated against the discovered schema before dispatch. The supported
-schema subset is object/string/boolean/number/integer, required properties,
-additionalProperties boolean, enums, numeric minimum/maximum and string length
-bounds. Arrays, pattern, format, references and other constructs make a tool
-unavailable rather than being silently ignored.
+## Public MCP and internal ABI
 
-Each call starts a Studio-owned read-only gateway with the selected allowlist,
-rechecks discovery facts and selection, performs one call and closes the gateway.
-Calls are serialized. There is no automatic replay after disconnection. Startup,
-initialization, discovery and call waits are bounded. Stop sends cancellation,
-ends the wait and kills the owned gateway if needed; late replies are discarded.
-Changing Tools configuration and application exit stop owned gateways. We do not
-claim that force-killing a gateway terminates every possible descendant process.
+Studio → Kit is public MCP 2026-07-28 stdio: one UTF-8 JSON-RPC message per line,
+server/discover, tools/list and tools/call. Every request supplies protocolVersion,
+empty clientCapabilities and clientInfo in the io.modelcontextprotocol/* metadata
+keys under params._meta. No initialize/initialized handshake is used. Only complete
+results are supported; no subscriptions, elicitation, tasks or resource browser
+is advertised. Discovery is refreshed per gateway (no persisted cache).
 
-Session review reuses the existing step trace and Tools tab. It records name,
-bounded/redacted arguments and result, duration, gate decision and outcome,
-including refusal, failure and cancellation. Normal overlay step completion is
-emitted after tool execution. Replies above the output budget are explicitly
-marked truncated; protocol messages above 64 KB fail with a bounded error.
-No trace migration was needed; schema stays version 8.
+Kit's normative schema and protocol tests are the local integration reference:
+../code-kit/crates/core/tests/protocol_tests.rs and docs/MCP-CONTRACT.md. The
+advertised fixtures/mcp-2026-07-28.json was absent during verification; Studio's
+fake server asserts modern metadata and rejects the old handshake. The native
+plugin JSON-RPC and WASM exports are private Kit/Tools ABI, unchanged here.
+Reference: https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/stdio
 
-## Filesystem release blocker
+The validated schema subset covers object/string/boolean/number/integer, required,
+additionalProperties boolean, enum, numeric bounds and string length bounds.
+x-rune-rules and x-rune-read-limits are metadata; Kit/plugin enforce file output
+limits. Unsupported constraints make tools unavailable. Results are bounded and
+redacted, with explicit truncation. Plugin error envelopes and MCP isError are
+failures, never successful empty results. Session review reuses existing traces.
 
-File tools are deliberately unavailable in this release. In a direct test with
-released Kit 0.3.1 and `rune-filesystem` 0.4.0, supplying
-`-p allowed_dir=<disposable folder>` still left `read_text_file` declared
-`read_only: false`, `readOnly: false`, and `readOnlyHint: false`. Consequently
-`--read-only` exposes an empty tool list. No file read is claimed shipped.
+Requests retain unique IDs, finite deadlines, bounded stderr/framing, cancellation,
+late-reply discard and no uncertain call replay. Each serialized call starts an
+owned read-only allowlisted gateway. Stop/config changes/exit terminate owned
+gateways when needed. Descendant-process termination is not guaranteed.
 
-The smallest required follow-up is a released filesystem/gateway combination
-that exposes bounded read/list tools as read-only, with its host/guest path and
-outside-root refusal verified. Studio can then add the user-owned root and those
-exact identities; string path checks alone will not be treated as a sandbox.
-Ordinary file contents would be sent to the selected model and would not inherit
-unfinished Life protections.
+## Local acceptance and owner trial
 
-## Verification and remaining owner trial
+Actual Windows Studio client checks used local Kit target/debug/rune-kit.exe
+0.5.0, time 0.3.0 WASM, git 0.3.0 Windows native and filesystem 0.4.1 WASM from
+code-tools build outputs, through an isolated RUNE_KIT_DATA_DIR registry.
+Five operations, in-root read/list, outside-root/missing-file errors, deselection
+and recovery passed. No installed registry was modified. The ignored test
+actual_kit_plugins_through_studio is reproducible with STUDIO_KIT_TEST_EXE and
+an isolated RUNE_KIT_DATA_DIR containing those three plugins. These are local
+artifacts, not a claim that Kit 0.5.0 is publicly released. Linux/macOS runtime
+and live model/desktop acceptance are untested.
 
-Deterministic coverage includes partial framing, discovery/call success,
-discovery errors versus empty success, malformed/oversized messages,
-timeout/disconnection, ignored cancellation and late replies, unselected tools,
-conflicting facts, argument validation, error results, output truncation and
-RPC cancellation/refusal classification. Rust: 481 passed, 10 ignored. Frontend:
-159 passed. Application typecheck, production build, lint, Clippy and formatting
-passed. Restricted loopback/temp-file failures were rerun outside the sandbox.
+Owner trial: install a compatible Kit/plugins, refresh Tools, choose a disposable
+folder, enable/select tools, ask a tool-capable model to use all five, stop a call
+and inspect Tools/Safety session review. Try an outside-root path and verify a
+visible refusal. Report exact Studio/Kit/plugin/Infer versions, model and session.
 
-Real portable-release checks passed with Kit 0.3.1 and time/git 0.3.0: current
-Kolkata time, UTC 12:00 → Kolkata 17:30 on 2026-10-23, and Conventional Commit
-message validation. Artifacts were run directly through Kit, without changing
-installed plugins. Installed older plugins exposed an empty read-only list.
-No live Infer was available at the configured local endpoint, so no model-driven
-or interactive Windows acceptance is claimed.
+## Owner-controlled release
 
-Five-minute owner trial:
+Prepared version: 0.0.23. Preview with `node scripts/release-notes.mjs`.
+CI now validates without auto-commits, auto-version bumps or branch pushes.
+The previous workflow did all three; those steps are removed. Owner reviews,
+commits and pushes develop, then promotes main using the existing release trigger
+(commit message containing ci(release):). release.yml extracts the exact matching
+CHANGELOG section and publishes; deploy.yml uploads artifacts after publication.
+There is no later source version bump or history-generated release description.
+Missing/empty/mismatched/placeholder sections fail before publication. Historical
+notes, tags and releases are preserved. No release workflow was dispatched here.
 
-1. Install compatible Kit/plugins separately and discover them in Settings → Tools.
-2. Enable and select the three tools; use a tool-capable agent model.
-3. Ask for current time, a UTC/Kolkata conversion, and commit-message validation.
-4. Stop a call, then start a new task; inspect the session's Tools and Safety tabs.
-5. Report Studio/Kit/plugin/Infer versions, model, session ID and any failing step.
+Verification results on Windows: 483 Rust tests passed, 11 ignored; the separate
+real-Kit acceptance test passed; 160 frontend tests passed across 22 files.
+Typecheck, production build, lint, Clippy (-D warnings), cargo fmt, frontend
+formatting, diff whitespace and workflow YAML syntax checks passed. Two release
+preview tests passed (exact extraction plus rejection cases). Clippy reported
+only host incremental-cache hard-link fallback warnings. CI publication itself
+was not run, and Linux/macOS execution and live model/GUI trials remain untested.
+
+Exact local artifact SHA-256 values:
+
+- Kit 0.5.0: a194a7768e72f836a797230b8ddac2b43499cd1c5890aa6909e33f29d8a1498e
+- filesystem 0.4.1: 13da65a89d73f40155b9baddd59b49c2195cd70249e6305290713c3994a51e24
+- time 0.3.0: 1f4ad30d00f0e250611fb642b965dea2b9a843bb4d6f729e03256cc161b7f3a8
+- git 0.3.0: 2f00f4ac969aa371e16ee6251e0b1973e943a5f323821b5f7c0ff3c61ea9b442
+
+Changed files: AGENTS.md, README.md, docs/kit.md, CHANGELOG.md, package.json;
+src-tauri/Cargo.toml and Cargo.lock; src-tauri/src/kit/client.rs, mod.rs and
+schema.rs; src-tauri/tests/fixtures/kit_gateway.rs; src/components/SettingsTools.vue
+and SettingsTools.test.ts; scripts/release-notes.mjs and release-notes.test.mjs;
+.github/workflows/integrate.yml, release.yml and deploy.yml.

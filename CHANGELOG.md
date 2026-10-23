@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.0.23
+
+### Fixes
+
+- Discover rune-kit from the shared home installation before PATH, while preserving explicit executable selection and avoiding unrelated rune commands.
+- Require rune-kit 0.5.0 or newer and use MCP 2026-07-28 request metadata and server discovery. Incompatible binaries now show upgrade guidance.
+- Enable selected read-only file reads and directory listings inside an owner-configured folder with filesystem 0.4.1 or newer. File contents are sent to the selected model; outside-root access and plugin failures remain visible errors.
+- Preserve selected time and commit-validation tools, safety checks, bounded results, cancellation and session review.
+
+### Release preparation
+
+- Publish release notes from this exact versioned changelog section. CI validates prepared changes without committing fixes, pushing version branches or regenerating notes from commit history.
+
+### Compatibility
+
+- Legacy rune executables and Kit versions before 0.5.0 are no longer supported. Install rune-kit separately or select its explicit path. Existing Studio settings and trace data are preserved; file tools remain unavailable until a folder is configured and the tools are selected.
+
 ## v0.0.22
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.0.20...v0.0.22)

@@ -21,6 +21,7 @@ pub fn supported(schema: &Value) -> bool {
                 | "minLength"
                 | "maxLength"
                 | "x-rune-rules"
+                | "x-rune-read-limits"
         )
     }) && schema["type"]
         .as_str()

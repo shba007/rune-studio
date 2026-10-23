@@ -1,4 +1,4 @@
-//! Cycle 2 Kit integration boundaries. Discovery never grants execution authority.
+//! Selected Kit integration boundaries. Discovery never grants execution authority.
 use serde_json::Value;
 
 /// Exact gateway identities only; names containing an approved suffix are not approved.
@@ -11,6 +11,10 @@ pub fn approved_identity(name: &str) -> bool {
             | "rune-time__convert_time"
             | "git__validate_commit_message"
             | "rune-git__validate_commit_message"
+            | "filesystem__read_text_file"
+            | "rune-filesystem__read_text_file"
+            | "filesystem__list_directory"
+            | "rune-filesystem__list_directory"
     )
 }
 
@@ -78,3 +82,8 @@ mod tests {
 
 pub mod client;
 pub mod schema;
+
+pub fn filesystem_identity(name: &str) -> bool {
+    approved_identity(name)
+        && (name.starts_with("filesystem__") || name.starts_with("rune-filesystem__"))
+}

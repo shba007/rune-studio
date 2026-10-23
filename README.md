@@ -357,4 +357,4 @@ Copyright &copy; 2024 Shirsendu Bairagi.
 
 ### Selected read-only Kit tools
 
-Settings → Tools can enable selected time and commit-message validation tools through Kit 0.3.1+. Kit/plugin installation remains manual. See [setup, permissions and verification](docs/kit.md). File tools remain unavailable pending the bounded read-only gateway contract.
+Settings → Tools supports selected time, commit-message validation and bounded file read/list tools through rune-kit 0.5.0+ (MCP 2026-07-28). Kit/plugin installation remains manual. File tools require an owner-configured folder and filesystem 0.4.1+. See [setup, permissions and verification](docs/kit.md).
