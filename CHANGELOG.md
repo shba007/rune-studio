@@ -18,6 +18,15 @@
 
 - Legacy rune executables and Kit versions before 0.5.0 are no longer supported. Install rune-kit separately or select its explicit path. Existing Studio settings and trace data are preserved; file tools remain unavailable until a folder is configured and the tools are selected.
 
+### Features
+
+- release: allow all semantic commit types to trigger release preparation
+- ci: update integration workflow to include release/update-version branch
+
+### Maintenance
+
+- remove release notes test file
+
 ## v0.0.22
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.0.20...v0.0.22)
