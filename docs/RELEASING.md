@@ -8,14 +8,16 @@ release branch and publish after owner review/promotion. No AI service is used.
 
 1. Owner pushes develop. Vue CI runs frontend typecheck/tests/build/lint/format,
    release utility tests/Clippy/format, and Windows app Rust tests/Clippy/format.
-   All PRs and release/update-version branch pushes get the same checks; there is no
-   blanket skip for merges or release commits. PR jobs have read-only permissions.
+   Only develop pushes trigger Vue CI. PR events and release/update-version pushes
+   do not trigger duplicate runs. Merge/release commits still receive validation.
 2. After both validation jobs pass, a trusted develop push prepares release files.
    It checks the tested SHA is still current, then uses the Rust utility to update
    package.json, src-tauri/Cargo.toml, src-tauri/Cargo.lock, CHANGELOG.md and
    .release/prepared.json. Tauri already reads ../package.json. bun.lock contains
    dependency metadata, not the app version; xtask is an independently versioned,
-   unpublished developer utility. No other source files are autoformatted/committed.
+   unpublished developer utility. The same run validates generated version/notes,
+   reruns release-tool tests and checks locked Cargo metadata before opening the PR.
+   No other source files are autoformatted/committed.
 3. peter-evans/create-pull-request updates one branch, release/update-version,
    targeting develop. Both title and commit are ci(release): update version.
    The exact generated changelog section supplies its PR body. Owner reviews
@@ -102,10 +104,10 @@ approval/SSO. Never print token values. Both preparation and publication fail
 clearly if the secret is missing; actual scopes/expiry require owner verification.
 
 create-pull-request uses token=GITHUB_TOKEN for PR operations and
-branch-token=GH_TOKEN for Git pushes. The event-capable branch push triggers full
-validation on release/update-version even if the bot-created PR workflow requires
-owner approval. Approve that PR workflow if GitHub displays an approval banner;
-no validation checks are bypassed. Preparation itself still runs only on develop.
+branch-token=GH_TOKEN for Git pushes. Vue CI listens only to develop pushes;
+opening/updating the PR or pushing its branch starts no additional Vue CI run.
+Source validation and generated-release-file checks happen in the original
+develop run. Preparation itself still runs only on develop.
 Keep GH_TOKEN for gh release create: publication must trigger release.published
 and artifact delivery. Artifact uploads use GITHUB_TOKEN because they do not need
 to trigger another workflow. No secret is supplied to pull-request validation.

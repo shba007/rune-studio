@@ -1,8 +1,7 @@
 name: Vue CI
 on:
   push:
-    branches: [develop, release/update-version]
-  pull_request:
+    branches: [develop]
 permissions:
   contents: read
 jobs:
@@ -84,13 +83,17 @@ jobs:
       - name: Extract exact PR notes
         if: steps.preparation.outputs.prepared == 'true'
         run: cargo run --locked --manifest-path xtask/Cargo.toml -- notes --out "$RUNNER_TEMP/release-notes.md"
+      - name: Validate generated release files
+        if: steps.preparation.outputs.prepared == 'true'
+        run: |
+          cargo test --locked --manifest-path xtask/Cargo.toml
+          cargo metadata --locked --manifest-path src-tauri/Cargo.toml --no-deps --format-version 1 > /dev/null
       - uses: peter-evans/create-pull-request@v8
         if: steps.preparation.outputs.prepared == 'true'
         with:
           # Use the job's granted PR permission, not the narrower branch PAT.
           token: ${{ github.token }}
-          # This push triggers validation on release/update-version independently
-          # of approval-gated PR events created using GITHUB_TOKEN.
+          # Release branch pushes do not trigger another Vue CI run.
           branch-token: ${{ secrets.GH_TOKEN }}
           branch: release/update-version
           base: develop
