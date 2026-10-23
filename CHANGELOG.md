@@ -11,6 +11,7 @@
 
 ### Release preparation
 
+- Prepare release PRs for all semantic commit types, including documentation, refactors and CI changes.
 - Restore automatic release preparation after successful validation, with synchronized versions and changelog notes in a reviewable release PR. Publication extracts this exact versioned changelog section.
 
 ### Compatibility

@@ -68,7 +68,7 @@ pub fn entries(messages: &[String]) -> Vec<Entry> {
                     "feat" => "Features",
                     "fix" => "Fixes",
                     "perf" => "Performance",
-                    _ => return None,
+                    _ => "Maintenance",
                 }
             };
             let description = commit.description().replace(['\r', '\n'], " ");
@@ -173,7 +173,13 @@ pub fn plan(
         String::new()
     };
     let mut additions = String::new();
-    for group in ["Features", "Fixes", "Performance", "Compatibility"] {
+    for group in [
+        "Features",
+        "Fixes",
+        "Performance",
+        "Maintenance",
+        "Compatibility",
+    ] {
         let lines: Vec<_> = changes
             .iter()
             .filter(|c| c.group == group)

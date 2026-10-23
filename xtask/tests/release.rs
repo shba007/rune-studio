@@ -93,7 +93,7 @@ fn routine_bot_merge_and_internal_messages_do_not_prepare_releases() {
         "feat(kit): finish Cycle 3",
         "fix: finish M15 checks",
         "fix: complete INF-7 rollout",
-        "docs: update contributor guidance",
+        "not a conventional commit",
         "fix: TBD",
         "fix: update version",
     ]));
@@ -102,6 +102,34 @@ fn routine_bot_merge_and_internal_messages_do_not_prepare_releases() {
         plan(&v("0.0.23"), &v("0.0.23"), &history(), "head", &changes)
             .unwrap()
             .is_none()
+    );
+}
+
+#[test]
+fn every_semantic_type_can_prepare_a_release() {
+    for kind in [
+        "feat", "fix", "perf", "docs", "refactor", "style", "test", "build", "ci", "chore",
+        "revert", "custom",
+    ] {
+        let changes = entries(&[format!("{kind}: improve {kind} behavior")]);
+        assert_eq!(changes.len(), 1, "{kind} was excluded");
+        let prepared = plan(&v("0.0.23"), &v("0.0.23"), &history(), "head", &changes)
+            .unwrap()
+            .unwrap();
+        assert_eq!(prepared.version, v("0.0.24"));
+        assert!(
+            prepared
+                .notes
+                .contains(&format!("- improve {kind} behavior"))
+        );
+    }
+    let changes = entries(&messages(&["refactor: remove release notes test file"]));
+    assert!(
+        plan(&v("0.0.23"), &v("0.0.23"), &history(), "head", &changes)
+            .unwrap()
+            .unwrap()
+            .notes
+            .contains("remove release notes test file")
     );
 }
 

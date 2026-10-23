@@ -40,8 +40,10 @@ release branch and publish after owner review/promotion. No AI service is used.
 ## Deterministic rules and repeat runs
 
 The utility uses git-conventional for parsing, semver for versions and toml_edit
-for Rust manifest/lock edits. Only feat/fix/perf and breaking conventional commits
-are substantive. Merge wrappers, routine ci/chore/version/autoformat bookkeeping,
+for Rust manifest/lock edits. All valid semantic commit types are releasable,
+including docs, refactor, style, test, build, ci, chore, revert and custom types.
+Other than feat/fix/perf or breaking changes, they appear under Maintenance and
+use a patch bump. Merge wrappers, routine release/version/autoformat bookkeeping,
 placeholders and internal planning labels are excluded. Write public descriptions
 in reviewed conventional commit subjects; the tool does not invent product prose.
 Under the repository's existing pre-1.0 progression nonbreaking changes bump patch,
@@ -78,11 +80,10 @@ example uses synthetic reviewed messages without creating commits or files:
 - kit: report incompatible tool gateways clearly
 ```
 
-Repeating that example yields the same output. The current pre-amendment committed
-history contains only a version/bookkeeping commit since v0.0.22 and has a pending
-0.0.23 section, so a local prepare dry run reports no releasable changes. After the
-owner commits this fix under a substantive fix subject, CI can prepare its notes
-using pending 0.0.23; the example above is not a promised actual release version.
+Repeating that example yields the same output. The repository currently has a
+pending 0.0.23 section. Preparation reuses it and includes the reviewed refactor
+commit that the earlier narrow type filter excluded. The example above is not
+a promised actual release version.
 
 ## Authentication and repository settings
 
@@ -132,7 +133,7 @@ Python implementation is retained.
 
 ## Local verification for this change
 
-Windows: eight release-tool tests passed, including repeat preparation/consumed
+Windows: nine release-tool tests passed, including repeat preparation/consumed
 source state, historical preservation, exact extraction, synchronized manifests,
 no-change exclusions, semantic versions and event/body mismatch refusal.
 483 application Rust tests passed (11 environment-dependent tests ignored);
@@ -141,8 +142,7 @@ with local Kit 0.5.0, time/git 0.3.0 and filesystem 0.4.1: all five operations,
 root enforcement, plugin error handling, deselection and recovery. Typecheck,
 production build, lint, both Rust Clippy runs, formatting, YAML syntax and diff
 whitespace checks passed. Host incremental hard-link fallback warnings were
-non-fatal. The local dry run changed no Git state and generated no preparation
-for bookkeeping-only history. The example and idempotence tests need no commits.
+non-fatal. The local dry run changed no Git state and now includes the previously excluded refactor. The example and idempotence tests need no commits.
 
 No live workflow, PR, tag or release was created. Repository settings/token scopes,
 Linux/macOS execution and live model/GUI acceptance are untested here. Temporary
