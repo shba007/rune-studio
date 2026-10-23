@@ -215,9 +215,12 @@ fn tool_list() -> Value {
           "inputSchema": { "type": "object", "properties": {
               "region": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4,
                           "description": "[x0, y0, x1, y1], each 0 to 1000 across the whole screen." } } } },
+        { "name": "rune_wait_for_request", "description": "Wait for the user to click Studio's Screen Analysis button. Keeps this host turn waiting for up to 60 seconds; does not acquire control or call an API model. Use only when the user asked you to listen for button requests. A stopped/cancelled response must not be automatically retried.",
+          "inputSchema": { "type": "object", "properties": { "timeoutSeconds": { "type": "integer", "minimum": 0, "maximum": 60 } }, "additionalProperties": false } },
         { "name": "rune_analyze", "description": "Capture a fresh screenshot for you to analyze with your own reasoning engine. Returns the question, screenshot and freshness metadata. Requires rune_begin; Stop cancels it. Never calls Studio's API model.",
           "inputSchema": { "type": "object", "properties": {
-              "question": { "type": "string", "maxLength": 500, "description": "What to find or explain on screen. Omit for a general analysis." }
+              "question": { "type": "string", "maxLength": 500, "description": "What to find or explain on screen. Omit for a general analysis." },
+              "requestId": { "type": "integer", "minimum": 1, "description": "Button request id returned by rune_wait_for_request. Captures and acknowledges that request." }
           }, "additionalProperties": false } },
         { "name": "rune_click", "description": "Click a point. x and y run 0 to 1000 across the whole screenshot, left to right and top to bottom. Returns a fresh screenshot.",
           "inputSchema": schema(json!({
@@ -279,6 +282,7 @@ async fn call(app: &AppHandle, name: &str, arguments: &Value) -> Reply {
         "rune_guide" => Reply::text(GUIDE),
         "rune_begin" => begin(app, arguments).await,
         "rune_observe" => observe(app, arguments).await,
+        "rune_wait_for_request" => wait_for_request(app, arguments).await,
         "rune_analyze" => analyze(app, arguments).await,
         "rune_plan" => plan(app, arguments),
         "rune_elements" => elements(app).await,
@@ -507,15 +511,83 @@ async fn observe(app: &AppHandle, arguments: &Value) -> Reply {
     Reply::shot(text, frame.jpeg)
 }
 
+fn wait_seconds(arguments: &Value) -> Result<u64, &'static str> {
+    let object = arguments.as_object().ok_or("arguments must be an object")?;
+    if object
+        .keys()
+        .any(|key| key != "timeoutSeconds" && key != ATTESTED_KEY)
+    {
+        return Err("only timeoutSeconds is accepted");
+    }
+    match object.get("timeoutSeconds") {
+        None => Ok(25),
+        Some(value) => value
+            .as_u64()
+            .filter(|seconds| *seconds <= 60)
+            .ok_or("timeoutSeconds must be an integer from 0 to 60"),
+    }
+}
+
+struct Waiting<'a> {
+    app: &'a AppHandle,
+    ticket: u64,
+}
+impl Drop for Waiting<'_> {
+    fn drop(&mut self) {
+        self.app
+            .state::<AppState>()
+            .screen_requests
+            .locked()
+            .end_wait(self.ticket);
+        super::requests::publish(self.app);
+    }
+}
+
+async fn wait_for_request(app: &AppHandle, arguments: &Value) -> Reply {
+    let seconds = match wait_seconds(arguments) {
+        Ok(seconds) => seconds,
+        Err(why) => return Reply::error("bad_arguments", why),
+    };
+    let state = app.state::<AppState>();
+    let (ticket, epoch) = {
+        let _analysis = state.analysis.locked();
+        if !state.settings.locked().external_agent {
+            return Reply::error(
+                "not_enabled",
+                "Select external agent mode before waiting for a screen request.",
+            );
+        }
+        match state.screen_requests.locked().start_wait() {
+            Ok(wait) => wait,
+            Err(why) => return Reply::error("busy", why),
+        }
+    };
+    let _waiting = Waiting { app, ticket };
+    super::requests::publish(app);
+    match super::requests::wait(&state.screen_requests, epoch, seconds).await {
+        Err(why) => Reply::error("stopped_by_user", why),
+        Ok(Some(request)) => Reply::text(json!({
+            "status":"requested", "requestId":request.id, "question":request.question,
+            "instruction":"The user clicked Screen Analysis. Check rune_status. If you do not hold control, call rune_begin for a new screen-analysis session (any restart still requires the user's approval). Then call rune_analyze with this requestId, analyze its screenshot using your own model, and report to the user in this host. Call rune_done when finished. Do not switch to Studio's API model."
+        }).to_string()),
+        Ok(None) => Reply::text(json!({"status":"timeout", "instruction":"No button request arrived. Only wait again if the user authorized continuing to listen; do not start a session or capture the screen."}).to_string()),
+    }
+}
+
 fn analysis_question(arguments: &Value) -> Result<String, &'static str> {
     let Some(object) = arguments.as_object() else {
         return Err("arguments must be an object");
     };
     if object
         .keys()
-        .any(|key| key != "question" && key != ATTESTED_KEY)
+        .any(|key| key != "question" && key != "requestId" && key != ATTESTED_KEY)
     {
-        return Err("only question is accepted");
+        return Err("only question and requestId are accepted");
+    }
+    if let Some(id) = object.get("requestId")
+        && !id.as_u64().is_some_and(|id| id > 0)
+    {
+        return Err("requestId must be a positive integer");
     }
     let question = match object.get("question") {
         None => "",
@@ -542,11 +614,18 @@ fn analysis_failure(
 
 async fn analyze(app: &AppHandle, arguments: &Value) -> Reply {
     use crate::analysis::stale::{self, Staleness};
-    let question = match analysis_question(arguments) {
+    let mut question = match analysis_question(arguments) {
         Ok(question) => question,
         Err(why) => return Reply::error("bad_arguments", why),
     };
     let state = app.state::<AppState>();
+    let request_id = arguments["requestId"].as_u64();
+    if let Some(id) = request_id {
+        question = match state.screen_requests.locked().question(id, Instant::now()) {
+            Ok(question) => question,
+            Err(why) => return Reply::error("bad_arguments", why),
+        };
+    }
     let scope = state.current_scope();
     let _turn = match lock_unless_stopped(&state.act_turn, &scope.token).await {
         Ok(turn) => turn,
@@ -635,7 +714,13 @@ async fn analyze(app: &AppHandle, arguments: &Value) -> Reply {
         body::finish_step(app, step, &Err(ExecError::Cancelled));
         return LeaseError::StoppedByUser.into();
     }
-    let payload = json!({"question":question,"analysisBy":"external_agent",
+    if let Some(id) = request_id {
+        if let Err(why) = state.screen_requests.locked().captured(id, Instant::now()) {
+            return analysis_failure(app, step, &mut row, "bad_arguments", why);
+        }
+        super::requests::publish(app);
+    }
+    let payload = json!({"question":question,"requestId":request_id,"analysisBy":"external_agent",
         "capturedUtc":captured_utc,"stale":stale,
         "coordinates":"0..1000 across the captured whole screen","monitor":frame.monitor,
         "imageWidth":frame.width,"imageHeight":frame.height,
@@ -985,6 +1070,29 @@ mod tests {
         assert_eq!(tool["inputSchema"]["additionalProperties"], false);
     }
     #[test]
+    fn button_wait_arguments_are_bounded() {
+        assert_eq!(wait_seconds(&json!({})), Ok(25));
+        assert_eq!(wait_seconds(&json!({"timeoutSeconds":0})), Ok(0));
+        for arguments in [
+            json!({"timeoutSeconds":61}),
+            json!({"timeoutSeconds":-1}),
+            json!({"timeoutSeconds":"60"}),
+            json!({"command":"run"}),
+            json!([]),
+        ] {
+            assert!(wait_seconds(&arguments).is_err());
+        }
+        for arguments in [
+            json!({"requestId":0}),
+            json!({"requestId":-1}),
+            json!({"requestId":"old"}),
+        ] {
+            assert!(analysis_question(&arguments).is_err());
+        }
+        assert!(analysis_question(&json!({"requestId":1})).is_ok());
+    }
+
+    #[test]
     fn only_the_registration_can_attest_an_identity() {
         use super::*;
         let mut spoofed = json!({ "method": "tools/call", "params": { "name": "rune_begin", "arguments": { "agent": "Evil", "_attested": "claude" } } });
@@ -1019,6 +1127,7 @@ mod tests {
             "rune_begin",
             "rune_observe",
             "rune_analyze",
+            "rune_wait_for_request",
             "rune_plan",
             "rune_elements",
             "rune_status",

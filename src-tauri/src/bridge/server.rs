@@ -86,7 +86,12 @@ fn switch_is_on(app: &AppHandle) -> bool {
     }
     let settings = crate::settings::load(app);
     let on = settings.external_agent;
+    let changed = state.settings.locked().external_agent != on;
     state.settings.locked().external_agent = on;
+    if changed {
+        state.screen_requests.locked().cancel();
+        super::requests::publish(app);
+    }
     let was_on = WAS_ON.swap(on, Ordering::SeqCst);
     let enabled_again = settings.external_agent_since
         > LAST_SINCE.swap(settings.external_agent_since, Ordering::SeqCst);

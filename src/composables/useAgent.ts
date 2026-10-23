@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import { useTimeoutFn } from '@vueuse/core'
+import { useIntervalFn, useTimeoutFn } from '@vueuse/core'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import type { TaskTiming } from '@/config/eta'
@@ -32,6 +32,7 @@ import {
   type ReflectionProgressPayload,
   type ReflectionPromptPayload,
   type Settings,
+  type ScreenRequestSnapshot,
   type StateChangedPayload,
   type StepStartedPayload,
   type TaskDonePayload,
@@ -76,6 +77,7 @@ const SOUND_THRESHOLD = 0.04
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 export function useAgent() {
+  const screenRequest = ref<ScreenRequestSnapshot>({ id: null, status: 'idle', waiting: false })
   const state = ref<AgentState>('idle')
   const backend = ref<BackendStatus | null>(null)
   const settings = ref<Settings | null>(null)
@@ -266,7 +268,22 @@ export function useAgent() {
     lastActivity = now
     void call('pill_activity')
   }
-  const analyzeScreen = () => call('analyze_screen', { question: null })
+  const refreshScreenRequest = async () => {
+    const snapshot = await call<ScreenRequestSnapshot>('screen_request_state')
+    if (snapshot) screenRequest.value = snapshot
+  }
+  const analyzeScreen = async () => {
+    await call('analyze_screen', { question: null })
+    if (settings.value?.externalAgent) await refreshScreenRequest()
+  }
+  const cancelScreenRequest = () => call('cancel_screen_request')
+  useIntervalFn(() => {
+    if (
+      settings.value?.externalAgent &&
+      ['queued', 'delivered'].includes(screenRequest.value.status)
+    )
+      void refreshScreenRequest()
+  }, 1000)
   const openSettings = (section = 'general') => call('open_settings_window', { section })
   const toggleListening = () => call('toggle_listening')
   async function answer(approved: boolean) {
@@ -385,18 +402,24 @@ export function useAgent() {
         showNotice(text ? `${note}: “${text}”` : note)
       }),
       await listen(SUMMON, () => void toggleOpen()),
+      await listen<ScreenRequestSnapshot>('screen_request_updated', (event) => {
+        screenRequest.value = event.payload
+      }),
       await listen('settings_changed', () => {
         void refreshSettings()
         void refreshBackend()
       }),
     )
     await refreshSettings()
+    await refreshScreenRequest()
     await refreshBackend()
   })
 
   onBeforeUnmount(() => unlisten.forEach((off) => off()))
 
   return {
+    cancelScreenRequest,
+    screenRequest,
     state,
     isRunning,
     statusText,

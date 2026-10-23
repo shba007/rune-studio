@@ -26,10 +26,10 @@ const tool =
       aria-label="Analyse the screen"
       :title="
         agent.settings.value?.externalAgent
-          ? 'Ask your external agent to call rune_analyze'
+          ? 'Request screen analysis from your external agent'
           : 'Analyse the screen'
       "
-      :disabled="agent.isRunning.value || agent.settings.value?.externalAgent"
+      :disabled="!agent.settings.value?.externalAgent && agent.isRunning.value"
       @click="agent.analyzeScreen()"
     >
       <AppIcon name="scan" />

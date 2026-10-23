@@ -21,10 +21,17 @@ pub fn get_settings(app: AppHandle, state: State<'_, AppState>) -> Settings {
         || state.mic.locked().is_some()
         || crate::analysis::state::in_flight(analysis.status);
     let mut settings = state.settings.locked();
+    let changed = !busy && settings.external_agent != on_disk;
     if !busy {
         settings.external_agent = on_disk;
     }
-    settings.clone()
+    let result = settings.clone();
+    drop(settings);
+    if changed {
+        state.screen_requests.locked().cancel();
+        crate::bridge::requests::publish(&app);
+    }
+    result
 }
 
 #[tauri::command]
@@ -53,10 +60,17 @@ pub fn save_settings(
     }
     let demo_changed = state.settings.locked().demo_mode != settings.demo_mode;
     let hide_previews = state.settings.locked().developer_mode && !settings.developer_mode;
+    let mode_changed = was_on != settings.external_agent;
     *state.settings.locked() = settings;
+    if mode_changed {
+        state.screen_requests.locked().cancel();
+    }
     drop(analysis);
     if hide_previews {
         events::preview_agent_state(&app, events::agent_state(&app));
+    }
+    if mode_changed {
+        crate::bridge::requests::publish(&app);
     }
     if demo_changed {
         crate::window::apply_demo_mode(&app);
@@ -150,6 +164,7 @@ pub fn pill_rect(app: AppHandle) -> Option<PillRect> {
 #[tauri::command]
 pub fn stop(app: AppHandle) {
     app.state::<AppState>().stop_current();
+    crate::bridge::requests::publish(&app);
     let had_agent = {
         let state = app.state::<AppState>();
         let mut lease = state.lease.locked();
@@ -355,7 +370,39 @@ pub fn bridge_info() -> BridgeInfo {
 
 #[tauri::command]
 pub async fn analyze_screen(app: AppHandle, question: Option<String>) -> AppResult<()> {
+    {
+        let state = app.state::<AppState>();
+        let _analysis = state.analysis.locked();
+        if state.settings.locked().external_agent {
+            if !cfg!(feature = "agent-bridge") {
+                return Err(AppError::Invalid(
+                    "This build does not include the external agent bridge".into(),
+                ));
+            }
+            state.screen_requests.locked().enqueue(
+                crate::analysis::report::question_or_default(question.as_deref().unwrap_or("")),
+                std::time::Instant::now(),
+            );
+            drop(_analysis);
+            crate::bridge::requests::publish(&app);
+            return Ok(());
+        }
+    }
     crate::analysis::run::run(&app, question.as_deref().unwrap_or(""), true).await
+}
+
+#[tauri::command]
+pub fn screen_request_state(state: State<'_, AppState>) -> crate::bridge::requests::Snapshot {
+    state
+        .screen_requests
+        .locked()
+        .snapshot(std::time::Instant::now())
+}
+
+#[tauri::command]
+pub fn cancel_screen_request(app: AppHandle) {
+    app.state::<AppState>().screen_requests.locked().cancel();
+    crate::bridge::requests::publish(&app);
 }
 
 #[tauri::command]

@@ -5,6 +5,7 @@ import { computed, nextTick, watch } from 'vue'
 import type { Agent } from '@/composables/useAgent'
 
 import AppIcon from './AppIcon.vue'
+import { screenRequestText } from '@/config/screenRequest'
 
 const props = defineProps<{ agent: Agent }>()
 const agent = props.agent
@@ -64,6 +65,20 @@ async function submit() {
       aria-live="polite"
     >
       {{ agent.notice.value }}
+    </p>
+    <p v-if="external" class="m-0 px-3 pt-1 text-label text-zinc-400" role="status">
+      {{ screenRequestText(agent.screenRequest.value) }}
+      <button
+        v-if="
+          agent.screenRequest.value.waiting ||
+          ['queued', 'delivered'].includes(agent.screenRequest.value.status)
+        "
+        type="button"
+        class="ml-2 cursor-pointer underline"
+        @click="agent.cancelScreenRequest()"
+      >
+        Cancel screen request
+      </button>
     </p>
     <p class="sr-only" role="status" aria-live="polite">{{ agent.statusText.value }}</p>
     <div

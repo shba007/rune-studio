@@ -1,5 +1,6 @@
 pub mod identity;
 pub mod lease;
+pub mod requests;
 
 #[cfg(feature = "agent-bridge")]
 pub fn exe_name(base: &str) -> String {

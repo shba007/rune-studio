@@ -265,3 +265,8 @@ export interface ReflectionProgressPayload {
   done: number
   total: number
 }
+export interface ScreenRequestSnapshot {
+  id: number | null
+  status: 'idle' | 'queued' | 'delivered' | 'captured' | 'cancelled' | 'expired'
+  waiting: boolean
+}

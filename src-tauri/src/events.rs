@@ -56,6 +56,7 @@ pub struct AppState {
     pub run: Mutex<RunScope>,
     pub verifier: Mutex<exec::CancelToken>,
     pub analysis: Mutex<crate::analysis::state::AnalysisState>,
+    pub screen_requests: Mutex<crate::bridge::requests::Inbox>,
     pub external: Mutex<Option<crate::bridge::identity::AgentIdentity>>,
     pub reflect: Mutex<crate::reflect::State>,
     pub agent_state: Mutex<AgentState>,
@@ -77,6 +78,7 @@ impl AppState {
     }
 
     pub fn stop_current(&self) {
+        self.screen_requests.locked().cancel();
         crate::voice::note_stop();
         self.reflect.locked().cancel.cancel();
         self.verifier.locked().cancel();
@@ -317,6 +319,7 @@ mod tests {
             run: Mutex::new(RunScope::new()),
             verifier: Mutex::new(exec::CancelToken::default()),
             analysis: Default::default(),
+            screen_requests: Default::default(),
             external: Default::default(),
             reflect: Default::default(),
             agent_state: Mutex::new(AgentState::Idle),
@@ -358,7 +361,20 @@ mod tests {
         let state = idle_state();
         let check = state.begin_verification();
         let scope = exec::current_scope(&state.run);
+        let request_id = state
+            .screen_requests
+            .locked()
+            .enqueue("Describe the screen".into(), std::time::Instant::now())
+            .id
+            .unwrap();
         state.stop_current();
+        assert!(
+            state
+                .screen_requests
+                .locked()
+                .question(request_id, std::time::Instant::now())
+                .is_err()
+        );
         assert!(
             check.is_cancelled(),
             "Stop reaches the check from Idle, like it reaches typing"
