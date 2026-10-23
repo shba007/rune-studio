@@ -540,6 +540,9 @@ const rawText = computed(() => {
       </template>
 
       <template v-else-if="tab === 'tools'">
+        <p v-if="step.tool?.startsWith('kit__')" class="m-0">
+          {{ step.tool }} · {{ step.result }} · Gate: {{ step.gate }}
+        </p>
         <p v-if="outside" class="m-0">
           <strong class="font-semibold">rune_{{ step.tool }}</strong> called by {{ header.source }}
         </p>

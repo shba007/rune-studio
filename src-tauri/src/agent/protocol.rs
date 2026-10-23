@@ -13,6 +13,10 @@ const MAX_SCROLL: u32 = 10;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {
+    External {
+        name: String,
+        arguments: Value,
+    },
     Click {
         x: f64,
         y: f64,
@@ -58,6 +62,7 @@ pub enum Action {
 impl Action {
     pub fn tool_name(&self) -> &'static str {
         match self {
+            Action::External { .. } => "kit_tool",
             Action::Click { .. } => "click",
             Action::ClickElement { .. } => "click_element",
             Action::Scroll { .. } => "scroll",
@@ -73,6 +78,7 @@ impl Action {
 
     pub fn describe(&self) -> String {
         match self {
+            Action::External { name, .. } => format!("Kit: {name}"),
             Action::Click {
                 x,
                 y,
@@ -156,6 +162,16 @@ pub fn parse(name: &str, arguments: &Value) -> Result<Decision, String> {
     };
 
     let action = match name {
+        name if name.starts_with("kit__") => {
+            let exact = name.strip_prefix("kit__").unwrap_or("");
+            if !crate::kit::approved_identity(exact) {
+                return Err("Unapproved Kit tool".into());
+            }
+            Action::External {
+                name: exact.into(),
+                arguments: arguments.clone(),
+            }
+        }
         "click" => {
             let x = number(&arguments["x"]).ok_or("click: missing \"x\"")?;
             let y = number(&arguments["y"]).ok_or("click: missing \"y\"")?;

@@ -126,12 +126,19 @@ fn mentions_any(text: &str, list: &[&str]) -> Option<String> {
 pub fn is_harmless(action: &Action) -> bool {
     matches!(
         action,
-        Action::Wait { .. } | Action::Done { .. } | Action::Scroll { .. } | Action::AskUser { .. }
+        Action::External { .. }
+            | Action::Wait { .. }
+            | Action::Done { .. }
+            | Action::Scroll { .. }
+            | Action::AskUser { .. }
     )
 }
 
 pub fn assess(action: &Action, reason: &str, foreground: &Foreground) -> Assessment {
     let mut result = Assessment::low();
+    if matches!(action, Action::External { .. }) {
+        return result;
+    }
     if is_harmless(action) {
         return result;
     }
@@ -160,7 +167,8 @@ pub fn assess(action: &Action, reason: &str, foreground: &Foreground) -> Assessm
                 assess_control(&element.name, &mut result);
             }
         }
-        Action::Wait { .. }
+        Action::External { .. }
+        | Action::Wait { .. }
         | Action::Done { .. }
         | Action::Scroll { .. }
         | Action::AskUser { .. } => {}

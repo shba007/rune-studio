@@ -354,3 +354,7 @@ Secrets used: `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 
 
 Published under the [MIT](https://github.com/shba007/rune-studio/blob/main/LICENSE) License.  
 Copyright &copy; 2024 Shirsendu Bairagi.
+
+### Selected read-only Kit tools
+
+Settings → Tools can enable selected time and commit-message validation tools through Kit 0.3.1+. Kit/plugin installation remains manual. See [setup, permissions and verification](docs/kit.md). File tools remain unavailable pending the bounded read-only gateway contract.

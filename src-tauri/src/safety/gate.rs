@@ -146,7 +146,10 @@ pub async fn check_detailed(
         reasons.push("The agent marked it as high risk".into());
     }
     let text = action.describe();
-    if risk != Risk::High && !rules::is_harmless(action) {
+    if risk != Risk::High
+        && !rules::is_harmless(action)
+        && !matches!(action, Action::External { .. })
+    {
         let window = foreground::current();
         let window = format!("{} ({})", window.title, window.process);
         let opinion = tokio::select! {
