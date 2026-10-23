@@ -27,6 +27,11 @@
 
 - remove release notes test file
 
+### Fixes
+
+- docs: simplify description of desktop harness in README
+- ci: restrict Vue CI to develop pushes and enhance release validation process
+
 ## v0.0.22
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.0.20...v0.0.22)
