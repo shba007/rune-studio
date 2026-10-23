@@ -1,5 +1,43 @@
 # Changelog
 
+## v0.0.25
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.0.22...v0.0.25)
+
+### 🚀 Enhancements
+
+- **release:** Allow all semantic commit types to trigger release preparation ([23a4b1a](https://github.com/shba007/rune-studio/commit/23a4b1a))
+- **ci:** Update integration workflow to include release/update-version branch ([de0459e](https://github.com/shba007/rune-studio/commit/de0459e))
+
+### 🩹 Fixes
+
+- **docs:** Simplify description of desktop harness in README ([cb23133](https://github.com/shba007/rune-studio/commit/cb23133))
+- **ci:** Restrict Vue CI to develop pushes and enhance release validation process ([94dec6f](https://github.com/shba007/rune-studio/commit/94dec6f))
+- **release:** Update GITHUB_TOKEN secret reference in workflow ([233e2e8](https://github.com/shba007/rune-studio/commit/233e2e8))
+
+### 💅 Refactors
+
+- Remove release notes test file ([e23358a](https://github.com/shba007/rune-studio/commit/e23358a))
+- **ci:** Streamline CI workflows and enhance release process ([ea35ddf](https://github.com/shba007/rune-studio/commit/ea35ddf))
+
+### 🏡 Chore
+
+- Update version to 0.0.23 and add release notes script ([57a3507](https://github.com/shba007/rune-studio/commit/57a3507))
+
+### 🤖 CI
+
+- **release:** Update version ([5cd1871](https://github.com/shba007/rune-studio/commit/5cd1871))
+- **release:** Update version ([d5cd521](https://github.com/shba007/rune-studio/commit/d5cd521))
+- **release:** Update version ([309b578](https://github.com/shba007/rune-studio/commit/309b578))
+- **release:** Update version ([61e2a08](https://github.com/shba007/rune-studio/commit/61e2a08))
+- **release:** Update version ([d0026ec](https://github.com/shba007/rune-studio/commit/d0026ec))
+- **release:** Update version ([9b7750d](https://github.com/shba007/rune-studio/commit/9b7750d))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+- Shba007
+
 ## v0.0.24
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.0.22...v0.0.24)
