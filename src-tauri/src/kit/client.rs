@@ -24,12 +24,14 @@ pub fn shutdown() {
     }
 }
 const LIMIT: usize = 65536;
+const PROTOCOL: &str = "2026-07-28";
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Config {
     pub enabled: bool,
     pub executable: String,
     pub selected: Vec<String>,
+    pub root: String,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -43,6 +45,7 @@ pub struct Tool {
 pub struct Discovery {
     pub version: String,
     pub tools: Vec<Tool>,
+    pub unavailable: Vec<String>,
 }
 pub fn load(app: &AppHandle) -> Config {
     app.path()
@@ -59,8 +62,12 @@ pub fn kit_settings(app: AppHandle) -> Config {
 #[tauri::command]
 pub fn kit_save(app: AppHandle, config: Config) -> Result<(), String> {
     if config.selected.iter().any(|n| !super::approved_identity(n)) {
-        return Err("Only approved time and git validators may be selected".into());
+        return Err(
+            "Only approved time, git validators and bounded filesystem reads may be selected"
+                .into(),
+        );
     }
+    configured_root(&config)?;
     shutdown();
     let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -80,27 +87,52 @@ fn command(executable: &str) -> Command {
     c
 }
 fn executable(config: &Config) -> Result<String, String> {
+    let home = dirs::home_dir();
+    resolve_executable(
+        config,
+        home.as_deref(),
+        &std::env::var_os("PATH").unwrap_or_default(),
+    )
+}
+fn resolve_executable(
+    config: &Config,
+    home: Option<&std::path::Path>,
+    paths: &std::ffi::OsStr,
+) -> Result<String, String> {
     if !config.executable.trim().is_empty() {
         return Ok(config.executable.clone());
     }
-    let paths = std::env::var_os("PATH").unwrap_or_default();
-    for name in ["rune-kit", "rune"] {
-        for dir in std::env::split_paths(&paths) {
-            let p = dir.join(if cfg!(windows) {
-                format!("{name}.exe")
-            } else {
-                name.into()
-            });
-            if p.is_file() {
-                return Ok(p.to_string_lossy().into());
-            }
+    let home = home.filter(|path| path.is_absolute()).ok_or(
+        "Cannot resolve your home directory. Choose an explicit rune-kit executable path.",
+    )?;
+    let name = if cfg!(windows) {
+        "rune-kit.exe"
+    } else {
+        "rune-kit"
+    };
+    for p in std::iter::once(home.join("rune").join(name))
+        .chain(std::env::split_paths(paths).map(|dir| dir.join(name)))
+    {
+        if p.is_file() {
+            return Ok(p.to_string_lossy().into());
         }
     }
-    Err("Kit not found. Install Kit 0.3.1+ separately or choose rune-kit.exe / rune.exe.".into())
+    Err("Kit not found. Install rune-kit 0.5.0+ at ~/rune/rune-kit.exe (Windows) or ~/rune/rune-kit, or choose its explicit path. Legacy rune is not supported.".into())
+}
+fn configured_root(config: &Config) -> Result<Option<String>, String> {
+    if config.root.trim().is_empty() {
+        return Ok(None);
+    }
+    let path = std::path::Path::new(&config.root);
+    if !path.is_absolute() || !path.is_dir() {
+        return Err("Choose an existing absolute filesystem folder; no working-directory fallback is allowed".into());
+    }
+    // Kit passes this trusted host root into its WASI capability boundary.
+    Ok(Some(config.root.replace('\\', "/")))
 }
 pub fn compatible_version(text: &str) -> bool {
     let mut words = text.split_whitespace();
-    if !matches!(words.next(), Some("rune" | "rune-kit")) {
+    if words.next() != Some("rune-kit") {
         return false;
     }
     let Some(version) = words.next() else {
@@ -111,18 +143,27 @@ pub fn compatible_version(text: &str) -> bool {
         .split('.')
         .map(str::parse::<u64>)
         .collect();
-    matches!(numbers.as_slice(),[Ok(a),Ok(b),Ok(c)] if (*a,*b,*c)>=(0,3,1))
+    matches!(numbers.as_slice(),[Ok(a),Ok(b),Ok(c)] if (*a,*b,*c)>=(0,5,0))
 }
 struct Gateway {
     child: Arc<Mutex<Child>>,
-    stdin: ChildStdin,
+    stdin: Option<ChildStdin>,
     messages: mpsc::Receiver<Result<Value, String>>,
     next: u64,
     cancel: CancelToken,
+    unavailable: Vec<String>,
 }
 impl Drop for Gateway {
     fn drop(&mut self) {
+        self.stdin.take(); // EOF is the portable graceful stdio shutdown signal.
         if let Ok(mut c) = self.child.lock() {
+            let deadline = Instant::now() + Duration::from_millis(100);
+            while Instant::now() < deadline {
+                if c.try_wait().ok().flatten().is_some() {
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
             let _ = c.kill();
             let _ = c.wait();
         }
@@ -180,10 +221,16 @@ impl Gateway {
             .map_err(|_| "Kit version output timeout")?
             .map_err(|e| e.to_string())?;
         if !compatible_version(&version) {
-            return Err(format!("Kit 0.3.1+ required; reported {}", version.trim()));
+            return Err(format!(
+                "rune-kit 0.5.0+ with MCP {PROTOCOL} is required; reported {}. Select the updated rune-kit executable.",
+                version.trim()
+            ));
         }
         let mut cmd = command(&exe);
         cmd.args(["run", "--all", "--read-only", "--timeout", "15"]);
+        if let Some(root) = configured_root(config)? {
+            cmd.args(["-p", &format!("allowed_dir={root}")]);
+        }
         if !discovery {
             for name in &config.selected {
                 cmd.args(["--allow-tool", name]);
@@ -269,36 +316,54 @@ impl Gateway {
         });
         let mut gateway = Self {
             child,
-            stdin,
+            stdin: Some(stdin),
             messages: rx,
             next: 1,
             cancel: cancel.clone(),
+            unavailable: Vec::new(),
         };
-        let initialized = gateway.request("initialize",json!({"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"rune-studio","version":crate::VERSION}}),Duration::from_secs(5))?;
-        if initialized["protocolVersion"] != "2025-03-26" {
-            return Err("Kit negotiated an unsupported MCP protocol version".into());
+        let discovered = gateway
+            .request("server/discover", json!({}), Duration::from_secs(5))
+            .map_err(|e| {
+                format!("Kit discovery failed: {e}. Use rune-kit 0.5.0+ supporting MCP {PROTOCOL}.")
+            })?;
+        if !discovered["supportedVersions"]
+            .as_array()
+            .is_some_and(|versions| versions.iter().any(|v| v == PROTOCOL))
+            || !discovered["capabilities"]["tools"].is_object()
+        {
+            return Err(format!(
+                "Kit does not advertise MCP {PROTOCOL} tools. Select a compatible rune-kit 0.5.0+ binary."
+            ));
         }
-        gateway.notify("notifications/initialized", json!({}))?;
         Ok((gateway, version.trim().into()))
     }
     fn notify(&mut self, method: &str, params: Value) -> Result<(), String> {
+        let stdin = self.stdin.as_mut().ok_or("Kit stdin closed")?;
         writeln!(
-            self.stdin,
+            stdin,
             "{}",
             json!({"jsonrpc":"2.0","method":method,"params":params})
         )
-        .and_then(|_| self.stdin.flush())
+        .and_then(|_| stdin.flush())
         .map_err(|e| e.to_string())
     }
-    fn request(&mut self, method: &str, params: Value, timeout: Duration) -> Result<Value, String> {
+    fn request(
+        &mut self,
+        method: &str,
+        mut params: Value,
+        timeout: Duration,
+    ) -> Result<Value, String> {
+        params["_meta"] = json!({"io.modelcontextprotocol/protocolVersion":PROTOCOL,"io.modelcontextprotocol/clientCapabilities":{},"io.modelcontextprotocol/clientInfo":{"name":"rune-studio","version":crate::VERSION}});
         let id = self.next;
         self.next += 1;
+        let stdin = self.stdin.as_mut().ok_or("Kit stdin closed")?;
         writeln!(
-            self.stdin,
+            stdin,
             "{}",
             json!({"jsonrpc":"2.0","id":id,"method":method,"params":params})
         )
-        .and_then(|_| self.stdin.flush())
+        .and_then(|_| stdin.flush())
         .map_err(|e| e.to_string())?;
         let deadline = Instant::now() + timeout;
         loop {
@@ -317,6 +382,9 @@ impl Gateway {
             }
             match self.messages.recv_timeout(Duration::from_millis(10)) {
                 Ok(Ok(v)) => {
+                    if v["jsonrpc"] != "2.0" || !v.is_object() {
+                        return Err("Malformed Kit JSON-RPC envelope".into());
+                    }
                     if v["id"] != id {
                         continue;
                     }
@@ -328,7 +396,11 @@ impl Gateway {
                         };
                         return Err(format!("{kind}: {}: {}", error["code"], error["message"]));
                     }
-                    return v.get("result").cloned().ok_or("Kit result missing".into());
+                    let result = v.get("result").cloned().ok_or("Kit result missing")?;
+                    if result["resultType"] != "complete" {
+                        return Err("Unsupported or missing Kit resultType; only complete results are supported".into());
+                    }
+                    return Ok(result);
                 }
                 Ok(Err(e)) => return Err(e),
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
@@ -338,7 +410,7 @@ impl Gateway {
             }
         }
     }
-    fn tools(&mut self) -> Result<Vec<Tool>, String> {
+    fn tools(&mut self, config: &Config) -> Result<Vec<Tool>, String> {
         let result = self.request("tools/list", json!({}), Duration::from_secs(5))?;
         if result.get("nextCursor").is_some_and(|v| !v.is_null()) {
             return Err("Paginated tool discovery is not supported in this slice".into());
@@ -355,10 +427,30 @@ impl Gateway {
             if !names.insert(name.to_owned()) {
                 return Err("Duplicate Kit tool identity".into());
             }
-            if super::approved_identity(name)
-                && super::read_only_facts(entry)
-                && super::schema::supported(&entry["inputSchema"])
+            if !super::approved_identity(name) {
+                continue;
+            }
+            let reason = if super::filesystem_identity(name) && configured_root(config)?.is_none() {
+                Some("choose an existing absolute folder in Tools settings")
+            } else if super::filesystem_identity(name)
+                && entry["inputSchema"]["x-rune-rules"]["limits"]["root_param"] != "allowed_dir"
             {
+                Some("plugin does not declare the required allowed_dir boundary")
+            } else if !super::read_only_facts(entry) {
+                Some("plugin metadata is missing, conflicting or not read-only")
+            } else if !super::schema::supported(&entry["inputSchema"]) {
+                Some("plugin input schema contains unsupported constraints")
+            } else {
+                None
+            };
+            if let Some(reason) = reason {
+                if self.unavailable.len() < 16 {
+                    self.unavailable.push(format!(
+                        "{}: {reason}",
+                        name.chars().take(128).collect::<String>()
+                    ));
+                }
+            } else {
                 tools.push(Tool {
                     name: name.into(),
                     description: entry["description"]
@@ -376,9 +468,11 @@ impl Gateway {
 }
 pub fn discover(config: &Config, cancel: &CancelToken) -> Result<Discovery, String> {
     let (mut gateway, version) = Gateway::start(config, cancel, true)?;
+    let tools = gateway.tools(config)?;
     Ok(Discovery {
         version,
-        tools: gateway.tools()?,
+        tools,
+        unavailable: gateway.unavailable.clone(),
     })
 }
 #[tauri::command]
@@ -414,9 +508,17 @@ pub fn call(
     {
         return Err("Tool is not selected or approved".into());
     }
+    if super::filesystem_identity(name) && configured_root(config)?.is_none() {
+        return Err("Select a filesystem folder in Tools settings before using file tools".into());
+    }
+    if super::filesystem_identity(name)
+        && (args.get("allowed_dir").is_some() || args.get("allowedDir").is_some())
+    {
+        return Err("Filesystem root belongs to Tools settings, not tool arguments".into());
+    }
     let (mut gateway, _) = Gateway::start(config, cancel, false)?;
     let tool = gateway
-        .tools()?
+        .tools(config)?
         .into_iter()
         .find(|t| t.name == name)
         .ok_or("Tool is unavailable or has unsafe/unsupported metadata")?;
@@ -504,6 +606,7 @@ mod tests {
             enabled: true,
             executable: target.to_string_lossy().into(),
             selected: vec!["time__get_current_time".into()],
+            root: String::new(),
         }
     }
     #[test]
@@ -578,10 +681,15 @@ mod tests {
     }
     #[test]
     fn version_titles_and_minimum_are_checked() {
-        for version in ["rune 0.3.1", "rune-kit 0.4.0"] {
+        for version in ["rune-kit 0.5.0", "rune-kit 0.6.0"] {
             assert!(compatible_version(version))
         }
-        for version in ["rune 0.3.0", "something 0.3.1", "rune 0.x.1"] {
+        for version in [
+            "rune 0.5.0",
+            "rune-kit 0.4.0",
+            "something 0.5.0",
+            "rune-kit 0.x.1",
+        ] {
             assert!(!compatible_version(version))
         }
     }
@@ -631,5 +739,183 @@ mod tests {
         let text = bounded(&json!({"content":[{"type":"text","text":"x".repeat(30000)}]}));
         assert!(text.ends_with("[truncated]"));
         assert!(text.len() < 17000);
+    }
+
+    #[test]
+    fn executable_discovery_prefers_shared_home_and_never_uses_legacy_rune() {
+        let temp = tempfile::tempdir().unwrap();
+        let shared = temp.path().join("rune");
+        let path = temp.path().join("path");
+        std::fs::create_dir_all(&shared).unwrap();
+        std::fs::create_dir_all(&path).unwrap();
+        let name = if cfg!(windows) {
+            "rune-kit.exe"
+        } else {
+            "rune-kit"
+        };
+        std::fs::write(shared.join(name), "").unwrap();
+        std::fs::write(path.join(name), "").unwrap();
+        let paths = std::env::join_paths([&path]).unwrap();
+        let config = Config::default();
+        assert_eq!(
+            resolve_executable(&config, Some(temp.path()), &paths).unwrap(),
+            shared.join(name).to_string_lossy()
+        );
+        let explicit = Config {
+            executable: "explicit-kit".into(),
+            ..config.clone()
+        };
+        assert_eq!(
+            resolve_executable(&explicit, None, &paths).unwrap(),
+            "explicit-kit"
+        );
+        std::fs::remove_file(shared.join(name)).unwrap();
+        assert_eq!(
+            resolve_executable(&config, Some(temp.path()), &paths).unwrap(),
+            path.join(name).to_string_lossy()
+        );
+        std::fs::remove_file(path.join(name)).unwrap();
+        std::fs::write(
+            path.join(if cfg!(windows) { "rune.exe" } else { "rune" }),
+            "",
+        )
+        .unwrap();
+        assert!(resolve_executable(&config, Some(temp.path()), &paths).is_err());
+        assert!(
+            resolve_executable(&config, None, &paths)
+                .unwrap_err()
+                .contains("home")
+        );
+    }
+
+    #[test]
+    fn filesystem_requires_an_existing_absolute_owner_root() {
+        assert!(
+            configured_root(&Config {
+                root: ".".into(),
+                ..Config::default()
+            })
+            .is_err()
+        );
+        let config = Config {
+            enabled: true,
+            selected: vec!["rune-filesystem__read_text_file".into()],
+            ..Config::default()
+        };
+        assert!(
+            call(
+                &config,
+                &config.selected[0],
+                &json!({"path":"note.txt"}),
+                &CancelToken::default()
+            )
+            .unwrap_err()
+            .contains("folder")
+        );
+    }
+
+    /// Uses the production Studio client, an isolated Kit registry, and actual plugin artifacts.
+    #[test]
+    #[ignore = "Requires STUDIO_KIT_TEST_EXE and isolated RUNE_KIT_DATA_DIR containing time/git/filesystem"]
+    fn actual_kit_plugins_through_studio() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join("note.txt"),
+            "Studio inside marker\nsecond line",
+        )
+        .unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("secret.txt"), "outside marker").unwrap();
+        let mut config = Config {
+            enabled: true,
+            executable: std::env::var("STUDIO_KIT_TEST_EXE").unwrap(),
+            root: root.path().to_string_lossy().into(),
+            ..Config::default()
+        };
+        let cancel = CancelToken::default();
+        let without_root = Config {
+            root: String::new(),
+            ..config.clone()
+        };
+        let limited = discover(&without_root, &cancel).unwrap();
+        assert_eq!(limited.tools.len(), 3);
+        assert!(
+            limited
+                .unavailable
+                .iter()
+                .any(|reason| reason.contains("folder"))
+        );
+        let discovery = discover(&config, &cancel).unwrap();
+        config.selected = discovery.tools.iter().map(|t| t.name.clone()).collect();
+        assert_eq!(config.selected.len(), 5, "{:?}", config.selected);
+        for (suffix, args, expected) in [
+            (
+                "get_current_time",
+                json!({"timezone":"Asia/Kolkata"}),
+                "2026",
+            ),
+            (
+                "convert_time",
+                json!({"time":"2026-10-23T12:00:00","sourceTimezone":"UTC","targetTimezone":"Asia/Kolkata"}),
+                "17:30",
+            ),
+            (
+                "validate_commit_message",
+                json!({"message":"fix(studio): discover compatible tools","conventional":true}),
+                "true",
+            ),
+            (
+                "read_text_file",
+                json!({"path":"note.txt","lineLimit":1}),
+                "Studio inside marker",
+            ),
+            (
+                "list_directory",
+                json!({"path":".","maxEntries":20}),
+                "note.txt",
+            ),
+        ] {
+            let name = config
+                .selected
+                .iter()
+                .find(|n| n.ends_with(&format!("__{suffix}")))
+                .unwrap();
+            let result = call(&config, name, &args, &cancel).unwrap();
+            assert!(result.contains(expected), "{suffix}: {result}");
+        }
+        let read = config
+            .selected
+            .iter()
+            .find(|n| n.ends_with("__read_text_file"))
+            .unwrap()
+            .clone();
+        for path in [
+            outside
+                .path()
+                .join("secret.txt")
+                .to_string_lossy()
+                .into_owned(),
+            "missing.txt".into(),
+            "../secret.txt".into(),
+        ] {
+            assert!(
+                call(&config, &read, &json!({"path":path}), &cancel).is_err(),
+                "{path}"
+            );
+        }
+        config.selected.retain(|n| n != &read);
+        assert!(
+            call(&config, &read, &json!({"path":"note.txt"}), &cancel)
+                .unwrap_err()
+                .contains("selected")
+        );
+        let stopped = CancelToken::default();
+        stopped.cancel();
+        assert!(discover(&config, &stopped).is_err());
+        assert!(discover(&config, &cancel).is_ok());
+        println!(
+            "Verified {} through Studio with five selected operations, outside-root/missing-file refusal, deselection and recovery",
+            discovery.version
+        );
     }
 }

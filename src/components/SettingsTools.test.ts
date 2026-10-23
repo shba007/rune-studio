@@ -5,6 +5,21 @@ import SettingsTools from './SettingsTools.vue'
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn<typeof invoke>() }))
 beforeEach(() => vi.mocked(invoke).mockReset())
 describe('Kit settings', () => {
+  it('saves the owner folder separately from selected tool arguments', async () => {
+    vi.mocked(invoke)
+      .mockResolvedValueOnce({ enabled: true, executable: '', selected: [], root: '' })
+      .mockResolvedValue(undefined)
+    const wrapper = mount(SettingsTools)
+    await flushPromises()
+    const root = wrapper.get('input[placeholder="Choose a folder to expose to file tools"]')
+    await root.setValue('D:/Disposable/Tools')
+    await root.trigger('change')
+    await flushPromises()
+    expect(invoke).toHaveBeenCalledWith('kit_save', {
+      config: { enabled: true, executable: '', selected: [], root: 'D:/Disposable/Tools' },
+    })
+    expect(wrapper.text()).toContain('File contents are sent to the selected model')
+  })
   it('keeps tools off and unselected, surfaces discovery errors without treating them as empty success', async () => {
     vi.mocked(invoke)
       .mockResolvedValueOnce({ enabled: false, executable: '', selected: [] })

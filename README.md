@@ -338,15 +338,23 @@ scripts/                     m1-system-test.ps1, m15/ (grounding probe), make-lo
 
 ## Build and release pipeline
 
-| Workflow                          | Trigger                                              | What it does                                                                                                                                                                                                                                                                  |
-| --------------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.github/workflows/integrate.yml` | push to `develop` (skips release/merge commits)      | `bun run build`, lint (failures are ignored: the step ends in `echo`), format, auto-commit fixes, bump version and changelog with `changelogen`, open the `release/update-version` PR. **No tests and no Rust checks.**                                                       |
-| `.github/workflows/release.yml`   | push to `main` whose message contains `ci(release):` | Creates the GitHub release notes with `changelogen gh release`.                                                                                                                                                                                                               |
-| `.github/workflows/deploy.yml`    | release published                                    | Builds the desktop app with `tauri-action` on Windows, Ubuntu and macOS (Apple Silicon and Intel), all with `--features agent-bridge`, signs updater artifacts, and uploads `rune-studio-cli` as its own release asset. The web-container and Android jobs are commented out. |
+| Workflow                          | Trigger                             | Behavior                                                                                                                                                                                                                                                 |
+| --------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.github/workflows/integrate.yml` | develop pushes and all PRs          | Frontend tests/typecheck/build/lint/format, Rust tests/Clippy/format and Rust release-helper checks. After successful trusted develop checks, prepare/update `release/update-version` targeting develop with title/commit `ci(release): update version`. |
+| `.github/workflows/release.yml`   | main push containing `ci(release):` | Validate synchronized versions and extract the exact prepared CHANGELOG section, then publish the matching tag/release using the event-capable `GH_TOKEN`.                                                                                               |
+| `.github/workflows/deploy.yml`    | release published                   | Verify release notes/tag, build Windows/Linux/macOS installers with agent-bridge, sign updater artifacts and upload the CLI to the existing release.                                                                                                     |
 
-The active deployment workflow builds desktop bundles. The commented web-container and Android jobs are inactive.
+The owner merges the preparation PR into develop, then promotes develop to main
+with a **merge commit**, titled `ci(release): publish vX.Y.Z`. Merging into develop
+alone does not publish. Do not squash/rebase the main promotion; release history
+must remain connected. PR checks are never skipped just because a commit is a
+merge or release bump. Agents leave changes unstaged/uncommitted; GitHub Actions
+is authorized to prepare and push the dedicated release branch.
 
-Secrets used: `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (updater signatures), `GITHUB_TOKEN`, `GH_TOKEN` (release notes).
+See [release rules, Rust dry runs, permissions and owner steps](docs/RELEASING.md).
+The frontend still uses Bun; release utilities are Rust. Existing `GH_TOKEN` needs
+Contents/Pull requests write access and must trigger downstream events. Updater
+signing uses `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
 
 ---
 
@@ -357,4 +365,4 @@ Copyright &copy; 2024 Shirsendu Bairagi.
 
 ### Selected read-only Kit tools
 
-Settings → Tools can enable selected time and commit-message validation tools through Kit 0.3.1+. Kit/plugin installation remains manual. See [setup, permissions and verification](docs/kit.md). File tools remain unavailable pending the bounded read-only gateway contract.
+Settings → Tools supports selected time, commit-message validation and bounded file read/list tools through rune-kit 0.5.0+ (MCP 2026-07-28). Kit/plugin installation remains manual. File tools require an owner-configured folder and filesystem 0.4.1+. See [setup, permissions and verification](docs/kit.md).

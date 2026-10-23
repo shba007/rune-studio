@@ -1,30 +1,39 @@
 name: Vue Release
-
-permissions:
-  contents: write
-
 on:
   push:
-    branches:
-      - main
-
+    branches: [main]
+permissions:
+  contents: read
 jobs:
   release:
     if: contains(github.event.head_commit.message, 'ci(release):')
     runs-on: ubuntu-latest
-
+    concurrency:
+      group: release-publication
+      cancel-in-progress: false
+    permissions:
+      contents: write
     steps:
-      - name: 📥 Checkout Repo
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-
-      - name: 🛠️ Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - name: 📝 Create Release Note
-        run: bunx changelogen@latest gh release
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Extract prepared changelog section
+        run: cargo run --locked --manifest-path xtask/Cargo.toml -- notes --out "$RUNNER_TEMP/release-notes.md"
+      - name: Publish prepared release
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{secrets.GH_TOKEN}}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo 'GH_TOKEN must be an event-capable PAT/App token so release.published triggers artifact delivery.' >&2
+            exit 1
+          fi
+          version=$(cargo run --quiet --locked --manifest-path xtask/Cargo.toml -- version)
+          git fetch --tags origin
+          if git show-ref --verify --quiet "refs/tags/v$version"; then
+            echo "Release tag v$version already exists; refusing to overwrite it." >&2
+            exit 1
+          fi
+          gh release create "v$version" --target "$GITHUB_SHA" --title "v$version" --notes-file "$RUNNER_TEMP/release-notes.md"

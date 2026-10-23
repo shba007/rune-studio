@@ -1,5 +1,6 @@
 [package]
 name = "rune-studio"
+version = "0.0.23"
 description = "Voice and text driven desktop agent that controls the PC through rune-infer"
 authors = ["Shirsendu Bairagi <shirsendu2001@gmail.com>"]
 license = "MIT"
@@ -36,6 +37,7 @@ agent-bridge = ["dep:axum"]
 eval = []
 
 [dependencies]
+dirs = "7"
 axum = { version = "0.8", optional = true, default-features = false, features = [
   "http1",
   "json",
@@ -63,6 +65,7 @@ tokio = { version = "1.54", features = ["time", "macros", "rt", "net", "sync"] }
 aes-gcm = "0.11.1"
 
 [dev-dependencies]
+tempfile = "3"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 
 [target.'cfg(windows)'.dependencies]

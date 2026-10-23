@@ -215,6 +215,9 @@ jobs:
       - name: 📦 Install Dependencies
         run: bun install --frozen-lockfile
 
+      - name: Validate exact prepared release body
+        run: cargo run --locked --manifest-path xtask/Cargo.toml -- verify-event
+
       - name: ⚙️ Build and Upload App Artifact
         uses: tauri-apps/tauri-action@v1
         env:
@@ -223,8 +226,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           args: ${{ matrix.args }}
-          tagName: v__VERSION__
-          releaseName: 'v__VERSION__'
+          releaseId: ${{ github.event.release.id }}
+          generateReleaseNotes: false
           releaseDraft: false
           prerelease: false
 
