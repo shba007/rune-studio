@@ -1,22 +1,14 @@
+//! Minimal release integration: manifest synchronization and one exact note extractor.
+//! Conventional-commit parsing, version decisions and rendering belong to pinned changelogen.
 use semver::Version;
-use serde::{Deserialize, Serialize};
-use std::{collections::BTreeSet, fs, path::Path, process::Command};
+use std::{fs, path::Path};
 use toml_edit::{DocumentMut, value};
-
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct State {
-    pub source_head: String,
-    pub version: String,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Entry {
-    pub group: &'static str,
-    pub text: String,
-    pub breaking: bool,
+/// Only CRLF/LF and surrounding blank newline delimiters are transport-normalized.
+/// Markdown, contributor links, spaces and wording remain significant.
+pub fn canonical_notes(text: &str) -> String {
+    text.replace("\r\n", "\n").trim_matches('\n').to_string()
 }
 
 fn private_or_placeholder(text: &str) -> bool {
@@ -25,68 +17,23 @@ fn private_or_placeholder(text: &str) -> bool {
         .split(|c: char| !c.is_alphanumeric())
         .filter(|w| !w.is_empty())
         .collect();
-    words.iter().any(|w| {
-        matches!(
-            *w,
-            "todo" | "tbd" | "placeholder" | "unreleased" | "cycle" | "milestone"
-        )
-    }) || words.windows(2).any(|pair| {
-        matches!(pair[0], "m" | "k" | "l" | "r" | "inf" | "kf" | "wp")
-            && pair[1].chars().all(|c| c.is_ascii_digit())
-    }) || words.iter().any(|w| {
-        let (prefix, number) = w.split_at(w.find(|c: char| c.is_ascii_digit()).unwrap_or(w.len()));
-        !number.is_empty()
-            && number.chars().all(|c| c.is_ascii_digit())
-            && matches!(prefix, "m" | "k" | "l" | "r" | "inf" | "kf" | "wp")
-    }) || lower.contains("ci(release):")
-        || lower.contains("update version")
-        || lower.contains("bump version")
-}
-
-/// Conventional Commit parsing is supplied by git-conventional, not an AI service.
-pub fn entries(messages: &[String]) -> Vec<Entry> {
-    let mut seen = BTreeSet::new();
-    messages
+    words
         .iter()
-        .filter_map(|message| {
-            let commit = git_conventional::Commit::parse(message).ok()?;
-            let kind = commit.type_().to_string();
-            let scope = commit.scope().map(|s| s.to_string());
-            if (kind == "ci" && scope.as_deref() == Some("release"))
-                || commit
-                    .description()
-                    .to_ascii_lowercase()
-                    .contains("apply code fixes")
-                || private_or_placeholder(commit.description())
-            {
-                return None;
-            }
-            let group = if commit.breaking() {
-                "Compatibility"
-            } else {
-                match kind.as_str() {
-                    "feat" => "Features",
-                    "fix" => "Fixes",
-                    "perf" => "Performance",
-                    _ => "Maintenance",
-                }
-            };
-            let description = commit.description().replace(['\r', '\n'], " ");
-            let text = if let Some(scope) = scope.filter(|s| !private_or_placeholder(s)) {
-                format!("{scope}: {description}")
-            } else {
-                description
-            };
-            if !seen.insert(text.clone()) {
-                return None;
-            }
-            Some(Entry {
-                group,
-                text,
-                breaking: commit.breaking(),
-            })
+        .any(|w| matches!(*w, "todo" | "tbd" | "placeholder" | "unreleased"))
+        || words.windows(2).any(|pair| {
+            matches!(
+                pair[0],
+                "m" | "k" | "l" | "r" | "inf" | "kf" | "wp" | "cycle" | "milestone"
+            ) && pair[1].chars().all(|c| c.is_ascii_digit())
         })
-        .collect()
+        || words.iter().any(|w| {
+            let (prefix, number) =
+                w.split_at(w.find(|c: char| c.is_ascii_digit()).unwrap_or(w.len()));
+            !number.is_empty()
+                && number.chars().all(|c| c.is_ascii_digit())
+                && matches!(prefix, "m" | "k" | "l" | "r" | "inf" | "kf" | "wp")
+        })
+        || lower.contains("ci(release):")
 }
 
 fn sections(changelog: &str) -> Vec<(Version, usize, usize)> {
@@ -112,135 +59,19 @@ pub fn release_notes(changelog: &str, version: &Version) -> Result<String> {
             format!("First CHANGELOG version section must uniquely match {version}").into(),
         );
     }
-    let notes = changelog[parts[0].2..parts.get(1).map_or(changelog.len(), |p| p.1)].trim();
+    let notes =
+        canonical_notes(&changelog[parts[0].2..parts.get(1).map_or(changelog.len(), |p| p.1)]);
     let substantive = notes
         .lines()
+        .take_while(|line| !line.contains("Contributors"))
         .any(|l| l.trim_start().starts_with("- ") && l.trim().len() > 2);
-    if !substantive || private_or_placeholder(notes) {
+    if !substantive || private_or_placeholder(&notes) {
         return Err(format!(
             "CHANGELOG {version} has empty, placeholder or internal planning notes"
         )
         .into());
     }
     Ok(format!("{notes}\n"))
-}
-
-#[derive(Debug)]
-pub struct Plan {
-    pub version: Version,
-    pub changelog: String,
-    pub notes: String,
-    pub state: State,
-}
-
-pub fn plan(
-    published: &Version,
-    current: &Version,
-    changelog: &str,
-    source_head: &str,
-    changes: &[Entry],
-) -> Result<Option<Plan>> {
-    if changes.is_empty() {
-        return Ok(None);
-    }
-    if current < published {
-        return Err("Manifest version is older than the latest published tag".into());
-    }
-    let version = {
-        let mut next = published.clone();
-        // Preserve the repository's pre-1.0 patch progression; breaking changes advance minor.
-        if changes.iter().any(|c| c.breaking) {
-            if next.major == 0 {
-                next.minor += 1;
-                next.patch = 0;
-            } else {
-                next.major += 1;
-                next.minor = 0;
-                next.patch = 0;
-            }
-        } else if next.major > 0 && changes.iter().any(|c| c.group == "Features") {
-            next.minor += 1;
-            next.patch = 0;
-        } else {
-            next.patch += 1;
-        }
-        std::cmp::max(next, current.clone())
-    };
-    let pending = current > published;
-    let old_notes = if pending {
-        release_notes(changelog, current)?
-    } else {
-        String::new()
-    };
-    let mut additions = String::new();
-    for group in [
-        "Features",
-        "Fixes",
-        "Performance",
-        "Maintenance",
-        "Compatibility",
-    ] {
-        let lines: Vec<_> = changes
-            .iter()
-            .filter(|c| c.group == group)
-            .filter(|c| {
-                !old_notes
-                    .lines()
-                    .any(|line| line == format!("- {}", c.text))
-            })
-            .map(|c| format!("- {}\n", c.text))
-            .collect();
-        if !lines.is_empty() {
-            additions.push_str(&format!("### {group}\n\n{}\n", lines.concat()));
-        }
-    }
-    let notes = if old_notes.is_empty() {
-        additions.trim_end().to_owned()
-    } else if additions.is_empty() {
-        old_notes.trim_end().to_owned()
-    } else {
-        format!("{}\n\n{}", old_notes.trim_end(), additions.trim_end())
-    };
-    let parts = sections(changelog);
-    let updated = if pending {
-        let first = parts.first().ok_or("Missing pending version section")?;
-        let end = parts.get(1).map_or(changelog.len(), |p| p.1);
-        format!(
-            "{}## v{version}\n\n{notes}\n\n{}",
-            &changelog[..first.1],
-            &changelog[end..]
-        )
-    } else {
-        let at = parts.first().map_or(changelog.len(), |p| p.1);
-        format!(
-            "{}## v{version}\n\n{notes}\n\n{}",
-            &changelog[..at],
-            &changelog[at..]
-        )
-    };
-    let notes = release_notes(&updated, &version)?;
-    Ok(Some(Plan {
-        version: version.clone(),
-        changelog: updated,
-        notes,
-        state: State {
-            source_head: source_head.into(),
-            version: version.to_string(),
-        },
-    }))
-}
-
-pub fn git(root: &Path, args: &[&str]) -> Result<String> {
-    let out = Command::new("git").current_dir(root).args(args).output()?;
-    if !out.status.success() {
-        return Err(format!(
-            "git {} failed: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&out.stderr)
-        )
-        .into());
-    }
-    Ok(String::from_utf8(out.stdout)?)
 }
 
 pub fn version(root: &Path) -> Result<Version> {
@@ -252,82 +83,15 @@ pub fn version(root: &Path) -> Result<Version> {
     )?)
 }
 
-pub fn repository_plan(root: &Path) -> Result<Option<Plan>> {
-    let tags = git(root, &["tag", "--list", "v*"])?;
-    let published = tags
-        .lines()
-        .filter_map(|tag| Version::parse(tag.strip_prefix('v')?).ok())
-        .filter(|v| v.pre.is_empty())
-        .max()
-        .ok_or("No release tags found; fetch complete history and tags")?;
-    let tag = format!("v{published}");
-    let current = version(root)?;
-    let head = git(root, &["rev-parse", "HEAD"])?.trim().to_owned();
-    let state_path = root.join(".release/prepared.json");
-    let state: Option<State> = if state_path.exists() {
-        Some(serde_json::from_slice(&fs::read(state_path)?)?)
-    } else {
-        None
-    };
-    let base = history_base(&published, &current, state.as_ref())?;
-    if base != tag {
-        git(root, &["merge-base", "--is-ancestor", &base, "HEAD"])?;
-    }
-    let history = git(
-        root,
-        &[
-            "log",
-            "--no-merges",
-            "--reverse",
-            "--format=%B%x00",
-            &format!("{base}..HEAD"),
-        ],
-    )?;
-    let messages = history
-        .split('\0')
-        .map(|s| s.trim().to_owned())
-        .filter(|s| !s.is_empty())
-        .collect::<Vec<_>>();
-    plan(
-        &published,
-        &current,
-        &fs::read_to_string(root.join("CHANGELOG.md"))?,
-        &head,
-        &entries(&messages),
-    )
-}
-
-pub fn history_base(
-    published: &Version,
-    current: &Version,
-    state: Option<&State>,
-) -> Result<String> {
-    if let Some(state) = state {
-        if Version::parse(&state.version)? <= *published {
-            return Ok(format!("v{published}"));
-        }
-        if state.version != current.to_string()
-            || state.source_head.len() != 40
-            || !state.source_head.chars().all(|c| c.is_ascii_hexdigit())
-        {
-            return Err("Invalid pending release state".into());
-        }
-        Ok(state.source_head.clone())
-    } else {
-        Ok(format!("v{published}"))
-    }
-}
-
-/// Only changes release-owned files. Does not stage, commit, push or invoke Git mutations.
-pub fn apply(root: &Path, plan: &Plan) -> Result<()> {
+pub fn sync_manifests(root: &Path, next: &Version) -> Result<()> {
     let text = fs::read_to_string(root.join("package.json"))?;
     let mut json: serde_json::Value = serde_json::from_str(&text)?;
-    json["version"] = serde_json::Value::String(plan.version.to_string());
+    json["version"] = serde_json::Value::String(next.to_string());
     // Preserve source order and all unrelated JSON formatting.
     let old = version(root)?.to_string();
     let package = text.replacen(
         &format!("\"version\": \"{old}\""),
-        &format!("\"version\": \"{}\"", plan.version),
+        &format!("\"version\": \"{}\"", next),
         1,
     );
     if serde_json::from_str::<serde_json::Value>(&package)? != json {
@@ -335,7 +99,7 @@ pub fn apply(root: &Path, plan: &Plan) -> Result<()> {
     }
     let mut cargo =
         fs::read_to_string(root.join("src-tauri/Cargo.toml"))?.parse::<DocumentMut>()?;
-    cargo["package"]["version"] = value(plan.version.to_string());
+    cargo["package"]["version"] = value(next.to_string());
     let mut lock = fs::read_to_string(root.join("src-tauri/Cargo.lock"))?.parse::<DocumentMut>()?;
     let packages = lock["package"]
         .as_array_of_tables_mut()
@@ -344,16 +108,10 @@ pub fn apply(root: &Path, plan: &Plan) -> Result<()> {
         .iter_mut()
         .find(|p| p["name"].as_str() == Some("rune-studio"))
         .ok_or("Cargo.lock Studio package missing")?;
-    package_lock["version"] = value(plan.version.to_string());
+    package_lock["version"] = value(next.to_string());
     fs::write(root.join("package.json"), package)?;
     fs::write(root.join("src-tauri/Cargo.toml"), cargo.to_string())?;
     fs::write(root.join("src-tauri/Cargo.lock"), lock.to_string())?;
-    fs::write(root.join("CHANGELOG.md"), &plan.changelog)?;
-    fs::create_dir_all(root.join(".release"))?;
-    fs::write(
-        root.join(".release/prepared.json"),
-        format!("{}\n", serde_json::to_string_pretty(&plan.state)?),
-    )?;
     Ok(())
 }
 
@@ -389,7 +147,7 @@ pub fn validate_event(root: &Path, event: &serde_json::Value) -> Result<()> {
     let version = version(root)?;
     let notes = release_notes(&fs::read_to_string(root.join("CHANGELOG.md"))?, &version)?;
     if event["release"]["tag_name"] != format!("v{version}")
-        || event["release"]["body"].as_str().map(str::trim) != Some(notes.trim())
+        || event["release"]["body"].as_str().map(canonical_notes) != Some(canonical_notes(&notes))
     {
         return Err("Published version/body does not match the prepared CHANGELOG section".into());
     }

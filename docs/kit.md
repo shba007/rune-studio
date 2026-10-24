@@ -9,6 +9,11 @@ can explicitly opt in with `RUNE_STUDIO_ALLOW_KIT_HTTP_PREVIEW=1`. Published
 
 Start Kit with `rune-kit serve --headless` for background/CI use. With an attached
 interactive terminal Kit provides its own TUI. Studio never starts or stops Kit.
+The shared installation root is the actual user home plus `/.rune`: binaries
+`rune-kit[.exe]` and `rune-infer[.exe]` sit directly there, Kit storage is
+`~/.rune/tools` (plugins in `tools/plugins`), and Infer uses `~/.rune/infer`
+with configuration in `infer/config`. Preserve explicit overrides. Kit/Infer own
+migration from legacy roots; Studio does not move or overwrite their data.
 Kit owns installation, plugins, filesystem roots and their migrations. Filesystem
 reads need an explicit server `-p allowed_dir=<absolute existing folder>` and
 read-only/allow-tool configuration. Studio cannot replace that root in a call.

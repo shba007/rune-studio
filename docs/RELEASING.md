@@ -1,185 +1,125 @@
-# Release preparation and publication
+# Generated release preparation and artifact delivery
 
-## Owner and CI responsibilities
+## Source of truth and version policy
 
-Agents implement/test locally and leave changes unstaged/uncommitted. The owner
-commits and pushes development changes. GitHub Actions may prepare/push the
-release branch and publish after owner review/promotion. No AI service is used.
+`changelogen@0.6.2` is pinned in package.json and bun.lock. It alone parses
+Conventional Commits, calculates the bump, groups changes and renders Markdown.
+There is no custom bump algorithm or handwritten release renderer in xtask.
+`changelog.config.mjs` explicitly configures features, fixes/performance and all
+maintenance groups. Features advance minor (including below 1.0); fixes/performance
+and substantive maintenance advance patch. Breaking changes override type: major
+after 1.0, minor before 1.0. Changelogen's pre-1.0 default would demote features to
+patch; the small adapter configures its package-major classification for those
+features so the package produces the required minor bump. Fixtures enforce this.
 
-1. Owner pushes develop. Vue CI runs frontend typecheck/tests/build/lint/format,
-   release utility tests/Clippy/format, and Windows app Rust tests/Clippy/format.
-   Only develop pushes trigger Vue CI. PR events and release/update-version pushes
-   do not trigger duplicate runs. Merge/release commits still receive validation.
-2. After both validation jobs pass, a trusted develop push prepares release files.
-   It checks the tested SHA is still current, then uses the Rust utility to update
-   package.json, src-tauri/Cargo.toml, src-tauri/Cargo.lock, CHANGELOG.md and
-   .release/prepared.json. Tauri already reads ../package.json. bun.lock contains
-   dependency metadata, not the app version; xtask is an independently versioned,
-   unpublished developer utility. The same run validates generated version/notes,
-   reruns release-tool tests and checks locked Cargo metadata before opening the PR.
-   No other source files are autoformatted/committed.
-3. peter-evans/create-pull-request updates one branch, release/update-version,
-   targeting develop. Both title and commit are ci(release): update version.
-   The exact generated changelog section supplies its PR body. Owner reviews
-   versions, notes, diff and successful Frontend and release utility / Windows Rust
-   checks. Merge or squash this PR; do not squash unrelated development changes
-   into the bookkeeping subject before preparation.
-4. Owner opens develop → main promotion PR. Use Create a merge commit, preserving
-   ancestry (do NOT squash/rebase promotion). Set the merge commit title to
-   ci(release): publish vX.Y.Z, using the prepared package.json version. This
-   marker on the main HEAD is required by Vue Release. Merging the preparation
-   PR into develop alone NEVER publishes. Squashing promotion would also make
-   previously consumed source commits reappear in later tag-to-develop ranges.
-5. Vue Release validates synchronized versions and extracts the exact matching
-   latest CHANGELOG section. Missing, mismatched, empty, duplicate or placeholder
-   notes fail. It refuses an existing tag, then creates vX.Y.Z and its release
-   with that extracted body, using GH_TOKEN.
-6. That release.published event starts Vue CD. Each platform validates release
-   tag/body against the same Rust extractor, then uploads signed installers and
-   CLI assets to the existing release ID. It does not regenerate release prose.
-   Owner checks all platform jobs, Windows installer download and latest.json.
+All valid semantic types, including custom types, are eligible. Routine ci/chore
+release bookkeeping, apply-code-fix commits and internal planning labels are
+excluded. Substantive fix(release), docs, refactor, tests, build and CI changes remain.
+Changelogen renders commit/PR links, compare links, breaking markers and contributors.
+Contributor names come from Git; optional handles come from a reviewed local map.
+Online author enrichment is disabled so outages/account changes cannot change a
+repeat preview. No AI service or network prose generator is involved.
 
-## Deterministic rules and repeat runs
+## Workflow and ownership
 
-The utility uses git-conventional for parsing, semver for versions and toml_edit
-for Rust manifest/lock edits. All valid semantic commit types are releasable,
-including docs, refactor, style, test, build, ci, chore, revert and custom types.
-Other than feat/fix/perf or breaking changes, they appear under Maintenance and
-use a patch bump. Merge wrappers, routine release/version/autoformat bookkeeping,
-placeholders and internal planning labels are excluded. Write public descriptions
-in reviewed conventional commit subjects; the tool does not invent product prose.
-Under the repository's existing pre-1.0 progression nonbreaking changes bump patch,
-breaking changes advance minor. After 1.0, feat bumps minor and breaking bumps major.
+1. Owner commits/pushes develop. Only develop pushes start Vue CI; merge/release
+   commits still receive strict frontend, app Rust and release-integration checks.
+   PR events and release-branch pushes do not start duplicate integration runs.
+2. Successful validation permits trusted Actions preparation. It checks the tested
+   source is current, runs the pinned package, synchronizes package/Tauri/Cargo,
+   writes the generated changelog and preparation metadata, and validates all
+   generated files in that same run. It rechecks develop immediately before PR update.
+3. One release/update-version → develop PR is created/updated. Both title and
+   generated commit are ci(release): update version. The extracted version section
+   is its body. The owner reviews the generated files and successful source run.
+4. Owner merges the preparation PR (merge or squash supported), then promotes
+   develop → main with a merge commit preserving source ancestry. Ordinary merge
+   titles work; no ci(release) marker is required. Merging develop alone never publishes.
+5. Every main push validates versions, exact prepared notes/digest, generator,
+   baseline and source ancestry. An already published version is a successful
+   explicit no-op. An invalid, decreasing or stale pending preparation fails with
+   instructions to prepare through develop again. A valid unpublished preparation
+   publishes its matching tag/release using the already prepared notes file.
+6. release.published triggers Vue CD. All platforms check out that tag and run
+   the same Rust exact-section validator before builds/uploads to the existing
+   release ID. No publication or artifact step regenerates prose from Git history.
 
-Tags supply the last published baseline. An already prepared pending version is
-reused (or advanced if new breaking changes require it). An existing unpublished
-changelog section is retained and new entries are deduplicated. Published sections
-are preserved byte-for-byte. .release/prepared.json stores the consumed source
-head; a merged preparation with no new substantive commits produces no PR. An
-unmerged preparation rerun uses the same develop inputs, therefore the same
-version/notes/branch. New reviewed changes update that one outstanding PR.
-The source head must remain an ancestor; unexpected history rewrites fail clearly.
+Agents only implement/test locally and leave work unstaged/uncommitted. Agents do
+not edit CHANGELOG.md or run actual preparation on the working repository. CI owns
+release file generation and branch/release mutations; the owner reviews/promotes.
+The generator's bump operation runs in a temporary scratch package during previews,
+so local calculation writes neither the repository changelog nor manifests.
 
-## Local commands (no Git mutations or publication)
+## Exact note contract and repeat runs
+
+Rust xtask supplies the single section extractor to preparation, publication and
+artifact validation. The first version heading must uniquely match the manifests.
+Missing, empty, duplicate and placeholder sections fail. The release body omits the
+version heading and includes the exact substantive body, compare/commit/contributor
+links and groups. Only CRLF → LF and surrounding blank newline delimiters are
+normalized. No Markdown rewriting, mention/link removal, trimming of meaningful
+spaces, commit-range regeneration or unrelated-note fallback is accepted.
+
+Preparation always considers the full source range after the actual previous tag,
+using changelogen for the greatest pending bump. An unpublished section may be
+regenerated; all published historical suffix bytes are preserved. Repeat unmerged
+runs produce the same version/section. `.release/prepared.json` records generator,
+sourceHead, baseTag, version and notesHash. A merged preparation with no new source
+changes produces no PR/bump. New source recomputes the pending section from the
+same published baseline, without duplicate version sections. Source freshness
+checks plus publication's unconsumed-source refusal prevent stale publication.
+
+## Local read-only commands
 
 ```text
+bun install --frozen-lockfile
+bun run release:prepare
+bun run release:preview
+bun run release:test
 cargo test --locked --manifest-path xtask/Cargo.toml
-cargo clippy --locked --manifest-path xtask/Cargo.toml --all-targets -- -D warnings
-cargo run --locked --manifest-path xtask/Cargo.toml -- prepare
-cargo run --locked --manifest-path xtask/Cargo.toml -- example
 cargo run --locked --manifest-path xtask/Cargo.toml -- notes
 ```
 
-prepare prints a proposal; it never changes files without --apply. The apply flag
-is used by CI/owner only. Neither mode stages, commits, pushes, tags or publishes.
-example uses synthetic reviewed messages without creating commits or files:
-
-```markdown
-## v0.0.24
-
-### Fixes
-
-- kit: report incompatible tool gateways clearly
-```
-
-Repeating that example yields the same output. The repository currently has a
-pending 0.0.23 section. Preparation reuses it and includes the reviewed refactor
-commit that the earlier narrow type filter excluded. The example above is not
-a promised actual release version.
+xtask prepare/example delegate to Bun and remain supported. `sync VERSION` is small
+manifest integration, not a bump calculator; it never edits the changelog. Actual
+`prepare --apply` is guarded to trusted develop CI. Tests use temporary fixtures,
+including a read-only Git object reference; they create no commits, tags or branches.
 
 ## Authentication and repository settings
 
-GH_TOKEN already exists in the repository workflow contract. It MUST be a usable
-PAT or GitHub App installation token whose events trigger downstream workflows,
-with repository Contents write access for branch pushes and release publication.
-PR API operations use the job's GITHUB_TOKEN with explicit Pull requests write
-permission. The observed PAT could push the release branch but PR creation failed
-with Resource not accessible by personal access token; the two credentials now
-have separate roles. A stored short-lived App
-installation token must be refreshed by the repository's App integration; do not
-assume an expired static token works. A classic PAT needs repo access (and workflow
-scope if GitHub requires it for branch ancestry containing workflow changes).
-Fine-grained PAT/App access must include this repository and required organization
-approval/SSO. Never print token values. Both preparation and publication fail
-clearly if the secret is missing; actual scopes/expiry require owner verification.
+Enable Actions to create pull requests. The preparation job grants Contents/Pull
+requests write. `GITHUB_TOKEN` is used for PR API operations; event-capable `GH_TOKEN`
+is used for branch pushes. PR validation is the original preparation run, not a bot
+PR event. Release creation also uses GH_TOKEN so release.published can trigger CD;
+a release created with GITHUB_TOKEN alone would not provide that downstream event.
+GH_TOKEN must be a usable PAT or refreshed App installation token with repository
+Contents write. Keep existing Tauri signing secrets and relevant branch protection.
+Values need not be exposed. Live token/settings and publishing are owner checks.
 
-create-pull-request uses token=GITHUB_TOKEN for PR operations and
-branch-token=GH_TOKEN for Git pushes. Vue CI listens only to develop pushes;
-opening/updating the PR or pushing its branch starts no additional Vue CI run.
-Source validation and generated-release-file checks happen in the original
-develop run. Preparation itself still runs only on develop.
-Keep GH_TOKEN for gh release create: publication must trigger release.published
-and artifact delivery. Artifact uploads use GITHUB_TOKEN because they do not need
-to trigger another workflow. Source validation jobs receive no release secrets.
+## Failed v0.0.27 release diagnosis and recovery
 
-Repository policy was read and already allows Actions to create/approve PRs;
-no settings or secret values were changed. Live success of the credential split
-requires the owner's next commit/push; rerunning an old SHA uses its old workflow.
+[Run 40060814562](https://github.com/shba007/rune-studio/actions/runs/40060814562)
+failed on all four platforms at Validate exact prepared release body, before artifact
+build/upload. Public job annotations confirm exit 1 at that step. Full log downloads
+require authenticated access (public API returned 403); the first failure was reproduced
+with the tagged source and validator:
 
-Repository/org policy must allow Actions, the listed third-party actions, bot
-release branches/PRs and the token permissions. The owner reviews the successful
-develop run and generated-file checks before merging. With develop-only CI,
-required PR-head checks would never arrive; the owner must align branch protection
-with this trigger policy rather than waiting for a second PR workflow.
-Allow merge commits for promotion;
-keep owner review and any required approval protections. Permit only the release
-actor to push release/update-version. Existing updater signing secrets remain
-TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD. This change
-neither changes secrets/settings nor bypasses protections.
+- package.json at tag v0.0.27 says 0.0.27; Cargo.toml and Cargo.lock say 0.0.26.
+  validate_versions runs first, producing "versions must agree".
+- Additionally, the published contributor text is `(@shba007)`, while the tagged
+  changelog contains `([@shba007](https://github.com/shba007))`. Those are different
+  Markdown bodies, not a line-ending difference, so version synchronization alone
+  would not repair note validation. The old publisher independently regenerated
+  notes using changelogen while artifacts compared a stored custom-tool contract.
 
-The full PR → merge → main → release → artifact event sequence was reviewed
-locally, not executed. Only owner actions can verify token policy, protections,
-actual GitHub event delivery and all installer platforms. No live run was dispatched.
+The working manifests now match existing package 0.0.27, without modifying the
+repository changelog. No published body/tag/history was rewritten. Owner recovery:
+commit/push this repair to develop, review the generated preparation PR, merge it,
+and promote with an ordinary ancestry-preserving merge. The next release will use
+one prepared section end to end. Rerunning the old immutable tag still uses its old
+inconsistent files and is not a substitute for a correctly prepared release.
 
-## Remaining non-Rust tooling
-
-The superseded scripts/release-notes.mjs and its tests are removed after equivalent
-Rust tests passed. GitHub Actions YAML, third-party Actions, git/gh CLI transport,
-and small shell orchestration remain; application Vue/TypeScript/Bun tooling is
-unchanged. End users install prebuilt products and never need Rust.
-
-Inspected scripts/m1-system-test.ps1, m1-target.ps1, eval/run.ps1 and
-m15/run-probe.ps1. They have no release/version/changelog logic to consolidate:
-they manage existing Windows desktop/WinForms fixtures, explicit live evaluation
-and probe setup. Their Node browser rendering/reporting is existing evaluation
-infrastructure. Rewriting these unrelated GUI/evaluation harnesses would be a
-large product-testing change, so they remain; no obsolete release PowerShell or
-Python implementation is retained.
-
-## Local verification for this change
-
-Windows: nine release-tool tests passed, including repeat preparation/consumed
-source state, historical preservation, exact extraction, synchronized manifests,
-no-change exclusions, semantic versions and event/body mismatch refusal.
-483 application Rust tests passed (11 environment-dependent tests ignored);
-160 frontend tests passed across 22 files. A separate real Studio → Kit test passed
-with local Kit 0.5.0, time/git 0.3.0 and filesystem 0.4.1: all five operations,
-root enforcement, plugin error handling, deselection and recovery. Typecheck,
-production build, lint, both Rust Clippy runs, formatting, YAML syntax and diff
-whitespace checks passed. Host incremental hard-link fallback warnings were
-non-fatal. The local dry run changed no Git state and now includes the previously excluded refactor. The example and idempotence tests need no commits.
-
-No live workflow, PR, tag or release was created. Repository settings/token scopes,
-Linux/macOS execution and live model/GUI acceptance are untested here. Temporary
-Kit registry data stayed under this repository, without modifying installation.
-Suggested owner commit subject: fix(ci): restore automated release preparation.
-
-## Restored workflow and Linux dependency correction
-
-The active workflows again follow the flow above, using xtask rather than deleting
-CHANGELOG or regenerating publication prose. Both before and after preparation,
-the tested develop SHA is checked against origin/develop; an advanced branch is
-left to its newer validated run. Generated files are validated in that same run.
-The Ubuntu installer job installs libpipewire-0.3-dev, libspa-0.2-dev, libclang-dev,
-GBM/EGL, XCB, libxdo and ALSA headers alongside WebKit/GTK. This fixes the reported
-libspa-sys pkg-config failure; changing PKG_CONFIG_PATH cannot replace absent
-system development packages. Linux installation/build still needs owner CI verification.
-
-The pre-existing package version was 0.0.26 while Cargo remained 0.0.23; Cargo's
-manifest/lock have been synchronized to the existing package version without
-rewriting historical changelog entries. Release preparation remains CI-owned.
-Local prepare currently proposes 0.0.27 from reviewed committed history; it excludes
-uncommitted Screen Insight changes until the owner commits them. The synthetic
-example remains deterministic at 0.0.24. Owner promotion still requires a merge
-commit titled ci(release): publish vX.Y.Z, followed by release.published artifact
-jobs. GH_TOKEN, Actions PR creation permission and signing secrets remain required.
+No later artifact/build failure was observed in that run: those stages never ran.
+Linux/macOS installers and live GitHub dispatch remain unverified locally. Existing
+PipeWire/SPA, Clang, WebKit/GTK, GBM/EGL, XCB, libxdo and ALSA dependencies are retained.
+Report any failure after note validation separately; do not relax the note contract.

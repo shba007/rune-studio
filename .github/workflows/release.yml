@@ -1,30 +1,47 @@
 name: Vue Release
-
-permissions:
-  contents: write
-
 on:
   push:
-    branches:
-      - main
-
+    branches: [main]
+permissions:
+  contents: read
 jobs:
   release:
-    if: contains(github.event.head_commit.message, 'ci(release):')
     runs-on: ubuntu-latest
-
+    concurrency:
+      group: release-publication
+      cancel-in-progress: false
+    permissions:
+      contents: write
     steps:
-      - name: 📥 Checkout Repo
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-
-      - name: 🛠️ Setup Bun
-        uses: oven-sh/setup-bun@v2
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-
-      - name: 📝 Create Release Note
-        run: bunx changelogen@latest gh release
+      - run: bun install --frozen-lockfile
+      - name: Validate every main push and evaluate prepared release
+        id: eligibility
+        run: bun run release:check
+      - name: Extract the exact prepared notes
+        if: steps.eligibility.outputs.publish == 'true'
+        run: cargo run --quiet --locked --manifest-path xtask/Cargo.toml -- notes --out "$RUNNER_TEMP/release-notes.md"
+      - name: Publish only the prepared unpublished release
+        if: steps.eligibility.outputs.publish == 'true'
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{secrets.GH_TOKEN}}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          RELEASE_VERSION: ${{ steps.eligibility.outputs.version }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo 'GH_TOKEN must be an event-capable Contents-write PAT/App token for release.published artifact delivery.' >&2
+            exit 1
+          fi
+          git fetch --tags origin
+          if git show-ref --verify --quiet "refs/tags/v$RELEASE_VERSION"; then
+            echo 'Release tag appeared during publication; refusing to overwrite it.' >&2
+            exit 1
+          fi
+          gh release create "v$RELEASE_VERSION" --target "$GITHUB_SHA" --title "v$RELEASE_VERSION" --notes-file "$RUNNER_TEMP/release-notes.md"
