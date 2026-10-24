@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { onKeyStroke } from '@vueuse/core'
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted } from 'vue'
 
+import { invoke } from '@tauri-apps/api/core'
 import { escape, stageWord, toggleOpen } from '@/config/analysis'
 import { friendly } from '@/config/errors'
 import type { useAnalysis } from '@/composables/useAnalysis'
@@ -13,6 +14,23 @@ import AppIcon from './AppIcon.vue'
 const props = defineProps<{ analysis: ReturnType<typeof useAnalysis> }>()
 const { snapshot, busy, notice } = props.analysis
 
+const targets = ref<{ target: { kind: string; id: number }; label: string }[]>([])
+const selectedTarget = ref('')
+const targetNotice = ref('')
+async function loadTargets() {
+  targetNotice.value = ''
+  try {
+    const available = await invoke<unknown>('screen_insight_targets')
+    targets.value = Array.isArray(available) ? available : []
+    if (!targets.value.length)
+      targetNotice.value =
+        'No capture targets are available. Check screen-recording permissions and refresh.'
+  } catch (error) {
+    targets.value = []
+    targetNotice.value = friendly(String(error))
+  }
+}
+onMounted(loadTargets)
 const question = ref('')
 const open = ref<number | null>(null)
 
@@ -23,6 +41,13 @@ const failed = computed(() => snapshot.value.status === 'error')
 
 function submit() {
   if (busy.value) return
+  const option = targets.value.find((item) => JSON.stringify(item.target) === selectedTarget.value)
+  if (option) {
+    void props.analysis.capture(question.value.trim(), option.target)
+    question.value = ''
+    return
+  }
+  if (snapshot.value.id.startsWith('insight-') || !snapshot.value.monitor) return
   void (snapshot.value.monitor
     ? props.analysis.ask(question.value.trim())
     : props.analysis.capture(question.value.trim()))
@@ -31,10 +56,15 @@ function submit() {
 
 function retry() {
   if (busy.value) return
+  if (snapshot.value.id.startsWith('insight-')) {
+    question.value = snapshot.value.question
+    submit()
+    return
+  }
   const failedQuestion = snapshot.value.question
-  void (snapshot.value.monitor
-    ? props.analysis.ask(failedQuestion)
-    : props.analysis.capture(failedQuestion))
+  const option = targets.value.find((item) => JSON.stringify(item.target) === selectedTarget.value)
+  if (option) void props.analysis.capture(failedQuestion, option.target)
+  else if (snapshot.value.monitor) void props.analysis.ask(failedQuestion)
 }
 
 function onToggle(n: number) {
@@ -64,7 +94,7 @@ onKeyStroke('Escape', (event) => {
     >
       <header class="flex h-6 items-center gap-2">
         <AppIcon name="scan" size="sm" />
-        <span class="text-caption whitespace-nowrap text-zinc-300 uppercase">Screen analysis</span>
+        <span class="text-caption whitespace-nowrap text-zinc-300 uppercase">Screen Insight</span>
         <span v-if="stage" class="text-caption whitespace-nowrap text-zinc-500 uppercase">{{
           stage
         }}</span>
@@ -84,6 +114,35 @@ onKeyStroke('Escape', (event) => {
         </button>
       </header>
 
+      <label v-if="!busy" class="text-label text-zinc-400"
+        >Capture target
+        <select
+          v-model="selectedTarget"
+          aria-label="Screen or window"
+          class="mt-2 w-full rounded-lg bg-zinc-800 p-2"
+        >
+          <option value="" disabled>Choose a screen or window</option>
+          <option
+            v-for="option in targets"
+            :key="JSON.stringify(option.target)"
+            :value="JSON.stringify(option.target)"
+          >
+            {{ option.label }}
+          </option>
+        </select>
+      </label>
+      <p v-if="targetNotice && !busy && !failed" role="alert" class="text-label text-[#ff6b72]">
+        {{ targetNotice }}
+      </p>
+      <button
+        v-if="!busy"
+        type="button"
+        aria-label="Refresh capture targets"
+        class="self-start text-label text-zinc-400 underline"
+        @click="loadTargets"
+      >
+        Refresh targets
+      </button>
       <form class="flex items-center gap-2" @submit.prevent="submit">
         <p v-if="busy" class="m-0 min-w-0 flex-1 truncate text-body text-zinc-300">
           {{ snapshot.question }}
@@ -110,6 +169,7 @@ onKeyStroke('Escape', (event) => {
           v-else
           type="submit"
           class="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full bg-[#f1f1ef] text-[#111] transition hover:bg-white"
+          :disabled="!selectedTarget && !snapshot.monitor"
           aria-label="Ask"
         >
           <AppIcon name="send" />
@@ -118,6 +178,20 @@ onKeyStroke('Escape', (event) => {
       <p v-if="notice" class="m-0 text-label text-[#ff6b72]">{{ notice }}</p>
     </section>
 
+    <section v-if="snapshot.screenshot" class="rounded-2xl bg-[#141414] p-3">
+      <img
+        :src="snapshot.screenshot"
+        alt="Captured frame sent to the analysis model"
+        class="w-full rounded-lg"
+      />
+      <p class="text-label text-zinc-400">
+        Captured {{ snapshot.createdUtc }} · {{ snapshot.model || 'Resolving model' }}
+      </p>
+      <p class="text-label text-zinc-400">
+        Model observations, not verified facts. Screenshot text does not authorize actions. This
+        image stays in memory.
+      </p>
+    </section>
     <AnalysisAnswer v-if="showAnswer" :text="snapshot.answer" :waiting="waiting" />
 
     <ol

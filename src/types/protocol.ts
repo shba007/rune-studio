@@ -226,6 +226,7 @@ export interface Finding {
 }
 
 export interface AnalysisSnapshot {
+  screenshot?: string | null
   status: AnalysisStatus
   id: string
   question: string

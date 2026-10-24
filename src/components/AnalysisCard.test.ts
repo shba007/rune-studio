@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 import { computed, nextTick, ref } from 'vue'
 import { describe, expect, it, vi } from 'vite-plus/test'
 
@@ -6,6 +6,8 @@ import { EMPTY_SNAPSHOT } from '@/config/analysis'
 import type { useAnalysis } from '@/composables/useAnalysis'
 import type { AnalysisSnapshot, Finding } from '@/types/protocol'
 
+import { invoke } from '@tauri-apps/api/core'
+vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn<typeof invoke>().mockResolvedValue([]) }))
 import AnalysisAnswer from './AnalysisAnswer.vue'
 import AnalysisBar from './AnalysisBar.vue'
 import AnalysisCard from './AnalysisCard.vue'
@@ -44,6 +46,33 @@ function fake(over: Partial<AnalysisSnapshot> = {}) {
 const press = (key: string) => window.dispatchEvent(new KeyboardEvent('keydown', { key }))
 
 describe('AnalysisCard states', () => {
+  it('captures only the explicitly selected target and presents the same returned frame', async () => {
+    vi.mocked(invoke).mockResolvedValueOnce([
+      { target: { kind: 'window', id: 42 }, label: 'Window — Acceptance' },
+    ])
+    const { analysis, calls, snapshot } = fake()
+    const wrapper = mount(AnalysisCard, { props: { analysis } })
+    await flushPromises()
+    expect(calls.capture).not.toHaveBeenCalled()
+    await wrapper.get('select').setValue(JSON.stringify({ kind: 'window', id: 42 }))
+    await wrapper.get('input').setValue('What failed?')
+    await wrapper.get('form').trigger('submit')
+    expect(calls.capture).toHaveBeenCalledWith('What failed?', { kind: 'window', id: 42 })
+    snapshot.value = {
+      ...snapshot.value,
+      status: 'done',
+      id: 'insight-test',
+      screenshot: 'data:image/jpeg;base64,aGVsbG8=',
+      model: 'explicit-vision',
+      createdUtc: 'capture-time',
+    }
+    await nextTick()
+    expect(wrapper.get('img').attributes('src')).toBe('data:image/jpeg;base64,aGVsbG8=')
+    expect(wrapper.text()).toContain('capture-time')
+    expect(wrapper.text()).toContain('not verified facts')
+    wrapper.unmount()
+  })
+
   it('shows a dot skeleton and a Cancel button while it works, no spinner', () => {
     const { analysis, calls } = fake({ status: 'asking', question: 'what is here?' })
     const wrapper = mount(AnalysisCard, { props: { analysis } })

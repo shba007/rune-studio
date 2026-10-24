@@ -35,7 +35,7 @@ enum Ended {
     Cancelled,
 }
 
-fn publish(app: &AppHandle) {
+pub(crate) fn publish(app: &AppHandle) {
     let (snapshot, wanted) = {
         let state = app.state::<AppState>();
         let analysis = state.analysis.locked();
@@ -45,7 +45,8 @@ fn publish(app: &AppHandle) {
             .any(|finding| finding.bbox.is_some());
         (
             analysis.snapshot(),
-            wants_overlay(analysis.status, boxes_on_screen, analysis.stale),
+            !analysis.id.starts_with("insight-")
+                && wants_overlay(analysis.status, boxes_on_screen, analysis.stale),
         )
     };
     crate::overlay::sync_analysis(app, wanted);
@@ -217,7 +218,20 @@ pub async fn analyze_image(
     run_id: &str,
 ) -> Result<ModelAnalysis, AnalysisError> {
     let state = app.state::<AppState>();
-    let (settings, api_key) = (state.settings.locked().clone(), settings::api_key());
+    let settings = state.settings.locked().clone();
+    analyze_image_with_settings(app, question, image, cancel, run_id, &settings).await
+}
+
+pub(crate) async fn analyze_image_with_settings(
+    app: &AppHandle,
+    question: &str,
+    image: &str,
+    cancel: &CancelToken,
+    run_id: &str,
+    settings: &settings::Settings,
+) -> Result<ModelAnalysis, AnalysisError> {
+    let state = app.state::<AppState>();
+    let api_key = settings::api_key();
     let call_log = state.trace.call_log(run_id, "analysis");
     let analysis_model = settings.model_for_role(crate::model::role::ModelRole::Analysis);
     let profile = crate::model::profile::resolve_profile(analysis_model, None, None);
@@ -296,8 +310,12 @@ fn finish(
     latency_ms: u64,
 ) {
     let state = app.state::<AppState>();
+    if state.analysis.locked().id != id {
+        return;
+    }
     let model = match &ended {
         Ended::Done { model, .. } => model.clone(),
+        _ if id.starts_with("insight-") => state.analysis.locked().model.clone(),
         _ => state
             .settings
             .locked()
@@ -306,6 +324,14 @@ fn finish(
     };
     let (status, label, error) = {
         let mut analysis = state.analysis.locked();
+        if analysis.id != id {
+            return;
+        }
+        let ended = if analysis.cancel.is_cancelled() {
+            Ended::Cancelled
+        } else {
+            ended
+        };
         analysis.model = model.clone();
         analysis.latency_ms = latency_ms;
         match ended {
@@ -356,7 +382,9 @@ fn finish(
         archive::end_session(Some(id), label, "");
     }
     publish(app);
-    watch_for_change(app, id.to_string());
+    if !id.starts_with("insight-") {
+        watch_for_change(app, id.to_string());
+    }
 }
 
 pub fn cancel(app: &AppHandle) {
@@ -426,6 +454,49 @@ fn watch_for_change(app: &AppHandle, id: String) {
             }
         }
     });
+}
+
+pub(crate) fn current(app: &AppHandle, id: &str) -> bool {
+    let state = app.state::<AppState>();
+    let analysis = state.analysis.locked();
+    analysis.accepts(id)
+}
+pub(crate) fn finish_workflow(
+    app: &AppHandle,
+    id: &str,
+    result: Result<crate::workflow::Output, String>,
+    latency_ms: u64,
+) {
+    let state = app.state::<AppState>();
+    let (question, cancelled) = {
+        let analysis = state.analysis.locked();
+        if analysis.id != id {
+            return;
+        }
+        (analysis.question.clone(), analysis.cancel.is_cancelled())
+    };
+    let ended = if cancelled {
+        Ended::Cancelled
+    } else {
+        match result {
+            Ok(output) => {
+                let mut analysis = state.analysis.locked();
+                if analysis.id != id {
+                    return;
+                }
+                analysis.frame = output.frame;
+                analysis.created_utc = output.captured_utc;
+                Ended::Done {
+                    answer: output.analysis.parsed.answer,
+                    findings: output.analysis.parsed.findings,
+                    model: output.analysis.model,
+                }
+            }
+            Err(error) if error == "cancelled" => Ended::Cancelled,
+            Err(error) => Ended::Failed(error),
+        }
+    };
+    finish(app, &question, id, ended, None, latency_ms);
 }
 
 #[cfg(test)]
@@ -563,5 +634,64 @@ mod model_tests {
             ask("invalid-url", &cancel, Duration::from_secs(1)).await,
             Err(AnalysisError::Cancelled)
         ));
+    }
+    #[tokio::test]
+    #[ignore = "requires explicit real Infer model and live desktop capture opt-in"]
+    async fn actual_screen_capture_reaches_real_vision_model() {
+        let model = std::env::var("RUNE_STUDIO_INSIGHT_TEST_MODEL").expect("explicit test model");
+        assert_eq!(
+            std::env::var("RUNE_STUDIO_INSIGHT_TEST_SCREEN").as_deref(),
+            Ok("primary")
+        );
+        let mut settings = crate::settings::Settings {
+            base_url: std::env::var("RUNE_STUDIO_INSIGHT_TEST_INFER")
+                .unwrap_or("http://127.0.0.1:8080".into()),
+            ..Default::default()
+        };
+        settings.models.analysis = model.clone();
+        let http = reqwest::Client::new();
+        let key = crate::settings::api_key();
+        let status = crate::backend::check(&http, &settings, key.as_deref()).await;
+        crate::workflow::vision_model(&settings, &status.models)
+            .expect("available explicit vision/tool model");
+        let target = screenshot::monitors()
+            .unwrap()
+            .into_iter()
+            .find(|m| m.primary)
+            .expect("primary screen");
+        let frame =
+            screenshot::insight_capture(screenshot::CaptureTarget::Screen { id: target.id })
+                .unwrap();
+        assert!(
+            frame.path.as_os_str().is_empty(),
+            "Insight never retains the capture"
+        );
+        let profile = crate::model::profile::resolve_profile(&model, None, None);
+        let client = ChatClient {
+            http: &http,
+            base_url: &settings.base_url,
+            api_key: key.as_deref(),
+            model: &model,
+            profile: Some(&profile),
+            sink: None,
+            no_swap: false,
+            on_loading: None,
+        };
+        let image = frame.data_uri();
+        let captured = crate::trace::now_utc();
+        let result = analyze_with_client(
+            &client,
+            "Identify the most prominent application in one sentence. Do not read secrets.",
+            &image,
+            &CancelToken::default(),
+            CALL_TIMEOUT,
+        )
+        .await
+        .unwrap();
+        assert!(!result.parsed.answer.is_empty());
+        println!(
+            "Captured screen {} at {captured}, {}x{}, model {}: {}",
+            target.id, frame.width, frame.height, result.model, result.parsed.answer
+        );
     }
 }

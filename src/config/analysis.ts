@@ -76,6 +76,10 @@ export function readSnapshot(raw: unknown): AnalysisSnapshot {
   if (typeof raw !== 'object' || raw === null) return { ...EMPTY_SNAPSHOT }
   const value = raw as Record<string, unknown>
   return {
+    screenshot:
+      typeof value.screenshot === 'string' && value.screenshot.startsWith('data:image/jpeg;base64,')
+        ? value.screenshot
+        : null,
     status: STATUSES.find((known) => known === value.status) ?? 'idle',
     id: text(value.id),
     question: text(value.question),

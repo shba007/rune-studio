@@ -388,7 +388,9 @@ pub async fn analyze_screen(app: AppHandle, question: Option<String>) -> AppResu
             return Ok(());
         }
     }
-    crate::analysis::run::run(&app, question.as_deref().unwrap_or(""), true).await
+    Err(AppError::Invalid(
+        "Select a screen/window in Screen Insight before capturing".into(),
+    ))
 }
 
 #[tauri::command]
@@ -548,4 +550,21 @@ pub fn flight_reveal(app: AppHandle, id: String) -> AppResult<()> {
         .ok_or_else(|| AppError::Invalid("This run has no session folder on disk.".into()))?;
     crate::flight::reveal(&dir)
         .map_err(|err| AppError::Invalid(format!("Could not open the folder: {err}")))
+}
+
+#[tauri::command]
+pub async fn run_workflow(
+    app: AppHandle,
+    workflow_id: String,
+    input: serde_json::Value,
+) -> Result<(), String> {
+    crate::workflow::run(&app, &workflow_id, input).await
+}
+#[tauri::command]
+pub async fn screen_insight_targets()
+-> Result<Vec<crate::observe::screenshot::TargetOption>, String> {
+    tauri::async_runtime::spawn_blocking(crate::observe::screenshot::insight_targets)
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
 }

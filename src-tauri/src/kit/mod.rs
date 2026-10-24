@@ -87,3 +87,5 @@ pub fn filesystem_identity(name: &str) -> bool {
     approved_identity(name)
         && (name.starts_with("filesystem__") || name.starts_with("rune-filesystem__"))
 }
+
+pub mod headers;

@@ -54,6 +54,7 @@ impl Default for AnalysisState {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
+    pub screenshot: Option<String>,
     pub status: Status,
     pub id: String,
     pub question: String,
@@ -70,8 +71,22 @@ pub struct Snapshot {
 }
 
 impl AnalysisState {
+    pub fn accepts(&self, id: &str) -> bool {
+        self.id == id && !self.cancel.is_cancelled()
+    }
     pub fn snapshot(&self) -> Snapshot {
         Snapshot {
+            screenshot: if self.id.starts_with("insight-") {
+                self.frame.as_ref().map(|frame| {
+                    use base64::Engine;
+                    format!(
+                        "data:image/jpeg;base64,{}",
+                        base64::engine::general_purpose::STANDARD.encode(frame.jpeg.as_ref())
+                    )
+                })
+            } else {
+                None
+            },
             status: self.status,
             id: self.id.clone(),
             question: self.question.clone(),
@@ -91,6 +106,8 @@ impl AnalysisState {
     pub fn close(&mut self) {
         self.cancel.cancel();
         self.status = Status::Idle;
+        self.id.clear();
+        self.frame = None;
         self.answer.clear();
         self.findings.clear();
         self.error = None;
@@ -156,6 +173,22 @@ pub fn may_follow(from: Status, to: Status) -> bool {
 mod tests {
     use super::*;
     use Status::*;
+    #[test]
+    fn superseding_or_closing_a_workflow_rejects_its_late_output() {
+        let mut state = AnalysisState::default();
+        state.begin("first", true);
+        state.id = "insight-first".into();
+        let first = state.cancel.clone();
+        assert!(state.accepts("insight-first"));
+        state.cancel.cancel();
+        state.begin("second", true);
+        state.id = "insight-second".into();
+        assert!(first.is_cancelled());
+        assert!(!state.accepts("insight-first"));
+        assert!(state.accepts("insight-second"));
+        state.close();
+        assert!(!state.accepts("insight-second"));
+    }
 
     #[test]
     fn the_status_only_moves_forward_through_the_steps() {
@@ -279,7 +312,7 @@ mod tests {
     }
 
     #[test]
-    fn closing_clears_the_findings_and_cancels_but_keeps_the_frame() {
+    fn closing_clears_findings_cancels_and_releases_the_frame() {
         let mut state = AnalysisState {
             status: Done,
             answer: "a".into(),
@@ -314,8 +347,8 @@ mod tests {
             (Idle, "", false, 0)
         );
         assert!(
-            state.frame.is_some(),
-            "a follow-up question can still use the frame"
+            state.frame.is_none(),
+            "closing releases the captured image from memory"
         );
     }
 

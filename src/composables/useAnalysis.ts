@@ -24,7 +24,13 @@ export function useAnalysis() {
     }
   }
 
-  const capture = (question?: string) => run('analyze_screen', { question: question || null })
+  const capture = (question?: string, target?: { kind: string; id: number }) =>
+    target
+      ? run('run_workflow', {
+          workflowId: 'screen-insight',
+          input: { target, question: question || '' },
+        })
+      : run('analyze_screen', { question: question || null })
   const ask = (question: string) => run('analyze_again', { question })
   const cancel = () => run('cancel_analysis')
   const close = () => run('close_analysis')

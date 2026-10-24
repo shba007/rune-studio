@@ -273,8 +273,12 @@ export function useAgent() {
     if (snapshot) screenRequest.value = snapshot
   }
   const analyzeScreen = async () => {
-    await call('analyze_screen', { question: null })
-    if (settings.value?.externalAgent) await refreshScreenRequest()
+    if (settings.value?.externalAgent) {
+      await call('analyze_screen', { question: null })
+      await refreshScreenRequest()
+    } else {
+      await setMode('analysis')
+    }
   }
   const cancelScreenRequest = () => call('cancel_screen_request')
   useIntervalFn(() => {

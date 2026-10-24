@@ -258,3 +258,99 @@ fn encode_jpeg(
         .map_err(|err| ObserveError::Encode(err.to_string()))?;
     Ok(bytes.into_inner())
 }
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
+pub enum CaptureTarget {
+    Screen { id: u32 },
+    Window { id: u32 },
+}
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TargetOption {
+    pub target: CaptureTarget,
+    pub label: String,
+}
+pub fn insight_targets() -> Result<Vec<TargetOption>, ObserveError> {
+    let mut targets = monitors()?
+        .into_iter()
+        .map(|m| TargetOption {
+            target: CaptureTarget::Screen { id: m.id },
+            label: format!(
+                "Screen {} — {}×{}{}",
+                m.id,
+                m.width,
+                m.height,
+                if m.primary { " (primary)" } else { "" }
+            ),
+        })
+        .collect::<Vec<_>>();
+    for window in xcap::Window::all().map_err(|e| ObserveError::Display(e.to_string()))? {
+        if window.pid().ok() == Some(std::process::id()) || window.is_minimized().unwrap_or(true) {
+            continue;
+        }
+        if let (Ok(id), Ok(title)) = (window.id(), window.title())
+            && !title.trim().is_empty()
+        {
+            targets.push(TargetOption {
+                target: CaptureTarget::Window { id },
+                label: format!("Window — {}", title.chars().take(120).collect::<String>()),
+            });
+        }
+    }
+    Ok(targets)
+}
+pub fn insight_capture(target: CaptureTarget) -> Result<Frame, ObserveError> {
+    let started = Instant::now();
+    let (mut rgba, monitor) = match target {
+        CaptureTarget::Screen { id } => {
+            let (screen, monitor) = resolve(Some(id))?;
+            (
+                screen
+                    .capture_image()
+                    .map_err(|e| ObserveError::Capture(e.to_string()))?,
+                monitor,
+            )
+        }
+        CaptureTarget::Window { id } => {
+            let window = xcap::Window::all()
+                .map_err(|e| ObserveError::Display(e.to_string()))?
+                .into_iter()
+                .find(|w| w.id().ok() == Some(id))
+                .ok_or_else(|| {
+                    ObserveError::Capture("Selected window is no longer available".into())
+                })?;
+            if window.pid().ok() == Some(std::process::id())
+                || window.is_minimized().unwrap_or(true)
+            {
+                return Err(ObserveError::Capture(
+                    "Selected window is unavailable for capture".into(),
+                ));
+            }
+            let rgba = window
+                .capture_image()
+                .map_err(|e| ObserveError::Capture(e.to_string()))?;
+            let monitor = Monitor {
+                id,
+                x: window.x().unwrap_or(0),
+                y: window.y().unwrap_or(0),
+                width: rgba.width(),
+                height: rgba.height(),
+                scale_factor: 1.0,
+                primary: false,
+            };
+            (rgba, monitor)
+        }
+    };
+    super::mask::apply(&mut rgba, &super::mask::current(), monitor.x, monitor.y);
+    let prepared = prepare(rgba, MODEL_MAX_EDGE, MODEL_JPEG_QUALITY)?;
+    Ok(Frame {
+        monitor,
+        width: prepared.width,
+        height: prepared.height,
+        jpeg: prepared.jpeg,
+        path: Default::default(),
+        elapsed_ms: started.elapsed().as_millis() as u64,
+        image: prepared.image,
+    })
+}

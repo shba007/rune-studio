@@ -163,3 +163,23 @@ No live workflow, PR, tag or release was created. Repository settings/token scop
 Linux/macOS execution and live model/GUI acceptance are untested here. Temporary
 Kit registry data stayed under this repository, without modifying installation.
 Suggested owner commit subject: fix(ci): restore automated release preparation.
+
+## Restored workflow and Linux dependency correction
+
+The active workflows again follow the flow above, using xtask rather than deleting
+CHANGELOG or regenerating publication prose. Both before and after preparation,
+the tested develop SHA is checked against origin/develop; an advanced branch is
+left to its newer validated run. Generated files are validated in that same run.
+The Ubuntu installer job installs libpipewire-0.3-dev, libspa-0.2-dev, libclang-dev,
+GBM/EGL, XCB, libxdo and ALSA headers alongside WebKit/GTK. This fixes the reported
+libspa-sys pkg-config failure; changing PKG_CONFIG_PATH cannot replace absent
+system development packages. Linux installation/build still needs owner CI verification.
+
+The pre-existing package version was 0.0.26 while Cargo remained 0.0.23; Cargo's
+manifest/lock have been synchronized to the existing package version without
+rewriting historical changelog entries. Release preparation remains CI-owned.
+Local prepare currently proposes 0.0.27 from reviewed committed history; it excludes
+uncommitted Screen Insight changes until the owner commits them. The synthetic
+example remains deterministic at 0.0.24. Owner promotion still requires a merge
+commit titled ci(release): publish vX.Y.Z, followed by release.published artifact
+jobs. GH_TOKEN, Actions PR creation permission and signing secrets remain required.

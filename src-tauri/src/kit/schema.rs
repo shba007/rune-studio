@@ -20,6 +20,7 @@ pub fn supported(schema: &Value) -> bool {
                 | "maximum"
                 | "minLength"
                 | "maxLength"
+                | "x-mcp-header"
                 | "x-rune-rules"
                 | "x-rune-read-limits"
         )

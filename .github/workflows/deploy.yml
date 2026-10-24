@@ -32,17 +32,34 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # The rune-studio-cli command only exists in agent-bridge builds, and it talks to the app
+          # over that bridge, so every app is built with the feature. Tauri bundles every binary the
+          # package builds, so the installers carry the CLI next to the app by themselves (Windows
+          # installer and macOS bundle: next to the app; deb/rpm: /usr/bin). `target` is the Rust
+          # target, `cli` the CLI's file name on this OS and `asset` its name on the release.
           - platform: 'macos-latest' # for Arm based macs (M1 and above).
-            args: '--target aarch64-apple-darwin'
+            args: '--target aarch64-apple-darwin --features agent-bridge'
+            target: 'aarch64-apple-darwin'
+            cli: 'rune-studio-cli'
+            asset: 'macos_aarch64'
 
           - platform: 'macos-latest' # for Intel based macs.
-            args: '--target x86_64-apple-darwin'
+            args: '--target x86_64-apple-darwin --features agent-bridge'
+            target: 'x86_64-apple-darwin'
+            cli: 'rune-studio-cli'
+            asset: 'macos_x64'
 
           - platform: 'ubuntu-latest'
-            args: ''
+            args: '--features agent-bridge'
+            target: ''
+            cli: 'rune-studio-cli'
+            asset: 'linux_x64'
 
           - platform: 'windows-latest'
-            args: ''
+            args: '--features agent-bridge'
+            target: ''
+            cli: 'rune-studio-cli.exe'
+            asset: 'x64.exe'
 
     runs-on: ${{ matrix.platform }}
 
@@ -56,13 +73,20 @@ jobs:
         if: matrix.platform == 'ubuntu-latest' # This must match the platform value defined above.
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y pkg-config libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
+            libpipewire-0.3-dev libspa-0.2-dev libclang-dev libgbm-dev libegl1-mesa-dev libxcb1-dev libxcb-randr0-dev libxcb-shm0-dev libxdo-dev libasound2-dev
 
       - name: 🛠️ Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           # Those targets are only used on macos runners so it's in an `if` to slightly speed up windows and linux builds.
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: 🛠️ Setup Vite-Plus
+        uses: voidzero-dev/setup-vp@v1.21.2
+        with:
+          node-version: 'lts/*'
+          cache: true
 
       - name: 🛠️ Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -72,7 +96,10 @@ jobs:
       - name: 📦 Install Dependencies
         run: bun install --frozen-lockfile
 
-      - name: ⚙️ Build and Upload Artifact
+      - name: Validate exact prepared release body
+        run: cargo run --locked --manifest-path xtask/Cargo.toml -- verify-event
+
+      - name: ⚙️ Build and Upload App Artifact
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -80,98 +107,17 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           args: ${{ matrix.args }}
-          tagName: v__VERSION__
-          releaseName: 'v__VERSION__'
+          releaseId: ${{ github.event.release.id }}
+          generateReleaseNotes: false
           releaseDraft: false
           prerelease: false
 
-  # deploy-desktop:
-  #   needs: build-desktop
-  #   runs-on: ubuntu-latest
-
-  # build-mobile:
-  #   env:
-  #     ANDROID_HOME:
-  #     PLATFORM_ENV: native
-  #     NUXT_PUBLIC_SITE_URL: ${{ vars.SITE_URL }}
-
-  #   strategy:
-  #     fail-fast: false
-  #     matrix:
-  #       include:
-  #         - platform: 'ubuntu-latest'
-  #           os: 'android'
-  #         # - platform: 'ubuntu-latest'
-  #         #   name: 'ios'
-  #         #   args: ''
-
-  #   runs-on: ${{ matrix.platform }}
-
-  #   steps:
-  #     - name: 📥 Checkout Repo
-  #       uses: actions/checkout@v7
-  #       with:
-  #         fetch-depth: 0
-
-  #     - name: Install OS Dependencies
-  #       run: |
-  #         sudo apt-get update
-  #         sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-
-  #     - name: Setup Java
-  #       uses: actions/setup-java@v6
-  #       with:
-  #         distribution: 'temurin'
-  #         java-version: '17'
-
-  #     - name: Setup Android SDK
-  #       uses: android-actions/setup-android@v4
-
-  #     - name: Setup Android NDK
-  #       run: |
-  #         sdkmanager "ndk;29.0.13846066"
-  #         echo "NDK_HOME=${{ env.ANDROID_HOME }}/ndk/29.0.13846066" >> $GITHUB_ENV
-
-  #     - name: Setup Android Signing
-  #       run: |
-  #         cd src-tauri/gen/android
-  #         echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" > keystore.properties
-  #         echo "password=${{ secrets.ANDROID_KEY_PASSWORD }}" >> keystore.properties
-  #         base64 -d <<< "${{ secrets.ANDROID_KEY_BASE64 }}" > ./release-keystore.jks
-  #         echo "storeFile=../release-keystore.jks" >> keystore.properties
-
-  #     - name: 🛠️ Setup Rust
-  #       uses: dtolnay/rust-toolchain@stable
-  #       with:
-  #         targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
-
-  #     - name: 🛠️ Setup Bun
-  #       uses: oven-sh/setup-bun@v2
-  #       with:
-  #         bun-version: latest
-
-  #     - name: 📦 Install Dependencies
-  #       run: bun install --frozen-lockfile
-
-  #     - name: ⚙️ Build Artifact
-  #       run: bun run tauri:build:mobile
-
-  #     - name: ⚙️ Upload Artifact
-  #       uses: svenstaro/upload-release-action@v2
-  #       with:
-  #         repo_token: ${{ secrets.GITHUB_TOKEN }}
-  #         file: src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
-  #         asset_name: vuetemplate_${{ env.VERSION }}_arm64.apk
-  #         tag: ${{ env.VERSION }}
-
-  #     - name: ⚙️ Upload Artifact
-  #       uses: svenstaro/upload-release-action@v2
-  #       with:
-  #         repo_token: ${{ secrets.GITHUB_TOKEN }}
-  #         file: src-tauri/gen/android/app/build/outputs/bundle/universalRelease/app-universal-release.aab
-  #         asset_name: vuetemplate_${{ env.VERSION }}_arm64.aab
-  #         tag: ${{ env.VERSION }}
-
-  # # deploy-mobile:
-  #   needs: build-mobile
-  #   runs-on: ubuntu-latest
+      - name: ⚙️ Build and Upload CLI Artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          file="rune-studio-cli_${VERSION}_${{ matrix.asset }}"
+          if [ -n "${{ matrix.target }}" ]; then dir="src-tauri/target/${{ matrix.target }}/release"; else dir="src-tauri/target/release"; fi
+          cp "$dir/${{ matrix.cli }}" "$file"
+          gh release upload "$VERSION" "$file" --clobber --repo "$REPO"

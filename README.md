@@ -365,4 +365,8 @@ Copyright &copy; 2024 Shirsendu Bairagi.
 
 ### Selected read-only Kit tools
 
-Settings → Tools supports selected time, commit-message validation and bounded file read/list tools through rune-kit 0.5.0+ (MCP 2026-07-28). Kit/plugin installation remains manual. File tools require an owner-configured folder and filesystem 0.4.1+. See [setup, permissions and verification](docs/kit.md).
+Settings → Tools supports selected time, commit-message validation and bounded file read/list tools through a separately running rune-kit HTTP server (minimum release 0.6.0, MCP 2026-07-28). Configure its loopback endpoint in Tools settings. Kit/plugin installation and filesystem roots remain server-owned. File tools require filesystem 0.4.1+. See [setup, permissions and verification](docs/kit.md).
+
+### Screen Insight
+
+In API mode, click Screen Analysis, select a screen/window and optionally enter a question. Screen Insight captures one frame and sends it to an explicitly configured vision-capable Analysis model in Infer. The result includes the captured image, model and capture time; images remain in memory. See [Screen Insight](docs/SCREEN-INSIGHT.md).

@@ -4,19 +4,19 @@ import { onMounted, ref } from 'vue'
 defineProps<{ toolCalls?: string }>()
 interface Config {
   enabled: boolean
-  executable: string
+  endpoint: string
+  migration?: string
   selected: string[]
-  root: string
 }
 interface Tool {
   name: string
   description: string
   inputSchema: unknown
 }
-const config = ref<Config>({ enabled: false, executable: '', selected: [], root: '' })
+const config = ref<Config>({ enabled: false, endpoint: 'http://127.0.0.1:47601/mcp', selected: [] })
 const tools = ref<Tool[]>([])
 const status = ref(
-  'Not connected. rune-kit 0.5.0 or newer with a compatible MCP protocol is required.',
+  'Not connected. rune-kit 0.6.0 or newer with a compatible MCP protocol is required.',
 )
 const busy = ref(false)
 async function save() {
@@ -38,7 +38,7 @@ async function refresh() {
     tools.value = result.tools
     status.value = result.tools.length
       ? `${result.version}: ${result.tools.length} supported read-only tools available.`
-      : `${result.version}: no supported tools. Check installed time/git plugins and filesystem 0.4.1+. File tools require a folder below. Unsafe metadata or unsupported schemas remain unavailable.`
+      : `${result.version}: no supported tools. Check installed time/git plugins and filesystem 0.4.1+. File tools require a server-configured allowed_dir. Unsafe metadata or unsupported schemas remain unavailable.`
     if (result.unavailable?.length) status.value += ` ${result.unavailable.join('; ')}`
   } catch (error) {
     tools.value = []
@@ -71,31 +71,22 @@ onMounted(async () => {
       Enable Kit tools</label
     >
     <label class="flex flex-col gap-2"
-      >Kit executable (optional)
+      >Kit HTTP endpoint
       <input
-        v-model="config.executable"
+        v-model="config.endpoint"
         class="rounded-lg bg-zinc-900 p-3"
-        placeholder="Default: ~/rune/rune-kit.exe (Windows) or ~/rune/rune-kit"
+        placeholder="http://127.0.0.1:47601/mcp"
         @change="save"
       />
     </label>
     <p class="m-0 text-zinc-400">
-      Read-only tools only. Install rune-kit and plugins separately. Discovery checks ~/rune before
-      PATH.
+      Read-only tools only. Start Kit HTTP 0.6.0+ separately with serve --headless. Studio connects
+      to the endpoint and never launches or stops the shared server.
     </p>
-    <label class="flex flex-col gap-2"
-      >Filesystem folder (optional, absolute path)
-      <input
-        v-model="config.root"
-        class="rounded-lg bg-zinc-900 p-3"
-        placeholder="Choose a folder to expose to file tools"
-        @change="save"
-      />
-    </label>
+    <p v-if="config.migration" role="alert">{{ config.migration }}</p>
     <p class="m-0 text-zinc-400">
-      File contents are sent to the selected model. Choose a trusted folder; these tools do not
-      inherit Life protections. Folder changes stop owned gateways. Refresh discovery after changing
-      the folder.
+      Configure filesystem confinement on the Kit server using an explicit allowed_dir. Studio
+      cannot change that root. File contents are sent to the selected model.
     </p>
     <button class="rounded-lg bg-white/10 p-3" :disabled="busy" @click="refresh">
       {{ busy ? 'Discovering…' : 'Refresh / discover' }}

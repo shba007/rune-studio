@@ -1,1 +1,1 @@
-What is on this screen, and what could the user do next?
+Summarize what is visible and identify any apparent errors or issues.

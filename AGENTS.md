@@ -47,9 +47,16 @@ Prefer Rust for new repository-owned release utilities, protocol harnesses and
 migration validation. Existing WinForms desktop fixtures and frontend/reporting
 tooling are outside this focused release change; avoid broad rewrites.
 
-Product contract: explicit Kit executable, then actual user home
-rune/rune-kit[.exe], then PATH rune-kit[.exe]. No legacy rune fallback. Public
-Studio → Kit MCP is 2026-07-28, Kit minimum 0.5.0. The private native/WASM plugin
-ABI is unchanged. Studio remains an Infer HTTP client; Kit/Infer own installation
-and storage migration. Never fall back to CWD on failed home resolution, overwrite
-conflicting installation data or move unrelated project/model files.
+Product contract: Studio connects to Kit's loopback HTTP MCP endpoint (default
+http://127.0.0.1:47601/mcp), minimum HTTP release 0.6.0. It never discovers,
+launches, owns or stops a Kit subprocess. Old stdio settings are disabled and
+backed up before replacement; selected tool restrictions remain. Public Studio
+→ Kit MCP uses the revision documented in docs/mcp-kit-version.txt. The private
+native/WASM plugin ABI is unchanged. Kit/Infer own shared ~/rune installation,
+storage and migration. Never fall back to CWD or overwrite conflicting data.
+
+Implement only Screen Insight for now. Its static workflow registry is in
+src-tauri/src/workflow.rs. Capture follows explicit screen/window selection and
+a user action; Insight frames remain in memory and never use archive capture
+or continuous monitoring. Require an explicit Analysis model with advertised
+vision/tool support. Keep external-agent and API sessions separate.

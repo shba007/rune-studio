@@ -32,6 +32,7 @@ mod trace;
 mod video;
 mod voice;
 mod window;
+mod workflow;
 
 #[cfg(test)]
 mod grounding_probe;
@@ -207,6 +208,8 @@ pub fn run() {
             commands::toggle_listening,
             commands::confirm,
             commands::analyze_screen,
+            commands::run_workflow,
+            commands::screen_insight_targets,
             commands::screen_request_state,
             commands::cancel_screen_request,
             commands::analyze_again,
@@ -243,7 +246,6 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|_, event| {
             if let tauri::RunEvent::Exit = event {
-                kit::client::shutdown();
                 cursor::reset();
             }
         });
