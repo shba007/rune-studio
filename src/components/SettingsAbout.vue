@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { Agent } from '@/composables/useAgent'
+import { invoke } from '@tauri-apps/api/core'
+import { onMounted, ref } from 'vue'
 import { useUpdater } from '@/composables/useUpdater'
 
 import AppIcon from './AppIcon.vue'
@@ -9,6 +11,16 @@ import HubRow from './HubRow.vue'
 defineProps<{ agent: Agent }>()
 
 const updater = useUpdater()
+const cliVersion = ref('Loading…')
+onMounted(async () => {
+  await updater.loadVersion()
+  try {
+    const versions = await invoke<{ cli: string | null }>('installed_versions')
+    cliVersion.value = versions.cli || 'Not available in this installation'
+  } catch {
+    cliVersion.value = 'Unavailable'
+  }
+})
 
 const LOGO = '/logo.svg'
 
@@ -32,7 +44,10 @@ const button =
       <img :src="LOGO" alt="" class="size-14" />
       <div class="flex flex-col">
         <span class="text-title">Rune Studio</span>
-        <span class="text-label text-zinc-500">Version {{ updater.version.value || '...' }}</span>
+        <span class="text-label text-zinc-400"
+          >Installed Studio {{ updater.version.value || 'Unavailable' }}</span
+        >
+        <span class="text-label text-zinc-500">CLI {{ cliVersion }}</span>
       </div>
     </div>
 

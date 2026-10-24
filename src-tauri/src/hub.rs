@@ -5,7 +5,14 @@ pub const WINDOW: &str = "settings";
 pub const SECTION_EVENT: &str = "settings_section";
 pub const CHANGED_EVENT: &str = "settings_changed";
 
-const SECTIONS: [&str; 5] = ["general", "shortcuts", "agents", "artifacts", "about"];
+const SECTIONS: [&str; 6] = [
+    "general",
+    "agents",
+    "tools",
+    "artifacts",
+    "shortcuts",
+    "about",
+];
 
 fn clean(section: Option<&str>) -> &'static str {
     SECTIONS

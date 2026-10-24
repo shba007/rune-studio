@@ -93,6 +93,8 @@ fn change(app: &AppHandle, change: Change, linger: Duration) {
 pub struct OverlayInfo {
     pub mode: Owner,
     pub primary: bool,
+    pub x: i32,
+    pub y: i32,
     pub width: u32,
     pub height: u32,
     pub scale_factor: f64,
@@ -106,9 +108,12 @@ pub fn info(window: &tauri::WebviewWindow) -> OverlayInfo {
         _ => false,
     };
     let size = window.inner_size().unwrap_or_default();
+    let position = window.inner_position().unwrap_or_default();
     OverlayInfo {
         mode: owner(),
         primary,
+        x: position.x,
+        y: position.y,
         width: size.width,
         height: size.height,
         scale_factor: window.scale_factor().unwrap_or(1.0),

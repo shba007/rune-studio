@@ -31,7 +31,7 @@ const failed = computed(() => props.status === 'error')
     </div>
     <div class="flex items-center gap-2 border-l border-white/20 pr-3 pl-3">
       <span v-if="hotkey" class="text-caption whitespace-nowrap text-white/50 uppercase">
-        {{ hotkey }} cancels
+        {{ hotkey }}
       </span>
     </div>
   </OverlayBarShell>

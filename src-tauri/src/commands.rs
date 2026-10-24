@@ -13,6 +13,67 @@ use crate::{
 };
 
 #[tauri::command]
+pub async fn installed_versions() -> serde_json::Value {
+    let cli = tauri::async_runtime::spawn_blocking(|| -> Option<String> {
+        use std::{
+            io::Read,
+            process::{Command, Stdio},
+            time::{Duration, Instant},
+        };
+        let path = std::env::current_exe()
+            .ok()?
+            .with_file_name(if cfg!(windows) {
+                "rune-studio-cli.exe"
+            } else {
+                "rune-studio-cli"
+            });
+        if !path.is_file() {
+            return None;
+        }
+        let mut command = Command::new(path);
+        command
+            .arg("--version")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x08000000);
+        }
+        let mut child = command.spawn().ok()?;
+        let started = Instant::now();
+        loop {
+            if let Some(status) = child.try_wait().ok()? {
+                if !status.success() {
+                    return None;
+                }
+                let mut text = String::new();
+                child
+                    .stdout
+                    .take()?
+                    .take(256)
+                    .read_to_string(&mut text)
+                    .ok()?;
+                return text
+                    .trim()
+                    .strip_prefix("rune-studio-cli ")
+                    .map(str::to_owned);
+            }
+            if started.elapsed() >= Duration::from_secs(2) {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    })
+    .await
+    .ok()
+    .flatten();
+    serde_json::json!({"studio":crate::VERSION,"cli":cli})
+}
+
+#[tauri::command]
 pub fn get_settings(app: AppHandle, state: State<'_, AppState>) -> Settings {
     let on_disk = settings::load(&app).external_agent;
     let analysis = state.analysis.locked();
@@ -164,6 +225,15 @@ pub fn pill_rect(app: AppHandle) -> Option<PillRect> {
 #[tauri::command]
 pub fn stop(app: AppHandle) {
     app.state::<AppState>().stop_current();
+    let dismiss_findings = {
+        let state = app.state::<AppState>();
+        let analysis = state.analysis.locked();
+        analysis.id.starts_with("insight-")
+            && analysis.status == crate::analysis::report::Status::Done
+    };
+    if dismiss_findings {
+        crate::analysis::run::close(&app);
+    }
     crate::bridge::requests::publish(&app);
     let had_agent = {
         let state = app.state::<AppState>();

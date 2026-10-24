@@ -9,7 +9,13 @@ use std::{
 };
 
 use serde_json::{Value, json};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
+
+static RECORDING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+#[tauri::command]
+pub fn video_recording_state() -> bool {
+    RECORDING.load(std::sync::atomic::Ordering::Relaxed)
+}
 
 use crate::{
     events::{self, AgentState, AppState},
@@ -147,14 +153,16 @@ pub fn start_motion_recorder(app: &AppHandle) {
             loop {
                 std::thread::sleep(MOTION_EVERY);
                 let state = app.state::<AppState>();
-                if state.settings.locked().record_session_video
-                    != crate::settings::RecordVideo::Motion
-                {
-                    continue;
-                }
                 let working =
                     events::agent_state(&app).is_running() || state.lease.locked().is_held();
-                let Some(dir) = crate::archive::open_session_dir().filter(|_| working) else {
+                let dir = crate::archive::open_session_dir().filter(|_| working);
+                let recording = dir.is_some()
+                    && state.settings.locked().record_session_video
+                        == crate::settings::RecordVideo::Motion;
+                if RECORDING.swap(recording, std::sync::atomic::Ordering::Relaxed) != recording {
+                    let _ = app.emit("video_recording", recording);
+                }
+                let Some(dir) = dir.filter(|_| recording) else {
                     continue;
                 };
                 let Ok(jpeg) = crate::observe::screenshot::live_jpeg(MOTION_EDGE, MOTION_QUALITY)

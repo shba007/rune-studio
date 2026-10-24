@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="480" height="480" role="img"
+  aria-labelledby="t">
+  <title id="t">Wait cursor</title>
+  <circle cx="12" cy="12" r="11.5" fill="#0d0d0d" stroke="#fff" stroke-opacity=".25"
+    stroke-width=".4" />
+  <g fill="#fff">
+    <g>
+      <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12"
+        dur="1s" repeatCount="indefinite" />
+      <circle cx="12" cy="3.7" r="0.45" fill-opacity="0.12" />
+      <circle cx="15.18" cy="4.33" r="0.48" fill-opacity="0.18" />
+      <circle cx="17.87" cy="6.13" r="0.51" fill-opacity="0.24" />
+      <circle cx="19.67" cy="8.82" r="0.54" fill-opacity="0.3" />
+      <circle cx="20.3" cy="12" r="0.57" fill-opacity="0.35" />
+      <circle cx="19.67" cy="15.18" r="0.6" fill-opacity="0.41" />
+      <circle cx="17.87" cy="17.87" r="0.63" fill-opacity="0.47" />
+      <circle cx="15.18" cy="19.67" r="0.66" fill-opacity="0.53" />
+      <circle cx="12" cy="20.3" r="0.69" fill-opacity="0.59" />
+      <circle cx="8.82" cy="19.67" r="0.72" fill-opacity="0.65" />
+      <circle cx="6.13" cy="17.87" r="0.75" fill-opacity="0.71" />
+      <circle cx="4.33" cy="15.18" r="0.78" fill-opacity="0.77" />
+      <circle cx="3.7" cy="12" r="0.81" fill-opacity="0.82" />
+      <circle cx="4.33" cy="8.82" r="0.84" fill-opacity="0.88" />
+      <circle cx="6.13" cy="6.13" r="0.87" fill-opacity="0.94" />
+      <circle cx="8.82" cy="4.33" r="0.9" />
+    </g>
+    <circle cx="12" cy="12" r="0.9" />
+    <circle cx="14.6" cy="12" r="0.5" fill-opacity="0.5" />
+    <circle cx="13.3" cy="14.25" r="0.5" fill-opacity="0.5" />
+    <circle cx="10.7" cy="14.25" r="0.5" fill-opacity="0.5" />
+    <circle cx="9.4" cy="12" r="0.5" fill-opacity="0.5" />
+    <circle cx="10.7" cy="9.75" r="0.5" fill-opacity="0.5" />
+    <circle cx="13.3" cy="9.75" r="0.5" fill-opacity="0.5" />
+  </g>
+</svg>

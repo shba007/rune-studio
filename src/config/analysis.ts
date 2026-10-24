@@ -100,6 +100,8 @@ export interface OverlayView {
   width: number
   height: number
   scaleFactor: number
+  originX?: number
+  originY?: number
 }
 
 export interface CssRect {

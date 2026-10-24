@@ -246,5 +246,11 @@ onMounted(() => {
 </script>
 
 <template>
-  <canvas ref="canvas" :width="SIZE" :height="SIZE" class="block size-14" aria-hidden="true" />
+  <canvas
+    ref="canvas"
+    :width="SIZE"
+    :height="SIZE"
+    class="block size-14 rounded-full border-0"
+    aria-hidden="true"
+  />
 </template>

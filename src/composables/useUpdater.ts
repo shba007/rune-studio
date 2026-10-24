@@ -81,10 +81,16 @@ async function installUpdate(busy = false) {
 function startup() {
   if (started) return
   started = true
-  void getVersion()
-    .then((value) => (version.value = value))
-    .catch(() => undefined)
+  void loadVersion()
   setTimeout(() => void checkForUpdate(true), STARTUP_DELAY_MS)
+}
+
+async function loadVersion() {
+  try {
+    version.value = await getVersion()
+  } catch {
+    version.value = ''
+  }
 }
 
 export function useUpdater() {
@@ -97,6 +103,7 @@ export function useUpdater() {
     prompt,
     updating,
     startup,
+    loadVersion,
     check: checkForUpdate,
     install: installUpdate,
     dismissPrompt: () => (prompt.value = false),

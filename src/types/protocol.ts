@@ -246,6 +246,8 @@ export const OVERLAY_MODE = 'overlay_mode'
 export type OverlayOwner = 'none' | 'control' | 'analysis'
 
 export interface OverlayInfo {
+  x: number
+  y: number
   mode: OverlayOwner
   primary: boolean
   width: number

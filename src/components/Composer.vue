@@ -98,11 +98,11 @@ async function submit() {
 
       <button
         type="button"
-        class="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full text-white transition"
+        class="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full transition"
         :class="
           action.tone === 'blue'
             ? 'bg-[#2d71c3] hover:bg-[#245fa8]'
-            : 'bg-[#f1f1ef] text-[#111] hover:bg-white'
+            : 'bg-[#f1f1ef] !text-[#111] hover:bg-white'
         "
         :disabled="external && !agent.isRunning.value"
         :aria-label="action.label"

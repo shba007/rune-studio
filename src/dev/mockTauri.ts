@@ -180,14 +180,37 @@ export function installTauriMock() {
             error: null,
           }
         case 'analysis_state':
-          return analysisFixture()
+          return new URLSearchParams(location.search).get('demo') === 'analysis'
+            ? {
+                ...analysisFixture(),
+                id: 'insight-preview',
+                monitor: { ...monitor(), width: window.innerWidth, height: window.innerHeight },
+              }
+            : analysisFixture()
+        case 'installed_versions':
+          return { studio: '0.0.3', cli: '0.0.3' }
+        case 'video_recording_state':
+          return new URLSearchParams(location.search).get('demo') === 'recording'
         case 'screen_insight_targets':
           return [
             { target: { kind: 'screen', id: 1 }, label: 'Screen 1 — 1920×1080 (primary)' },
             { target: { kind: 'window', id: 2 }, label: 'Window — Project notes' },
           ]
         case 'overlay_info':
-          return { mode: 'none', primary: true, width: 1920, height: 1080, scaleFactor: 1 }
+          return {
+            x: 0,
+            y: 0,
+            mode:
+              new URLSearchParams(location.search).get('demo') === 'analysis'
+                ? 'analysis'
+                : new URLSearchParams(location.search).has('demo')
+                  ? 'control'
+                  : 'none',
+            primary: true,
+            width: window.innerWidth,
+            height: window.innerHeight,
+            scaleFactor: 1,
+          }
         case 'has_api_key':
           return true
         case 'debug_capture':

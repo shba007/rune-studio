@@ -26,6 +26,7 @@ import AnalysisBar from './AnalysisBar.vue'
 import AnalysisLayer from './AnalysisLayer.vue'
 import OverlayBarShell from './OverlayBarShell.vue'
 import AppIcon from './AppIcon.vue'
+import CursorGlyph from './CursorGlyph.vue'
 
 const STEP = 8
 const DEPTH = 4
@@ -34,6 +35,7 @@ const DROP_INTERVAL = 2.4
 
 const canvas = useTemplateRef<HTMLCanvasElement>('canvas')
 const active = ref(false)
+const recording = ref(false)
 const stopHotkey = ref('')
 const reducedMotion = usePreferredReducedMotion()
 let width = 0
@@ -86,8 +88,8 @@ function draw(now: number) {
   const origins = [drop - 1, drop]
     .filter((index) => index >= 0)
     .map((index) => ({
-      x: width * (0.5 + Math.sin(index * 12.9898) * 0.12),
-      y: height * (0.5 + Math.cos(index * 7.233) * 0.12),
+      x: width / 2,
+      y: height / 2,
       age: seconds - index * DROP_INTERVAL,
     }))
 
@@ -112,7 +114,7 @@ function draw(now: number) {
     ctx.fill()
   }
   drawFlashes(ctx, now, still)
-  drawRipples(ctx, now, still)
+  updateCursorEffects(now)
   updateTyping(now, still)
 }
 
@@ -135,41 +137,14 @@ interface Ripple {
   typing?: boolean
 }
 const RIPPLE_SECONDS = 0.9
-const RIPPLE_REACH = 72
-const TYPING_REACH = 44
 let ripples: Ripple[] = []
 
-function drawRipples(ctx: CanvasRenderingContext2D, now: number, still: boolean) {
+const cursorEffects = ref<Ripple[]>([])
+function updateCursorEffects(now: number) {
   ripples = ripples.filter(
     (ripple) => (now - ripple.at) / 1000 < RIPPLE_SECONDS * ripple.pulses + 0.4,
   )
-  for (const ripple of ripples) {
-    const age = (now - ripple.at) / 1000
-    if (age < 0) continue
-    for (let pulse = 0; pulse < ripple.pulses; pulse++) {
-      const t = still ? 0.5 : (age - pulse * 0.35) / RIPPLE_SECONDS
-      if (t < 0 || t > 1) continue
-      const radius = 8 + t * (ripple.typing ? TYPING_REACH : RIPPLE_REACH)
-      const count = Math.max(8, Math.round((Math.PI * 2 * radius) / STEP))
-      for (let i = 0; i < count; i++) {
-        const angle = (i / count) * Math.PI * 2
-        dot(
-          ctx,
-          ripple.x + Math.cos(angle) * radius,
-          ripple.y + Math.sin(angle) * radius,
-          1.6,
-          (1 - t) * 0.9,
-        )
-      }
-    }
-    const settle = Math.max(0, 1 - Math.max(0, age - 0.3) / (RIPPLE_SECONDS * ripple.pulses + 0.1))
-    const hold = Math.min(1, 0.35 + settle)
-    if (ripple.typing) {
-      for (const offset of [-1, 0, 1]) dot(ctx, ripple.x, ripple.y + offset * STEP, 2.2, hold)
-    } else {
-      dot(ctx, ripple.x, ripple.y, 3, hold)
-    }
-  }
+  cursorEffects.value = ripples.filter((ripple) => now >= ripple.at)
 }
 
 interface Flash {
@@ -187,7 +162,11 @@ let flashes: Flash[] = []
 
 function drawFlashes(ctx: CanvasRenderingContext2D, now: number, still: boolean) {
   flashes = flashes.filter((flash) => flash.continuous || (now - flash.at) / 1000 < WAVE_SECONDS)
-  for (const flash of flashes) {
+  const visible =
+    recording.value && overlayInfo.value?.primary
+      ? [...flashes, { x: 0, y: 0, w: width, h: height, at: startedAt, continuous: true }]
+      : flashes
+  for (const flash of visible) {
     const cycle = (now - flash.at) / 1000 / WAVE_SECONDS
     const t = still ? 0.5 : flash.continuous ? cycle % 1 : cycle
     if (t < 0) continue
@@ -240,12 +219,14 @@ const view = computed(() => ({
   width: overlayInfo.value?.width ?? window.innerWidth * (window.devicePixelRatio || 1),
   height: overlayInfo.value?.height ?? window.innerHeight * (window.devicePixelRatio || 1),
   scaleFactor: overlayInfo.value?.scaleFactor ?? (window.devicePixelRatio || 1),
+  originX: overlayInfo.value?.x ?? 0,
+  originY: overlayInfo.value?.y ?? 0,
 }))
 const drawsMarkers = computed(
   () =>
     analysisMode.value &&
-    overlayInfo.value?.primary === true &&
-    analysis.snapshot.value.monitor?.primary === true,
+    (analysis.snapshot.value.id.startsWith('insight-') ||
+      (overlayInfo.value?.primary === true && analysis.snapshot.value.monitor?.primary === true)),
 )
 const barShown = ref(false)
 const startedAtMs = ref(0)
@@ -440,6 +421,14 @@ onMounted(async () => {
   layout()
   draw(performance.now())
   try {
+    recording.value = await invoke<boolean>('video_recording_state')
+  } catch {}
+  unlisten.push(
+    await listen<boolean>('video_recording', (event) => {
+      recording.value = event.payload
+    }),
+  )
+  try {
     stopHotkey.value = (await invoke<Settings>('get_settings')).stopHotkey
   } catch {}
   unlisten.push(
@@ -521,6 +510,17 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="fixed inset-0">
+    <CursorGlyph
+      v-for="effect in cursorEffects"
+      :key="effect.at"
+      class="absolute"
+      :style="{
+        left: `${effect.x - (effect.typing ? 16 : 1)}px`,
+        top: `${effect.y - (effect.typing ? 16 : 1)}px`,
+      }"
+      :kind="effect.typing ? 'text' : 'default'"
+      ripple
+    />
     <div
       class="absolute inset-0 transition-opacity duration-500 ease-out"
       :class="active ? 'opacity-100' : 'opacity-0'"
@@ -566,7 +566,7 @@ onBeforeUnmount(() => {
           </div>
         </Transition>
 
-        <div class="flex items-center gap-2 border-l border-white/20 pl-3">
+        <div class="flex items-center gap-2 border-l border-white/20 pr-6 pl-3">
           <span v-if="hotkeyLabel" class="text-caption whitespace-nowrap text-white/50 uppercase">{{
             hotkeyLabel
           }}</span>
@@ -581,13 +581,13 @@ onBeforeUnmount(() => {
         :elapsed-ms="elapsedMs"
         :hotkey="hotkeyLabel"
       />
-      <AnalysisLayer
-        v-if="drawsMarkers"
-        :snapshot="analysis.snapshot.value"
-        :view="view"
-        :scan-key="scanKey"
-      />
     </template>
+    <AnalysisLayer
+      v-if="drawsMarkers"
+      :snapshot="analysis.snapshot.value"
+      :view="view"
+      :scan-key="scanKey"
+    />
 
     <Transition name="bubble">
       <div

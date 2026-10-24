@@ -110,7 +110,7 @@ function onOrb() {
     </div>
     <div
       data-tauri-drag-region
-      class="relative flex size-16 shrink-0 items-center justify-center rounded-full bg-[#141414]"
+      class="relative isolate flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-full border-0 bg-[#141414] outline-none [clip-path:circle(50%)]"
     >
       <svg v-if="updating" viewBox="0 0 64 64" class="update-ring" aria-hidden="true">
         <circle cx="32" cy="32" r="30" fill="none" class="update-track" />
@@ -156,7 +156,7 @@ function onOrb() {
       />
       <button
         type="button"
-        class="relative size-14 cursor-pointer rounded-full bg-[#f1f1ef] outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+        class="relative size-14 cursor-pointer border-0 rounded-full bg-[#f1f1ef] outline-none focus-visible:ring-2 focus-visible:ring-white/60"
         :aria-label="
           updating ? 'Updating' : agent.isRunning.value ? 'Stop' : isAmbient ? 'Open' : 'Close'
         "

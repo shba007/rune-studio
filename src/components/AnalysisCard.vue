@@ -93,7 +93,7 @@ onKeyStroke('Escape', (event) => {
 
 <template>
   <div
-    class="flex max-h-[480px] w-full flex-col gap-2 overflow-y-auto"
+    class="analysis-scroll flex max-h-[480px] w-full flex-col gap-2 overflow-x-hidden overflow-y-auto"
     aria-label="Screen analysis"
   >
     <section
@@ -159,7 +159,7 @@ onKeyStroke('Escape', (event) => {
         <button
           v-else
           type="submit"
-          class="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full bg-[#f1f1ef] text-[#111] transition hover:bg-white"
+          class="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full bg-[#f1f1ef] !text-[#111] transition hover:bg-white"
           :disabled="!selectedTarget && !snapshot.monitor"
           aria-label="Ask"
         >
@@ -222,3 +222,14 @@ onKeyStroke('Escape', (event) => {
     </section>
   </div>
 </template>
+<style scoped>
+.analysis-scroll {
+  scrollbar-width: none;
+}
+.analysis-scroll::-webkit-scrollbar {
+  display: none;
+}
+.analysis-scroll > * {
+  flex-shrink: 0;
+}
+</style>

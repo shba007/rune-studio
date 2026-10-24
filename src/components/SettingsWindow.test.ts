@@ -20,6 +20,19 @@ afterEach(() => {
 })
 
 describe('release settings availability', () => {
+  it('keeps Agents available without the bridge, orders navigation, and removes the saved footer', () => {
+    const wrapper = shallowMount(SettingsWindow)
+    expect(wrapper.findAll('nav button').map((button) => button.text())).toEqual([
+      'General',
+      'Agents',
+      'Tools',
+      'Sessions',
+      'Shortcuts',
+      'About',
+    ])
+    expect(wrapper.find('[data-testid="saved"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
   it('saves nested Analysis model edits without mutating the saved settings', async () => {
     vi.useFakeTimers()
     const settings = ref({ models: { agent: 'vision', analysis: '' } } as Settings)

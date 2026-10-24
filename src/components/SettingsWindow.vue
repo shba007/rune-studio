@@ -21,11 +21,19 @@ type Section = 'general' | 'shortcuts' | 'agents' | 'artifacts' | 'about' | 'too
 const agent = useAgent()
 
 const SECTIONS: { id: Section; label: string; subtitle: string; icon: IconName }[] = [
+  { id: 'general', label: 'General', subtitle: 'Recording, safety and preferences.', icon: 'tune' },
   {
-    id: 'general',
-    label: 'General',
-    subtitle: 'Backend, models, recording and safety.',
-    icon: 'tune',
+    id: 'agents',
+    label: 'Agents',
+    subtitle: 'Connection, models and execution mode.',
+    icon: 'plug',
+  },
+  { id: 'tools', label: 'Tools', subtitle: 'Selected read-only Kit tools.', icon: 'plug' },
+  {
+    id: 'artifacts',
+    label: 'Sessions',
+    subtitle: 'Recorded sessions. Pick one to play it in Rune Preview.',
+    icon: 'history',
   },
   {
     id: 'shortcuts',
@@ -33,25 +41,9 @@ const SECTIONS: { id: Section; label: string; subtitle: string; icon: IconName }
     subtitle: 'Keys that work from anywhere.',
     icon: 'shortcut',
   },
-  {
-    id: 'agents',
-    label: 'Agents',
-    subtitle: 'Let outside agents use this PC through Rune.',
-    icon: 'plug',
-  },
-  {
-    id: 'artifacts',
-    label: 'Sessions',
-    subtitle: 'Recorded sessions. Pick one to play it in Rune Preview.',
-    icon: 'history',
-  },
-  { id: 'tools', label: 'Tools', subtitle: 'Selected read-only Kit tools.', icon: 'plug' },
-  { id: 'about', label: 'About', subtitle: 'Version and updates.', icon: 'logo' },
+  { id: 'about', label: 'About', subtitle: 'Installed versions and updates.', icon: 'logo' },
 ]
-
-const visible = computed(() =>
-  SECTIONS.filter((item) => item.id !== 'agents' || agent.bridge.value?.available),
-)
+const visible = SECTIONS
 
 const asked = new URLSearchParams(location.search).get('section')
 const section = ref<Section>(
@@ -145,14 +137,6 @@ onBeforeUnmount(() => {
           <AppIcon :name="item.icon" />
           {{ item.label }}
         </button>
-        <p
-          class="mt-auto mb-0 px-3 text-caption text-zinc-600 uppercase"
-          role="status"
-          aria-live="polite"
-          data-testid="saved"
-        >
-          {{ saved ? 'All changes saved' : 'Saving...' }}
-        </p>
       </nav>
 
       <section class="flex min-w-0 flex-1 flex-col overflow-y-auto px-10 py-8">
@@ -171,13 +155,7 @@ onBeforeUnmount(() => {
         </p>
 
         <template v-if="draft">
-          <SettingsGeneral
-            v-if="section === 'general'"
-            v-model:api-key="apiKey"
-            :agent="agent"
-            :draft="draft"
-            @commit-key="commitKey"
-          />
+          <SettingsGeneral v-if="section === 'general'" :agent="agent" :draft="draft" />
           <SettingsTools
             v-else-if="section === 'tools'"
             :tool-calls="
@@ -187,7 +165,13 @@ onBeforeUnmount(() => {
             "
           />
           <SettingsShortcuts v-else-if="section === 'shortcuts'" :draft="draft" />
-          <SettingsAgents v-else-if="section === 'agents'" :agent="agent" :draft="draft" />
+          <SettingsAgents
+            v-else-if="section === 'agents'"
+            :agent="agent"
+            :draft="draft"
+            v-model:api-key="apiKey"
+            @commit-key="commitKey"
+          />
         </template>
         <SettingsArtifacts v-if="section === 'artifacts'" :agent="agent" />
         <SettingsAbout v-else-if="section === 'about'" :agent="agent" />

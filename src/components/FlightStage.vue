@@ -5,6 +5,7 @@ import '@videojs/html/ui/container'
 import { useElementSize } from '@vueuse/core'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
+import CursorGlyph from './CursorGlyph.vue'
 import { fitBox, type ActionLayer } from '@/config/flight'
 
 const props = defineProps<{
@@ -17,6 +18,13 @@ const props = defineProps<{
   badge: string
   note: string | null
 }>()
+const markerCursor = computed(
+  () =>
+    props.cursor ??
+    (props.layer.kind === 'click' || props.layer.kind === 'scroll'
+      ? { x: props.layer.x, y: props.layer.y }
+      : null),
+)
 const emit = defineEmits<{
   time: [ms: number]
   playing: [playing: boolean]
@@ -178,31 +186,18 @@ defineExpose({
         data-testid="layer"
         aria-hidden="true"
       >
-        <svg
-          v-if="cursor"
-          viewBox="0 0 24 24"
-          class="absolute size-6 drop-shadow transition-[left,top] duration-300 ease-out"
-          :style="{ left: `${cursor.x / 10}%`, top: `${cursor.y / 10}%` }"
+        <CursorGlyph
+          v-if="markerCursor"
+          class="absolute transition-[left,top] duration-300 ease-out"
+          :kind="layer.kind === 'type' ? 'text' : 'default'"
+          :style="{
+            left: `calc(${markerCursor.x / 10}% - ${layer.kind === 'type' ? 16 : 1}px)`,
+            top: `calc(${markerCursor.y / 10}% - ${layer.kind === 'type' ? 16 : 1}px)`,
+          }"
+          :ripple="layer.kind === 'click' || layer.kind === 'scroll'"
           data-testid="cursor"
-        >
-          <path
-            d="M3 2 L3 18.5 L7.4 14.6 L10.2 21 L13 19.8 L10.2 13.6 L16 13.4 Z"
-            fill="#ffffff"
-            stroke="#000000"
-            stroke-width="1.4"
-            stroke-linejoin="round"
-          />
-        </svg>
+        />
         <template v-if="layer.kind === 'click' || layer.kind === 'scroll'">
-          <span
-            class="absolute size-8 -translate-1/2 rounded-full border-2 border-[#f1f1ef] motion-safe:animate-ping"
-            :style="{ left: `${layer.x / 10}%`, top: `${layer.y / 10}%` }"
-          />
-          <span
-            class="absolute size-2 -translate-1/2 rounded-full bg-[#f1f1ef]"
-            :style="{ left: `${layer.x / 10}%`, top: `${layer.y / 10}%` }"
-            data-testid="ripple"
-          />
           <span
             class="absolute -translate-x-1/2 translate-y-5 rounded-full bg-black/70 px-2 text-caption text-zinc-100"
             :style="{ left: `${layer.x / 10}%`, top: `${layer.y / 10}%` }"

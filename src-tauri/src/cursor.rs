@@ -15,91 +15,23 @@ mod imp {
     };
 
     const SIZE: i32 = 32;
-    const MIDDLE: f32 = SIZE as f32 / 2.0;
-    const DOT: f32 = 1.3;
-    const HALO: f32 = 2.2;
-    const RED: [u8; 3] = [0xd7, 0x19, 0x21];
-    const WHITE: [u8; 3] = [0xf1, 0xf1, 0xef];
-
     static APPLIED: AtomicBool = AtomicBool::new(false);
+    static IMAGES: std::sync::Mutex<Vec<super::CursorImage>> = std::sync::Mutex::new(Vec::new());
 
-    type Dot = (f32, f32, bool);
+    pub fn set_images(images: Vec<super::CursorImage>) {
+        *IMAGES
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = images;
+    }
 
-    fn arrow() -> Vec<Dot> {
-        let mut dots = vec![(MIDDLE, MIDDLE, true)];
-        for (radius, count) in [(3.6_f32, 6), (7.2, 12)] {
-            for index in 0..count {
-                let angle = (index as f32 / count as f32) * std::f32::consts::TAU
-                    - std::f32::consts::FRAC_PI_2;
-                dots.push((
-                    MIDDLE + radius * angle.cos(),
-                    MIDDLE + radius * angle.sin(),
-                    false,
-                ));
+    fn build(image: &super::CursorImage) -> Option<HCURSOR> {
+        let mut pixels = image.rgba.clone();
+        for pixel in pixels.as_chunks_mut::<4>().0 {
+            pixel.swap(0, 2);
+            for channel in 0..3 {
+                pixel[channel] = (u16::from(pixel[channel]) * u16::from(pixel[3]) / 255) as u8;
             }
         }
-        dots
-    }
-
-    fn beam() -> Vec<Dot> {
-        (-2..=2)
-            .map(|index| (MIDDLE, MIDDLE + index as f32 * 4.5, index == 0))
-            .collect()
-    }
-
-    fn coverage(px: f32, py: f32, cx: f32, cy: f32, radius: f32) -> f32 {
-        let distance = ((px + 0.5 - cx).powi(2) + (py + 0.5 - cy).powi(2)).sqrt();
-        (radius + 0.5 - distance).clamp(0.0, 1.0)
-    }
-
-    fn paint(dots: &[Dot]) -> Vec<u8> {
-        let mut pixels = vec![0u8; (SIZE * SIZE * 4) as usize];
-        for py in 0..SIZE {
-            for px in 0..SIZE {
-                let (mut alpha, mut colour) = (0.0f32, [0.0f32; 3]);
-                for &(cx, cy, red) in dots {
-                    let halo = coverage(px as f32, py as f32, cx, cy, HALO) * 0.55;
-                    if halo > 0.0 {
-                        let out = halo + alpha * (1.0 - halo);
-                        for channel in colour.iter_mut() {
-                            *channel = *channel * alpha * (1.0 - halo) / out.max(f32::EPSILON);
-                        }
-                        alpha = out;
-                    }
-                    let dot = coverage(px as f32, py as f32, cx, cy, DOT);
-                    if dot > 0.0 {
-                        let source = if red { RED } else { WHITE };
-                        let out = dot + alpha * (1.0 - dot);
-                        for (index, channel) in colour.iter_mut().enumerate() {
-                            *channel = (f32::from(source[index]) * dot
-                                + *channel * alpha * (1.0 - dot))
-                                / out.max(f32::EPSILON);
-                        }
-                        alpha = out;
-                    }
-                }
-                let at = ((py * SIZE + px) * 4) as usize;
-                pixels[at] = colour[2].round() as u8;
-                pixels[at + 1] = colour[1].round() as u8;
-                pixels[at + 2] = colour[0].round() as u8;
-                pixels[at + 3] = (alpha * 255.0).round() as u8;
-            }
-        }
-        pixels
-    }
-
-    #[cfg(test)]
-    pub fn arrow_pixels() -> Vec<u8> {
-        paint(&arrow())
-    }
-
-    #[cfg(test)]
-    pub fn beam_pixels() -> Vec<u8> {
-        paint(&beam())
-    }
-
-    fn build(dots: &[Dot]) -> Option<HCURSOR> {
-        let pixels = paint(dots);
         unsafe {
             let info = BITMAPINFO {
                 bmiHeader: BITMAPINFOHEADER {
@@ -122,8 +54,8 @@ mod imp {
             let mask = CreateBitmap(SIZE, SIZE, 1, 1, None);
             let icon = ICONINFO {
                 fIcon: false.into(),
-                xHotspot: MIDDLE as u32,
-                yHotspot: MIDDLE as u32,
+                xHotspot: image.hotspot[0],
+                yHotspot: image.hotspot[1],
                 hbmMask: mask,
                 hbmColor: colour,
             };
@@ -135,17 +67,31 @@ mod imp {
     }
 
     pub fn apply() {
-        if APPLIED.swap(true, Ordering::SeqCst) {
+        let images = IMAGES
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if images.is_empty() || APPLIED.swap(true, Ordering::SeqCst) {
             return;
         }
-        for (id, dots) in [(OCR_NORMAL, arrow()), (OCR_IBEAM, beam())] {
-            match build(&dots) {
+        for image in images.iter() {
+            let id = match image.kind.as_str() {
+                "default" => OCR_NORMAL,
+                "text" => OCR_IBEAM,
+                "link" => windows::Win32::UI::WindowsAndMessaging::OCR_HAND,
+                "wait" => windows::Win32::UI::WindowsAndMessaging::OCR_WAIT,
+                "not-allowed" => windows::Win32::UI::WindowsAndMessaging::OCR_NO,
+                _ => continue,
+            };
+            match build(image) {
                 Some(cursor) => unsafe {
                     if let Err(err) = SetSystemCursor(cursor, SYSTEM_CURSOR_ID(id.0)) {
                         log::warn!("could not set the agent cursor: {err}");
                     }
                 },
-                None => log::warn!("could not build the agent cursor"),
+                None => log::warn!(
+                    "could not build the agent cursor from public/cursor/{}",
+                    image.kind
+                ),
             }
         }
     }
@@ -170,6 +116,7 @@ mod imp {
 #[cfg(not(windows))]
 mod imp {
     pub fn apply() {}
+    pub fn set_images(_images: Vec<super::CursorImage>) {}
     pub fn restore(_force: bool) {}
 }
 
@@ -185,24 +132,59 @@ pub fn reset() {
     imp::restore(true);
 }
 
-#[cfg(all(test, windows))]
-mod tests {
-    use super::imp::*;
+#[derive(serde::Deserialize)]
+pub struct CursorImage {
+    kind: String,
+    hotspot: [u32; 2],
+    rgba: Vec<u8>,
+}
 
+fn validate_images(images: &[CursorImage]) -> Result<(), String> {
+    let kinds = ["default", "link", "text", "wait", "not-allowed"];
+    if images.len() != kinds.len()
+        || kinds
+            .iter()
+            .any(|kind| images.iter().filter(|i| i.kind == *kind).count() != 1)
+        || images
+            .iter()
+            .any(|i| i.rgba.len() != 32 * 32 * 4 || i.hotspot.iter().any(|p| *p >= 32))
+    {
+        return Err("Invalid cursor assets".into());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_cursor_images(app: tauri::AppHandle, images: Vec<CursorImage>) -> Result<(), String> {
+    validate_images(&images)?;
+    imp::set_images(images);
+    if crate::overlay::has_control(crate::events::agent_state(&app)) {
+        imp::apply();
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
     #[test]
-    fn the_arrow_has_a_red_tip_and_the_beam_a_red_middle() {
-        let (arrow_pixels, beam_pixels) = (arrow_pixels(), beam_pixels());
-        for pixels in [arrow_pixels, beam_pixels] {
-            let red = pixels
-                .chunks(4)
-                .filter(|p| p[3] > 200 && p[2] > 180 && p[1] < 60)
-                .count();
-            let white = pixels
-                .chunks(4)
-                .filter(|p| p[3] > 200 && p[0] > 200 && p[1] > 200)
-                .count();
-            assert!(red >= 4, "a red dot");
-            assert!(white >= 12, "white dots");
-        }
+    fn cursor_assets_require_all_kinds_bounded_pixels_and_valid_hotspots() {
+        let mut images: Vec<_> = ["default", "link", "text", "wait", "not-allowed"]
+            .into_iter()
+            .map(|kind| CursorImage {
+                kind: kind.into(),
+                hotspot: [1, 1],
+                rgba: vec![0; 32 * 32 * 4],
+            })
+            .collect();
+        assert!(validate_images(&images).is_ok());
+        images[0].rgba.pop();
+        assert!(validate_images(&images).is_err());
+        images[0].rgba.push(0);
+        images[0].hotspot = [32, 1];
+        assert!(validate_images(&images).is_err());
+        images[0].hotspot = [1, 1];
+        images[0].kind = "text".into();
+        assert!(validate_images(&images).is_err());
     }
 }

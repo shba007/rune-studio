@@ -31,7 +31,7 @@ const long = computed(() => props.text.length > LONG || props.text.split('\n').l
       </div>
       <div class="min-w-0">
         <p class="m-0 text-label text-zinc-200">Reading your capture</p>
-        <p class="mt-1 mb-0 text-caption text-zinc-500">Escape to cancel</p>
+        <p class="mt-1 mb-0 text-caption text-zinc-500">Escape</p>
       </div>
     </div>
     <template v-else>

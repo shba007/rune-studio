@@ -198,6 +198,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            cursor::set_cursor_images,
+            commands::installed_versions,
+            video::video_recording_state,
             kit::client::kit_settings,
             kit::client::kit_save,
             kit::client::kit_discover,

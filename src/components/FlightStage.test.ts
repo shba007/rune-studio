@@ -43,9 +43,11 @@ describe('FlightStage', () => {
 
   it('draws the ripple at the click point and the step badge', async () => {
     const wrapper = await mountStage({ layer: { kind: 'click', x: 250, y: 500, label: 'CLICK' } })
-    const dot = wrapper.find('[data-testid="ripple"]')
-    expect(dot.attributes('style')).toContain('left: 25%')
-    expect(dot.attributes('style')).toContain('top: 50%')
+    const cursor = wrapper.find('[data-testid="cursor"]')
+    expect(cursor.attributes('style')).toContain('left: calc(25% - 1px)')
+    expect(cursor.attributes('style')).toContain('top: calc(50% - 1px)')
+    expect(cursor.get('img').attributes('src')).toBe('/cursor/default.svg')
+    expect(cursor.find('[data-testid="ripple"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="badge"]').text()).toBe('STEP 1 / 3 · CLICK')
   })
 

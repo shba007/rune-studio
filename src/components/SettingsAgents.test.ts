@@ -10,7 +10,10 @@ describe('execution mode', () => {
     const draft = reactive({ externalAgent: false }) as Settings
     const running = ref(false)
     const agent = { isRunning: running, bridge: ref(null) } as unknown as Agent
-    const wrapper = mount(SettingsAgents, { props: { agent, draft } })
+    const wrapper = mount(SettingsAgents, {
+      props: { agent, draft },
+      global: { stubs: { SettingsConnectionModels: true } },
+    })
     const select = wrapper.get('select')
     expect(wrapper.text()).toContain('API')
     await select.setValue('true')

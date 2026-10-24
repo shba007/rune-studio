@@ -57,7 +57,10 @@ pub fn vision_model(
 ) -> Result<String, String> {
     let name = settings.models.analysis.trim();
     if name.is_empty() {
-        return Err("Configure an explicit Analysis model in General settings before running Screen Insight".into());
+        return Err(
+            "Configure an explicit Analysis model in Agents settings before running Screen Insight"
+                .into(),
+        );
     }
     let model = models
         .iter()
