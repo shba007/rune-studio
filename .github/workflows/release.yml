@@ -21,6 +21,11 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+      - uses: actions/cache@v4
+        with:
+          path: xtask/target
+          key: ${{ runner.os }}-xtask-${{ hashFiles('xtask/Cargo.lock', 'xtask/src/**', 'xtask/Cargo.toml') }}
+          restore-keys: ${{ runner.os }}-xtask-
       - run: bun install --frozen-lockfile
       - name: Validate every main push and evaluate prepared release
         id: eligibility

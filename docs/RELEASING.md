@@ -50,6 +50,10 @@ release file generation and branch/release mutations; the owner reviews/promotes
 The generator's bump operation runs in a temporary scratch package during previews,
 so local calculation writes neither the repository changelog nor manifests.
 
+CI runs each test suite once. Preparation checks only the generated files and
+extracts PR notes; it does not rerun the source test suite. Rust build caches are
+reused between validation, preparation and publication where the OS matches.
+
 ## Exact note contract and repeat runs
 
 Rust xtask supplies the single section extractor to preparation, publication and

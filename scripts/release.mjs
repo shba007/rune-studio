@@ -256,7 +256,7 @@ export async function applyPlan(root, prepared) {
     throw new Error('Applied notes do not match the generated preview')
 }
 export async function eligibility(root, history = rawHistory) {
-  rust(['notes'], root) // Includes synchronized package/Tauri/Cargo validation even on no-op pushes.
+  const notes = rust(['notes'], root) // Validate versions/notes once, including no-op pushes.
   const data = await snapshot(root)
   if (data.current === data.baseline)
     return {
@@ -264,7 +264,6 @@ export async function eligibility(root, history = rawHistory) {
       version: data.current,
       reason: 'Version already published; nothing to release.',
     }
-  const notes = rust(['notes'], root)
   checkState(data, notes)
   git(root, ['merge-base', '--is-ancestor', data.baseTag, data.state.sourceHead])
   const { commits } = await parsedCommits(

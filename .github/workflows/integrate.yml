@@ -18,6 +18,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      - uses: actions/cache@v4
+        with:
+          path: xtask/target
+          key: ${{ runner.os }}-xtask-${{ hashFiles('xtask/Cargo.lock', 'xtask/src/**', 'xtask/Cargo.toml') }}
+          restore-keys: ${{ runner.os }}-xtask-
       - run: bun install --frozen-lockfile
       - run: bun x --no-install vue-tsc --noEmit -p tsconfig.app.json
       - run: bun run test:unit -- --run --pool=threads --maxWorkers=2
@@ -28,7 +33,6 @@ jobs:
       - run: cargo test --locked --manifest-path xtask/Cargo.toml
       - run: cargo clippy --locked --manifest-path xtask/Cargo.toml --all-targets -- -D warnings
       - run: cargo fmt --manifest-path xtask/Cargo.toml --check
-      - run: cargo run --locked --manifest-path xtask/Cargo.toml -- notes
   rust:
     name: Windows Rust
     runs-on: windows-latest
@@ -39,13 +43,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      - uses: actions/cache@v4
+        with:
+          path: src-tauri/target
+          key: ${{ runner.os }}-app-${{ hashFiles('src-tauri/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: ${{ runner.os }}-app-${{ hashFiles('src-tauri/Cargo.lock') }}-
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib --features eval,agent-bridge
       - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets --features eval,agent-bridge -- -D warnings
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
   prepare:
     name: Prepare release PR
     needs: [frontend, rust]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
     concurrency:
       group: release-preparation
@@ -62,6 +70,11 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+      - uses: actions/cache@v4
+        with:
+          path: xtask/target
+          key: ${{ runner.os }}-xtask-${{ hashFiles('xtask/Cargo.lock', 'xtask/src/**', 'xtask/Cargo.toml') }}
+          restore-keys: ${{ runner.os }}-xtask-
       - run: bun install --frozen-lockfile
       - name: Require event-capable release token
         env:
@@ -84,15 +97,12 @@ jobs:
         if: steps.current.outputs.current == 'true'
         id: preparation
         run: bun run release:prepare --apply
-      - name: Extract exact PR notes
-        if: steps.preparation.outputs.prepared == 'true'
-        run: cargo run --locked --manifest-path xtask/Cargo.toml -- notes --out "$RUNNER_TEMP/release-notes.md"
       - name: Validate generated release files
         if: steps.preparation.outputs.prepared == 'true'
         run: |
-          cargo test --locked --manifest-path xtask/Cargo.toml
           cargo metadata --locked --manifest-path src-tauri/Cargo.toml --no-deps --format-version 1 > /dev/null
           bun run release:check
+          cargo run --quiet --locked --manifest-path xtask/Cargo.toml -- notes --out "$RUNNER_TEMP/release-notes.md"
       - name: Refuse a stale preparation before updating the PR
         id: fresh
         if: steps.preparation.outputs.prepared == 'true'
