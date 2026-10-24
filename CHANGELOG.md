@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.1.0
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.0.27...v0.1.0)
+
+### 🚀 Enhancements
+
+- Add caching for Rust build artifacts in CI workflows ([fd09dfa](https://github.com/shba007/rune-studio/commit/fd09dfa))
+- Enhance Analysis components and introduce CaptureTargetPicker ([166d174](https://github.com/shba007/rune-studio/commit/166d174))
+
+### 🩹 Fixes
+
+- Set fetch-depth to 0 for actions/checkout in CI workflow ([26ba80d](https://github.com/shba007/rune-studio/commit/26ba80d))
+
+### 🏡 Chore
+
+- Update rune-studio to version 0.0.27 in Cargo.toml and Cargo.lock ([9c6a6a1](https://github.com/shba007/rune-studio/commit/9c6a6a1))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+
 ## v0.0.27
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.0.26...v0.0.27)
