@@ -57,24 +57,31 @@ function git(args) {
   assert.equal(result.status, 0, result.stderr)
   return result.stdout.trim()
 }
+const baseline = git(['tag', '--list', 'v[0-9]*.[0-9]*.[0-9]*', '--sort=-v:refname'])
+  .split(/\r?\n/)[0]
+  .slice(1)
+const [major, minor, patch] = baseline.split('.').map(Number)
+const nextPatch = `${major}.${minor}.${patch + 1}`
+const nextMinor = `${major}.${minor + 1}.0`
+const history = `# Changelog\r\n\r\n## v${baseline}\r\n\r\n- Published notes.\r\n\r\n## v0.0.26\r\n\r\n- Historical Cycle 2 notes.\r\n`
 async function fixture(job) {
   const directory = await mkdtemp(join(tmpdir(), 'studio-release-fixture-'))
   try {
     await mkdir(join(directory, 'src-tauri'))
     await writeFile(
       join(directory, 'package.json'),
-      JSON.stringify({ name: 'fixture', version: '0.0.27', private: true }, null, 2) + '\n',
+      JSON.stringify({ name: 'fixture', version: baseline, private: true }, null, 2) + '\n',
     )
     await writeFile(
       join(directory, 'src-tauri/Cargo.toml'),
-      '[package]\nname = "rune-studio"\nversion = "0.0.27"\n',
+      `[package]\nname = "rune-studio"\nversion = "${baseline}"\n`,
     )
     await writeFile(
       join(directory, 'src-tauri/Cargo.lock'),
-      'version = 4\n[[package]]\nname = "rune-studio"\nversion = "0.0.27"\n',
+      `version = 4\n[[package]]\nname = "rune-studio"\nversion = "${baseline}"\n`,
     )
     await writeFile(join(directory, 'src-tauri/tauri.conf.json'), '{"version":"../package.json"}')
-    await writeFile(join(directory, 'CHANGELOG.md'), old)
+    await writeFile(join(directory, 'CHANGELOG.md'), history)
     // Read-only access to existing repository objects; tests create no Git commits,
     // branches, tags or index changes.
     await writeFile(
@@ -167,11 +174,11 @@ test('routine bookkeeping and internal IDs are excluded while substantive mainte
 })
 test('preparation repeats without a bump, no-op merges stay no-op, and normal main titles need no marker', async () => {
   await fixture(async (directory) => {
-    const generated = await generate([raw('feat: explain a selected screen')], '0.0.27')
+    const generated = await generate([raw('feat: explain a selected screen')], baseline)
     const prepared = {
       ...generated,
-      changelog: assemble(old, '0.0.27', '0.0.27', generated),
-      baseTag: 'v0.0.27',
+      changelog: assemble(history, baseline, baseline, generated),
+      baseTag: `v${baseline}`,
       sourceHead: git(['rev-parse', 'HEAD']),
     }
     await applyPlan(directory, prepared)
@@ -203,25 +210,28 @@ test('preparation repeats without a bump, no-op merges stay no-op, and normal ma
 test('new source advances a pending release using the greatest package bump without duplicate sections', async () => {
   await fixture(async (directory) => {
     const sourceHead = git(['rev-parse', 'HEAD'])
-    const fix = await generate([raw('fix: report connection failure')], '0.0.27')
+    const fix = await generate([raw('fix: report connection failure')], baseline)
     const first = {
       ...fix,
-      changelog: assemble(old, '0.0.27', '0.0.27', fix),
-      baseTag: 'v0.0.27',
+      changelog: assemble(history, baseline, baseline, fix),
+      baseTag: `v${baseline}`,
       sourceHead,
     }
-    await assert.rejects(applyPlan(directory, { ...first, version: '0.0.27' }), /unpublished/)
+    await assert.rejects(applyPlan(directory, { ...first, version: baseline }), /unpublished/)
     await applyPlan(directory, first)
     const feature = await generate(
       [raw('fix: report connection failure'), raw('feat: explain a selected window')],
-      '0.0.27',
+      baseline,
     )
-    assert.equal(feature.version, '0.1.0')
-    const changelog = assemble(first.changelog, fix.version, '0.0.27', feature)
-    assert.ok(changelog.endsWith(old.slice(old.indexOf('## v0.0.27'))))
-    assert.doesNotMatch(changelog, /^## v0\.0\.28$/m)
-    assert.equal((changelog.match(/^## v0\.1\.0$/gm) || []).length, 1)
-    await applyPlan(directory, { ...feature, changelog, baseTag: 'v0.0.27', sourceHead })
+    assert.equal(feature.version, nextMinor)
+    const changelog = assemble(first.changelog, fix.version, baseline, feature)
+    assert.ok(changelog.endsWith(history.slice(history.indexOf(`## v${baseline}`))))
+    assert.doesNotMatch(changelog, new RegExp(`^## v${nextPatch.replaceAll('.', '.')}$`, 'm'))
+    assert.equal(
+      (changelog.match(new RegExp(`^## v${nextMinor.replaceAll('.', '.')}$`, 'gm')) || []).length,
+      1,
+    )
+    await applyPlan(directory, { ...feature, changelog, baseTag: `v${baseline}`, sourceHead })
     assert.equal(await plan(directory), null)
   })
 })
