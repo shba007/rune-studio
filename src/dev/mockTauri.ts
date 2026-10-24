@@ -144,7 +144,7 @@ export function installTauriMock() {
             },
             maxSteps: 30,
             toggleHotkey: 'Alt+Q',
-            stopHotkey: 'Ctrl+Alt+Escape',
+            stopHotkey: 'Escape',
             externalAgent: false,
             externalAgentSince: 0,
             showThinking: false,
@@ -181,6 +181,11 @@ export function installTauriMock() {
           }
         case 'analysis_state':
           return analysisFixture()
+        case 'screen_insight_targets':
+          return [
+            { target: { kind: 'screen', id: 1 }, label: 'Screen 1 — 1920×1080 (primary)' },
+            { target: { kind: 'window', id: 2 }, label: 'Window — Project notes' },
+          ]
         case 'overlay_info':
           return { mode: 'none', primary: true, width: 1920, height: 1080, scaleFactor: 1 }
         case 'has_api_key':

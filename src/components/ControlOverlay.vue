@@ -30,8 +30,7 @@ import AppIcon from './AppIcon.vue'
 const STEP = 8
 const DEPTH = 4
 const DOT = 1.15
-const TRAVEL = 520
-const TAIL = 380
+const DROP_INTERVAL = 2.4
 
 const canvas = useTemplateRef<HTMLCanvasElement>('canvas')
 const active = ref(false)
@@ -39,7 +38,6 @@ const stopHotkey = ref('')
 const reducedMotion = usePreferredReducedMotion()
 let width = 0
 let height = 0
-let perimeter = 1
 let startedAt = 0
 let dots: { x: number; y: number; depth: number; along: number }[] = []
 
@@ -50,7 +48,6 @@ function layout() {
   if (!el) return
   width = window.innerWidth
   height = window.innerHeight
-  perimeter = 2 * (width + height)
   const dpr = window.devicePixelRatio || 1
   el.width = width * dpr
   el.height = height * dpr
@@ -84,17 +81,25 @@ function draw(now: number) {
   const still = reducedMotion.value === 'reduce'
   const seconds = (now - startedAt) / 1000
   const reveal = still ? DEPTH : Math.min(DEPTH, seconds * 14)
-  const head = still ? -1 : (seconds * TRAVEL) % perimeter
+  const drop = Math.floor(seconds / DROP_INTERVAL)
+  const speed = Math.hypot(width, height) / 3
+  const origins = [drop - 1, drop]
+    .filter((index) => index >= 0)
+    .map((index) => ({
+      x: width * (0.5 + Math.sin(index * 12.9898) * 0.12),
+      y: height * (0.5 + Math.cos(index * 7.233) * 0.12),
+      age: seconds - index * DROP_INTERVAL,
+    }))
 
-  for (const frameDot of dots) {
+  for (const frameDot of owner.value === 'control' ? dots : []) {
     if (frameDot.depth > reveal) continue
     const edge = 1 - frameDot.depth / DEPTH
     let level = 0.1 + 0.34 * edge * edge
-    if (head >= 0) {
-      const behind = (head - frameDot.along + perimeter) % perimeter
-      if (behind < TAIL) {
-        const glow = 1 - behind / TAIL
-        level = Math.max(level, glow * glow * (0.35 + 0.65 * edge))
+    if (!still) {
+      for (const origin of origins) {
+        const distance = Math.hypot(frameDot.x - origin.x, frameDot.y - origin.y)
+        const wave = Math.exp(-Math.pow((distance - origin.age * speed) / 48, 2))
+        level = Math.max(level, wave * (0.65 + 0.35 * edge))
       }
     }
     ctx.beginPath()
@@ -175,8 +180,8 @@ interface Flash {
   at: number
   continuous: boolean
 }
-const WAVE_SECONDS = 1.2
-const WAVE_BAND = 0.14
+const WAVE_SECONDS = 1.8
+const WAVE_BAND = 0.09
 const WAVE_PITCH = 2 * STEP
 let flashes: Flash[] = []
 
@@ -186,11 +191,13 @@ function drawFlashes(ctx: CanvasRenderingContext2D, now: number, still: boolean)
     const cycle = (now - flash.at) / 1000 / WAVE_SECONDS
     const t = still ? 0.5 : flash.continuous ? cycle % 1 : cycle
     if (t < 0) continue
-    const front = t * (1 + 2 * WAVE_BAND) - WAVE_BAND
+    const reach = Math.hypot(flash.w / 2, flash.h / 2)
+    const front = t * (1 + WAVE_BAND)
     for (let y = flash.y; y <= flash.y + flash.h; y += WAVE_PITCH) {
       for (let x = flash.x; x <= flash.x + flash.w; x += WAVE_PITCH) {
-        const diagonal = ((x - flash.x) / flash.w + (y - flash.y) / flash.h) / 2
-        const lit = 1 - Math.abs(diagonal - front) / WAVE_BAND
+        const radius =
+          Math.hypot(x - flash.x - flash.w / 2, y - flash.y - flash.h / 2) / Math.max(1, reach)
+        const lit = Math.max(0, 1 - Math.abs(radius - front) / WAVE_BAND)
         if (lit > 0) dot(ctx, x, y, 1.2 + 1.4 * lit, 0.9 * lit)
       }
     }
@@ -225,6 +232,7 @@ watch(identity, (who, before) => {
   }
 })
 const owner = ref<OverlayOwner>('none')
+watch(owner, (next) => setActive(next !== 'none'))
 const overlayInfo = ref<OverlayInfo | null>(null)
 const analysis = useAnalysis()
 const analysisMode = computed(() => owner.value === 'analysis')
@@ -253,7 +261,21 @@ watch(
       startedAtMs.value = performance.now()
       barShown.value = true
     }
-    if (status === 'asking' && before === 'capturing') scanKey.value += 1
+    if (status === 'asking' && before !== 'asking') {
+      scanKey.value += 1
+      const monitor = analysis.snapshot.value.monitor
+      if (analysis.snapshot.value.id.startsWith('insight-') && monitor) {
+        const dpr = window.devicePixelRatio || 1
+        flashes.push({
+          x: monitor.x / dpr - window.screenX,
+          y: monitor.y / dpr - window.screenY,
+          w: monitor.width / dpr,
+          h: monitor.height / dpr,
+          at: performance.now(),
+          continuous: false,
+        })
+      }
+    }
     if (status === 'done' || status === 'error' || status === 'cancelled') {
       barTimer = window.setTimeout(() => (barShown.value = false), 1500)
     }
@@ -467,7 +489,7 @@ onMounted(async () => {
   } catch {}
   nowMs.value = performance.now()
   tick = window.setInterval(() => (nowMs.value = performance.now()), 250)
-  if (owner.value !== 'analysis') setActive(true)
+  setActive(true)
   try {
     agentName.value = await invoke<string | null>('get_control_label')
   } catch {}
@@ -505,7 +527,7 @@ onBeforeUnmount(() => {
     >
       <canvas ref="canvas" class="absolute inset-0 size-full" aria-hidden="true" />
 
-      <OverlayBarShell>
+      <OverlayBarShell v-if="owner === 'control'">
         <span
           class="grid shrink-0 place-items-center"
           :class="{ 'motion-safe:animate-pulse': markPulse }"
@@ -548,9 +570,6 @@ onBeforeUnmount(() => {
           <span v-if="hotkeyLabel" class="text-caption whitespace-nowrap text-white/50 uppercase">{{
             hotkeyLabel
           }}</span>
-          <span class="grid size-8 shrink-0 place-items-center rounded-full bg-[#d71921]">
-            <AppIcon name="stop" />
-          </span>
         </div>
       </OverlayBarShell>
     </div>

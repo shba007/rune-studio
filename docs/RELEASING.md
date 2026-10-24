@@ -1,5 +1,30 @@
 # Generated release preparation and artifact delivery
 
+## Owner-authorized historical formatting
+
+Historical formatting uses the same pinned changelogen 0.6.2 renderer as new
+releases. Rust `history-import` retains legacy entries and comparison baselines,
+rejects unrecognized content and conflicting duplicate versions, and collapses
+only identical sections after newline normalization. Historical wording and IDs
+are retained; normal new-release validation remains strict.
+
+For an explicit formatting migration, save a GitHub release API snapshot and run:
+
+```sh
+bun scripts/format-release-history.mjs --releases SNAPSHOT.json
+```
+
+This prepares a generated changelog, exact per-version release bodies, original
+changelog backup and a hash/asset manifest in the ignored
+`temp/studio-release-format/` directory. Add `--write-changelog` only when the owner
+has requested the history migration. `--source PATH` can re-render the original
+backup. The command never changes GitHub, versions or Git refs. An authenticated,
+explicitly authorized metadata update may replace existing release bodies with
+those exact files; check source-body hashes before writing and verify release
+identity/assets afterwards. Missing historical releases are not created.
+Ordinary preparation still preserves history and restricts `prepare --apply`
+to trusted develop CI.
+
 ## Source of truth and version policy
 
 `changelogen@0.6.2` is pinned in package.json and bun.lock. It alone parses

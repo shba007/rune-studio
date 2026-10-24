@@ -1,15 +1,12 @@
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/shba007/rune-studio/main/public/logo.svg">
-    <img alt="Rune Studio Logo" src="https://raw.githubusercontent.com/shba007/rune-studio/main/public/logo.svg" width="96" height="96">
-  </picture>
-</p>
-
-<h1 align="center">Rune Studio</h1>
+<div align="center">
 
 <p align="center">
-  <strong>A desktop harness that controls your PC through a local model server (rune-infer)</strong>
+  <img src="./public/logo.svg" alt="Rune Kit ASCII logo" width="180" height="120">
 </p>
+
+# Rune Studio
+
+**A desktop harness that controls your PC through a local model server (rune-infer)**
 
 <p align="center">
   <a href="https://github.com/shba007/rune-studio/actions/workflows/deploy.yml"><img src="https://github.com/shba007/rune-studio/actions/workflows/deploy.yml/badge.svg" alt="Vue CD Pipeline"></a>

@@ -2,6 +2,8 @@ const MAX_LENGTH = 140
 
 export function friendly(raw: string): string {
   const text = raw.replace(/^Error:\s*/i, '').trim()
+  if (/the model did not answer within \d+ seconds/i.test(text))
+    return 'The Analysis model took too long. Retry, or check Infer for a busy or loading model.'
   if (/could not reach the model|connection refused|error sending request|timed out/i.test(text))
     return "Can't reach the model server. Is it running?"
   if (/401|403|api key|unauthori[sz]ed|forbidden/i.test(text))

@@ -100,7 +100,8 @@ async function revealDeveloper() {
 
     <HubGroup title="Models">
       <p class="m-0 mb-2 text-label text-zinc-400">
-        Choose a model for each job. Leave a field empty to use the agent model. Open Model
+        Choose a model for each job. Screen Insight requires an explicit Analysis model with image
+        input and tool calling. Other optional roles can use the agent model when empty. Open Model
         capabilities to check what each model supports.
       </p>
       <datalist id="discovered-models-list">

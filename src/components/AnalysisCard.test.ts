@@ -46,6 +46,26 @@ function fake(over: Partial<AnalysisSnapshot> = {}) {
 const press = (key: string) => window.dispatchEvent(new KeyboardEvent('keydown', { key }))
 
 describe('AnalysisCard states', () => {
+  it('clears a disappeared target on refresh and disables Ask', async () => {
+    vi.mocked(invoke)
+      .mockResolvedValueOnce([{ target: { kind: 'window', id: 42 }, label: 'Window — Acceptance' }])
+      .mockResolvedValueOnce([])
+    const { analysis, calls } = fake()
+    const wrapper = mount(AnalysisCard, { props: { analysis } })
+    await flushPromises()
+    await wrapper.get('[aria-label="Choose capture target"]').trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('Acceptance'))!
+      .trigger('click')
+    await wrapper.get('[aria-label="Refresh capture targets"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('button[aria-label="Ask"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('form').trigger('submit')
+    expect(calls.capture).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('captures only the explicitly selected target and presents the same returned frame', async () => {
     vi.mocked(invoke).mockResolvedValueOnce([
       { target: { kind: 'window', id: 42 }, label: 'Window — Acceptance' },
@@ -54,7 +74,11 @@ describe('AnalysisCard states', () => {
     const wrapper = mount(AnalysisCard, { props: { analysis } })
     await flushPromises()
     expect(calls.capture).not.toHaveBeenCalled()
-    await wrapper.get('select').setValue(JSON.stringify({ kind: 'window', id: 42 }))
+    await wrapper.get('[aria-label="Choose capture target"]').trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('Acceptance'))!
+      .trigger('click')
     await wrapper.get('input').setValue('What failed?')
     await wrapper.get('form').trigger('submit')
     expect(calls.capture).toHaveBeenCalledWith('What failed?', { kind: 'window', id: 42 })
@@ -77,7 +101,7 @@ describe('AnalysisCard states', () => {
     const { analysis, calls } = fake({ status: 'asking', question: 'what is here?' })
     const wrapper = mount(AnalysisCard, { props: { analysis } })
     expect(wrapper.findComponent(AnalysisAnswer).props('waiting')).toBe(true)
-    expect(wrapper.findAll('.skeleton-dot')).toHaveLength(42)
+    expect(wrapper.findAll('.skeleton-dot')).toHaveLength(49)
     expect(wrapper.text()).toContain('what is here?')
     expect(wrapper.text()).toContain('READING')
     const cancel = wrapper.find('button[aria-label="Cancel analysis"]')
@@ -110,7 +134,7 @@ describe('AnalysisCard states', () => {
     const { analysis } = fake({ status: 'done', answer: 'x', findings })
     const wrapper = mount(AnalysisCard, { props: { analysis } })
     expect(wrapper.findAllComponents(AnalysisFindingRow)).toHaveLength(8)
-    expect(wrapper.classes()).toEqual(expect.arrayContaining(['max-h-full', 'overflow-y-auto']))
+    expect(wrapper.classes()).toEqual(expect.arrayContaining(['max-h-[480px]', 'overflow-y-auto']))
     expect(wrapper.find('li span.truncate').exists()).toBe(true)
   })
 

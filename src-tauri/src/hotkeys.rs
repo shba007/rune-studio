@@ -6,7 +6,7 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 use crate::settings::Settings;
 
 pub const DEFAULT_TOGGLE: &str = "Alt+Q";
-pub const DEFAULT_STOP: &str = "Ctrl+Alt+Escape";
+pub const DEFAULT_STOP: &str = "Escape";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Hotkeys {

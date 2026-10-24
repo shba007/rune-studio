@@ -19,12 +19,12 @@ const needsConfirm = computed(() => agent.state.value === 'awaiting_confirm')
 
 const action = computed(() => {
   if (agent.isRunning.value)
-    return { icon: 'stop', label: 'Stop', tone: 'red', run: () => agent.stop() } as const
+    return { icon: 'stop', label: 'Stop', tone: 'blue', run: () => agent.stop() } as const
   if (hasText.value) return { icon: 'send', label: 'Send', tone: 'dark', run: submit } as const
   return {
     icon: 'mic',
     label: isListening.value ? 'Stop listening' : 'Listen',
-    tone: isListening.value ? 'red' : 'dark',
+    tone: 'blue',
     run: () => agent.toggleListening(),
   } as const
 })
@@ -53,10 +53,7 @@ async function submit() {
 </script>
 
 <template>
-  <div
-    data-tauri-drag-region
-    class="flex w-full flex-col gap-1 rounded-[32px] bg-[#141414] p-2 shadow-[inset_0_0_0_1px_rgb(255_255_255/0.08)]"
-  >
+  <div data-tauri-drag-region class="flex w-full flex-col gap-1 rounded-[28px] bg-[#141414] p-1.5">
     <p
       v-if="agent.notice.value"
       class="m-0 px-3 pt-1 text-label"
@@ -82,7 +79,7 @@ async function submit() {
     </p>
     <p class="sr-only" role="status" aria-live="polite">{{ agent.statusText.value }}</p>
     <div
-      class="flex w-full items-end gap-1 rounded-[24px] bg-[#f1f1ef] p-2 text-[#111] dark:bg-[#1f1f1f] dark:text-zinc-100"
+      class="flex w-full items-end gap-2 rounded-[22px] bg-white/5 p-2 text-zinc-100 focus-within:bg-white/8 transition-colors"
     >
       <textarea
         ref="field"
@@ -103,9 +100,9 @@ async function submit() {
         type="button"
         class="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full text-white transition"
         :class="
-          action.tone === 'red'
-            ? 'bg-[#d71921] hover:bg-[#b9151c]'
-            : 'bg-[#111] hover:bg-black dark:bg-[#f1f1ef] dark:text-[#111] dark:hover:bg-white'
+          action.tone === 'blue'
+            ? 'bg-[#2d71c3] hover:bg-[#245fa8]'
+            : 'bg-[#f1f1ef] text-[#111] hover:bg-white'
         "
         :disabled="external && !agent.isRunning.value"
         :aria-label="action.label"

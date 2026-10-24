@@ -3,6 +3,12 @@ import { describe, expect, it } from 'vite-plus/test'
 import { friendly, noticeMillis } from './errors'
 
 describe('friendly', () => {
+  it('gives an actionable next step when Screen Insight inference times out', () => {
+    expect(friendly('the model did not answer within 60 seconds')).toBe(
+      'The Analysis model took too long. Retry, or check Infer for a busy or loading model.',
+    )
+  })
+
   it('keeps a short plain message as it is', () => {
     expect(friendly('A task is already running')).toBe('A task is already running')
     expect(friendly('Error: Stop the current task before listening')).toBe(

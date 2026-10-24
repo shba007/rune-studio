@@ -10,6 +10,7 @@ import type { useAnalysis } from '@/composables/useAnalysis'
 import AnalysisAnswer from './AnalysisAnswer.vue'
 import AnalysisFindingRow from './AnalysisFindingRow.vue'
 import AppIcon from './AppIcon.vue'
+import CaptureTargetPicker from './CaptureTargetPicker.vue'
 
 const props = defineProps<{ analysis: ReturnType<typeof useAnalysis> }>()
 const { snapshot, busy, notice } = props.analysis
@@ -28,6 +29,9 @@ async function loadTargets() {
   } catch (error) {
     targets.value = []
     targetNotice.value = friendly(String(error))
+  }
+  if (!targets.value.some((item) => JSON.stringify(item.target) === selectedTarget.value)) {
+    selectedTarget.value = ''
   }
 }
 onMounted(loadTargets)
@@ -88,7 +92,10 @@ onKeyStroke('Escape', (event) => {
 </script>
 
 <template>
-  <div class="flex max-h-full w-full flex-col gap-2 overflow-y-auto" aria-label="Screen analysis">
+  <div
+    class="flex max-h-[480px] w-full flex-col gap-2 overflow-y-auto"
+    aria-label="Screen analysis"
+  >
     <section
       class="flex w-full flex-col gap-2 rounded-[28px] border border-white/15 bg-[#141414] p-4 text-zinc-100"
     >
@@ -114,23 +121,7 @@ onKeyStroke('Escape', (event) => {
         </button>
       </header>
 
-      <label v-if="!busy" class="text-label text-zinc-400"
-        >Capture target
-        <select
-          v-model="selectedTarget"
-          aria-label="Screen or window"
-          class="mt-2 w-full rounded-lg bg-zinc-800 p-2"
-        >
-          <option value="" disabled>Choose a screen or window</option>
-          <option
-            v-for="option in targets"
-            :key="JSON.stringify(option.target)"
-            :value="JSON.stringify(option.target)"
-          >
-            {{ option.label }}
-          </option>
-        </select>
-      </label>
+      <CaptureTargetPicker v-if="!busy" v-model="selectedTarget" :options="targets" />
       <p v-if="targetNotice && !busy && !failed" role="alert" class="text-label text-[#ff6b72]">
         {{ targetNotice }}
       </p>

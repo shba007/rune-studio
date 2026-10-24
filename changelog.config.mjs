@@ -5,7 +5,12 @@ export const releasePolicy = {
   stableFeatures: 'minor',
   stableBreaking: 'major',
   maintenance: 'patch',
-  authorHandles: {}, // Optional reviewed email -> GitHub handle map; no online lookup.
+  // Existing Git signatures and historical contributor links identify this account.
+  // Keep attribution deterministic without exposing email addresses in new notes.
+  authorHandles: {
+    'shirsendu2001@gmail.com': 'shba007',
+    '48382105+shba007@users.noreply.github.com': 'shba007',
+  },
 }
 export default {
   repo: { provider: 'github', domain: 'github.com', repo: 'shba007/rune-studio' },

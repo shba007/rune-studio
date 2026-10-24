@@ -44,6 +44,36 @@ const fakeModels: ModelCapabilities[] = [
 ]
 
 describe('ModelRoleRow', () => {
+  it('requires an explicit Analysis model instead of advertising an agent fallback', () => {
+    const wrapper = mount(ModelRoleRow, {
+      props: {
+        roleLabel: 'Screen Analysis',
+        roleKey: 'analysis',
+        agentModel: 'local-omni',
+        modelValue: '',
+        models: fakeModels,
+      },
+    })
+    expect(wrapper.text()).not.toContain('Using agent model')
+    expect(wrapper.text()).toContain('Choose an explicit Analysis model')
+    expect(wrapper.find('input').attributes('placeholder')).not.toBe('Same as agent')
+  })
+
+  it('warns when Analysis capabilities are unknown or tool calling is unavailable', () => {
+    for (const toolCalls of ['no', 'unknown'] as const) {
+      const wrapper = mount(ModelRoleRow, {
+        props: {
+          roleLabel: 'Screen Analysis',
+          roleKey: 'analysis',
+          agentModel: 'local-omni',
+          modelValue: 'local-omni',
+          models: [{ ...fakeModels[0]!, toolCalls }],
+        },
+      })
+      expect(wrapper.text()).toContain('advertises image input and tool calling')
+    }
+  })
+
   it('shows CLOUD tag for a cloud model', () => {
     const wrapper = mount(ModelRoleRow, {
       props: {

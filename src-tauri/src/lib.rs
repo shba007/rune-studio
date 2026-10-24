@@ -93,6 +93,13 @@ pub fn run() {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
+                        .targets([
+                            tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                            tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Folder {
+                                path: app.path().app_data_dir()?.join("logs"),
+                                file_name: None,
+                            }),
+                        ])
                         .level(log::LevelFilter::Info)
                         .build(),
                 )?;

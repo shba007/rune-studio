@@ -15,7 +15,7 @@ const modelValue = defineModel<string>({ required: true })
 const effectiveModelId = computed(() => {
   const trimmed = modelValue.value.trim()
   if (trimmed) return trimmed
-  return props.roleKey === 'agent' ? '' : props.agentModel.trim()
+  return props.roleKey === 'agent' || props.roleKey === 'analysis' ? '' : props.agentModel.trim()
 })
 
 const currentCaps = computed(() => {
@@ -28,7 +28,16 @@ const isCloud = computed(() => {
 })
 
 const warning = computed<string | null>(() => {
+  if (props.roleKey === 'analysis' && !modelValue.value.trim()) {
+    return 'Choose an explicit Analysis model for Screen Insight.'
+  }
   const caps = currentCaps.value
+  if (
+    props.roleKey === 'analysis' &&
+    (!caps || caps.imageIn !== 'yes' || caps.toolCalls !== 'yes')
+  ) {
+    return 'Choose a model that advertises image input and tool calling, then check the backend again.'
+  }
   if (!caps) return null
 
   if (props.roleKey === 'voice' && caps.audioIn === 'no') {
@@ -39,7 +48,7 @@ const warning = computed<string | null>(() => {
       return 'This model lacks image input. Screen observation will not work.'
     if (caps.toolCalls === 'no') return 'This model lacks tool calling. Actions cannot be chosen.'
   }
-  if ((props.roleKey === 'verifier' || props.roleKey === 'analysis') && caps.imageIn === 'no') {
+  if (props.roleKey === 'verifier' && caps.imageIn === 'no') {
     return 'This model lacks image input. Visual analysis requires vision.'
   }
   return null
@@ -74,7 +83,12 @@ function statusLabel(status: string) {
           list="discovered-models-list"
           :aria-describedby="`${inputId}-status`"
           :placeholder="
-            placeholder ?? (roleKey === 'agent' ? 'Choose or enter a model' : 'Same as agent')
+            placeholder ??
+            (roleKey === 'analysis'
+              ? 'Choose an Analysis model'
+              : roleKey === 'agent'
+                ? 'Choose or enter a model'
+                : 'Same as agent')
           "
           spellcheck="false"
           autocomplete="off"
@@ -83,7 +97,7 @@ function statusLabel(status: string) {
       </div>
     </div>
     <p :id="`${inputId}-status`" class="m-0 break-words text-label text-zinc-400">
-      <template v-if="roleKey !== 'agent' && !modelValue.trim()">
+      <template v-if="roleKey !== 'agent' && roleKey !== 'analysis' && !modelValue.trim()">
         Using agent model{{ effectiveModelId ? ` · ${effectiveModelId}` : '' }}.
       </template>
       <template v-if="currentCaps">

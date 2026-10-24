@@ -45,8 +45,11 @@ pub(crate) fn publish(app: &AppHandle) {
             .any(|finding| finding.bbox.is_some());
         (
             analysis.snapshot(),
-            !analysis.id.starts_with("insight-")
-                && wants_overlay(analysis.status, boxes_on_screen, analysis.stale),
+            if analysis.id.starts_with("insight-") {
+                super::state::in_flight(analysis.status)
+            } else {
+                wants_overlay(analysis.status, boxes_on_screen, analysis.stale)
+            },
         )
     };
     crate::overlay::sync_analysis(app, wanted);

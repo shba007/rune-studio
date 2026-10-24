@@ -15,17 +15,23 @@ const long = computed(() => props.text.length > LONG || props.text.split('\n').l
   >
     <div
       v-if="waiting"
-      class="flex flex-col gap-2"
+      class="flex items-center gap-4"
       role="status"
       aria-label="Waiting for the answer"
     >
-      <div v-for="row in 3" :key="row" class="flex gap-1" aria-hidden="true">
+      <div class="grid shrink-0 grid-cols-7 gap-1" aria-hidden="true">
         <span
-          v-for="dot in 14"
-          :key="dot"
+          v-for="index in 49"
+          :key="index"
           class="skeleton-dot size-1 rounded-full bg-[#f1f1ef]"
-          :style="{ animationDelay: `${(row + dot) * 70}ms` }"
+          :style="{
+            animationDelay: `${Math.hypot(((index - 1) % 7) - 3, Math.floor((index - 1) / 7) - 3) * 140}ms`,
+          }"
         />
+      </div>
+      <div class="min-w-0">
+        <p class="m-0 text-label text-zinc-200">Reading your capture</p>
+        <p class="mt-1 mb-0 text-caption text-zinc-500">Escape to cancel</p>
       </div>
     </div>
     <template v-else>
@@ -52,7 +58,7 @@ const long = computed(() => props.text.length > LONG || props.text.split('\n').l
 
 @media (prefers-reduced-motion: no-preference) {
   .skeleton-dot {
-    animation: wave 1.2s ease-in-out infinite;
+    animation: wave 2.4s ease-in-out infinite;
   }
 }
 

@@ -16,9 +16,11 @@ fn run() -> Result<()> {
         args.remove(at);
     }
     match args.first().map(String::as_str) {
+  Some("history-import") if args.len()==2=>println!("{}",serde_json::to_string(&studio_xtask::history::import_history(&fs::read_to_string(&args[1])?)?)?),
   Some("prepare"|"example")=>{let script=PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap().join("scripts/release.mjs");let status=Command::new(if cfg!(windows){"bun.exe"}else{"bun"}).arg(script).args(&args).arg("--root").arg(&root).status()?;if !status.success(){return Err("Pinned changelogen integration failed".into());}}
   Some("sync") if args.len()==2=>sync_manifests(&root,&semver::Version::parse(&args[1])?)?,
   Some("extract") if args.len()==3=>print!("{}",release_notes(&fs::read_to_string(&args[1])?,&semver::Version::parse(&args[2])?)?),
+  Some("history-extract") if args.len()==3=>print!("{}",studio_xtask::historical_release_notes(&fs::read_to_string(&args[1])?,&semver::Version::parse(&args[2])?)?),
   Some("notes")=>{validate_versions(&root)?;let notes=release_notes(&fs::read_to_string(root.join("CHANGELOG.md"))?,&version(&root)?)?;if args.len()==3 && args[1]=="--out"{fs::write(&args[2],notes)?;}else if args.len()==1{print!("{notes}");}else{return Err("Usage: notes [--out FILE]".into());}}
   Some("version") if args.len()==1=>{validate_versions(&root)?;println!("{}",version(&root)?);}
   Some("verify-event") if args.len()==1=>{let event=serde_json::from_slice(&fs::read(env::var_os("GITHUB_EVENT_PATH").ok_or("GITHUB_EVENT_PATH is required")?)?)?;validate_event(&root,&event)?;}

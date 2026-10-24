@@ -5,7 +5,15 @@ import { join, dirname, basename, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { generate, assemble, extract, applyPlan, plan, eligibility } from './release.mjs'
+import {
+  generate,
+  assemble,
+  extract,
+  applyPlan,
+  plan,
+  eligibility,
+  formatHistoricalRelease,
+} from './release.mjs'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const raw = (message, body = '', shortHash = 'abc1234') => ({
   message,
@@ -15,6 +23,35 @@ const raw = (message, body = '', shortHash = 'abc1234') => ({
 })
 const old =
   '# Changelog\r\n\r\n## v0.0.27\r\n\r\n- Published notes.\r\n\r\n## v0.0.26\r\n\r\n- Historical Cycle 2 notes.\r\n'
+
+test('historical formatting preserves reviewed wording, attribution and missing provenance', async () => {
+  const release = {
+    version: '0.0.1',
+    compareFrom: null,
+    contributors: ['Example Contributor'],
+    entries: [
+      { group: 'Features', text: 'Historical M0 shell guidance.' },
+      {
+        group: 'Fixes',
+        text: '**capture:** Preserve selection ([abc1234](https://github.com/shba007/rune-studio/commit/abc1234))',
+      },
+      { group: 'Compatibility', text: 'Retain the original migration instructions.' },
+    ],
+  }
+  const author = () => ({ name: 'Example Contributor', email: 'example@example.invalid' })
+  const first = await formatHistoricalRelease(release, author)
+  const second = await formatHistoricalRelease(release, author)
+  assert.equal(first.section, second.section)
+  assert.equal(first.notesHash, second.notesHash)
+  assert.match(first.notes, /Historical M0 shell guidance\./)
+  assert.match(first.notes, /\*\*capture:\*\* Preserve selection/)
+  assert.match(first.notes, /commit\/abc1234/)
+  assert.match(first.notes, /### 📖 Documentation/)
+  assert.match(first.notes, /Example Contributor/)
+  assert.doesNotMatch(first.notes, /compare\/|commit\/\)|example@example.invalid/)
+  assert.equal((first.notes.match(/commit\//g) || []).length, 1)
+  assert.doesNotMatch(first.notes, /## v/)
+})
 function git(args) {
   const result = spawnSync('git', args, { cwd: root, encoding: 'utf8', windowsHide: true })
   assert.equal(result.status, 0, result.stderr)

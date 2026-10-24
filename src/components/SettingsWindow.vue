@@ -81,7 +81,7 @@ const saved = ref(true)
 watch(
   agent.settings,
   (value) => {
-    if (value && saved.value) draft.value = { ...value }
+    if (value && saved.value) draft.value = { ...value, models: { ...value.models } }
   },
   { immediate: true },
 )
@@ -90,7 +90,8 @@ const save = useDebounceFn(async () => {
   if (!draft.value) return
   await agent.saveSettings(draft.value)
   saved.value = true
-  if (agent.settings.value) draft.value = { ...agent.settings.value }
+  if (agent.settings.value)
+    draft.value = { ...agent.settings.value, models: { ...agent.settings.value.models } }
 }, 600)
 
 watch(

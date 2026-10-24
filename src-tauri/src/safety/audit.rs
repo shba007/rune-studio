@@ -7,7 +7,11 @@ pub fn record(app: &AppHandle, entry: Value) {
     let Ok(dir) = app.path().app_data_dir() else {
         return;
     };
-    let _ = std::fs::create_dir_all(&dir);
+    let dir = dir.join("logs");
+    if let Err(err) = std::fs::create_dir_all(&dir) {
+        log::warn!("could not create the audit log directory: {err}");
+        return;
+    }
     let at = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs());

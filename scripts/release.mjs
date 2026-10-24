@@ -154,6 +154,100 @@ export async function extract(changelog, next) {
     return rust(['extract', file, version(next)])
   })
 }
+
+// Fixed-version history migration. This deliberately does not apply the policy
+// that excludes internal labels from newly generated notes: old wording is kept.
+// Rust imports legacy structure; changelogen alone formats the resulting notes.
+export async function formatHistoricalRelease(release, authorForHash) {
+  const pkg = await generator()
+  const config = await pkg.loadChangelogConfig(home, {
+    ...defaults,
+    from: release.compareFrom || '',
+    to: `v${version(release.version)}`,
+    newVersion: release.version,
+    output: false,
+    tokens: {},
+  })
+  // Config resolution fills an empty baseline with the latest tag. Historical
+  // sections without a baseline must retain that absence, not compare backwards.
+  config.from = release.compareFrom || ''
+  if (release.compareFrom) git(home, ['rev-parse', '--verify', `refs/tags/${release.compareFrom}`])
+  const authorLookup =
+    authorForHash ||
+    ((hash) => {
+      const [name, email] = git(home, ['show', '-s', '--format=%an%x00%ae', hash]).split('\0')
+      return { name, email }
+    })
+  const fallback =
+    release.contributors.length === 1
+      ? release.contributors[0].replace(/\s*(?:\(<|<|\(\[@|\(@).*$/, '').trim()
+      : ''
+  const records = []
+  for (const entry of release.entries) {
+    const group = entry.group.toLowerCase()
+    const type = [
+      [/enhancement|feature/, 'feat'],
+      [/fix/, 'fix'],
+      [/performance/, 'perf'],
+      [/refactor/, 'refactor'],
+      [/documentation|compatibility/, 'docs'],
+      [/style/, 'style'],
+      [/test/, 'test'],
+      [/build/, 'build'],
+      [/\bci\b|release preparation/, 'ci'],
+      [/revert/, 'revert'],
+      [/chore|maintenance/, 'chore'],
+    ].find(([pattern]) => pattern.test(group))?.[1]
+    if (!type) throw new Error(`Unrecognized historical group: ${entry.group}`)
+    let text = entry.text
+    let scope = ''
+    const scoped = text.match(/^\*\*(.+?):\*\*\s*/) || text.match(/^(release|ci|docs):\s*/)
+    if (scoped) {
+      scope = scoped[1]
+      text = text.slice(scoped[0].length)
+    }
+    const isBreaking = text.startsWith('⚠️')
+    if (isBreaking) text = text.replace(/^⚠️\s*/, '')
+    const reference = text.match(
+      /\s+\(\[([^\]]+)\]\(https:\/\/github\.com\/shba007\/rune-studio\/(commit|pull|issues)\/([^)]+)\)\)$/,
+    )
+    const references = []
+    let hash = ''
+    if (reference) {
+      text = text.slice(0, reference.index)
+      const kind = { commit: 'hash', pull: 'pull-request', issues: 'issue' }[reference[2]]
+      references.push({ type: kind, value: kind === 'hash' ? reference[3] : `#${reference[3]}` })
+      if (kind === 'hash') hash = reference[3]
+    }
+    const author = hash ? await authorLookup(hash) : { name: fallback, email: '' }
+    const [commit] = pkg.parseCommits(
+      [
+        {
+          message: `${type}${scope ? `(${scope})` : ''}${isBreaking ? '!' : ''}: ${text}`,
+          body: '',
+          shortHash: hash,
+          author,
+        },
+      ],
+      config,
+    )
+    if (!commit) throw new Error(`Cannot import historical entry: ${entry.text}`)
+    commit.references = [...references, ...commit.references.filter((ref) => ref.type !== 'hash')]
+    records.push(commit)
+  }
+  const descriptions = records.map((commit) => commit.description.toLowerCase())
+  // Package rendering reverses each type group. Reverse the imported entries so
+  // historical order remains unchanged within each group.
+  const section = await pkg.generateMarkDown(records.reverse(), config)
+  if (descriptions.some((description) => !section.toLowerCase().includes(description)))
+    throw new Error(`Historical wording was lost while rendering ${release.version}`)
+  return scratch(async (directory) => {
+    const file = join(directory, 'CHANGELOG.md')
+    await writeFile(file, `${section}\n`)
+    const notes = rust(['history-extract', file, release.version])
+    return { version: release.version, section, notes, notesHash: sha(notes) }
+  })
+}
 export function assemble(history, current, baseline, generated) {
   // Only replace an unpublished generated section. The historical suffix remains byte-for-byte.
   const headings = [...history.matchAll(/^## v?(\d+\.\d+\.\d+)\r?$/gm)]

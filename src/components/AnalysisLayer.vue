@@ -33,7 +33,7 @@ const markers = computed(() =>
     <div
       v-if="scanKey > 0 && reduced !== 'reduce'"
       :key="scanKey"
-      class="scan-line absolute inset-x-0 top-0 h-2"
+      class="scan-line absolute inset-0"
     />
     <div
       v-for="marker in markers"
@@ -78,7 +78,19 @@ const markers = computed(() =>
 .scan-line {
   background-image: radial-gradient(circle, rgb(241 241 239 / 0.6) 1.2px, transparent 1.6px);
   background-size: 8px 8px;
-  animation: sweep 0.4s linear forwards;
+  animation: sweep 1.8s ease-out forwards;
+  mask-image: radial-gradient(
+    circle at center,
+    transparent calc(var(--scan-radius) - 32px),
+    black var(--scan-radius),
+    transparent calc(var(--scan-radius) + 32px)
+  );
+}
+
+@property --scan-radius {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
 }
 
 .marker-in {
@@ -91,11 +103,11 @@ const markers = computed(() =>
 
 @keyframes sweep {
   from {
-    transform: translateY(0);
+    --scan-radius: 0px;
     opacity: 1;
   }
   to {
-    transform: translateY(100vh);
+    --scan-radius: 120vmax;
     opacity: 0;
   }
 }

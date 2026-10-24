@@ -3,6 +3,7 @@
 use semver::Version;
 use std::{fs, path::Path};
 use toml_edit::{DocumentMut, value};
+pub mod history;
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 /// Only CRLF/LF and surrounding blank newline delimiters are transport-normalized.
@@ -51,6 +52,20 @@ fn sections(changelog: &str) -> Vec<(Version, usize, usize)> {
 }
 
 pub fn release_notes(changelog: &str, version: &Version) -> Result<String> {
+    section_notes(changelog, version, true)
+}
+
+/// One-time historical formatting retains reviewed wording, including old IDs.
+/// Normal preparation/publication continues to use the strict release_notes API.
+pub fn historical_release_notes(changelog: &str, version: &Version) -> Result<String> {
+    section_notes(changelog, version, false)
+}
+
+fn section_notes(
+    changelog: &str,
+    version: &Version,
+    enforce_public_policy: bool,
+) -> Result<String> {
     let parts = sections(changelog);
     if parts.first().map(|p| &p.0) != Some(version)
         || parts.iter().filter(|p| &p.0 == version).count() != 1
@@ -65,7 +80,7 @@ pub fn release_notes(changelog: &str, version: &Version) -> Result<String> {
         .lines()
         .take_while(|line| !line.contains("Contributors"))
         .any(|l| l.trim_start().starts_with("- ") && l.trim().len() > 2);
-    if !substantive || private_or_placeholder(&notes) {
+    if !substantive || enforce_public_policy && private_or_placeholder(&notes) {
         return Err(format!(
             "CHANGELOG {version} has empty, placeholder or internal planning notes"
         )

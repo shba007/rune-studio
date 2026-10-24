@@ -219,7 +219,14 @@ impl<'de> Deserialize<'de> for Settings {
             models,
             max_steps: helper.max_steps,
             toggle_hotkey: helper.toggle_hotkey,
-            stop_hotkey: helper.stop_hotkey,
+            stop_hotkey: if matches!(
+                helper.stop_hotkey.to_ascii_lowercase().as_str(),
+                "ctrl+alt+escape" | "ctrl+alt+esc"
+            ) {
+                hotkeys::DEFAULT_STOP.into()
+            } else {
+                helper.stop_hotkey
+            },
             external_agent: helper.external_agent,
             external_agent_since: helper.external_agent_since,
             show_thinking: helper.show_thinking,
@@ -415,6 +422,18 @@ pub fn set_api_key(key: &str) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn old_stop_shortcut_migrates_to_escape_and_custom_shortcuts_survive() {
+        for old in ["Ctrl+Alt+Escape", "Ctrl+Alt+Esc"] {
+            let settings: Settings =
+                serde_json::from_value(serde_json::json!({"stopHotkey":old})).unwrap();
+            assert_eq!(settings.stop_hotkey, "Escape");
+        }
+        let settings: Settings =
+            serde_json::from_value(serde_json::json!({"stopHotkey":"Ctrl+Shift+S"})).unwrap();
+        assert_eq!(settings.stop_hotkey, "Ctrl+Shift+S");
+    }
 
     #[test]
     fn migration_from_old_settings_with_model_and_decision_model() {
