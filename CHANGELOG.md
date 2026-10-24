@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.2.0
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.1.0...v0.2.0)
+
+### 🚀 Enhancements
+
+- Enhance cursor functionality and visual feedback ([bea96c4](https://github.com/shba007/rune-studio/commit/bea96c4))
+- Update versioning logic and changelog generation in release tests ([257c5de](https://github.com/shba007/rune-studio/commit/257c5de))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+
 ## v0.1.0
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.0.27...v0.1.0)
