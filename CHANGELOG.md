@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.0.27
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.0.26...v0.0.27)
+
+### 🚀 Enhancements
+
+- Implement external agent screen request handling and UI updates ([2f479b3](https://github.com/shba007/rune-studio/commit/2f479b3))
+- Add screen insight workflow and capture target selection ([829d4e3](https://github.com/shba007/rune-studio/commit/829d4e3))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+
 ## v0.0.26
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.0.25...v0.0.26)
