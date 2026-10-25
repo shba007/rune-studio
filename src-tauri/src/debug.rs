@@ -11,12 +11,10 @@ use crate::{
         input::{Input, MouseButton},
     },
     model::coords::{Monitor, model_to_pixels},
-    observe::screenshot::{self, MODEL_JPEG_QUALITY, MODEL_MAX_EDGE},
+    observe::screenshot::{self, MODEL_JPEG_QUALITY},
     sync::LockExt,
     window,
 };
-
-const THUMBNAIL_EDGE: u32 = 320;
 
 fn invalid(err: impl std::fmt::Display) -> AppError {
     AppError::Invalid(err.to_string())
@@ -101,9 +99,14 @@ pub struct CaptureReport {
 #[tauri::command]
 pub async fn debug_capture(app: AppHandle, monitor: Option<u32>) -> AppResult<CaptureReport> {
     require_idle(&app)?;
+    let max_edge = app
+        .state::<AppState>()
+        .settings
+        .locked()
+        .model_image_resolution
+        .max_edge();
     tauri::async_runtime::spawn_blocking(move || {
-        let frame =
-            screenshot::capture(monitor, MODEL_MAX_EDGE, MODEL_JPEG_QUALITY).map_err(invalid)?;
+        let frame = screenshot::capture(monitor, max_edge, MODEL_JPEG_QUALITY).map_err(invalid)?;
         crate::overlay::show_capture(&app, frame.monitor);
         log::info!(
             "debug_capture: {}x{} from a {}x{} monitor, {} KB, {} ms",
@@ -120,7 +123,7 @@ pub async fn debug_capture(app: AppHandle, monitor: Option<u32>) -> AppResult<Ca
             height: frame.height,
             bytes: frame.jpeg.len(),
             millis: frame.elapsed_ms,
-            thumbnail: frame.thumbnail_data_uri(THUMBNAIL_EDGE).map_err(invalid)?,
+            thumbnail: frame.preview_data_uri(),
         })
     })
     .await

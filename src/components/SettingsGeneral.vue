@@ -7,6 +7,7 @@ import type { AgentState, Settings } from '@/types/protocol'
 import DevInputLab from './DevInputLab.vue'
 import HubGroup from './HubGroup.vue'
 import HubToggle from './HubToggle.vue'
+import HubRow from './HubRow.vue'
 import SettingsReview from './SettingsReview.vue'
 import RecordingControls from './RecordingControls.vue'
 
@@ -32,6 +33,24 @@ async function revealDeveloper() {
 
 <template>
   <div class="flex flex-col gap-8">
+    <HubGroup title="Screen capture">
+      <HubRow
+        label="Model image resolution"
+        hint="Limits the longest edge sent to models for screen analysis and desktop tasks. Larger images use more memory and may take longer or exceed the model's limit. Saved screenshots keep their native resolution."
+      >
+        <select
+          v-model="draft.modelImageResolution"
+          aria-label="Model image resolution"
+          class="rounded-lg bg-zinc-900 px-3 py-2 text-body text-zinc-100"
+        >
+          <option value="720">720 px · Faster</option>
+          <option value="1280">1280 px · Balanced</option>
+          <option value="1920">1920 px · Detailed</option>
+          <option value="2560">2560 px · More detailed</option>
+          <option value="native">Native resolution</option>
+        </select>
+      </HubRow>
+    </HubGroup>
     <HubGroup title="Reflection">
       <p class="m-0 text-label text-zinc-500">Self reflection is unavailable in this release.</p>
     </HubGroup>
@@ -46,6 +65,22 @@ async function revealDeveloper() {
     </HubGroup>
 
     <HubGroup title="Screen recording">
+      <HubRow
+        label="Recording resolution"
+        hint="Applies to new screen and session recordings. Limits the longest edge without enlarging smaller captures. Native retains captured dimensions; video stays silent at 2 fps."
+      >
+        <select
+          v-model="draft.recordingResolution"
+          aria-label="Recording resolution"
+          class="rounded-lg bg-zinc-900 px-3 py-2 text-body text-zinc-100"
+        >
+          <option value="720">720 px</option>
+          <option value="1280">1280 px</option>
+          <option value="1920">1920 px</option>
+          <option value="2560">2560 px</option>
+          <option value="native">Native resolution</option>
+        </select>
+      </HubRow>
       <RecordingControls />
     </HubGroup>
 

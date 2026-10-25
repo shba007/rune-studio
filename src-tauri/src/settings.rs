@@ -116,6 +116,8 @@ pub struct Settings {
     pub archive_keep_days: u32,
     pub verify_mode: VerifyMode,
     pub record_session_video: RecordVideo,
+    pub model_image_resolution: ImageResolution,
+    pub recording_resolution: ImageResolution,
     pub offer_review: OfferReview,
     pub demo_mode: bool,
     pub reflection_enabled: bool,
@@ -147,6 +149,8 @@ struct SettingsDeHelper {
     pub archive_keep_days: u32,
     pub verify_mode: VerifyMode,
     pub record_session_video: RecordVideo,
+    pub model_image_resolution: ImageResolution,
+    pub recording_resolution: ImageResolution,
     pub offer_review: OfferReview,
     pub demo_mode: bool,
     pub reflection_enabled: bool,
@@ -179,6 +183,8 @@ impl Default for SettingsDeHelper {
             archive_keep_days: def.archive_keep_days,
             verify_mode: def.verify_mode,
             record_session_video: def.record_session_video,
+            model_image_resolution: def.model_image_resolution,
+            recording_resolution: def.recording_resolution,
             offer_review: def.offer_review,
             demo_mode: def.demo_mode,
             reflection_enabled: def.reflection_enabled,
@@ -238,6 +244,8 @@ impl<'de> Deserialize<'de> for Settings {
             archive_keep_days: helper.archive_keep_days,
             verify_mode: helper.verify_mode,
             record_session_video: helper.record_session_video,
+            model_image_resolution: helper.model_image_resolution,
+            recording_resolution: helper.recording_resolution,
             offer_review: helper.offer_review,
             demo_mode: helper.demo_mode,
             reflection_enabled: helper.reflection_enabled,
@@ -254,6 +262,32 @@ impl<'de> Deserialize<'de> for Settings {
 impl Settings {
     pub fn model_for_role(&self, role: ModelRole) -> &str {
         self.models.model_for_role(role)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ImageResolution {
+    #[serde(rename = "720")]
+    Small,
+    #[serde(rename = "1920")]
+    Large,
+    #[serde(rename = "2560")]
+    ExtraLarge,
+    #[serde(rename = "native")]
+    Native,
+    #[default]
+    #[serde(rename = "1280", other)]
+    Balanced,
+}
+impl ImageResolution {
+    pub fn max_edge(self) -> u32 {
+        match self {
+            Self::Small => 720,
+            Self::Balanced => 1280,
+            Self::Large => 1920,
+            Self::ExtraLarge => 2560,
+            Self::Native => u32::MAX,
+        }
     }
 }
 
@@ -307,6 +341,8 @@ impl Default for Settings {
             archive_keep_days: 0,
             verify_mode: VerifyMode::default(),
             record_session_video: RecordVideo::default(),
+            model_image_resolution: ImageResolution::default(),
+            recording_resolution: ImageResolution::Native,
             offer_review: OfferReview::default(),
             demo_mode: true,
             reflection_enabled: true,
@@ -422,6 +458,33 @@ pub fn set_api_key(key: &str) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn capture_resolution_defaults_migrate_and_separate_settings_round_trip() {
+        let old: Settings = serde_json::from_str("{}").unwrap();
+        assert_eq!(old.model_image_resolution.max_edge(), 1280);
+        assert_eq!(old.recording_resolution, ImageResolution::Native);
+        for (name, edge) in [
+            ("720", 720),
+            ("1280", 1280),
+            ("1920", 1920),
+            ("2560", 2560),
+            ("native", u32::MAX),
+        ] {
+            let settings: Settings = serde_json::from_value(serde_json::json!({
+                "modelImageResolution": name, "recordingResolution": "720"
+            }))
+            .unwrap();
+            assert_eq!(settings.model_image_resolution.max_edge(), edge);
+            assert_eq!(settings.recording_resolution.max_edge(), 720);
+            let saved = serde_json::to_value(settings).unwrap();
+            assert_eq!(saved["modelImageResolution"], name);
+            assert_eq!(saved["recordingResolution"], "720");
+        }
+        let invalid: Settings =
+            serde_json::from_str(r#"{"modelImageResolution":"invalid"}"#).unwrap();
+        assert_eq!(invalid.model_image_resolution.max_edge(), 1280);
+    }
 
     #[test]
     fn old_stop_shortcut_migrates_to_escape_and_custom_shortcuts_survive() {

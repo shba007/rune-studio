@@ -8,6 +8,7 @@ use crate::{exec::CancelToken, model::coords::Monitor, safety::foreground::Windo
 #[derive(Debug, Clone)]
 pub struct StoredFrame {
     pub jpeg: Arc<Vec<u8>>,
+    pub png: Arc<Vec<u8>>,
     pub monitor: Monitor,
     pub signature: Vec<u8>,
     pub front: Option<WindowId>,
@@ -80,8 +81,8 @@ impl AnalysisState {
                 self.frame.as_ref().map(|frame| {
                     use base64::Engine;
                     format!(
-                        "data:image/jpeg;base64,{}",
-                        base64::engine::general_purpose::STANDARD.encode(frame.jpeg.as_ref())
+                        "data:image/png;base64,{}",
+                        base64::engine::general_purpose::STANDARD.encode(frame.png.as_ref())
                     )
                 })
             } else {
@@ -292,6 +293,7 @@ mod tests {
         assert_eq!(json["stale"], false);
         assert_eq!(json["boxesRejected"], 0);
         state.frame = Some(StoredFrame {
+            png: Arc::new(vec![]),
             jpeg: Arc::new(vec![0xFF, 0xD8]),
             monitor: Monitor {
                 id: 0,
@@ -321,6 +323,7 @@ mod tests {
             ..AnalysisState::default()
         };
         state.frame = Some(StoredFrame {
+            png: Arc::new(vec![]),
             jpeg: Arc::new(vec![1]),
             monitor: Monitor {
                 id: 0,

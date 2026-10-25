@@ -157,6 +157,8 @@ export function installTauriMock() {
             verifyMode: 'background',
             demoMode: true,
             recordSessionVideo: 'off',
+            modelImageResolution: '1280',
+            recordingResolution: 'native',
             offerReview: 'always',
             reflectionEnabled: true,
             idleMinutes: 10,

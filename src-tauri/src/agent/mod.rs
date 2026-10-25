@@ -17,7 +17,7 @@ use crate::{
     events::{self, AgentState, AppState, TaskDone},
     exec::{CancelToken, ExecError, uia},
     model::client::{ChatClient, ModelError, Request},
-    observe::screenshot::{self, MODEL_JPEG_QUALITY, MODEL_MAX_EDGE},
+    observe::screenshot::{self, MODEL_JPEG_QUALITY},
     settings,
 };
 
@@ -636,6 +636,7 @@ async fn run(
         }
     }
     let think = settings.show_thinking;
+    let model_image_edge = settings.model_image_resolution.max_edge();
     let call_log = trace.call_log(run_id, "plan");
     let agent_model = settings.model_for_role(crate::model::role::ModelRole::Agent);
     let agent_profile = crate::model::profile::resolve_profile(agent_model, None, None);
@@ -740,8 +741,8 @@ async fn run(
             body::announce_observe(app, None);
             let observing = Instant::now();
             let (captured, elements) = tokio::join!(
-                tauri::async_runtime::spawn_blocking(|| {
-                    screenshot::capture(None, MODEL_MAX_EDGE, MODEL_JPEG_QUALITY)
+                tauri::async_runtime::spawn_blocking(move || {
+                    screenshot::capture(None, model_image_edge, MODEL_JPEG_QUALITY)
                 }),
                 tauri::async_runtime::spawn_blocking(uia::snapshot),
             );

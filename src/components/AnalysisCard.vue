@@ -180,7 +180,7 @@ onKeyStroke('Escape', (event) => {
     <section v-if="snapshot.screenshot" class="rounded-2xl bg-[#141414] p-3">
       <img
         :src="snapshot.screenshot"
-        alt="Captured frame sent to the analysis model"
+        alt="Captured frame at native resolution"
         class="w-full rounded-lg"
       />
       <p class="text-label text-zinc-400">

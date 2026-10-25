@@ -46,6 +46,8 @@ export interface Settings {
   verifyMode: 'off' | 'background' | 'blocking'
   demoMode: boolean
   recordSessionVideo: 'off' | 'motion'
+  modelImageResolution: '720' | '1280' | '1920' | '2560' | 'native'
+  recordingResolution: '720' | '1280' | '1920' | '2560' | 'native'
   offerReview: 'always' | 'failures' | 'never'
   reflectionEnabled: boolean
   idleMinutes: number

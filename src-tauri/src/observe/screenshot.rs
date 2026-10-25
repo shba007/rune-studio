@@ -9,10 +9,9 @@ use xcap::Monitor as XMonitor;
 
 use crate::model::coords::{Monitor, fit_within};
 
+#[cfg(test)]
 pub const MODEL_MAX_EDGE: u32 = 1280;
 pub const MODEL_JPEG_QUALITY: u8 = 80;
-const ARCHIVE_MAX_EDGE: u32 = 2560;
-const ARCHIVE_JPEG_QUALITY: u8 = 90;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ObserveError {
@@ -35,6 +34,7 @@ pub struct Frame {
     pub width: u32,
     pub height: u32,
     pub jpeg: Vec<u8>,
+    pub png: Vec<u8>,
     pub path: std::path::PathBuf,
     #[cfg_attr(not(debug_assertions), allow(dead_code))]
     pub elapsed_ms: u64,
@@ -42,8 +42,20 @@ pub struct Frame {
 }
 
 impl Frame {
-    pub fn save_recording_frame(&self, path: &std::path::Path) -> Result<(), ObserveError> {
-        self.image
+    pub fn save_recording_frame(
+        &self,
+        path: &std::path::Path,
+        max_edge: u32,
+    ) -> Result<(), ObserveError> {
+        let (w, h) = fit_within(self.image.width(), self.image.height(), max_edge);
+        let resized;
+        let image = if (w, h) == self.image.dimensions() {
+            &self.image
+        } else {
+            resized = image::imageops::resize(&self.image, w, h, FilterType::Triangle);
+            &resized
+        };
+        image
             .save_with_format(path, image::ImageFormat::Png)
             .map_err(|e| ObserveError::Encode(e.to_string()))
     }
@@ -54,11 +66,8 @@ impl Frame {
     }
 
     #[cfg_attr(not(debug_assertions), allow(dead_code))]
-    pub fn thumbnail_data_uri(&self, max_edge: u32) -> Result<String, ObserveError> {
-        let (w, h) = fit_within(self.width, self.height, max_edge);
-        let small = image::imageops::resize(&self.image, w, h, FilterType::Triangle);
-        let jpeg = encode_jpeg(&small, 70)?;
-        Ok(format!("data:image/jpeg;base64,{}", BASE64.encode(jpeg)))
+    pub fn preview_data_uri(&self) -> String {
+        format!("data:image/png;base64,{}", BASE64.encode(&self.png))
     }
 
     pub fn signature(&self) -> Vec<u8> {
@@ -88,7 +97,7 @@ pub fn signature_of(image: &RgbImage) -> Vec<u8> {
         .collect()
 }
 
-pub fn live_jpeg(max_edge: u32, quality: u8) -> Result<Vec<u8>, ObserveError> {
+pub fn live_png(max_edge: u32) -> Result<Vec<u8>, ObserveError> {
     let (xmonitor, monitor) = resolve(None)?;
     let mut rgba = xmonitor
         .capture_image()
@@ -97,7 +106,14 @@ pub fn live_jpeg(max_edge: u32, quality: u8) -> Result<Vec<u8>, ObserveError> {
     if !masked.is_empty() {
         super::mask::apply(&mut rgba, &masked, monitor.x, monitor.y);
     }
-    Ok(prepare(rgba, max_edge, quality)?.jpeg)
+    let (w, h) = fit_within(rgba.width(), rgba.height(), max_edge);
+    let image = DynamicImage::ImageRgba8(rgba).into_rgb8();
+    let image = if (w, h) == image.dimensions() {
+        image
+    } else {
+        image::imageops::resize(&image, w, h, FilterType::Triangle)
+    };
+    encode_png(&image)
 }
 
 pub fn live_signature() -> Result<Vec<u8>, ObserveError> {
@@ -251,12 +267,12 @@ pub fn capture_region(
         jpeg,
         image,
     } = prepare(rgba.clone(), max_edge, quality)?;
-    let sharp = prepare(rgba, max_edge.max(ARCHIVE_MAX_EDGE), ARCHIVE_JPEG_QUALITY)?;
+    let png = encode_png(&DynamicImage::ImageRgba8(rgba).into_rgb8())?;
     let path = crate::archive::save(
         crate::archive::Kind::Screenshots,
         if region.is_some() { "region" } else { "screen" },
-        "jpg",
-        &sharp.jpeg,
+        "png",
+        &png,
     )
     .map_err(|err| ObserveError::Archive(err.to_string()))?;
     Ok(Frame {
@@ -264,10 +280,19 @@ pub fn capture_region(
         width,
         height,
         jpeg,
+        png,
         path,
         elapsed_ms: started.elapsed().as_millis() as u64,
         image,
     })
+}
+
+fn encode_png(image: &RgbImage) -> Result<Vec<u8>, ObserveError> {
+    let mut bytes = Cursor::new(Vec::new());
+    image
+        .write_to(&mut bytes, image::ImageFormat::Png)
+        .map_err(|e| ObserveError::Encode(e.to_string()))?;
+    Ok(bytes.into_inner())
 }
 
 fn encode_jpeg(
@@ -322,15 +347,19 @@ pub fn insight_targets() -> Result<Vec<TargetOption>, ObserveError> {
     }
     Ok(targets)
 }
-pub fn insight_capture(target: CaptureTarget) -> Result<Frame, ObserveError> {
-    capture_target(target, true)
+pub fn insight_capture(target: CaptureTarget, max_edge: u32) -> Result<Frame, ObserveError> {
+    capture_target(target, true, max_edge)
 }
 
 pub fn recording_capture(target: CaptureTarget) -> Result<Frame, ObserveError> {
-    capture_target(target, false)
+    capture_target(target, false, u32::MAX)
 }
 
-fn capture_target(target: CaptureTarget, mask_for_model: bool) -> Result<Frame, ObserveError> {
+fn capture_target(
+    target: CaptureTarget,
+    mask_for_model: bool,
+    max_edge: u32,
+) -> Result<Frame, ObserveError> {
     let started = Instant::now();
     let screen_capture = matches!(target, CaptureTarget::Screen { .. });
     let (mut rgba, monitor) = match target {
@@ -378,8 +407,13 @@ fn capture_target(target: CaptureTarget, mask_for_model: bool) -> Result<Frame, 
     if mask_for_model && screen_capture {
         super::mask::apply(&mut rgba, &super::mask::current(), monitor.x, monitor.y);
     }
+    let png = if mask_for_model {
+        encode_png(&DynamicImage::ImageRgba8(rgba.clone()).into_rgb8())?
+    } else {
+        Vec::new()
+    };
     let prepared = if mask_for_model {
-        prepare(rgba, MODEL_MAX_EDGE, MODEL_JPEG_QUALITY)?
+        prepare(rgba, max_edge, MODEL_JPEG_QUALITY)?
     } else {
         prepare_recording(rgba)
     };
@@ -388,6 +422,7 @@ fn capture_target(target: CaptureTarget, mask_for_model: bool) -> Result<Frame, 
         width: prepared.width,
         height: prepared.height,
         jpeg: prepared.jpeg,
+        png,
         path: Default::default(),
         elapsed_ms: started.elapsed().as_millis() as u64,
         image: prepared.image,
@@ -397,6 +432,25 @@ fn capture_target(target: CaptureTarget, mask_for_model: bool) -> Result<Frame, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn model_limits_do_not_reduce_native_png_pixels() {
+        let source = image::RgbaImage::from_fn(1600, 900, |x, y| {
+            image::Rgba([(x % 256) as u8, (y % 256) as u8, 37, 255])
+        });
+        let original = DynamicImage::ImageRgba8(source.clone()).into_rgb8();
+        let png = encode_png(&original).unwrap();
+        assert_eq!(image::load_from_memory(&png).unwrap().into_rgb8(), original);
+        for (limit, expected) in [
+            (720, (720, 405)),
+            (1280, (1280, 720)),
+            (1920, (1600, 900)),
+            (u32::MAX, (1600, 900)),
+        ] {
+            let model = prepare(source.clone(), limit, MODEL_JPEG_QUALITY).unwrap();
+            assert_eq!((model.width, model.height), expected);
+        }
+    }
 
     #[test]
     fn recording_preserves_native_pixels_without_model_jpeg_encoding() {

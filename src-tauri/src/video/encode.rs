@@ -4,6 +4,7 @@ use std::path::Path;
 
 use super::schedule::{Shown, video_size};
 
+#[cfg(test)]
 pub const MAX_WIDTH: u32 = 1920;
 
 fn bitrate(width: u32, height: u32) -> u32 {
@@ -11,20 +12,22 @@ fn bitrate(width: u32, height: u32) -> u32 {
         as u32
 }
 
-pub fn encode(
-    out: &Path,
-    shown: &[Shown],
-    cancelled: &dyn Fn() -> bool,
-) -> Result<(u32, u32), EncodeError> {
-    encode_with_limit(out, shown, cancelled, MAX_WIDTH)
-}
-
+#[cfg(test)]
 pub fn encode_native(
     out: &Path,
     shown: &[Shown],
     cancelled: &dyn Fn() -> bool,
 ) -> Result<(u32, u32), EncodeError> {
     encode_with_limit(out, shown, cancelled, u32::MAX)
+}
+
+pub fn encode_at_resolution(
+    out: &Path,
+    shown: &[Shown],
+    cancelled: &dyn Fn() -> bool,
+    max_edge: u32,
+) -> Result<(u32, u32), EncodeError> {
+    encode_with_limit(out, shown, cancelled, max_edge)
 }
 
 #[derive(Debug)]
@@ -59,6 +62,7 @@ pub fn load(path: &Path, size: (u32, u32)) -> Result<Bgra, String> {
     Ok(Bgra { data })
 }
 
+#[cfg(test)]
 pub fn size_of_first(shown: &[Shown]) -> Option<(u32, u32)> {
     first_size(shown, MAX_WIDTH)
 }
@@ -67,7 +71,10 @@ fn first_size(shown: &[Shown], max_width: u32) -> Option<(u32, u32)> {
     shown
         .iter()
         .find_map(|frame| image::image_dimensions(&frame.path).ok())
-        .map(|(w, h)| video_size(w, h, max_width))
+        .map(|(w, h)| {
+            let (w, h) = crate::model::coords::fit_within(w, h, max_width);
+            video_size(w, h, u32::MAX)
+        })
 }
 
 #[cfg(windows)]
@@ -90,12 +97,8 @@ fn encode_with_limit(
         core::HSTRING,
     };
 
-    let size = if max_width == MAX_WIDTH {
-        size_of_first(shown)
-    } else {
-        first_size(shown, max_width)
-    }
-    .ok_or_else(|| EncodeError::Failed("no frame could be read".into()))?;
+    let size = first_size(shown, max_width)
+        .ok_or_else(|| EncodeError::Failed("no frame could be read".into()))?;
     let (width, height) = size;
     const TICKS_PER_MS: i64 = 10_000;
 
@@ -110,14 +113,7 @@ fn encode_with_limit(
             let output = MFCreateMediaType()?;
             output.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Video)?;
             output.SetGUID(&MF_MT_SUBTYPE, &MFVideoFormat_H264)?;
-            output.SetUINT32(
-                &MF_MT_AVG_BITRATE,
-                if max_width == MAX_WIDTH {
-                    6_000_000
-                } else {
-                    bitrate(width, height)
-                },
-            )?;
+            output.SetUINT32(&MF_MT_AVG_BITRATE, bitrate(width, height))?;
             output.SetUINT32(&MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive.0 as u32)?;
             output.SetUINT64(&MF_MT_FRAME_SIZE, pack(width, height))?;
             output.SetUINT64(&MF_MT_FRAME_RATE, pack(2, 1))?;
@@ -226,6 +222,15 @@ mod tests {
         assert_eq!(first_size(&shown, u32::MAX), Some((3840, 2160)));
         assert_eq!(bitrate(3840, 2160), 24_000_000);
         assert_eq!(video_size(1001, 701, u32::MAX), (1000, 700));
+        assert_eq!(first_size(&shown, 1280), Some((1280, 720)));
+        let portrait = dir.path().join("portrait.png");
+        image::RgbImage::new(1080, 1920).save(&portrait).unwrap();
+        let portrait = [Shown {
+            path: portrait.display().to_string(),
+            hold_ms: 500,
+        }];
+        assert_eq!(first_size(&portrait, 1280), Some((720, 1280)));
+        assert_eq!(first_size(&portrait, u32::MAX), Some((1080, 1920)));
     }
 
     #[test]
@@ -262,7 +267,7 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn without_an_encoder_the_result_is_unavailable_not_a_crash() {
-        let result = encode(Path::new("x.mp4"), &[], &|| false);
+        let result = encode_at_resolution(Path::new("x.mp4"), &[], &|| false, u32::MAX);
         assert!(matches!(result, Err(EncodeError::Unavailable(_))));
     }
 }

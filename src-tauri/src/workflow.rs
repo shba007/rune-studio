@@ -124,10 +124,11 @@ impl Workflow for ScreenInsight {
                 analysis.model = model.clone();
             }
             let captured_utc = crate::trace::now_utc();
+            let max_edge = settings.model_image_resolution.max_edge();
             let frame = tokio::time::timeout(
                 Duration::from_secs(10),
                 tauri::async_runtime::spawn_blocking(move || {
-                    screenshot::insight_capture(input.target)
+                    screenshot::insight_capture(input.target, max_edge)
                 }),
             )
             .await
@@ -138,6 +139,7 @@ impl Workflow for ScreenInsight {
             let signature = frame.signature();
             let stored = StoredFrame {
                 jpeg: std::sync::Arc::new(frame.jpeg),
+                png: std::sync::Arc::new(frame.png),
                 monitor: frame.monitor,
                 signature,
                 front: None,

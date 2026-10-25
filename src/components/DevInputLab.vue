@@ -28,7 +28,7 @@ const captureSummary = computed(() => {
   if (!c) return ''
   const kb = Math.round(c.bytes / 1024)
   const scale = Math.round(c.monitor.scaleFactor * 100)
-  return `${c.width}×${c.height} · ${kb} KB · ${c.millis} ms from ${c.monitor.width}×${c.monitor.height} at ${scale}%`
+  return `Native preview ${c.monitor.width}×${c.monitor.height} · Model input ${c.width}×${c.height}, ${kb} KB · ${c.millis} ms · Display scale ${scale}%`
 })
 
 async function doCapture() {
@@ -73,7 +73,7 @@ async function doType() {
       <img
         v-if="capture"
         :src="capture.thumbnail"
-        alt="What the model would see"
+        alt="Captured screen at native resolution"
         class="w-full rounded-lg border border-white/8"
       />
       <p v-if="capture" class="text-label text-zinc-500">{{ captureSummary }}</p>

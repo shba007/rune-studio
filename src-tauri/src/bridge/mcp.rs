@@ -9,7 +9,7 @@ use crate::{
     agent::{body, protocol},
     events::{self, AgentState, AppState, TaskDone},
     exec::{ExecError, input::parse_key, lock_unless_stopped, uia},
-    observe::screenshot::{self, Frame, MODEL_JPEG_QUALITY, MODEL_MAX_EDGE},
+    observe::screenshot::{self, Frame, MODEL_JPEG_QUALITY},
 };
 
 use super::identity;
@@ -318,9 +318,15 @@ fn screen_note(frame: &Frame) -> String {
     )
 }
 
-async fn capture(region: Option<[f64; 4]>) -> Result<Frame, Reply> {
+async fn capture(app: &AppHandle, region: Option<[f64; 4]>) -> Result<Frame, Reply> {
+    let max_edge = app
+        .state::<AppState>()
+        .settings
+        .locked()
+        .model_image_resolution
+        .max_edge();
     match tauri::async_runtime::spawn_blocking(move || {
-        screenshot::capture_region(None, region, MODEL_MAX_EDGE, MODEL_JPEG_QUALITY)
+        screenshot::capture_region(None, region, max_edge, MODEL_JPEG_QUALITY)
     })
     .await
     {
@@ -502,7 +508,7 @@ async fn observe(app: &AppHandle, arguments: &Value) -> Reply {
         Err(reply) => return reply,
     };
     body::announce_observe(app, region);
-    let frame = match capture(region).await {
+    let frame = match capture(app, region).await {
         Ok(frame) => frame,
         Err(reply) => return reply,
     };
@@ -676,7 +682,7 @@ async fn analyze(app: &AppHandle, arguments: &Value) -> Reply {
     let captured_utc = trace::now_utc();
     let captured = crate::agent::unless_stopped(
         &scope.token,
-        tokio::time::timeout(std::time::Duration::from_secs(10), capture(None)),
+        tokio::time::timeout(std::time::Duration::from_secs(10), capture(app, None)),
     )
     .await;
     let frame = match captured {
@@ -926,7 +932,7 @@ async fn act_turn(
 
     let mut attempt = 0;
     loop {
-        let frame = match capture(None).await {
+        let frame = match capture(app, None).await {
             Ok(frame) => frame,
             Err(reply) => {
                 row.rec.result = Some("ok".into());

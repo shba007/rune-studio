@@ -121,8 +121,6 @@ fn has_video(dir: &Path) -> bool {
 }
 
 const MOTION_EVERY: Duration = Duration::from_millis(500);
-const MOTION_EDGE: u32 = 1920;
-const MOTION_QUALITY: u8 = 60;
 
 pub fn motion_frames(dir: &Path) -> Vec<(String, u64)> {
     let mut found: Vec<(u64, String)> = std::fs::read_dir(dir.join("motion"))
@@ -150,6 +148,7 @@ pub fn start_motion_recorder(app: &AppHandle) {
     std::thread::Builder::new()
         .name("session-motion".into())
         .spawn(move || {
+            let mut active_resolution: Option<(PathBuf, u32)> = None;
             loop {
                 std::thread::sleep(MOTION_EVERY);
                 let state = app.state::<AppState>();
@@ -163,10 +162,22 @@ pub fn start_motion_recorder(app: &AppHandle) {
                     let _ = app.emit("video_recording", recording);
                 }
                 let Some(dir) = dir.filter(|_| recording) else {
+                    active_resolution = None;
                     continue;
                 };
-                let Ok(jpeg) = crate::observe::screenshot::live_jpeg(MOTION_EDGE, MOTION_QUALITY)
-                else {
+                if active_resolution
+                    .as_ref()
+                    .is_none_or(|(active, _)| active != &dir)
+                {
+                    active_resolution = Some((
+                        dir.clone(),
+                        state.settings.locked().recording_resolution.max_edge(),
+                    ));
+                }
+                let max_edge = active_resolution
+                    .as_ref()
+                    .map_or(u32::MAX, |(_, edge)| *edge);
+                let Ok(png) = crate::observe::screenshot::live_png(max_edge) else {
                     continue;
                 };
                 let folder = dir.join("motion");
@@ -174,7 +185,7 @@ pub fn start_motion_recorder(app: &AppHandle) {
                     .duration_since(std::time::UNIX_EPOCH)
                     .map_or(0, |d| d.as_millis());
                 if std::fs::create_dir_all(&folder).is_ok() {
-                    let _ = std::fs::write(folder.join(format!("{millis}.jpg")), jpeg);
+                    let _ = std::fs::write(folder.join(format!("{millis}.png")), png);
                 }
             }
         })
@@ -258,7 +269,16 @@ fn work(app: &AppHandle, db: &Path, id: &str, dir: &Path, tried: &Mutex<HashSet<
         return;
     }
     let out = dir.join("session.mp4");
-    match encode::encode(&out, &shown, &|| !idle(app)) {
+    let max_edge = if kind == "motion" {
+        u32::MAX
+    } else {
+        app.state::<AppState>()
+            .settings
+            .locked()
+            .recording_resolution
+            .max_edge()
+    };
+    match encode::encode_at_resolution(&out, &shown, &|| !idle(app), max_edge) {
         Ok(_) => {
             let seconds = total_ms(&shown) as f64 / 1000.0;
             let mut value = video_value(Some("session.mp4"), shown.len(), seconds, None);

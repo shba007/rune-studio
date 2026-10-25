@@ -7,6 +7,30 @@ import type { Agent } from '@/composables/useAgent'
 import type { Settings } from '@/types/protocol'
 
 describe('developer controls', () => {
+  it('keeps model and recording resolution controls independent', async () => {
+    const draft = reactive({
+      modelImageResolution: '1280',
+      recordingResolution: 'native',
+      developerMode: false,
+    }) as Settings
+    const wrapper = shallowMount(SettingsGeneral, {
+      props: { agent: {} as Agent, draft },
+      global: {
+        stubs: {
+          HubGroup: { template: '<div><slot /></div>' },
+          HubRow: { template: '<div><slot /></div>' },
+        },
+      },
+    })
+    await wrapper.get('select[aria-label="Model image resolution"]').setValue('1920')
+    expect(draft.modelImageResolution).toBe('1920')
+    expect(draft.recordingResolution).toBe('native')
+    await wrapper.get('select[aria-label="Recording resolution"]').setValue('720')
+    expect(draft.recordingResolution).toBe('720')
+    expect(draft.modelImageResolution).toBe('1920')
+    wrapper.unmount()
+  })
+
   it('uses the saved developer setting rather than the development build flag', async () => {
     const draft = reactive({
       developerMode: false,

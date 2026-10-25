@@ -17,7 +17,7 @@ use crate::{
     events::{self, AppState},
     exec::CancelToken,
     model::client::ChatClient,
-    observe::screenshot::{self, MODEL_JPEG_QUALITY, MODEL_MAX_EDGE},
+    observe::screenshot::{self, MODEL_JPEG_QUALITY},
     settings,
     sync::LockExt,
     trace::{self, AnalysisRecord},
@@ -133,10 +133,11 @@ async fn work(
     let state = app.state::<AppState>();
     let mut path = None;
     if fresh {
+        let max_edge = state.settings.locked().model_image_resolution.max_edge();
         let captured = unless_stopped(
             cancel,
-            tauri::async_runtime::spawn_blocking(|| {
-                screenshot::capture(None, MODEL_MAX_EDGE, MODEL_JPEG_QUALITY)
+            tauri::async_runtime::spawn_blocking(move || {
+                screenshot::capture(None, max_edge, MODEL_JPEG_QUALITY)
             }),
         )
         .await;
@@ -156,6 +157,7 @@ async fn work(
         let front = crate::safety::foreground::remember();
         state.analysis.locked().frame = Some(StoredFrame {
             jpeg: Arc::new(frame.jpeg),
+            png: Arc::new(frame.png),
             monitor: frame.monitor,
             signature,
             front,
@@ -168,7 +170,7 @@ async fn work(
         );
     };
     if !fresh {
-        match archive::save(archive::Kind::Screenshots, "screen", "jpg", &frame.jpeg) {
+        match archive::save(archive::Kind::Screenshots, "screen", "png", &frame.png) {
             Ok(saved) => path = Some(saved.display().to_string()).filter(|path| !path.is_empty()),
             Err(err) => {
                 return (
@@ -257,10 +259,10 @@ async fn analyze_with_client(
     if cancel.is_cancelled() {
         return Err(AnalysisError::Cancelled);
     }
-    let tools = report::tools();
-    let request = report::request(question, image, &tools);
+    let schema = report::schema();
+    let request = report::request(question, image);
     let call = async {
-        tokio::time::timeout(timeout, client.call_retrying(&request, &mut |_: &str| {})).await
+        tokio::time::timeout(timeout, client.call_json_reply_retrying(&request, &schema)).await
     };
     match unless_stopped(cancel, call).await {
         None => Err(AnalysisError::Cancelled),
@@ -269,10 +271,6 @@ async fn analyze_with_client(
             timeout.as_secs()
         ))),
         Some(Ok(Err(err))) => Err(AnalysisError::Failed(err.to_string())),
-        Some(Ok(Ok(reply))) if reply.call.name != "report" => Err(AnalysisError::Failed(format!(
-            "the model answered with \"{}\" instead of a report",
-            reply.call.name
-        ))),
         Some(Ok(Ok(reply))) => {
             if cancel.is_cancelled() {
                 return Err(AnalysisError::Cancelled);
@@ -663,9 +661,11 @@ mod model_tests {
             .into_iter()
             .find(|m| m.primary)
             .expect("primary screen");
-        let frame =
-            screenshot::insight_capture(screenshot::CaptureTarget::Screen { id: target.id })
-                .unwrap();
+        let frame = screenshot::insight_capture(
+            screenshot::CaptureTarget::Screen { id: target.id },
+            screenshot::MODEL_MAX_EDGE,
+        )
+        .unwrap();
         assert!(
             frame.path.as_os_str().is_empty(),
             "Insight never retains the capture"

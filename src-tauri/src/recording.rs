@@ -373,6 +373,12 @@ fn capture(
     control: &Control,
     cancel: Option<&CancelToken>,
 ) -> Result<String, String> {
+    let max_edge = app
+        .state::<crate::events::AppState>()
+        .settings
+        .locked()
+        .recording_resolution
+        .max_edge();
     let cache = app.path().app_cache_dir().map_err(|e| e.to_string())?;
     fs::create_dir_all(&cache).map_err(|e| e.to_string())?;
     let folder = cache.join(format!("screen-recording-{}-{id}", std::process::id()));
@@ -416,7 +422,7 @@ fn capture(
             }
             let path = folder.join(format!("{:04}.png", frames.len()));
             frame
-                .save_recording_frame(&path)
+                .save_recording_frame(&path, max_edge)
                 .map_err(|e| e.to_string())?;
             frames.push((path.to_string_lossy().into_owned(), at));
             let first = {
@@ -448,13 +454,14 @@ fn capture(
         let shown =
             crate::video::schedule::schedule(&frames, Some(started.elapsed().as_millis() as u64));
         let encoded = folder.join("video.mp4");
-        crate::video::encode::encode_native(&encoded, &shown, &discarded).map_err(|e| match e {
-            crate::video::encode::EncodeError::Unavailable(e)
-            | crate::video::encode::EncodeError::Failed(e) => e,
-            crate::video::encode::EncodeError::Cancelled => {
-                "Recording cancelled; no video saved".into()
-            }
-        })?;
+        crate::video::encode::encode_at_resolution(&encoded, &shown, &discarded, max_edge)
+            .map_err(|e| match e {
+                crate::video::encode::EncodeError::Unavailable(e)
+                | crate::video::encode::EncodeError::Failed(e) => e,
+                crate::video::encode::EncodeError::Cancelled => {
+                    "Recording cancelled; no video saved".into()
+                }
+            })?;
         if discarded() {
             return Err("Recording cancelled; no video saved".into());
         }
