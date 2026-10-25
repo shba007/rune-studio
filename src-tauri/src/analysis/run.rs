@@ -591,6 +591,11 @@ mod model_tests {
                 .contains("data:image/jpeg;base64,AA")
         );
         assert_eq!(sent["tools"][0]["function"]["name"], "report");
+        assert_eq!(
+            sent["tools"].as_array().unwrap().len(),
+            1,
+            "Screen Insight must not expose recording or action tools"
+        );
     }
 
     #[tokio::test]

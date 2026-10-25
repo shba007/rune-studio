@@ -3,11 +3,12 @@ import { useFocus, useTextareaAutosize } from '@vueuse/core'
 import { computed, nextTick, watch } from 'vue'
 
 import type { Agent } from '@/composables/useAgent'
+import type { TaskBoardModel } from '@/composables/useTaskBoard'
 
 import AppIcon from './AppIcon.vue'
 import { screenRequestText } from '@/config/screenRequest'
 
-const props = defineProps<{ agent: Agent }>()
+const props = defineProps<{ agent: Agent; board?: TaskBoardModel }>()
 const agent = props.agent
 
 const { textarea: field, input: command } = useTextareaAutosize()
@@ -18,7 +19,12 @@ const isListening = computed(() => agent.state.value === 'listening')
 const needsConfirm = computed(() => agent.state.value === 'awaiting_confirm')
 
 const action = computed(() => {
-  if (agent.isRunning.value)
+  if (props.board && hasText.value)
+    return { icon: 'send', label: 'Add goal', tone: 'dark', run: submit } as const
+  if (
+    agent.isRunning.value ||
+    props.board?.requests.value.some((r) => ['queued', 'planning', 'running'].includes(r.phase))
+  )
     return { icon: 'stop', label: 'Stop', tone: 'blue', run: () => agent.stop() } as const
   if (hasText.value) return { icon: 'send', label: 'Send', tone: 'dark', run: submit } as const
   return {
@@ -34,10 +40,11 @@ const offline = computed(() => agent.health.value.tone === 'down')
 const placeholder = computed(() => {
   if (external.value) return 'Start tasks in your external agent host'
   if (needsConfirm.value) return 'Needs your OK'
+  if (props.board && agent.isRunning.value) return 'Add a goal'
   if (agent.isRunning.value) return 'Working…'
   if (isListening.value) return 'Listening…'
   if (offline.value) return 'Model server offline'
-  return 'Type or say a task'
+  return props.board ? 'Type or say a goal' : 'Type or say a task'
 })
 
 watch(agent.focusTick, async () => {
@@ -47,7 +54,15 @@ watch(agent.focusTick, async () => {
 
 async function submit() {
   const text = command.value.trim()
-  if (!text || agent.isRunning.value || external.value) return
+  if (!text || external.value) return
+  if (props.board) {
+    if (await props.board.submit(text)) {
+      command.value = ''
+      if (agent.mode.value === 'ambient') await agent.setMode('open')
+    }
+    return
+  }
+  if (agent.isRunning.value) return
   if (await agent.startTask(text)) command.value = ''
 }
 </script>
@@ -77,6 +92,9 @@ async function submit() {
         Cancel screen request
       </button>
     </p>
+    <p v-if="board?.notice.value" role="alert" class="m-0 px-3 text-label text-[#ff6b72]">
+      {{ board.notice.value }}
+    </p>
     <p class="sr-only" role="status" aria-live="polite">{{ agent.statusText.value }}</p>
     <div
       class="flex w-full items-end gap-2 rounded-[22px] bg-white/5 p-2 text-zinc-100 focus-within:bg-white/8 transition-colors"
@@ -104,7 +122,7 @@ async function submit() {
             ? 'bg-[#2d71c3] hover:bg-[#245fa8]'
             : 'bg-[#f1f1ef] !text-[#111] hover:bg-white'
         "
-        :disabled="external && !agent.isRunning.value"
+        :disabled="(external && !agent.isRunning.value) || board?.pending.value"
         :aria-label="action.label"
         :aria-pressed="action.icon === 'mic' ? isListening : undefined"
         @click="action.run()"

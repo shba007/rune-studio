@@ -186,6 +186,9 @@ pub async fn run(app: &AppHandle, workflow_id: &str, input: Value) -> Result<(),
         .find(|w| w.definition().id == workflow_id)
         .ok_or("Unknown workflow")?;
     workflow.validate(&input)?;
+    if crate::recording::busy() {
+        return Err("Stop or finish screen recording before starting Screen Insight".into());
+    }
     let state = app.state::<AppState>();
     static NEXT: AtomicU64 = AtomicU64::new(1);
     let id = format!(

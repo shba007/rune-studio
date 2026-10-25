@@ -77,6 +77,17 @@ fn visual(action: &Action, monitor: &Monitor) -> (String, Option<Point>, bool, &
         Action::PressKeys { keys } => (keys.join(" + "), None, false, "left"),
         Action::OpenApp { name } => (name.clone(), None, false, "left"),
         Action::Wait { ms } => (format!("{:.1} s", *ms as f64 / 1000.0), None, false, "left"),
+        Action::ListCaptureTargets => (String::new(), None, false, "left"),
+        Action::StartRecording { max_seconds, .. } => (
+            format!("up to {max_seconds} s · silent"),
+            None,
+            false,
+            "left",
+        ),
+        Action::StopRecording { .. } => ("save recording".into(), None, false, "left"),
+        Action::RecordScreen { seconds, .. } => {
+            (format!("{seconds} s · silent"), None, false, "left")
+        }
         Action::Done { .. } => (String::new(), None, false, "left"),
     }
 }
@@ -149,7 +160,38 @@ pub fn execute_reporting(
     action: &Action,
     monitor: &Monitor,
     cancel: &CancelToken,
+    recording_scope: &crate::recording::Scope,
 ) -> Result<(), ExecError> {
+    match action {
+        Action::StartRecording {
+            target,
+            max_seconds,
+        } => {
+            return crate::recording::start_async(
+                app,
+                target.clone(),
+                *max_seconds,
+                recording_scope,
+                cancel,
+            )
+            .map(|_| ())
+            .map_err(ExecError::Input);
+        }
+        Action::StopRecording { id, discard } => {
+            return crate::recording::stop_async(*id, *discard, recording_scope, cancel)
+                .map(|_| ())
+                .map_err(ExecError::Input);
+        }
+        _ => {}
+    }
+    if let Action::RecordScreen { target, seconds } = action {
+        let target = target
+            .clone()
+            .unwrap_or(crate::observe::screenshot::CaptureTarget::Screen { id: monitor.id });
+        return crate::recording::record(app, target, *seconds, cancel, recording_scope.owner)
+            .map(|_| ())
+            .map_err(ExecError::Input);
+    }
     let result = execute(action, monitor, cancel);
     if result.is_ok() && matches!(action, Action::TypeText { .. }) {
         let point = caret::position()
@@ -198,6 +240,12 @@ pub fn execute(action: &Action, monitor: &Monitor, cancel: &CancelToken) -> Resu
         }
         Action::External { .. } => Err(ExecError::Input(
             "External actions require the asynchronous Kit dispatcher".into(),
+        )),
+        Action::ListCaptureTargets
+        | Action::RecordScreen { .. }
+        | Action::StartRecording { .. }
+        | Action::StopRecording { .. } => Err(ExecError::Input(
+            "Screen recording requires the Studio recording dispatcher".into(),
         )),
         Action::AskUser { .. } => Ok(()),
         Action::TypeText { text } => Input::new()?.type_text(text, cancel),

@@ -1,7 +1,10 @@
 const HISTORY_WINDOW: usize = 12;
 
 pub fn plan_user_message(task: &str) -> String {
-    format!("Task: {task}")
+    format!(
+        "Task: {task}\n\nRecording capabilities: {}",
+        crate::recording::MODEL_CONTRACT
+    )
 }
 
 #[derive(Debug, Clone)]
@@ -44,7 +47,10 @@ pub fn user_message(
     step: u32,
     max_steps: u32,
 ) -> String {
-    let mut text = format!("Task: {task}\n\n");
+    let mut text = format!(
+        "Task: {task}\n\nRecording capabilities: {}\n\n",
+        crate::recording::MODEL_CONTRACT
+    );
     if !plan.is_empty() {
         text.push_str("Plan:\n");
         for (index, goal) in plan.iter().enumerate() {
@@ -89,6 +95,20 @@ mod tests {
         Entry {
             action: format!("click {n}"),
             outcome: "ok".into(),
+        }
+    }
+
+    #[test]
+    fn planning_and_decisions_explain_recording_actions_and_lifetimes() {
+        for text in [
+            plan_user_message("record while typing"),
+            user_message("record while typing", &[], 0, &[], "", None, 1, 30),
+        ] {
+            assert!(text.contains("start_recording"));
+            assert!(text.contains("stop_recording"));
+            assert!(text.contains("first captured frame"));
+            assert!(text.contains("survives task boundaries"));
+            assert!(!text.contains("There are no separate model start/stop"));
         }
     }
 

@@ -8,6 +8,7 @@ import DevInputLab from './DevInputLab.vue'
 import HubGroup from './HubGroup.vue'
 import HubToggle from './HubToggle.vue'
 import SettingsReview from './SettingsReview.vue'
+import RecordingControls from './RecordingControls.vue'
 
 defineProps<{ agent: Agent; draft: Settings }>()
 
@@ -42,6 +43,10 @@ async function revealDeveloper() {
         label="Show Rune in screen recordings"
         hint="OBS, Game Bar and the Snipping Tool can capture Rune's windows. Rune hides itself from its own model either way."
       />
+    </HubGroup>
+
+    <HubGroup title="Screen recording">
+      <RecordingControls />
     </HubGroup>
 
     <HubGroup title="Safety">

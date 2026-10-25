@@ -127,6 +127,8 @@ pub fn is_harmless(action: &Action) -> bool {
     matches!(
         action,
         Action::External { .. }
+            | Action::ListCaptureTargets
+            | Action::StopRecording { .. }
             | Action::Wait { .. }
             | Action::Done { .. }
             | Action::Scroll { .. }
@@ -157,6 +159,10 @@ pub fn assess(action: &Action, reason: &str, foreground: &Foreground) -> Assessm
     }
 
     match action {
+        Action::RecordScreen { .. } | Action::StartRecording { .. } => result.raise(
+            Risk::High,
+            "Recording saves visible screen content to a video file",
+        ),
         Action::PressKeys { keys } => assess_keys(keys, foreground, &mut result),
         Action::TypeText { text } => assess_typing(text, foreground, &mut result),
         Action::OpenApp { name } => assess_launch(name, &mut result),
@@ -168,6 +174,8 @@ pub fn assess(action: &Action, reason: &str, foreground: &Foreground) -> Assessm
             }
         }
         Action::External { .. }
+        | Action::ListCaptureTargets
+        | Action::StopRecording { .. }
         | Action::Wait { .. }
         | Action::Done { .. }
         | Action::Scroll { .. }
@@ -299,6 +307,44 @@ mod tests {
             title: title.into(),
             process: process.into(),
         }
+    }
+
+    #[test]
+    fn start_requires_approval_but_owned_stop_can_end_capture_immediately() {
+        let start = Action::StartRecording {
+            target: crate::observe::screenshot::CaptureTarget::Window { id: 42 },
+            max_seconds: 60,
+        };
+        assert_eq!(
+            assess(
+                &start,
+                "record the selected window",
+                &fg("Notes", "notepad")
+            )
+            .risk,
+            Risk::High
+        );
+        let stop = Action::StopRecording {
+            id: 1,
+            discard: false,
+        };
+        assert!(is_harmless(&stop));
+        assert_eq!(
+            assess(&stop, "stop and save", &fg("Notes", "notepad")).risk,
+            Risk::Low
+        );
+    }
+    #[test]
+    fn model_recording_always_requires_the_high_risk_confirmation_gate() {
+        let action = Action::RecordScreen {
+            target: None,
+            seconds: 2,
+        };
+        assert!(!is_harmless(&action));
+        assert_eq!(
+            assess(&action, "record this", &fg("Notes", "notepad")).risk,
+            Risk::High
+        );
     }
 
     fn keys(list: &[&str]) -> Action {

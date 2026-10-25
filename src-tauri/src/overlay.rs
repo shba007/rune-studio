@@ -1,4 +1,7 @@
-use std::{sync::Mutex, time::Duration};
+use std::{
+    sync::Mutex,
+    time::{Duration, Instant},
+};
 
 use serde::Serialize;
 use tauri::{
@@ -10,6 +13,81 @@ use crate::events::{AgentState, agent_state};
 const PREFIX: &str = "overlay-";
 const FADE_OUT: Duration = Duration::from_millis(500);
 const LINGER_AFTER_END: Duration = Duration::from_millis(6_500);
+const CAPTURE_WAVE: Duration = Duration::from_millis(1_800);
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptureFeedback {
+    serial: u64,
+    monitor: crate::model::coords::Monitor,
+    remaining_ms: u64,
+}
+
+struct CapturePreview {
+    serial: u64,
+    monitor: crate::model::coords::Monitor,
+    started: Instant,
+}
+
+impl CapturePreview {
+    fn snapshot(&self, now: Instant) -> Option<CaptureFeedback> {
+        let remaining = CAPTURE_WAVE.checked_sub(now.duration_since(self.started))?;
+        (!remaining.is_zero()).then_some(CaptureFeedback {
+            serial: self.serial,
+            monitor: self.monitor,
+            remaining_ms: remaining.as_millis() as u64,
+        })
+    }
+}
+
+static CAPTURE_PREVIEW: Mutex<Option<CapturePreview>> = Mutex::new(None);
+
+fn capture_feedback() -> Option<CaptureFeedback> {
+    CAPTURE_PREVIEW
+        .lock()
+        .ok()?
+        .as_ref()?
+        .snapshot(Instant::now())
+}
+
+pub fn show_capture(app: &AppHandle, monitor: crate::model::coords::Monitor) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    let serial = NEXT.fetch_add(1, Ordering::Relaxed);
+    let Ok(mut preview) = CAPTURE_PREVIEW.lock() else {
+        return;
+    };
+    *preview = Some(CapturePreview {
+        serial,
+        monitor,
+        started: Instant::now(),
+    });
+    drop(preview);
+    show(app);
+    if let Ok(mut preview) = CAPTURE_PREVIEW.lock()
+        && let Some(current) = preview.as_mut().filter(|current| current.serial == serial)
+    {
+        current.started = Instant::now();
+    }
+    if let Some(feedback) = capture_feedback() {
+        let _ = app.emit("capture_feedback", feedback);
+    }
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(CAPTURE_WAVE);
+        if let Ok(mut preview) = CAPTURE_PREVIEW.lock() {
+            if preview
+                .as_ref()
+                .is_some_and(|current| current.serial == serial)
+            {
+                *preview = None;
+            } else {
+                return;
+            }
+        }
+        hide_after_fade(&app, FADE_OUT);
+    });
+}
 
 pub fn has_control(state: AgentState) -> bool {
     matches!(
@@ -98,6 +176,8 @@ pub struct OverlayInfo {
     pub width: u32,
     pub height: u32,
     pub scale_factor: f64,
+    pub capture_feedback: Option<CaptureFeedback>,
+    pub recording: crate::recording::Snapshot,
 }
 
 pub fn info(window: &tauri::WebviewWindow) -> OverlayInfo {
@@ -117,6 +197,8 @@ pub fn info(window: &tauri::WebviewWindow) -> OverlayInfo {
         width: size.width,
         height: size.height,
         scale_factor: window.scale_factor().unwrap_or(1.0),
+        capture_feedback: capture_feedback(),
+        recording: crate::recording::snapshot(),
     }
 }
 
@@ -151,6 +233,15 @@ pub fn sync_analysis(app: &AppHandle, wanted: bool) {
             FADE_OUT,
         );
     });
+}
+
+pub fn recording_changed(app: &AppHandle) {
+    if crate::recording::capturing() {
+        show(app);
+    } else {
+        let app = app.clone();
+        std::thread::spawn(move || hide_after_fade(&app, FADE_OUT));
+    }
 }
 
 fn overlays(app: &AppHandle) -> Vec<tauri::WebviewWindow> {
@@ -226,7 +317,11 @@ fn build(app: &AppHandle, label: &str) -> tauri::Result<tauri::WebviewWindow> {
 
 fn hide_after_fade(app: &AppHandle, wait: Duration) {
     std::thread::sleep(wait);
-    if has_control(agent_state(app)) || owner() != Owner::None {
+    if has_control(agent_state(app))
+        || owner() != Owner::None
+        || capture_feedback().is_some()
+        || crate::recording::capturing()
+    {
         return;
     }
     for window in overlays(app) {
@@ -239,6 +334,41 @@ mod tests {
     use super::*;
     use Change::*;
     use Owner::*;
+
+    #[test]
+    fn capture_feedback_expires_and_late_overlay_startup_gets_only_the_remaining_wave() {
+        let started = Instant::now();
+        let preview = CapturePreview {
+            serial: 7,
+            monitor: crate::model::coords::Monitor {
+                id: 1,
+                x: -1920,
+                y: 0,
+                width: 1920,
+                height: 1080,
+                scale_factor: 1.25,
+                primary: false,
+            },
+            started,
+        };
+        let fresh = preview.snapshot(started).unwrap();
+        assert_eq!(fresh.serial, 7);
+        assert_eq!(fresh.remaining_ms, 1800);
+        assert_eq!(fresh.monitor.x, -1920);
+        assert_eq!(
+            preview
+                .snapshot(started + Duration::from_millis(300))
+                .unwrap()
+                .remaining_ms,
+            1500
+        );
+        assert!(preview.snapshot(started + CAPTURE_WAVE).is_none());
+        assert!(
+            preview
+                .snapshot(started + CAPTURE_WAVE + Duration::from_secs(1))
+                .is_none()
+        );
+    }
 
     #[test]
     fn control_always_takes_the_overlay_and_gives_it_back_when_it_ends() {

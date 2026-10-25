@@ -36,6 +36,23 @@ function mountDrawer(over: Record<string, unknown> = {}) {
 }
 
 describe('FlightDrawer', () => {
+  it('renders phase timings in milliseconds, seconds and minutes', () => {
+    const step = makeStep(1, 0)
+    step.phases = {
+      ...step.phases,
+      observe: 363,
+      screenCheck: null,
+      finishCheck: null,
+      decide: 5020,
+      gate: 125000,
+    }
+    const wrapper = mountDrawer({ tabs: ['timing'], tab: 'timing', step })
+    expect(wrapper.text()).toContain('363 ms')
+    expect(wrapper.text()).toContain('5.02 s')
+    expect(wrapper.text()).toContain('2 min 5 s')
+    expect(wrapper.text()).not.toContain('5020 ms')
+  })
+
   it('lists exactly the tabs it is given', () => {
     const wrapper = mountDrawer()
     expect(wrapper.findAll('[role="tab"]').map((tab) => tab.text())).toEqual(['Step', 'API'])
@@ -113,7 +130,7 @@ describe('FlightDrawer', () => {
     expect(wrapper.find('[data-testid="model-mismatch-warning"]').text()).toContain(
       'Served by different-served-model (requested requested-model)',
     )
-    expect(wrapper.find('[data-testid="call-model-info"]').text()).toContain('Swap: 1250 ms')
+    expect(wrapper.find('[data-testid="call-model-info"]').text()).toContain('Swap: 1.25 s')
     expect(wrapper.find('[data-testid="call-model-info"]').text()).toContain('Locality: local')
   })
 })

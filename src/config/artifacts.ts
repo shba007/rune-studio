@@ -1,5 +1,12 @@
 import type { FlightRun } from '@/config/flight'
 
+export function timingText(milliseconds: number): string {
+  const ms = Number.isFinite(milliseconds) ? Math.max(0, milliseconds) : 0
+  if (ms < 1000) return `${Math.round(ms)} ms`
+  if (ms < 60_000) return `${Number((ms / 1000).toFixed(2))} s`
+  return durationText(ms / 1000)
+}
+
 export function durationText(totalSeconds: number): string {
   const seconds = Math.max(0, Math.round(totalSeconds))
   if (seconds < 60) return `${seconds} s`

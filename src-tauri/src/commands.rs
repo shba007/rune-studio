@@ -224,6 +224,12 @@ pub fn pill_rect(app: AppHandle) -> Option<PillRect> {
 
 #[tauri::command]
 pub fn stop(app: AppHandle) {
+    crate::tasks::cancel_all(&app);
+    stop_desktop(app);
+}
+
+pub(crate) fn stop_desktop(app: AppHandle) {
+    crate::recording::stop(false);
     app.state::<AppState>().stop_current();
     let dismiss_findings = {
         let state = app.state::<AppState>();
@@ -255,18 +261,52 @@ pub fn stop(app: AppHandle) {
 
 #[tauri::command]
 pub fn start_task(app: AppHandle, text: String) -> AppResult<()> {
-    begin_task(&app, &text, false)
+    crate::tasks::submit_request(&app, &text, false)
+        .map(|_| ())
+        .map_err(AppError::Invalid)
 }
 
+#[cfg(feature = "eval")]
 pub fn begin_task(app: &AppHandle, text: &str, keep_mic: bool) -> AppResult<()> {
-    begin_task_planned(app, text, keep_mic, None)
+    begin_task_owned(app, text, keep_mic, None, None, None)
 }
 
 pub fn begin_task_planned(
     app: &AppHandle,
     text: &str,
     keep_mic: bool,
+    _plan: Option<Vec<String>>,
+) -> AppResult<()> {
+    crate::tasks::submit_request(app, text, keep_mic)
+        .map(|_| ())
+        .map_err(AppError::Invalid)
+}
+
+pub(crate) fn begin_board_task(
+    app: &AppHandle,
+    text: &str,
+    id: u64,
+    steps: Vec<String>,
+    keep_mic: bool,
+    request_id: u64,
+) -> AppResult<()> {
+    begin_task_owned(
+        app,
+        text,
+        keep_mic,
+        Some(steps),
+        Some(id),
+        Some(crate::recording::Owner::Request(request_id)),
+    )
+}
+
+fn begin_task_owned(
+    app: &AppHandle,
+    text: &str,
+    keep_mic: bool,
     plan: Option<Vec<String>>,
+    board_id: Option<u64>,
+    recording_owner: Option<crate::recording::Owner>,
 ) -> AppResult<()> {
     let state = app.state::<AppState>();
     let task = text.trim();
@@ -278,6 +318,11 @@ pub fn begin_task_planned(
     state.steer.locked().clear();
     if task.is_empty() {
         return Err(AppError::Invalid("Type or say what you want done".into()));
+    }
+    if crate::recording::busy() && !recording_owner.is_some_and(crate::recording::permits) {
+        return Err(AppError::Invalid(
+            "Finish or cancel the recording before starting a desktop task".into(),
+        ));
     }
     if events::agent_state(app).is_running() {
         return Err(AppError::Invalid("A task is already running".into()));
@@ -293,7 +338,7 @@ pub fn begin_task_planned(
     if !keep_mic {
         drop(state.mic.locked().take());
     }
-    agent::start_planned(app, task.to_string(), plan);
+    agent::start_planned(app, task.to_string(), plan, board_id);
     Ok(())
 }
 

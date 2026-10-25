@@ -3,8 +3,15 @@ import { computed, ref } from 'vue'
 import AppIcon from './AppIcon.vue'
 
 const props = defineProps<{
+  refreshing?: boolean
   options: { target: { kind: string; id: number }; label: string }[]
 }>()
+const emit = defineEmits<{ refresh: [] }>()
+function refresh() {
+  expanded.value = false
+  search.value = ''
+  emit('refresh')
+}
 const selected = defineModel<string>({ required: true })
 const expanded = ref(false)
 const search = ref('')
@@ -22,7 +29,7 @@ function choose(value: string) {
 </script>
 
 <template>
-  <div class="rounded-2xl bg-white/5 p-1" @keydown.esc.stop="expanded = false">
+  <div class="min-w-0 rounded-2xl bg-white/5 p-1" @keydown.esc.stop="expanded = false">
     <button
       type="button"
       aria-label="Choose capture target"
@@ -34,6 +41,15 @@ function choose(value: string) {
       <span class="min-w-0 flex-1 truncate">{{ label || 'Choose a screen or window' }}</span>
       <AppIcon name="chevron" size="sm" />
     </button>
+    <button
+      type="button"
+      aria-label="Refresh capture targets"
+      :disabled="refreshing"
+      class="min-h-9 cursor-pointer rounded-lg px-2 text-label text-zinc-300 hover:bg-white/8 focus-visible:ring-2 focus-visible:ring-white/50 disabled:cursor-wait disabled:opacity-50"
+      @click="refresh"
+    >
+      {{ refreshing ? 'Refreshing…' : 'Refresh targets' }}
+    </button>
     <div v-if="expanded" class="flex flex-col gap-2 p-1">
       <input
         v-model="search"
@@ -41,7 +57,7 @@ function choose(value: string) {
         placeholder="Find a screen or window"
         class="h-9 w-full rounded-lg bg-black/20 px-2 text-label text-zinc-100 outline-none focus-visible:ring-2 focus-visible:ring-white/50"
       />
-      <div class="max-h-44 overflow-y-auto" aria-label="Capture targets">
+      <div class="max-h-44 overflow-x-hidden overflow-y-auto" aria-label="Capture targets">
         <template v-for="kind in ['screen', 'window']" :key="kind">
           <p
             v-if="filtered.some((o) => o.target.kind === kind)"
@@ -61,7 +77,7 @@ function choose(value: string) {
               class="size-1.5 shrink-0 rounded-full"
               :class="selected === JSON.stringify(option.target) ? 'bg-white' : 'bg-zinc-600'"
             />
-            <span class="min-w-0 break-words">{{ option.label }}</span>
+            <span class="min-w-0 [overflow-wrap:anywhere]">{{ option.label }}</span>
           </button>
         </template>
         <p v-if="!filtered.length" class="px-2 py-3 text-label text-zinc-500">

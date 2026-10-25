@@ -191,9 +191,44 @@ pub fn parse(arguments: &Value) -> ParsedReport {
         })
         .unwrap_or_default();
     ParsedReport {
-        answer: text(&arguments["answer"], ANSWER_CAP),
+        answer: answer_text(arguments),
         findings,
     }
+}
+
+fn answer_text(arguments: &Value) -> String {
+    let raw = arguments["answer"].as_str().unwrap_or_default();
+    // Some model replies embed a second copy of the report's findings in the
+    // answer string. Remove only a complete, demonstrably duplicated suffix.
+    for (at, _) in raw.match_indices("\",") {
+        if raw[..at].contains('{') {
+            continue;
+        }
+        let candidate = format!("{{{}", &raw[at + 2..]);
+        let Ok(duplicate) = serde_json::from_str::<Value>(&candidate) else {
+            continue;
+        };
+        let Some(object) = duplicate.as_object().filter(|o| o.len() == 1) else {
+            continue;
+        };
+        let Some(extra) = object.get("findings").and_then(Value::as_array) else {
+            continue;
+        };
+        let Some(actual) = arguments["findings"].as_array() else {
+            continue;
+        };
+        if !extra.is_empty()
+            && extra.len() == actual.len()
+            && extra.iter().zip(actual).all(|(a, b)| {
+                ["kind", "description", "evidence"]
+                    .iter()
+                    .all(|key| a[*key].is_string() && a[*key] == b[*key])
+            })
+        {
+            return text(&Value::String(raw[..at].to_string()), ANSWER_CAP);
+        }
+    }
+    text(&arguments["answer"], ANSWER_CAP)
 }
 
 fn finding(index: usize, item: &Value) -> Finding {
@@ -221,6 +256,28 @@ mod tests {
 
     fn found(arguments: Value) -> ParsedReport {
         parse(&arguments)
+    }
+
+    #[test]
+    fn duplicated_findings_inside_an_answer_are_not_presented_as_prose() {
+        let findings = json!([{"label":"Error","kind":"text","description":"A port conflict.","evidence":"EADDRINUSE"}]);
+        let spill = format!("Port 5173 is in use.\", \"findings\": {findings}}}");
+        let parsed = parse(&json!({"answer":spill,"findings":findings}));
+        assert_eq!(parsed.answer, "Port 5173 is in use.");
+        assert_eq!(parsed.findings.len(), 1);
+        let different =
+            json!([{"label":"Other","kind":"text","description":"Different.","evidence":"Other"}]);
+        assert_eq!(
+            parse(&json!({"answer":spill,"findings":different})).answer,
+            spill
+        );
+        let example = format!(
+            "Example JSON: {{\"answer\":\"Port 5173 is in use.\", \"findings\": {findings}}}"
+        );
+        assert_eq!(
+            parse(&json!({"answer":example,"findings":findings})).answer,
+            example
+        );
     }
 
     #[test]

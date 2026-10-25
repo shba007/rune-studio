@@ -191,6 +191,8 @@ export function installTauriMock() {
           return { studio: '0.0.3', cli: '0.0.3' }
         case 'video_recording_state':
           return new URLSearchParams(location.search).get('demo') === 'recording'
+        case 'screen_recording_state':
+          return { id: 0, phase: 'idle', seconds: 0, monitor: null, path: null, error: null }
         case 'screen_insight_targets':
           return [
             { target: { kind: 'screen', id: 1 }, label: 'Screen 1 — 1920×1080 (primary)' },

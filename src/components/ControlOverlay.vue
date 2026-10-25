@@ -8,6 +8,8 @@ import { KIND_ICON, TOOL_LABEL, kindOf, type ActionKind } from '@/config/actions
 import { OVERLAY_MODE } from '@/types/protocol'
 import type {
   AgentState,
+  CaptureFeedback,
+  ScreenRecording,
   ObserveStartedPayload,
   OverlayInfo,
   OverlayOwner,
@@ -36,6 +38,7 @@ const DROP_INTERVAL = 2.4
 const canvas = useTemplateRef<HTMLCanvasElement>('canvas')
 const active = ref(false)
 const recording = ref(false)
+const standaloneRecording = ref<ScreenRecording | null>(null)
 const stopHotkey = ref('')
 const reducedMotion = usePreferredReducedMotion()
 let width = 0
@@ -162,10 +165,23 @@ let flashes: Flash[] = []
 
 function drawFlashes(ctx: CanvasRenderingContext2D, now: number, still: boolean) {
   flashes = flashes.filter((flash) => flash.continuous || (now - flash.at) / 1000 < WAVE_SECONDS)
-  const visible =
-    recording.value && overlayInfo.value?.primary
-      ? [...flashes, { x: 0, y: 0, w: width, h: height, at: startedAt, continuous: true }]
-      : flashes
+  const visible = [...flashes]
+  if (recording.value && overlayInfo.value?.primary && !isRecording())
+    visible.push({ x: 0, y: 0, w: width, h: height, at: startedAt, continuous: true })
+  const target =
+    standaloneRecording.value?.phase === 'recording' ? standaloneRecording.value.monitor : null
+  const info = overlayInfo.value
+  if (target && info) {
+    const scale = info.scaleFactor || 1
+    visible.push({
+      x: (target.x - info.x) / scale,
+      y: (target.y - info.y) / scale,
+      w: target.width / scale,
+      h: target.height / scale,
+      at: startedAt,
+      continuous: true,
+    })
+  }
   for (const flash of visible) {
     const cycle = (now - flash.at) / 1000 / WAVE_SECONDS
     const t = still ? 0.5 : flash.continuous ? cycle % 1 : cycle
@@ -211,8 +227,41 @@ watch(identity, (who, before) => {
   }
 })
 const owner = ref<OverlayOwner>('none')
-watch(owner, (next) => setActive(next !== 'none'))
+let captureUntil = 0
+let captureTimer: number | undefined
+let seenCapture = 0
+const isRecording = () => standaloneRecording.value?.phase === 'recording'
+watch(owner, (next) =>
+  setActive(next !== 'none' || performance.now() < captureUntil || isRecording()),
+)
+watch(standaloneRecording, () =>
+  setActive(owner.value !== 'none' || performance.now() < captureUntil || isRecording()),
+)
 const overlayInfo = ref<OverlayInfo | null>(null)
+const captureFeedback = ref<CaptureFeedback | null>(null)
+watch([captureFeedback, overlayInfo], () => {
+  const feedback = captureFeedback.value
+  const info = overlayInfo.value
+  if (!feedback || !info || feedback.serial <= seenCapture || feedback.remainingMs <= 0) return
+  seenCapture = feedback.serial
+  const scale = info.scaleFactor || 1
+  const now = performance.now()
+  flashes.push({
+    x: (feedback.monitor.x - info.x) / scale,
+    y: (feedback.monitor.y - info.y) / scale,
+    w: feedback.monitor.width / scale,
+    h: feedback.monitor.height / scale,
+    at: now - (WAVE_SECONDS * 1000 - feedback.remainingMs),
+    continuous: false,
+  })
+  captureUntil = now + feedback.remainingMs
+  setActive(true)
+  window.clearTimeout(captureTimer)
+  captureTimer = window.setTimeout(
+    () => setActive(owner.value !== 'none' || isRecording()),
+    feedback.remainingMs,
+  )
+})
 const analysis = useAnalysis()
 const analysisMode = computed(() => owner.value === 'analysis')
 const view = computed(() => ({
@@ -420,6 +469,14 @@ const unlisten: UnlistenFn[] = []
 onMounted(async () => {
   layout()
   draw(performance.now())
+  unlisten.push(
+    await listen<CaptureFeedback>('capture_feedback', (event) => {
+      captureFeedback.value = event.payload
+    }),
+    await listen<ScreenRecording>('screen_recording', (event) => {
+      standaloneRecording.value = event.payload
+    }),
+  )
   try {
     recording.value = await invoke<boolean>('video_recording_state')
   } catch {}
@@ -434,7 +491,13 @@ onMounted(async () => {
   unlisten.push(
     await listen<{ state: AgentState }>('state_changed', (event) => {
       const next = event.payload.state
-      setActive(next === 'acting' || next === 'observing' || next === 'planning')
+      setActive(
+        next === 'acting' ||
+          next === 'observing' ||
+          next === 'planning' ||
+          performance.now() < captureUntil ||
+          isRecording(),
+      )
       if (next !== 'acting' && next !== 'observing' && next !== 'planning') {
         action.value = null
       }
@@ -475,6 +538,10 @@ onMounted(async () => {
   try {
     overlayInfo.value = await invoke<OverlayInfo>('overlay_info')
     owner.value = overlayInfo.value.mode
+    if (overlayInfo.value.recording) standaloneRecording.value = overlayInfo.value.recording
+    const pending = overlayInfo.value.captureFeedback
+    if (pending && pending.serial > (captureFeedback.value?.serial ?? 0))
+      captureFeedback.value = pending
   } catch {}
   nowMs.value = performance.now()
   tick = window.setInterval(() => (nowMs.value = performance.now()), 250)
@@ -505,6 +572,7 @@ onBeforeUnmount(() => {
   unlisten.forEach((off) => off())
   window.clearInterval(tick)
   window.clearTimeout(barTimer)
+  window.clearTimeout(captureTimer)
 })
 </script>
 
@@ -571,6 +639,15 @@ onBeforeUnmount(() => {
             hotkeyLabel
           }}</span>
         </div>
+      </OverlayBarShell>
+      <OverlayBarShell v-else-if="isRecording()">
+        <span class="size-2 rounded-full bg-[#2d71c3] motion-safe:animate-pulse" />
+        <span class="text-caption whitespace-nowrap uppercase"
+          >Screen recording · {{ standaloneRecording?.seconds }}s</span
+        >
+        <span class="border-l border-white/20 pr-6 pl-3 text-caption text-white/50 uppercase">{{
+          hotkeyLabel
+        }}</span>
       </OverlayBarShell>
     </div>
 

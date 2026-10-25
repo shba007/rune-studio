@@ -245,6 +245,21 @@ export interface AnalysisSnapshot {
 export const OVERLAY_MODE = 'overlay_mode'
 export type OverlayOwner = 'none' | 'control' | 'analysis'
 
+export interface CaptureFeedback {
+  serial: number
+  monitor: MonitorInfo
+  remainingMs: number
+}
+
+export interface ScreenRecording {
+  id: number
+  phase: 'idle' | 'starting' | 'recording' | 'saving' | 'done' | 'cancelled' | 'failed'
+  seconds: number
+  monitor: MonitorInfo | null
+  path: string | null
+  error: string | null
+}
+
 export interface OverlayInfo {
   x: number
   y: number
@@ -253,6 +268,8 @@ export interface OverlayInfo {
   width: number
   height: number
   scaleFactor: number
+  captureFeedback?: CaptureFeedback | null
+  recording?: ScreenRecording
 }
 export const REFLECTION_PROMPT = 'reflection_prompt'
 export const REFLECTION_RESOLVED = 'reflection_resolved'

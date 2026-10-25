@@ -131,6 +131,8 @@ async function doType() {
         {{ busy === 'type' ? 'Typing…' : 'Type' }}
       </button>
     </div>
-    <p class="text-label text-zinc-600">Stop interrupts any of these: Ctrl+Alt+Esc or the tray.</p>
+    <p class="text-label text-zinc-600">
+      Stop interrupts any of these: {{ agent.settings.value?.stopHotkey || 'Escape' }} or the tray.
+    </p>
   </div>
 </template>

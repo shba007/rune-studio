@@ -20,8 +20,20 @@ import ReviewCard from './ReviewCard.vue'
 import HealthDots from './HealthDots.vue'
 import ProgressRing from './ProgressRing.vue'
 import TaskPanel from './TaskPanel.vue'
+import TaskBoard from './TaskBoard.vue'
+import { useTaskBoard } from '@/composables/useTaskBoard'
+import { taskOrbState } from '@/config/taskActivity'
 
 const agent = useAgent()
+const taskBoard = useTaskBoard()
+const workState = computed(() =>
+  agent.settings.value?.externalAgent
+    ? agent.state.value
+    : taskOrbState(agent.state.value, taskBoard.requests.value),
+)
+const boardWorking = computed(() =>
+  taskBoard.requests.value.some((r) => ['queued', 'planning', 'running'].includes(r.phase)),
+)
 const updater = useUpdater()
 
 const updating = updater.updating
@@ -50,16 +62,39 @@ const {
 } = useExternalAgent()
 
 const reflecting = computed(() => agent.state.value === 'reflecting' && agent.reflection.value)
+const boardGoals = computed(() => {
+  if (agent.settings.value?.externalAgent || !taskBoard.requests.value.length) return null
+  const active = taskBoard.requests.value.filter((r) =>
+    ['queued', 'planning', 'running'].includes(r.phase),
+  )
+  return (active.length ? active : taskBoard.requests.value.slice(-1)).flatMap((r) => r.goals)
+})
+const boardDone = computed(
+  () =>
+    boardGoals.value?.filter(
+      (g) =>
+        g.tasks.length &&
+        g.tasks.every((id) => taskBoard.tasks.value.find((t) => t.id === id)?.phase === 'done'),
+    ).length ?? 0,
+)
 const ringGoals = computed(() =>
-  reflecting.value ? reflecting.value.total : (agent.plan.value?.goals.length ?? 0),
+  reflecting.value
+    ? reflecting.value.total
+    : (boardGoals.value?.length ?? agent.plan.value?.goals.length ?? 0),
 )
 const ringCurrent = computed(() =>
-  reflecting.value ? reflecting.value.done : (agent.plan.value?.current ?? 0),
+  reflecting.value
+    ? reflecting.value.done
+    : boardGoals.value
+      ? boardDone.value
+      : (agent.plan.value?.current ?? 0),
 )
 const ringFinished = computed(() =>
   reflecting.value
     ? reflecting.value.done >= reflecting.value.total
-    : (agent.plan.value?.finished ?? false),
+    : boardGoals.value
+      ? boardGoals.value.length > 0 && boardDone.value === boardGoals.value.length
+      : (agent.plan.value?.finished ?? false),
 )
 
 const analysis = useAnalysis()
@@ -88,7 +123,7 @@ onKeyStroke('Escape', () => {
 
 function onOrb() {
   if (updating.value) return
-  if (agent.isRunning.value) void agent.stop()
+  if (agent.isRunning.value || boardWorking.value) void agent.stop()
   else void agent.toggleOpen()
 }
 </script>
@@ -150,21 +185,27 @@ function onOrb() {
         :goals="ringGoals"
         :current="ringCurrent"
         :finished="ringFinished"
-        :running="agent.isRunning.value || agent.state.value === 'reflecting'"
-        :failed="agent.state.value === 'failed'"
+        :running="agent.isRunning.value || boardWorking || agent.state.value === 'reflecting'"
+        :failed="workState === 'failed'"
         :accent="darkAccent"
       />
       <button
         type="button"
         class="relative size-14 cursor-pointer border-0 rounded-full bg-[#f1f1ef] outline-none focus-visible:ring-2 focus-visible:ring-white/60"
         :aria-label="
-          updating ? 'Updating' : agent.isRunning.value ? 'Stop' : isAmbient ? 'Open' : 'Close'
+          updating
+            ? 'Updating'
+            : agent.isRunning.value || boardWorking
+              ? 'Stop'
+              : isAmbient
+                ? 'Open'
+                : 'Close'
         "
         :title="updating ? 'Updating Rune Studio' : agent.health.value.title"
         @click="onOrb"
       >
         <GlyphOrb
-          :state="updating || analysis.busy.value ? 'planning' : agent.state.value"
+          :state="updating || analysis.busy.value ? 'planning' : workState"
           :level="agent.level.value"
           :accent="orbAccent"
           :mark="agentMark"
@@ -184,8 +225,15 @@ function onOrb() {
           <Transition name="page" mode="out-in">
             <div key="main" class="flex flex-col gap-2">
               <Transition name="page">
-                <TaskPanel v-if="agent.mode.value === 'task'" :agent="agent" />
+                <TaskPanel
+                  v-if="
+                    agent.mode.value === 'task' &&
+                    (!taskBoard.requests.value.length || agent.settings.value?.externalAgent)
+                  "
+                  :agent="agent"
+                />
               </Transition>
+              <TaskBoard :board="taskBoard" />
               <AnalysisCard v-if="agent.mode.value === 'analysis'" :analysis="analysis" />
               <section
                 v-if="promptVisible && updater.latest.value"
@@ -247,7 +295,7 @@ function onOrb() {
                 :key="agent.question.value.id"
                 :agent="agent"
               />
-              <Composer :agent="agent" />
+              <Composer :agent="agent" :board="taskBoard" />
             </div>
           </Transition>
         </div>

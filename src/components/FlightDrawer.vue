@@ -3,6 +3,7 @@ import { useClipboard } from '@vueuse/core'
 import { computed, ref, watch } from 'vue'
 
 import AppIcon from '@/components/AppIcon.vue'
+import { timingText } from '@/config/artifacts'
 import { KIND_ICON, TOOL_LABEL, kindOf } from '@/config/actions'
 import {
   TAB_LABEL,
@@ -448,9 +449,9 @@ const rawText = computed(() => {
               <span class="w-14 truncate">{{ call.kind }}</span>
               <span class="w-8">#{{ call.attempt }}</span>
               <span class="w-9">{{ call.status ?? '—' }}</span>
-              <span class="w-14">{{ call.durationMs }} ms</span>
+              <span class="w-14">{{ timingText(call.durationMs ?? 0) }}</span>
               <span v-if="call.waitBeforeMs > 0" class="w-14 text-zinc-400"
-                >+{{ call.waitBeforeMs }} ms</span
+                >+{{ timingText(call.waitBeforeMs ?? 0) }}</span
               >
               <span
                 class="ml-auto uppercase"
@@ -482,7 +483,7 @@ const rawText = computed(() => {
               >Locality: {{ pickedCall.locality }}</span
             >
             <span v-if="pickedCall.swapMs" class="text-zinc-400">
-              Swap: {{ pickedCall.swapMs }} ms
+              Swap: {{ timingText(pickedCall.swapMs ?? 0) }}
             </span>
           </div>
           <p v-if="pickedCall.error" class="m-0 text-status text-[#ff6b72]">
@@ -521,7 +522,7 @@ const rawText = computed(() => {
           <li
             v-for="item in timing"
             :key="item.phase"
-            class="grid grid-cols-[64px_1fr_64px] items-center gap-2 text-status"
+            class="grid grid-cols-[64px_minmax(0,1fr)_auto] items-center gap-2 text-status"
           >
             <span class="text-zinc-400 uppercase">{{ item.phase }}</span>
             <span class="h-1.5 rounded-full bg-white/10"
@@ -529,7 +530,7 @@ const rawText = computed(() => {
                 class="block h-full rounded-full bg-zinc-200"
                 :style="{ width: `${(item.ms / timingMax) * 100}%` }"
             /></span>
-            <span class="text-right">{{ item.ms }} ms</span>
+            <span class="text-right whitespace-nowrap">{{ timingText(item.ms) }}</span>
           </li>
         </ul>
         <p class="mt-4 mb-0 text-status text-zinc-400">

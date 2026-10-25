@@ -23,11 +23,13 @@ mod model;
 mod observe;
 mod overlay;
 mod prompts;
+mod recording;
 mod reflect;
 mod review;
 mod safety;
 mod settings;
 mod sync;
+mod tasks;
 mod trace;
 mod video;
 mod voice;
@@ -200,6 +202,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             cursor::set_cursor_images,
             commands::installed_versions,
+            tasks::tasks_state,
+            tasks::submit_independent_task,
+            tasks::cancel_independent_task,
+            tasks::cancel_planned_request,
+            tasks::dismiss_planned_request,
             video::video_recording_state,
             kit::client::kit_settings,
             kit::client::kit_save,
@@ -245,6 +252,9 @@ pub fn run() {
             commands::flight_reveal,
             commands::open_flight,
             commands::debug_set_state,
+            recording::screen_recording_state,
+            recording::start_screen_recording,
+            recording::stop_screen_recording,
             debug::debug_monitors,
             debug::debug_capture,
             debug::debug_click,

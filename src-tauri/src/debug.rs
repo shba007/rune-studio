@@ -104,6 +104,7 @@ pub async fn debug_capture(app: AppHandle, monitor: Option<u32>) -> AppResult<Ca
     tauri::async_runtime::spawn_blocking(move || {
         let frame =
             screenshot::capture(monitor, MODEL_MAX_EDGE, MODEL_JPEG_QUALITY).map_err(invalid)?;
+        crate::overlay::show_capture(&app, frame.monitor);
         log::info!(
             "debug_capture: {}x{} from a {}x{} monitor, {} KB, {} ms",
             frame.width,

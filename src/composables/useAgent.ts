@@ -208,16 +208,20 @@ export function useAgent() {
     await refreshBackend()
   }
 
+  function resetTaskView() {
+    stepText.value = null
+    resultText.value = null
+    plan.value = null
+    timing.value = null
+    reviewOffer.value = null
+    thinking.value = null
+    response.value = null
+    steps.value = []
+  }
+
   async function startTask(text: string): Promise<boolean> {
     try {
-      stepText.value = null
-      resultText.value = null
-      plan.value = null
-      timing.value = null
-      reviewOffer.value = null
-      thinking.value = null
-      response.value = null
-      steps.value = []
+      resetTaskView()
       await invoke('start_task', { text })
       return true
     } catch (err) {
@@ -340,6 +344,7 @@ export function useAgent() {
 
   onMounted(async () => {
     unlisten.push(
+      await listen('task_started', resetTaskView),
       await listen<StateChangedPayload>(STATE_CHANGED, (event) => {
         state.value = event.payload.state
       }),

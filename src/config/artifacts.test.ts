@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test'
 
-import { lengthText, toneOf } from './artifacts'
+import { lengthText, timingText, toneOf } from './artifacts'
 
 describe('lengthText', () => {
   it('reads seconds and minutes', () => {
@@ -19,4 +19,14 @@ describe('toneOf', () => {
     expect(toneOf('stopped')).toBe('stopped')
     expect(toneOf(null)).toBe('open')
   })
+})
+
+it('formats subsecond, second, minute and hour timings for people', () => {
+  expect(timingText(363)).toBe('363 ms')
+  expect(timingText(5020)).toBe('5.02 s')
+  expect(timingText(5700)).toBe('5.7 s')
+  expect(timingText(125_000)).toBe('2 min 5 s')
+  expect(timingText(3_600_000)).toBe('1 h')
+  expect(timingText(-1)).toBe('0 ms')
+  expect(timingText(Number.NaN)).toBe('0 ms')
 })

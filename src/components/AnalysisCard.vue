@@ -18,17 +18,25 @@ const { snapshot, busy, notice } = props.analysis
 const targets = ref<{ target: { kind: string; id: number }; label: string }[]>([])
 const selectedTarget = ref('')
 const targetNotice = ref('')
+const refreshing = ref(false)
+const refreshStatus = ref('')
 async function loadTargets() {
+  if (refreshing.value) return
+  refreshing.value = true
+  refreshStatus.value = ''
   targetNotice.value = ''
   try {
     const available = await invoke<unknown>('screen_insight_targets')
     targets.value = Array.isArray(available) ? available : []
+    refreshStatus.value = `${targets.value.length} capture targets available`
     if (!targets.value.length)
       targetNotice.value =
         'No capture targets are available. Check screen-recording permissions and refresh.'
   } catch (error) {
     targets.value = []
     targetNotice.value = friendly(String(error))
+  } finally {
+    refreshing.value = false
   }
   if (!targets.value.some((item) => JSON.stringify(item.target) === selectedTarget.value)) {
     selectedTarget.value = ''
@@ -121,19 +129,19 @@ onKeyStroke('Escape', (event) => {
         </button>
       </header>
 
-      <CaptureTargetPicker v-if="!busy" v-model="selectedTarget" :options="targets" />
+      <CaptureTargetPicker
+        v-if="!busy"
+        v-model="selectedTarget"
+        :options="targets"
+        :refreshing="refreshing"
+        @refresh="loadTargets"
+      />
+      <p v-if="refreshStatus && !busy" role="status" class="text-label text-zinc-400">
+        {{ refreshStatus }}
+      </p>
       <p v-if="targetNotice && !busy && !failed" role="alert" class="text-label text-[#ff6b72]">
         {{ targetNotice }}
       </p>
-      <button
-        v-if="!busy"
-        type="button"
-        aria-label="Refresh capture targets"
-        class="self-start text-label text-zinc-400 underline"
-        @click="loadTargets"
-      >
-        Refresh targets
-      </button>
       <form class="flex items-center gap-2" @submit.prevent="submit">
         <p v-if="busy" class="m-0 min-w-0 flex-1 truncate text-body text-zinc-300">
           {{ snapshot.question }}
