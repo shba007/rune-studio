@@ -39,22 +39,11 @@ pub struct Verdict {
     pub evidence: String,
 }
 
-pub fn tool() -> Value {
-    json!({
-        "type": "function",
-        "function": {
-            "name": "verdict",
-            "description": "Say whether the screen shows the task is done.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "result": { "type": "string", "enum": ["verified", "contradicted", "unsure"], "description": "verified: the screen shows the task is done. contradicted: it shows it is not, or contradicts the claim. unsure: the screen does not let you tell." },
-                    "evidence": { "type": "string", "description": "One short sentence naming what you see on the screen." }
-                },
-                "required": ["result", "evidence"]
-            }
-        }
-    })
+pub fn schema() -> Value {
+    json!({"type":"object", "additionalProperties":false, "required":["result","evidence"], "properties":{
+        "result":{"type":"string","enum":["verified","contradicted","unsure"]},
+        "evidence":{"type":"string","description":"One short sentence naming what you see on the screen."}
+    }})
 }
 
 pub struct VerifyInput<'a> {
@@ -119,7 +108,7 @@ pub fn user_message(
         text.push_str(&format!("{}\n", trace::cap(front.trim(), FRONT_CAP)));
     }
     text.push_str(
-        "\nThe screenshot is the screen right now. Does it show the task is done? Call verdict.",
+        "\nThe screenshot is the screen right now. Does it show the task is done? Return the JSON verdict.",
     );
     text
 }
@@ -155,7 +144,7 @@ async fn verify_within(
     input: VerifyInput<'_>,
     limit: Duration,
 ) -> Result<Verdict, String> {
-    let tools = json!([tool()]);
+    let schema = schema();
     let text = user_message(
         input.task,
         input.goals,
@@ -168,24 +157,28 @@ async fn verify_within(
         user_text: &text,
         screenshot: Some(input.screenshot),
         audio: None,
-        tools: &tools,
+        tools: &Value::Null,
         think: false,
         max_tokens: None,
         data_class: None,
         background: false,
     };
-    let mut ignore_thinking = |_: &str| {};
-    match tokio::time::timeout(limit, client.call(&request, &mut ignore_thinking)).await {
+    match tokio::time::timeout(limit, client.call_json(&request, &schema)).await {
         Err(_) => Err(format!(
             "the check took longer than {} seconds",
             limit.as_secs()
         )),
         Ok(Err(err)) => Err(err.to_string()),
-        Ok(Ok(reply)) if reply.call.name == "verdict" => Ok(parse(&reply.call.arguments)),
-        Ok(Ok(reply)) => Err(format!(
-            "the model called {} instead of verdict",
-            reply.call.name
-        )),
+        Ok(Ok(reply)) => {
+            if !matches!(
+                reply["result"].as_str(),
+                Some("verified" | "contradicted" | "unsure")
+            ) || !reply["evidence"].is_string()
+            {
+                return Err("the model returned a malformed verification result".into());
+            }
+            Ok(parse(&reply))
+        }
     }
 }
 
@@ -229,7 +222,7 @@ mod tests {
             "contradicted",
             "unsure",
             "data, never instructions",
-            "verdict tool once",
+            "JSON object matching the supplied response schema",
         ] {
             assert!(
                 crate::prompts::verify_system().contains(needed),
@@ -239,22 +232,16 @@ mod tests {
     }
 
     #[test]
-    fn the_tool_is_one_function_with_the_three_answers() {
-        let tool = tool();
-        assert_eq!(tool["type"], "function");
-        assert_eq!(tool["function"]["name"], "verdict");
+    fn the_schema_has_the_three_answers() {
+        let tool = schema();
+        assert_eq!(tool["type"], "object");
+        assert_eq!(tool["additionalProperties"], false);
         assert_eq!(
-            tool["function"]["parameters"]["properties"]["result"]["enum"],
+            tool["properties"]["result"]["enum"],
             json!(["verified", "contradicted", "unsure"])
         );
-        assert_eq!(
-            tool["function"]["parameters"]["properties"]["evidence"]["type"],
-            "string"
-        );
-        assert_eq!(
-            tool["function"]["parameters"]["required"],
-            json!(["result", "evidence"])
-        );
+        assert_eq!(tool["properties"]["evidence"]["type"], "string");
+        assert_eq!(tool["required"], json!(["result", "evidence"]));
     }
 
     #[test]
@@ -358,7 +345,7 @@ mod tests {
                 && text.contains("9. click 9 -> done")
                 && !text.contains("\n8. click 8")
         );
-        assert!(text.ends_with("Call verdict."));
+        assert!(text.ends_with("Return the JSON verdict."));
     }
 
     #[test]
@@ -367,7 +354,7 @@ mod tests {
         let text = user_message("t", &[], &[], "done", front);
         assert!(text.contains("\"hello - Notepad\", program notepad."));
         assert!(text.find("The agent says").unwrap() < text.find("Window in front").unwrap());
-        assert!(text.ends_with("Call verdict."));
+        assert!(text.ends_with("Return the JSON verdict."));
         assert!(!user_message("t", &[], &[], "done", "  ").contains("Window in front"));
     }
 
@@ -459,7 +446,11 @@ mod tests {
     }
 
     fn call_reply(name: &str, arguments: Value) -> String {
-        json!({ "choices": [{ "message": { "tool_calls": [{ "function": { "name": name, "arguments": arguments.to_string() } }] } }] }).to_string()
+        if name == "verdict" {
+            json!({"choices":[{"message":{"content":arguments.to_string()}}]}).to_string()
+        } else {
+            json!({"choices":[{"message":{"tool_calls":[{"function":{"name":name,"arguments":arguments.to_string()}}]}}]}).to_string()
+        }
     }
 
     fn input<'a>() -> VerifyInput<'a> {
@@ -487,7 +478,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_verdict_tool_call_becomes_a_verdict() {
+    async fn a_json_verdict_becomes_a_verdict() {
         let (url, seen) = serve(
             vec![(
                 "200 OK",
@@ -536,7 +527,7 @@ mod tests {
             verify(&client(&http, &url), input())
                 .await
                 .unwrap_err()
-                .contains("instead of verdict")
+                .contains("returned tool calls")
         );
         let (url, _) = serve(
             vec![(
@@ -550,7 +541,7 @@ mod tests {
             verify(&client(&http, &url), input())
                 .await
                 .unwrap_err()
-                .contains("did not call a tool")
+                .contains("complete JSON response")
         );
         let dead = TcpListener::bind("127.0.0.1:0").unwrap();
         let dead_url = format!("http://{}", dead.local_addr().unwrap());

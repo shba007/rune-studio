@@ -389,19 +389,15 @@ pub fn parse_plan(arguments: &Value) -> Result<Vec<String>, String> {
         })
         .unwrap_or_default();
     if goals.is_empty() {
-        return Err("set_plan: \"goals\" must be a list of one to six short goals".into());
+        return Err("plan: \"goals\" must be a list of one to six short goals".into());
     }
     Ok(goals)
 }
 
-pub fn plan_tools() -> Value {
-    json!([{ "type": "function", "function": {
-        "name": "set_plan",
-        "description": "Write the goals for this task, in order.",
-        "parameters": { "type": "object", "required": ["goals"], "properties": {
-            "goals": { "type": "array", "items": { "type": "string" }, "description": "Two to six short goals (a few words each), in the order they will be done. A simple task can have just one or two." },
-        }},
-    }}])
+pub fn plan_schema() -> Value {
+    json!({"type":"object", "additionalProperties":false, "required":["goals"], "properties":{
+        "goals":{"type":"array","minItems":1,"maxItems":MAX_GOALS,"items":{"type":"string"},"description":"Short goals in execution order. Use as few as needed."}
+    }})
 }
 
 fn tool(name: &str, description: &str, properties: Value, required: &[&str]) -> Value {
@@ -729,7 +725,7 @@ mod tests {
                 tool["function"]["name"]
             );
         }
-        assert_eq!(plan_tools()[0]["function"]["name"], "set_plan");
+        assert_eq!(plan_schema()["properties"]["goals"]["maxItems"], MAX_GOALS);
     }
 
     #[test]

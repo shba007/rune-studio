@@ -265,26 +265,24 @@ async fn ask(
         } else {
             crate::prompts::analysis_system().to_string()
         };
-        let tools = json!([report::tool_with(points)]);
+        let schema = report::schema_with(points);
         let question = format!("Where is {description}?");
         let request = crate::model::client::Request {
             system: &system,
             user_text: &question,
             screenshot: Some(data_uri),
             audio: None,
-            tools: &tools,
+            tools: &Value::Null,
             think: !mode.no_think && false,
             max_tokens: Some(1500),
             data_class: None,
             background: false,
         };
         let profile = crate::model::profile::resolve_profile(&mode.model, None, None);
-        let body = crate::model::client::chat_body(&mode.model, &profile, &request);
+        let body = crate::model::client::json_body(&mode.model, &profile, &request, &schema);
         let value = post(client, &format!("{base}/v1/chat/completions"), key, &body).await?;
         let message = &value["choices"][0]["message"];
-        let arguments = message["tool_calls"][0]["function"]["arguments"]
-            .as_str()
-            .unwrap_or("");
+        let arguments = message["content"].as_str().unwrap_or("");
         let parsed: Value = serde_json::from_str(arguments).unwrap_or(Value::Null);
         let findings = report::parse(&parsed).findings;
         let raw = parsed["findings"].as_array().cloned().unwrap_or_default();

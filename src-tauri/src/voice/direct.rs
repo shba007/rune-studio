@@ -34,16 +34,12 @@ pub struct Listened {
     pub goals: Option<Vec<String>>,
 }
 
-fn tools() -> Value {
-    json!([{ "type": "function", "function": {
-        "name": "heard",
-        "description": "Say what the recording was.",
-        "parameters": { "type": "object", "required": ["kind"], "properties": {
-            "kind": { "type": "string", "enum": ["stop", "stop_listening", "yes", "no", "task", "noise"] },
-            "text": { "type": "string", "description": "For task: what the user wants, as one sentence." },
-            "goals": { "type": "array", "items": { "type": "string" }, "description": "For task when idle: the goals, in order." },
-        }},
-    }}])
+fn schema() -> Value {
+    json!({"type":"object", "additionalProperties":false, "required":["kind","text","goals"], "properties":{
+        "kind":{"type":"string","enum":["stop","stop_listening","yes","no","task","noise"]},
+        "text":{"type":"string","description":"For task: the user's words as one sentence. Otherwise empty."},
+        "goals":{"type":["array","null"],"items":{"type":"string"},"description":"For task when idle: goals in order. Otherwise null."}
+    }})
 }
 
 fn describe(state: AgentState) -> &'static str {
@@ -127,29 +123,22 @@ pub async fn listen(
     wav_base64: &str,
     state: AgentState,
 ) -> Result<Option<Listened>, ModelError> {
-    let tools = tools();
+    let schema = schema();
     let request = Request {
         system: crate::prompts::voice_direct(),
         user_text: describe(state),
         screenshot: None,
         audio: Some(wav_base64),
-        tools: &tools,
+        tools: &Value::Null,
         think: false,
         max_tokens: Some(MAX_TRANSCRIPT_TOKENS),
         data_class: None,
         background: false,
     };
-    let reply = client.call(&request, &mut |_: &str| {}).await?;
-    if reply.call.name != "heard" {
-        log::info!(
-            "voice ignored: the model called {} instead of heard",
-            reply.call.name
-        );
-        return Ok(None);
-    }
-    let listened = parse(&reply.call.arguments);
-    if let Some(reason) = ignore_reason(&reply.call.arguments) {
-        log::info!("voice ignored: {reason} ({})", reply.call.arguments);
+    let reply = client.call_json(&request, &schema).await?;
+    let listened = parse(&reply);
+    if let Some(reason) = ignore_reason(&reply) {
+        log::info!("voice ignored: {reason} ({reply})");
     }
     Ok(listened)
 }
@@ -232,20 +221,22 @@ mod tests {
     fn the_request_always_has_a_transcribe_only_prompt_and_a_cap() {
         assert!(crate::prompts::voice_direct().contains("Transcribe only"));
         assert!(crate::prompts::voice_direct().contains("never guess a word"));
-        let tools = tools();
+        let schema = schema();
         let request = Request {
             system: crate::prompts::voice_direct(),
             user_text: "idle",
             screenshot: None,
             audio: Some("AA=="),
-            tools: &tools,
+            tools: &Value::Null,
             think: false,
             max_tokens: Some(MAX_TRANSCRIPT_TOKENS),
             data_class: None,
             background: false,
         };
         let profile = crate::model::profile::resolve_profile("m", None, None);
-        let body = crate::model::client::chat_body("m", &profile, &request);
+        let body = crate::model::client::json_body("m", &profile, &request, &schema);
+        assert!(body.get("tools").is_none());
+        assert!(body.get("tool_choice").is_none());
         assert_eq!(body["max_tokens"], 256);
         assert_eq!(body["messages"][0]["role"], "system");
     }

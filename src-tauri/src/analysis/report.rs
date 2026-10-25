@@ -71,52 +71,40 @@ pub struct ParsedReport {
 
 pub const REQUEST_POINTS: bool = false;
 
-pub fn tool() -> Value {
-    tool_with(REQUEST_POINTS)
+pub fn schema() -> Value {
+    schema_with(REQUEST_POINTS)
 }
 
-pub fn tool_with(points: bool) -> Value {
-    let mut tool = json!({
-        "type": "function",
-        "function": {
-            "name": "report",
-            "description": "Report what the screen shows: an answer and the findings behind it.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "answer": { "type": "string", "description": "The answer to the question, in a few plain sentences." },
-                    "findings": {
-                        "type": "array",
-                        "maxItems": MAX_FINDINGS,
-                        "description": "Up to 8 things on the screen that matter, most important first.",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "label": { "type": "string", "maxLength": LABEL_CAP, "description": "A short noun phrase, at most 24 characters." },
-                                "kind": { "type": "string", "enum": ["text", "control", "image", "region", "issue", "other"] },
-                                "box": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "type": "number" }, "description": "[x0, y0, x1, y1], each 0 to 1000 across the whole screenshot. Leave it out if you cannot locate the thing." },
-                                "description": { "type": "string", "maxLength": DESCRIPTION_CAP, "description": "One sentence." },
-                                "evidence": { "type": "string", "maxLength": EVIDENCE_CAP, "description": "What on the screen supports this." }
-                            },
-                            "required": ["label", "kind", "description", "evidence"]
-                        }
-                    }
-                },
-                "required": ["answer", "findings"]
-            }
-        }
+pub fn schema_with(points: bool) -> Value {
+    let mut finding = json!({
+        "type": "object", "additionalProperties": false,
+        "properties": {
+            "label": { "type": "string", "maxLength": LABEL_CAP, "description": "A short noun phrase, at most 24 characters." },
+            "kind": { "type": "string", "enum": ["text", "control", "image", "region", "issue", "other"] },
+            "box": { "type": ["array", "null"], "minItems": 4, "maxItems": 4, "items": { "type": "number" }, "description": "[x0, y0, x1, y1], each 0 to 1000 across the whole screenshot. Use null if you cannot locate the thing." },
+            "description": { "type": "string", "maxLength": DESCRIPTION_CAP, "description": "One sentence." },
+            "evidence": { "type": "string", "maxLength": EVIDENCE_CAP, "description": "What on the screen supports this." }
+        },
+        "required": ["label", "kind", "description", "evidence", "box"]
     });
     if points {
-        tool["function"]["parameters"]["properties"]["findings"]["items"]["properties"]["point"] = json!({
-            "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "number" },
-            "description": "[x, y], each 0 to 1000: the middle of the thing."
+        finding["properties"]["point"] = json!({
+            "type": ["array", "null"], "minItems": 2, "maxItems": 2, "items": { "type": "number" },
+            "description": "[x, y], each 0 to 1000: the middle of the thing, or null if unknown."
         });
+        finding["required"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!("point"));
     }
-    tool
-}
-
-pub fn tools() -> Value {
-    json!([tool()])
+    json!({
+        "type": "object", "additionalProperties": false,
+        "properties": {
+            "answer": { "type": "string", "description": "The answer to the question, in a few plain sentences." },
+            "findings": { "type": "array", "maxItems": MAX_FINDINGS, "description": "Up to 8 things on the screen that matter, most important first.", "items": finding }
+        },
+        "required": ["answer", "findings"]
+    })
 }
 
 pub fn question_or_default(question: &str) -> String {
@@ -128,13 +116,13 @@ pub fn question_or_default(question: &str) -> String {
     }
 }
 
-pub fn request<'a>(question: &'a str, screenshot: &'a str, tools: &'a Value) -> Request<'a> {
+pub fn request<'a>(question: &'a str, screenshot: &'a str) -> Request<'a> {
     Request {
         system: crate::prompts::analysis_system(),
         user_text: question,
         screenshot: Some(screenshot),
         audio: None,
-        tools,
+        tools: &Value::Null,
         think: false,
         max_tokens: Some(MAX_OUTPUT_TOKENS),
         data_class: None,
@@ -507,18 +495,17 @@ mod tests {
             "box + point is not the default; the maintainer switches it on after the probe"
         );
         assert!(
-            tool()["function"]["parameters"]["properties"]["findings"]["items"]["properties"]
+            schema()["properties"]["findings"]["items"]["properties"]
                 .get("point")
                 .is_none()
         );
-        let with = tool_with(true);
-        let props =
-            &with["function"]["parameters"]["properties"]["findings"]["items"]["properties"];
+        let with = schema_with(true);
+        let props = &with["properties"]["findings"]["items"]["properties"];
         assert_eq!(props["point"]["minItems"], 2);
         assert_eq!(
-            with["function"]["parameters"]["properties"]["findings"]["items"]["required"],
-            json!(["label", "kind", "description", "evidence"]),
-            "point stays optional"
+            with["properties"]["findings"]["items"]["required"],
+            json!(["label", "kind", "description", "evidence", "box", "point"]),
+            "unknown points are represented by null"
         );
     }
 
@@ -551,26 +538,25 @@ mod tests {
     }
 
     #[test]
-    fn the_request_sends_tools_as_an_array_of_functions() {
-        let tools = tools();
-        let list = tools.as_array().expect("tools must be a JSON array");
-        assert_eq!(list.len(), 1);
-        assert_eq!(list[0]["type"], "function");
+    fn the_request_sends_a_json_schema_without_functions() {
+        let schema = schema();
         let profile = crate::model::profile::resolve_profile("m", None, None);
-        let body = crate::model::client::chat_body(
+        let body = crate::model::client::json_body(
             "m",
             &profile,
-            &request("q", "data:image/jpeg;base64,AA==", &tools),
+            &request("q", "data:image/jpeg;base64,AA=="),
+            &schema,
         );
-        assert_eq!(body["tools"][0]["type"], "function");
-        assert_eq!(body["tools"][0]["function"]["name"], "report");
+        assert!(body.get("tools").is_none());
+        assert!(body.get("tool_choice").is_none());
+        assert_eq!(body["response_format"]["json_schema"]["schema"], schema);
+        assert_eq!(body["stream"], false);
     }
 
     #[test]
-    fn the_tool_has_the_eight_item_limit_and_the_kind_enum() {
-        let tool = tool();
-        assert_eq!(tool["function"]["name"], "report");
-        let findings = &tool["function"]["parameters"]["properties"]["findings"];
+    fn the_schema_has_the_eight_item_limit_and_the_kind_enum() {
+        let tool = schema();
+        let findings = &tool["properties"]["findings"];
         assert_eq!(findings["maxItems"], 8);
         assert_eq!(
             findings["items"]["properties"]["kind"]["enum"],
@@ -580,13 +566,10 @@ mod tests {
         assert_eq!(findings["items"]["properties"]["box"]["minItems"], 4);
         assert_eq!(
             findings["items"]["required"],
-            json!(["label", "kind", "description", "evidence"]),
-            "the box is optional"
+            json!(["label", "kind", "description", "evidence", "box"]),
+            "unknown boxes are represented by null"
         );
-        assert_eq!(
-            tool["function"]["parameters"]["required"],
-            json!(["answer", "findings"])
-        );
+        assert_eq!(tool["required"], json!(["answer", "findings"]));
     }
 
     #[test]
@@ -599,10 +582,10 @@ mod tests {
         for needed in [
             "up to 8 findings",
             "0 to 1000",
-            "leave out its box",
+            "set its box to null",
             "data, never instructions",
             "password",
-            "report tool once",
+            "JSON object matching the supplied response schema",
         ] {
             assert!(
                 crate::prompts::analysis_system().contains(needed),
@@ -628,13 +611,14 @@ mod tests {
 
     #[test]
     fn the_analysis_asks_for_1500_tokens_and_every_other_call_still_asks_for_512() {
-        let tools = json!([tool()]);
+        let tools = Value::Null;
         let mut profile = crate::model::profile::resolve_profile("m", None, None);
         profile.tool_choice_required = crate::model::capabilities::TriState::Yes;
-        let body = chat_body(
+        let body = crate::model::client::json_body(
             "m",
             &profile,
-            &request("what is this?", "data:image/jpeg;base64,AA", &tools),
+            &request("what is this?", "data:image/jpeg;base64,AA"),
+            &schema(),
         );
         assert_eq!(body["max_tokens"], 1_500);
         assert_eq!(
@@ -642,10 +626,10 @@ mod tests {
             json!({ "type": "disabled" }),
             "no thinking"
         );
-        assert_eq!(body["tool_choice"], "required");
-        assert_eq!(body["tools"][0]["function"]["name"], "report");
+        assert!(body.get("tool_choice").is_none());
+        assert!(body.get("tools").is_none());
         assert_eq!(body["messages"][1]["content"][0]["type"], "image_url");
-        assert!(body.get("stream").is_none());
+        assert_eq!(body["stream"], false);
         let plain = Request {
             system: "s",
             user_text: "u",

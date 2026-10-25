@@ -217,9 +217,43 @@ impl ChatClient<'_> {
         request: &Request<'_>,
         schema: &Value,
     ) -> Result<Value, ModelError> {
-        self.call_retrying_with_schema(request, &mut |_| {}, Some(schema))
+        self.call_json_reply_retrying(request, schema)
             .await
             .map(|reply| reply.call.arguments)
+    }
+
+    pub async fn call_json_reply_retrying(
+        &self,
+        request: &Request<'_>,
+        schema: &Value,
+    ) -> Result<Reply, ModelError> {
+        self.call_retrying_with_schema(request, &mut |_| {}, Some(schema))
+            .await
+    }
+
+    pub async fn call_json_thinking_retrying(
+        &self,
+        request: &Request<'_>,
+        schema: &Value,
+        on_thinking: &mut (dyn FnMut(&str) + Send),
+    ) -> Result<Reply, ModelError> {
+        self.call_retrying_with_schema(request, on_thinking, Some(schema))
+            .await
+    }
+
+    pub async fn call_json(
+        &self,
+        request: &Request<'_>,
+        schema: &Value,
+    ) -> Result<Value, ModelError> {
+        let (result, report) = self
+            .attempt_with_schema(request, &mut |_| {}, 1, Duration::ZERO, Some(schema))
+            .await;
+        crate::model::swap::record_call_activity();
+        if let (Some(sink), Some(report)) = (self.sink, report) {
+            sink.record(report);
+        }
+        result.map(|reply| reply.call.arguments)
     }
 
     async fn call_retrying_with_schema(
@@ -285,6 +319,7 @@ impl ChatClient<'_> {
         }
     }
 
+    #[cfg(test)]
     pub async fn call(
         &self,
         request: &Request<'_>,
@@ -298,6 +333,7 @@ impl ChatClient<'_> {
         result
     }
 
+    #[cfg(test)]
     async fn attempt(
         &self,
         request: &Request<'_>,
@@ -342,10 +378,10 @@ impl ChatClient<'_> {
             }
         }
 
-        let mut body = chat_body(self.model, profile, request);
-        if let Some(schema) = schema {
-            apply_json_schema(&mut body, schema);
-        }
+        let body = match schema {
+            Some(schema) => json_body(self.model, profile, request, schema),
+            None => chat_body(self.model, profile, request),
+        };
         let started = std::time::Instant::now();
         let mut guard = Guard {
             sink: self.sink,
@@ -651,7 +687,11 @@ impl ChatClient<'_> {
             .and_then(|v| v.to_str().ok())
             .map(str::to_owned)
             .or_else(|| stream.model.clone());
-        let mut result = stream.finish(header_swap_ms);
+        let mut result = if body.get("response_format").is_some() {
+            stream.finish_json(header_swap_ms)
+        } else {
+            stream.finish(header_swap_ms)
+        };
         if let Ok(reply) = &mut result {
             reply.served_model = served_model.clone();
         }
@@ -669,25 +709,33 @@ impl ChatClient<'_> {
     }
 }
 
-fn apply_json_schema(body: &mut Value, schema: &Value) {
+pub(crate) fn json_body(
+    model: &str,
+    profile: &ModelProfile,
+    request: &Request<'_>,
+    schema: &Value,
+) -> Value {
+    let mut body = chat_body(model, profile, request);
     let fields = body.as_object_mut().expect("chat body is an object");
     fields.remove("tools");
     fields.remove("tool_choice");
-    fields.insert("stream".into(), json!(false));
+    fields.insert("stream".into(), json!(request.think));
     fields.insert(
         "response_format".into(),
         json!({
             "type": "json_schema",
-            "json_schema": {"name": "task_plan", "strict": true, "schema": schema}
+            "json_schema": {"name": "structured_response", "strict": true, "schema": schema}
         }),
     );
+    body
 }
 
 fn parse_json_reply(value: &Value) -> Result<Reply, ModelError> {
     let choice = &value["choices"][0];
     if choice["finish_reason"] == "length" {
         return Err(ModelError::Reply(
-            "The task plan exceeded the model output limit; retry with a smaller goal".into(),
+            "The structured response exceeded the model output limit; retry with a smaller request"
+                .into(),
         ));
     }
     let message = &choice["message"];
@@ -696,18 +744,18 @@ fn parse_json_reply(value: &Value) -> Result<Reply, ModelError> {
         .is_some_and(|calls| !calls.is_empty())
     {
         return Err(ModelError::Reply(
-            "Expected a JSON task plan, but the model returned tool calls".into(),
+            "Expected a JSON response, but the model returned tool calls".into(),
         ));
     }
     let arguments: Value = serde_json::from_str(message["content"].as_str().unwrap_or(""))
         .map_err(|_| {
             ModelError::Reply(
-                "The model did not return a complete JSON task plan; retry the goal".into(),
+                "The model did not return a complete JSON response; retry the request".into(),
             )
         })?;
     if !arguments.is_object() {
         return Err(ModelError::Reply(
-            "The JSON task plan must be an object".into(),
+            "The JSON response must be an object".into(),
         ));
     }
     Ok(Reply {
@@ -804,6 +852,7 @@ struct Stream {
     calls: BTreeMap<u64, (String, String)>,
     completion_tokens: Option<u64>,
     model: Option<String>,
+    finish_reason: Option<String>,
 }
 
 impl Stream {
@@ -851,6 +900,9 @@ impl Stream {
                 .and_then(|v| v.as_str())
                 .map(ToString::to_string);
         }
+        if let Some(reason) = event["choices"][0]["finish_reason"].as_str() {
+            self.finish_reason = Some(reason.to_string());
+        }
         let delta = &event["choices"][0]["delta"];
         for call in delta["tool_calls"].as_array().into_iter().flatten() {
             let entry = self
@@ -881,6 +933,21 @@ impl Stream {
         }
     }
 
+    fn finish_json(self, swap_ms: Option<u64>) -> Result<Reply, ModelError> {
+        if !self.calls.is_empty() {
+            return Err(ModelError::Reply(
+                "Expected a JSON response, but the model returned tool calls".into(),
+            ));
+        }
+        parse_json_reply(&json!({
+            "model": self.model, "swap_ms": swap_ms,
+            "usage": {"completion_tokens": self.completion_tokens},
+            "choices": [{"finish_reason": self.finish_reason, "message": {
+                "content": self.content, "reasoning": self.thinking
+            }}]
+        }))
+    }
+
     fn finish(self, swap_ms: Option<u64>) -> Result<Reply, ModelError> {
         let Some((name, arguments)) = self.calls.into_values().next() else {
             return Err(ModelError::NoToolCall(snippet(&self.content)));
@@ -899,6 +966,72 @@ impl Stream {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn structured_json_stream_preserves_thinking_and_model_identity() {
+        let events = [
+            json!({"model":"served", "choices":[{"delta":{"reasoning_content":"First "}}]}),
+            json!({"choices":[{"delta":{"reasoning_content":"plan."}}]}),
+            json!({"choices":[{"delta":{"content":"{\"goals\":"}}]}),
+            json!({"choices":[{"delta":{"content":"[\"Open\"]}"}}]}),
+            json!({"choices":[{"delta":{},"finish_reason":"stop"}], "usage":{"completion_tokens":12}}),
+        ];
+        let response = events
+            .iter()
+            .map(|event| format!("data: {event}\n\n"))
+            .collect::<String>()
+            + "data: [DONE]\n\n";
+        let (url, _) = serve(vec![("200 OK", response)]);
+        let http = reqwest::Client::builder().no_proxy().build().unwrap();
+        let sink = crate::model::attempts::Collect::default();
+        let client = ChatClient {
+            http: &http,
+            base_url: &url,
+            api_key: None,
+            model: "requested",
+            profile: None,
+            sink: Some(&sink),
+            no_swap: false,
+            on_loading: None,
+        };
+        let tools = Value::Null;
+        let request = Request {
+            think: true,
+            ..a_click_request(&tools)
+        };
+        let mut thinking = String::new();
+        let reply = client
+            .call_json_thinking_retrying(&request, &json!({"type":"object"}), &mut |text| {
+                thinking = text.to_string()
+            })
+            .await
+            .unwrap();
+        assert_eq!(reply.call.arguments, json!({"goals":["Open"]}));
+        assert_eq!(reply.thinking, "First plan.");
+        assert_eq!(thinking, "First plan.");
+        assert_eq!(reply.served_model.as_deref(), Some("served"));
+        assert_eq!(reply.completion_tokens, Some(12));
+        let attempts = sink.0.lock().unwrap();
+        assert_eq!(attempts[0].request["stream"], true);
+        assert!(attempts[0].request.get("tools").is_none());
+        assert!(attempts[0].request.get("tool_choice").is_none());
+    }
+
+    #[test]
+    fn json_stream_rejects_tool_calls_and_truncated_results() {
+        let truncated = Stream {
+            content: "{}".into(),
+            finish_reason: Some("length".into()),
+            ..Default::default()
+        };
+        assert!(truncated.finish_json(None).is_err());
+        let mut tools = Stream {
+            content: "{}".into(),
+            ..Default::default()
+        };
+        tools.calls.insert(0, ("click".into(), "{}".into()));
+        assert!(tools.finish_json(None).is_err());
+    }
 
     #[tokio::test]
     async fn structured_planning_sends_schema_without_tools_and_reads_content() {

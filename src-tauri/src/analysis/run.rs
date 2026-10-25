@@ -509,7 +509,12 @@ mod model_tests {
     ) -> (String, std::sync::mpsc::Receiver<Value>) {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
-        let body = json!({"model":"vision-served","choices":[{"message":{"tool_calls":[{"id":"report-1","type":"function","function":{"name":tool,"arguments":arguments.to_string()}}]}}]}).to_string();
+        let message = if tool == "report" {
+            json!({"content": arguments.to_string()})
+        } else {
+            json!({"tool_calls":[{"id":"report-1","type":"function","function":{"name":tool,"arguments":arguments.to_string()}}]})
+        };
+        let body = json!({"model":"vision-served","choices":[{"message":message}]}).to_string();
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let (mut socket, _) = listener.accept().unwrap();
@@ -588,11 +593,15 @@ mod model_tests {
                 .to_string()
                 .contains("data:image/jpeg;base64,AA")
         );
-        assert_eq!(sent["tools"][0]["function"]["name"], "report");
+        assert!(
+            sent.get("tools").is_none(),
+            "Screen Insight exposes no action or reporting tools"
+        );
+        assert!(sent.get("tool_choice").is_none());
+        assert_eq!(sent["response_format"]["type"], "json_schema");
         assert_eq!(
-            sent["tools"].as_array().unwrap().len(),
-            1,
-            "Screen Insight must not expose recording or action tools"
+            sent["response_format"]["json_schema"]["schema"],
+            report::schema()
         );
     }
 

@@ -548,13 +548,13 @@ async fn make_plan(
     task: &str,
     think: bool,
 ) -> Result<Vec<String>, Outcome> {
-    let tools = protocol::plan_tools();
+    let schema = protocol::plan_schema();
     let request = Request {
         system: crate::prompts::agent_plan(),
         user_text: &prompt::plan_user_message(task),
         screenshot: None,
         audio: None,
-        tools: &tools,
+        tools: &serde_json::Value::Null,
         think,
         max_tokens: None,
         data_class: None,
@@ -562,20 +562,23 @@ async fn make_plan(
     };
     let mut send_thinking = thinking_sender(app);
     let started = Instant::now();
-    let Some(result) =
-        unless_stopped(cancel, client.call_retrying(&request, &mut send_thinking)).await
+    let Some(result) = unless_stopped(
+        cancel,
+        client.call_json_thinking_retrying(&request, &schema, &mut send_thinking),
+    )
+    .await
     else {
         return Err(Outcome::Stopped);
     };
     let fallback = || vec![task.trim().chars().take(80).collect::<String>()];
     let goals = match result {
-        Ok(reply) if reply.call.name == "set_plan" => {
+        Ok(reply) => {
             if think {
                 events::emit_thinking(app, &reply.thinking, true);
             }
             protocol::parse_plan(&reply.call.arguments).unwrap_or_else(|_| fallback())
         }
-        Ok(_) | Err(_) => fallback(),
+        Err(_) => fallback(),
     };
     log::info!("plan in {}: {goals:?}", duration_text(started.elapsed()));
     Ok(goals)
@@ -1704,13 +1707,13 @@ mod live {
             no_swap: false,
             on_loading: None,
         };
-        let tools = protocol::plan_tools();
+        let schema = protocol::plan_schema();
         let request = Request {
             system: crate::prompts::agent_plan(),
             user_text: &prompt::plan_user_message("Open Notepad and write hello"),
             screenshot: None,
             audio: None,
-            tools: &tools,
+            tools: &serde_json::Value::Null,
             think: true,
             max_tokens: None,
             data_class: None,
@@ -1723,7 +1726,7 @@ mod live {
             longest = longest.max(text.chars().count());
         };
         let reply = client
-            .call(&request, &mut on_thinking)
+            .call_json_thinking_retrying(&request, &schema, &mut on_thinking)
             .await
             .expect("the model should answer");
         let goals = protocol::parse_plan(&reply.call.arguments).expect("a usable plan");
