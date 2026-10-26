@@ -174,12 +174,15 @@ export function installTauriMock() {
           return null
         case 'check_backend':
           return {
-            reachable: true,
-            authOk: true,
-            missingModels: [],
-            modelCapabilities: [],
-            latencyMs: 12,
-            error: null,
+            revision: Date.now(),
+            status: {
+              reachable: true,
+              authOk: true,
+              missingModels: [],
+              modelCapabilities: [],
+              latencyMs: 12,
+              error: null,
+            },
           }
         case 'analysis_state':
           return new URLSearchParams(location.search).get('demo') === 'analysis'

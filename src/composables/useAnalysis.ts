@@ -19,8 +19,10 @@ export function useAnalysis() {
     notice.value = null
     try {
       await invoke(command, args)
+      return true
     } catch (err) {
       notice.value = friendly(String(err))
+      return false
     }
   }
 

@@ -13,6 +13,7 @@ import AppIcon from './AppIcon.vue'
 import CaptureTargetPicker from './CaptureTargetPicker.vue'
 
 const props = defineProps<{ analysis: ReturnType<typeof useAnalysis> }>()
+const emit = defineEmits<{ close: [] }>()
 const { snapshot, busy, notice } = props.analysis
 
 const targets = ref<{ target: { kind: string; id: number }; label: string; primary?: boolean }[]>(
@@ -75,6 +76,10 @@ async function submit(question = '') {
 
 defineExpose({ submit })
 
+async function close() {
+  if (await props.analysis.close()) emit('close')
+}
+
 function retry() {
   if (busy.value) return
   if (snapshot.value.id.startsWith('insight-')) {
@@ -98,12 +103,11 @@ watch(
 )
 
 onKeyStroke('Escape', (event) => {
-  if (snapshot.value.status === 'idle') return
   const next = escape({ open: open.value, selected: snapshot.value.selected, shown: true })
   event.stopPropagation()
   if (open.value !== null) open.value = next.open
   else if (snapshot.value.selected !== null) void props.analysis.select(null)
-  else void props.analysis.close()
+  else void close()
 })
 </script>
 
@@ -131,7 +135,7 @@ onKeyStroke('Escape', (event) => {
           type="button"
           class="ml-auto grid size-6 cursor-pointer place-items-center rounded-full text-zinc-400 transition hover:bg-white/8 hover:text-white"
           aria-label="Close the analysis"
-          @click="analysis.close()"
+          @click="close()"
         >
           <AppIcon name="close" size="sm" />
         </button>

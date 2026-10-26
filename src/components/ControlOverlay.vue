@@ -429,7 +429,7 @@ async function refreshPill() {
 }
 
 const bubble = computed(() => {
-  if (!pill.value || pill.value.width > 100) return null
+  if (!pill.value) return null
   if (bubbleThinking.value) {
     const text = bubbleThinking.value.replace(/\s+/g, ' ').trim()
     const shown = text.length > BUBBLE_CHARS ? `…${text.slice(-BUBBLE_CHARS)}` : text
@@ -448,7 +448,7 @@ const bubbleStyle = computed(() => {
   if (!rect) return {}
   const dpr = window.devicePixelRatio || 1
   const right = (rect.x + rect.width) / dpr - window.screenX
-  const top = rect.y / dpr - window.screenY
+  const top = (rect.y + rect.height) / dpr - 64 - window.screenY
   return {
     right: `${Math.max(8, window.innerWidth - right)}px`,
     bottom: `${Math.max(8, window.innerHeight - top + 12)}px`,
@@ -498,6 +498,8 @@ onMounted(async () => {
           next === 'acting' ||
           next === 'observing' ||
           next === 'planning' ||
+          next === 'loading_model' ||
+          next === 'awaiting_confirm' ||
           performance.now() < captureUntil ||
           isRecording(),
       )

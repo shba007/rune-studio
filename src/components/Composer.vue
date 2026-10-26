@@ -69,6 +69,7 @@ watch(agent.focusTick, async () => {
 })
 
 async function submit() {
+  if (offline.value) return
   const text = command.value.trim()
   if (props.analysisSubmit) {
     if (!external.value && !props.analysisBusy && (await props.analysisSubmit(text)))
@@ -124,14 +125,9 @@ async function submit() {
         ref="field"
         v-model="command"
         rows="1"
-        :disabled="external || (Boolean(analysisSubmit) && analysisBusy)"
+        :disabled="external || offline || (Boolean(analysisSubmit) && analysisBusy)"
         :placeholder="placeholder"
-        class="max-h-[152px] min-h-8 min-w-0 flex-1 resize-none bg-transparent px-1 py-1 text-body leading-6 outline-none [--scrollbar-thumb-hover:rgb(0_0_0/0.4)] [--scrollbar-thumb:rgb(0_0_0/0.22)] dark:[--scrollbar-thumb-hover:rgb(255_255_255/0.32)] dark:[--scrollbar-thumb:rgb(255_255_255/0.16)]"
-        :class="
-          offline && !isListening && !agent.isRunning.value
-            ? 'placeholder:text-[#b3141b] dark:placeholder:text-[#ff6b72]'
-            : 'placeholder:text-[#6b6b67] dark:placeholder:text-zinc-400'
-        "
+        class="text-zinc-100 placeholder:text-zinc-400 max-h-[152px] min-h-8 min-w-0 flex-1 resize-none bg-transparent px-1 py-1 text-body leading-6 outline-none [--scrollbar-thumb-hover:rgb(0_0_0/0.4)] [--scrollbar-thumb:rgb(0_0_0/0.22)] dark:[--scrollbar-thumb-hover:rgb(255_255_255/0.32)] dark:[--scrollbar-thumb:rgb(255_255_255/0.16)]"
         @keydown.enter.exact.prevent="submit"
       />
 
@@ -146,7 +142,9 @@ async function submit() {
               : 'bg-[#f1f1ef] !text-[#111] hover:bg-white'
         "
         :disabled="
-          (external && !agent.isRunning.value) || (!analysisSubmit && board?.pending.value)
+          (external && !agent.isRunning.value) ||
+          (!analysisSubmit && board?.pending.value) ||
+          (offline && action.icon !== 'stop')
         "
         :aria-label="action.label"
         :aria-pressed="action.icon === 'mic' ? isListening : undefined"

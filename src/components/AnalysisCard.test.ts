@@ -31,7 +31,7 @@ function fake(over: Partial<AnalysisSnapshot> = {}) {
     capture: vi.fn<(...args: unknown[]) => void>(),
     ask: vi.fn<(...args: unknown[]) => void>(),
     cancel: vi.fn<(...args: unknown[]) => void>(),
-    close: vi.fn<(...args: unknown[]) => void>(),
+    close: vi.fn<(...args: unknown[]) => Promise<boolean>>(async () => true),
     select: vi.fn<(...args: unknown[]) => void>(),
   }
   const analysis = {
@@ -207,11 +207,26 @@ describe('AnalysisCard states', () => {
     expect(wrapper.findAllComponents(AnalysisFindingRow)).toHaveLength(1)
   })
 
-  it('closing the analysis calls close', async () => {
-    const { analysis, calls } = fake({ status: 'done', answer: 'x' })
+  it.each(['idle', 'asking', 'done'] as const)(
+    'closing a %s analysis explicitly dismisses the panel',
+    async (status) => {
+      const { analysis, calls } = fake({ status, answer: 'x' })
+      const wrapper = mount(AnalysisCard, { props: { analysis } })
+      await wrapper.find('button[aria-label="Close the analysis"]').trigger('click')
+      expect(calls.close).toHaveBeenCalled()
+      await flushPromises()
+      expect(wrapper.emitted('close')).toHaveLength(1)
+      wrapper.unmount()
+    },
+  )
+  it('keeps the panel open if native close fails', async () => {
+    const { analysis, calls } = fake()
+    calls.close.mockResolvedValueOnce(false)
     const wrapper = mount(AnalysisCard, { props: { analysis } })
-    await wrapper.find('button[aria-label="Close the analysis"]').trigger('click')
-    expect(calls.close).toHaveBeenCalled()
+    await wrapper.get('[aria-label="Close the analysis"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('close')).toBeUndefined()
+    wrapper.unmount()
   })
 })
 

@@ -1,4 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { defineComponent } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
 import { makeCall, makeHeader, makeStep, stubResizeObserver } from './flightTestKit'
@@ -31,6 +32,8 @@ const RUN = {
 }
 
 interface World {
+  history?: unknown
+  mediaHeaders?: Record<string, unknown>
   runs?: unknown
   header?: unknown
   steps?: unknown[]
@@ -49,7 +52,10 @@ function world(w: World) {
       case 'flight_runs':
         return w.runs ?? [RUN]
       case 'flight_run':
+        if (w.mediaHeaders?.[String(args?.id)]) return w.mediaHeaders[String(args?.id)]
         return w.header === undefined ? makeHeader() : w.header
+      case 'flight_task_history':
+        return w.history ?? []
       case 'flight_steps':
         return w.steps ?? [makeStep(1, 0), makeStep(2, 10), makeStep(3, 20)]
       case 'flight_events':
@@ -78,6 +84,115 @@ beforeEach(() => {
 })
 
 describe('FlightPlayer states', () => {
+  it('seeks the correct desktop video using local video time on the shared task clock', async () => {
+    const origin = Date.parse('2026-10-20T10:00:00Z')
+    const task = (id: number, start: number, end: number) => ({
+      id,
+      kind: 'desktop',
+      text: `Desktop ${id}`,
+      phase: 'done',
+      runId: `desktop-${id}`,
+      startedAt: origin + start,
+      finishedAt: origin + end,
+      steps: [
+        { text: 'Type', phase: 'done', startedAt: origin + start + 5000, finishedAt: origin + end },
+      ],
+    })
+    world({
+      header: makeHeader({ id: 'request', source: 'task-request' }),
+      history: [
+        { revision: 1, atMs: origin, snapshot: { tasks: [] } },
+        {
+          revision: 2,
+          atMs: origin + 40000,
+          snapshot: { request: {}, tasks: [task(1, 5000, 15000), task(2, 20000, 35000)] },
+        },
+      ],
+      mediaHeaders: {
+        'desktop-1': makeHeader({
+          id: 'desktop-1',
+          startedUtc: '2026-10-20T10:00:05Z',
+          durationSecs: 10,
+          video: { file: 'first.mp4' },
+        }),
+        'desktop-2': makeHeader({
+          id: 'desktop-2',
+          startedUtc: '2026-10-20T10:00:20Z',
+          durationSecs: 15,
+          video: { file: 'second.mp4' },
+        }),
+      },
+    })
+    const seekVideo = vi.fn<(ms: number) => Promise<void>>(async () => {})
+    const stageStub = defineComponent({
+      setup(_, { expose }) {
+        expose({ seek: seekVideo, setRate: vi.fn<(rate: number) => Promise<void>>(async () => {}) })
+        return () => null
+      },
+    })
+    window.history.replaceState({}, '', '/?view=flight&run=request')
+    const wrapper = mount(FlightPlayer, { global: { stubs: { FlightStage: stageStub } } })
+    await flushPromises()
+    await wrapper.get('[aria-label="Desktop 2, step 1: Type, done"]').trigger('click')
+    await flushPromises()
+    expect(seekVideo).toHaveBeenLastCalledWith(5000)
+    expect(wrapper.get('[data-testid="time"]').text()).toBe('0:25 / 0:40')
+    expect(invoke).toHaveBeenCalledWith('flight_file', { id: 'desktop-2', relative: 'second.mp4' })
+    wrapper.unmount()
+  })
+  it('opens a whole request with three task rows and resolves captures against its desktop child', async () => {
+    const origin = Date.parse('2026-10-20T10:00:00Z')
+    const task = (id: number, kind: string, text: string) => ({
+      id,
+      kind,
+      text,
+      phase: 'done',
+      runId: kind === 'desktop' ? 'desktop' : `background-${id}`,
+      startedAt: origin + 5000,
+      finishedAt: origin + 25000,
+      steps: [
+        { text: 'Complete', phase: 'done', startedAt: origin + 10000, finishedAt: origin + 25000 },
+      ],
+    })
+    world({
+      header: makeHeader({ id: 'request', source: 'task-request' }),
+      history: [
+        { revision: 1, atMs: origin, snapshot: { tasks: [] } },
+        {
+          revision: 2,
+          atMs: origin + 30000,
+          snapshot: {
+            request: { historyId: 'request' },
+            tasks: [
+              task(1, 'background', 'Calculate'),
+              task(2, 'background', 'Translate'),
+              task(3, 'desktop', 'Notepad'),
+            ],
+          },
+        },
+      ],
+      mediaHeaders: {
+        desktop: makeHeader({
+          id: 'desktop',
+          startedUtc: '2026-10-20T10:00:05Z',
+          endedUtc: '2026-10-20T10:00:25Z',
+          durationSecs: 20,
+        }),
+      },
+      steps: [makeStep(1, 0, { observationFile: 'screenshots/one.png' })],
+    })
+    const wrapper = await open('request')
+    expect(wrapper.findAll('[data-task-row]')).toHaveLength(3)
+    expect(wrapper.find('[data-testid="no-steps"]').exists()).toBe(false)
+    await wrapper.get('[aria-label="Translate, step 1: Complete, done"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="time"]').text()).toBe('0:10 / 0:30')
+    expect(invoke).toHaveBeenCalledWith('flight_file', {
+      id: 'desktop',
+      relative: 'screenshots/one.png',
+    })
+    wrapper.unmount()
+  })
   it('goes back to Sessions when no run is asked for', async () => {
     world({})
     await open(null)

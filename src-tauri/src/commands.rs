@@ -1,5 +1,5 @@
 use crate::sync::LockExt;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::{
     agent,
@@ -186,10 +186,23 @@ pub async fn open_settings_window(app: AppHandle, section: Option<String>) -> Ap
         .map_err(|err| AppError::Invalid(format!("Could not open Settings: {err}")))
 }
 
+#[derive(Clone, serde::Serialize)]
+pub struct BackendProbe {
+    revision: u64,
+    status: BackendStatus,
+}
+
 #[tauri::command]
-pub async fn check_backend(state: State<'_, AppState>) -> AppResult<BackendStatus> {
+pub async fn check_backend(app: AppHandle, state: State<'_, AppState>) -> AppResult<BackendProbe> {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let revision = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let settings = state.settings.locked().clone();
-    Ok(backend::check(&state.http, &settings, settings::api_key().as_deref()).await)
+    let probe = BackendProbe {
+        revision,
+        status: backend::check(&state.http, &settings, settings::api_key().as_deref()).await,
+    };
+    let _ = app.emit("backend_status", &probe);
+    Ok(probe)
 }
 
 #[tauri::command]

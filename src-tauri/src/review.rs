@@ -60,6 +60,15 @@ pub fn offer_for(detail: &store::RunDetail) -> Option<Offer> {
     })
 }
 
+fn latest_reviewable(rows: Vec<store::RunSummary>) -> Option<store::RunSummary> {
+    rows.into_iter().find(|run| {
+        !matches!(
+            run.source.as_deref(),
+            Some("task-request" | "background-task")
+        )
+    })
+}
+
 pub fn start_watcher(app: &AppHandle) {
     let app = app.clone();
     let since = trace::now_utc();
@@ -77,9 +86,7 @@ pub fn start_watcher(app: &AppHandle) {
                 else {
                     continue;
                 };
-                let Some(newest) = store::list_runs(&db, 1)
-                    .ok()
-                    .and_then(|rows| rows.into_iter().next())
+                let Some(newest) = store::list_runs(&db, 100).ok().and_then(latest_reviewable)
                 else {
                     continue;
                 };
@@ -92,6 +99,11 @@ pub fn start_watcher(app: &AppHandle) {
                 {
                     continue;
                 }
+                let state = app.state::<AppState>();
+                let busy = events::agent_state(&app).is_running() || state.lease.locked().is_held();
+                if busy {
+                    continue;
+                }
                 announced = newest.id.clone();
                 let Some(offer) = store::get_run(&db, &newest.id)
                     .ok()
@@ -101,8 +113,6 @@ pub fn start_watcher(app: &AppHandle) {
                 else {
                     continue;
                 };
-                let state = app.state::<AppState>();
-                let busy = events::agent_state(&app).is_running() || state.lease.locked().is_held();
                 let setting = state.settings.locked().offer_review;
                 if should_offer(setting, &offer.outcome, offer.steps, busy) {
                     let _ = app.emit(OFFER, offer);
@@ -116,6 +126,30 @@ pub fn start_watcher(app: &AppHandle) {
 mod tests {
     use super::*;
     use crate::trace::{RunInfo, StepRecord, store::RunRow};
+
+    #[test]
+    fn internal_task_history_does_not_hide_the_desktop_session_review() {
+        let row = |source: &str| store::RunSummary {
+            id: source.into(),
+            source: Some(source.into()),
+            started_utc: None,
+            ended_utc: None,
+            outcome: None,
+            task: None,
+            steps: 0,
+            verdict: None,
+            session_dir: None,
+            last_shot: None,
+        };
+        let selected = latest_reviewable(vec![
+            row("background-task"),
+            row("task-request"),
+            row("built-in"),
+        ])
+        .unwrap();
+        assert_eq!(selected.id, "built-in");
+        assert!(latest_reviewable(vec![row("background-task")]).is_none());
+    }
 
     fn detail(outcome: &str, source: &str, steps: usize, ended: Option<&str>) -> store::RunDetail {
         store::RunDetail {

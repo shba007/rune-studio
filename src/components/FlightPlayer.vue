@@ -2,7 +2,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import AppIcon from '@/components/AppIcon.vue'
 import TitleBar from '@/components/TitleBar.vue'
@@ -11,6 +11,7 @@ import FlightDrawer from '@/components/FlightDrawer.vue'
 import FlightStage from '@/components/FlightStage.vue'
 import FlightTimeline from '@/components/FlightTimeline.vue'
 import FlightAnalysis from '@/components/FlightAnalysis.vue'
+import FlightTaskTimeline from '@/components/FlightTaskTimeline.vue'
 import { useFlight } from '@/composables/useFlight'
 import { durationText } from '@/config/artifacts'
 import {
@@ -50,8 +51,28 @@ const stepFile = ref<string | null>(null)
 
 const header = flight.header
 const steps = flight.steps
-const hasVideo = computed(() => flight.videoUrl.value !== null && videoFailed.value === null)
-const index = computed(() => stepAtTime(flight.starts.value, timeMs.value))
+const grouped = computed(() => flight.timeline.value !== null)
+const mediaCovered = computed(
+  () =>
+    !grouped.value ||
+    (timeMs.value >= flight.mediaOffset.value &&
+      timeMs.value <= flight.mediaOffset.value + flight.mediaDuration.value),
+)
+const hasVideo = computed(
+  () => mediaCovered.value && flight.videoUrl.value !== null && videoFailed.value === null,
+)
+const playbackNote = computed(() => {
+  if (
+    grouped.value &&
+    !flight.timeline.value?.rows.some((task) => task.kind === 'desktop' && task.runId)
+  )
+    return 'This request contains no recorded desktop task. Reasoning tasks have no screen capture.'
+  if (!mediaCovered.value) return 'No desktop capture during this part of the request.'
+  return videoFailed.value ?? flight.videoNote.value
+})
+const index = computed(() =>
+  mediaCovered.value ? stepAtTime(flight.starts.value, timeMs.value) : -1,
+)
 const step = computed(() => (index.value >= 0 ? steps.value[index.value] : undefined))
 const typed = computed(() => typedTexts(steps.value))
 const outside = computed(() => (header.value ? isOutsideAgent(header.value.source) : false))
@@ -61,7 +82,12 @@ const stepCalls = computed(() =>
 )
 const stepEvents = computed(() =>
   header.value
-    ? eventsOfStep(flight.events.value, header.value.startedUtc, steps.value, index.value)
+    ? eventsOfStep(
+        flight.events.value,
+        flight.mediaHeader.value?.startedUtc ?? header.value.startedUtc,
+        steps.value,
+        index.value,
+      )
     : [],
 )
 const retried = computed(() => {
@@ -89,7 +115,31 @@ const layer = computed(() => actionLayer(step.value, showTyped.value))
 const badge = computed(() => stepBadge(index.value, steps.value.length, step.value))
 
 const cursor = computed(() => (index.value >= 0 ? pointerAt(steps.value, index.value) : null))
-const pictureFile = computed(() => pictureFileOf(steps.value, index.value, outside.value))
+const pictureFile = computed(() =>
+  mediaCovered.value ? pictureFileOf(steps.value, index.value, outside.value) : null,
+)
+watch(
+  () => flight.mediaHeader.value?.id,
+  () => {
+    videoFailed.value = null
+  },
+)
+
+watch([() => flight.mediaHeader.value?.id, hasVideo], async () => {
+  if (!grouped.value) return
+  await nextTick()
+  if (hasVideo.value) {
+    await stage.value?.seek(Math.max(0, timeMs.value - flight.mediaOffset.value))
+    await stage.value?.setRate(rate.value)
+    if (playing.value) await stage.value?.play()
+  }
+})
+function onMediaTime(ms: number) {
+  if (!grouped.value) timeMs.value = ms
+}
+function onMediaPlaying(value: boolean) {
+  if (!grouped.value) playing.value = value
+}
 
 watch(
   pictureFile,
@@ -109,24 +159,27 @@ watch(
 let frame = 0
 let last = 0
 function loop(now: number) {
-  if (!playing.value || hasVideo.value) return
+  if (!playing.value || (hasVideo.value && !grouped.value)) return
   timeMs.value = Math.min(flight.total.value, timeMs.value + (now - last) * rate.value)
   last = now
+  if (grouped.value) flight.selectMediaAt(timeMs.value)
   if (timeMs.value >= flight.total.value) {
     playing.value = false
+    if (hasVideo.value && grouped.value) void stage.value?.pause()
     return
   }
   frame = requestAnimationFrame(loop)
 }
 
 async function play() {
-  if (!header.value || steps.value.length === 0) return
+  if (!header.value || (steps.value.length === 0 && !grouped.value)) return
   if (timeMs.value >= flight.total.value - 50) await seek(0)
   playing.value = true
-  if (hasVideo.value) {
+  if (hasVideo.value && !grouped.value) {
     await stage.value?.play()
   } else {
     last = performance.now()
+    if (hasVideo.value) await stage.value?.play()
     frame = requestAnimationFrame(loop)
   }
 }
@@ -141,7 +194,11 @@ function toggle() {
 async function seek(ms: number) {
   const next = Math.min(flight.total.value, Math.max(0, ms))
   timeMs.value = next
-  if (hasVideo.value) await stage.value?.seek(next)
+  if (grouped.value) {
+    flight.selectMediaAt(next)
+    await nextTick()
+  }
+  if (hasVideo.value) await stage.value?.seek(next - flight.mediaOffset.value)
 }
 function goto(target: number) {
   return seek(timeOfStep(flight.starts.value, target))
@@ -246,7 +303,11 @@ onBeforeUnmount(() => {
 })
 
 const duration = computed(() =>
-  header.value?.durationSecs == null ? null : durationText(header.value.durationSecs),
+  grouped.value
+    ? durationText(flight.total.value / 1000)
+    : header.value?.durationSecs == null
+      ? null
+      : durationText(header.value.durationSecs),
 )
 const outcomeClass = computed(() =>
   header.value?.outcome === 'failed' ? 'text-[#ff6b72]' : 'text-zinc-100',
@@ -347,7 +408,11 @@ const verdictLine = computed(() => {
         :analysis="header.analysis"
         :summary="header.summary"
       />
-      <p v-else-if="steps.length === 0" class="m-0 p-6 text-zinc-400" data-testid="no-steps">
+      <p
+        v-else-if="steps.length === 0 && !grouped"
+        class="m-0 p-6 text-zinc-400"
+        data-testid="no-steps"
+      >
         This session ended before it took a single step, so there is nothing to replay.
       </p>
 
@@ -365,9 +430,9 @@ const verdictLine = computed(() => {
             :layer-on="true"
             :cursor="cursor"
             :badge="badge"
-            :note="videoFailed ?? flight.videoNote.value"
-            @time="timeMs = $event"
-            @playing="playing = $event"
+            :note="playbackNote"
+            @time="onMediaTime"
+            @playing="onMediaPlaying"
             @failed="onVideoFailed"
           />
 
@@ -459,14 +524,21 @@ const verdictLine = computed(() => {
             </span>
           </div>
 
+          <FlightTaskTimeline
+            v-if="flight.timeline.value"
+            :timeline="flight.timeline.value"
+            :time-ms="timeMs"
+            @seek="seek"
+          />
           <FlightTimeline
+            v-else
             :segments="flight.segments.value"
             :steps="steps"
             :starts="flight.starts.value"
             :total="flight.total.value"
             :time-ms="timeMs"
             :events="flight.events.value"
-            :run-started-utc="header.startedUtc"
+            :run-started-utc="flight.mediaHeader.value?.startedUtc ?? header.startedUtc"
             :retried="retried"
             @seek="seek"
           />

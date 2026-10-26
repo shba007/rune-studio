@@ -93,6 +93,7 @@ pub fn has_control(state: AgentState) -> bool {
     matches!(
         state,
         AgentState::Planning
+            | AgentState::LoadingModel
             | AgentState::Observing
             | AgentState::Acting
             | AgentState::AwaitingConfirm
@@ -341,6 +342,14 @@ fn hide_after_fade(app: &AppHandle, wait: Duration) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn model_loading_and_confirmation_keep_the_control_overlay() {
+        assert!(super::has_control(crate::events::AgentState::LoadingModel));
+        assert!(super::has_control(
+            crate::events::AgentState::AwaitingConfirm
+        ));
+        assert!(!super::has_control(crate::events::AgentState::Idle));
+    }
     use super::*;
     use Change::*;
     use Owner::*;

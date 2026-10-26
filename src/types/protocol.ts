@@ -87,6 +87,11 @@ export interface BackendStatus {
   models?: ModelCapabilities[]
 }
 
+export interface BackendProbe {
+  revision: number
+  status: BackendStatus
+}
+
 export interface MonitorInfo {
   id: number
   x: number

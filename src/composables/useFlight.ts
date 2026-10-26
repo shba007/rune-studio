@@ -11,6 +11,7 @@ import {
   type FlightRun,
   type FlightStep,
 } from '@/config/flight'
+import { taskTimeline } from '@/config/taskTimeline'
 
 export function fileUrl(path: string): string {
   return /^(data:|blob:|https?:|\/)/.test(path) ? path : convertFileSrc(path)
@@ -34,10 +35,55 @@ export function useFlight() {
   const problem = ref<string | null>(null)
   const videoUrl = ref<string | null>(null)
   const videoNote = ref<string | null>(null)
+  const history = shallowRef<unknown>(null)
+  const timeline = computed(() => taskTimeline(history.value))
+  type Media = {
+    head: FlightHeader
+    steps: FlightStep[]
+    events: FlightEvent[]
+    calls: FlightCall[]
+    url: string | null
+    note: string | null
+  }
+  let mediaRuns: Media[] = []
+  const mediaHeader = shallowRef<FlightHeader | null>(null)
+  const mediaOffset = computed(() =>
+    timeline.value && mediaHeader.value
+      ? Math.max(0, Date.parse(mediaHeader.value.startedUtc) - timeline.value.origin)
+      : 0,
+  )
+  const mediaDuration = computed(() =>
+    mediaHeader.value
+      ? totalMs(stepStarts(mediaHeader.value.startedUtc, steps.value), mediaHeader.value)
+      : 0,
+  )
 
-  const starts = computed(() => stepStarts(header.value?.startedUtc ?? null, steps.value))
-  const total = computed(() =>
-    header.value ? totalMs(starts.value, { durationSecs: header.value.durationSecs }) : 0,
+  function selectMediaAt(ms: number) {
+    const origin = timeline.value?.origin ?? 0
+    const offset = (media: Media) => Date.parse(media.head.startedUtc) - origin
+    const eligible = mediaRuns.filter((media) => offset(media) <= ms)
+    const selected =
+      eligible.find((media) => ms <= offset(media) + (media.head.durationSecs ?? 0) * 1000) ??
+      eligible.at(-1) ??
+      mediaRuns[0]
+    if (!selected || mediaHeader.value?.id === selected.head.id) return
+    mediaHeader.value = selected.head
+    steps.value = selected.steps
+    events.value = selected.events
+    calls.value = selected.calls
+    videoUrl.value = selected.url
+    videoNote.value = selected.note
+  }
+
+  const starts = computed(() =>
+    stepStarts(mediaHeader.value?.startedUtc ?? header.value?.startedUtc ?? null, steps.value).map(
+      (ms) => ms + mediaOffset.value,
+    ),
+  )
+  const total = computed(
+    () =>
+      timeline.value?.total ??
+      (header.value ? totalMs(starts.value, { durationSecs: header.value.durationSecs }) : 0),
   )
   const segments = computed(() => segmentsOf(starts.value, total.value))
   const live = computed(() => header.value !== null && header.value.endedUtc === null)
@@ -54,26 +100,29 @@ export function useFlight() {
     }
   }
 
-  async function resolveVideo(head: FlightHeader): Promise<void> {
-    videoUrl.value = null
-    videoNote.value = null
+  async function resolveVideo(
+    head: FlightHeader,
+  ): Promise<{ url: string | null; note: string | null }> {
     const video = head.video
     if (!video) {
-      videoNote.value = 'This session has no video; the screenshots are shown instead.'
-      return
+      return { url: null, note: 'This session has no video; the screenshots are shown instead.' }
     }
     if (!video.file) {
-      videoNote.value = video.unavailable
+      const note = video.unavailable
         ? `No video could be made on this computer (${video.unavailable}); the screenshots are shown instead.`
         : 'This session has no video; the screenshots are shown instead.'
-      return
+      return { url: null, note }
     }
     try {
-      videoUrl.value = fileUrl(
+      const url = fileUrl(
         await invoke<string>('flight_file', { id: head.id, relative: video.file }),
       )
+      return { url, note: null }
     } catch (error) {
-      videoNote.value = `The video file is missing (${problemText(error)}); the screenshots are shown instead.`
+      return {
+        url: null,
+        note: `The video file is missing (${problemText(error)}); the screenshots are shown instead.`,
+      }
     }
   }
 
@@ -87,8 +136,16 @@ export function useFlight() {
     loading.value = true
     problem.value = null
     runId.value = id
+    history.value = null
+    mediaRuns = []
+    mediaHeader.value = null
+    videoUrl.value = null
+    steps.value = []
+    events.value = []
+    calls.value = []
     try {
       const head = await invoke<FlightHeader | null>('flight_run', { id })
+      if (runId.value !== id) return
       if (!head) {
         header.value = null
         steps.value = []
@@ -97,28 +154,55 @@ export function useFlight() {
         problem.value = 'There is no such run in the record.'
         return
       }
-      const [stepList, eventList, callList] = await Promise.all([
-        invoke<FlightStep[]>('flight_steps', { id }),
-        invoke<FlightEvent[]>('flight_events', { id }),
-        invoke<FlightCall[]>('flight_calls', { id }),
-      ])
+      const records = await invoke<unknown>('flight_task_history', { id })
+      if (runId.value !== id) return
+      history.value = records
+      const desktopIds =
+        timeline.value?.rows
+          .filter((task) => task.kind === 'desktop' && task.runId)
+          .map((task) => task.runId!) ?? []
+      const heads = desktopIds.length
+        ? (
+            await Promise.all(
+              [...new Set(desktopIds)].map((runId) =>
+                runId === id
+                  ? Promise.resolve(head)
+                  : invoke<FlightHeader | null>('flight_run', { id: runId }),
+              ),
+            )
+          ).filter((item): item is FlightHeader => item !== null)
+        : [head]
+      const loaded = await Promise.all(
+        heads.map(async (mediaHead) => {
+          const [stepList, eventList, callList, video] = await Promise.all([
+            invoke<FlightStep[]>('flight_steps', { id: mediaHead.id }),
+            invoke<FlightEvent[]>('flight_events', { id: mediaHead.id }),
+            invoke<FlightCall[]>('flight_calls', { id: mediaHead.id }),
+            resolveVideo(mediaHead),
+          ])
+          return { head: mediaHead, steps: stepList, events: eventList, calls: callList, ...video }
+        }),
+      )
+      if (runId.value !== id) return
       header.value = head
-      steps.value = stepList
-      events.value = eventList
-      calls.value = callList
-      await resolveVideo(head)
+      mediaRuns = loaded.sort(
+        (a, b) => Date.parse(a.head.startedUtc) - Date.parse(b.head.startedUtc),
+      )
+      selectMediaAt(0)
     } catch (error) {
+      if (runId.value !== id) return
       header.value = null
       steps.value = []
+      history.value = null
       problem.value = problemText(error)
     } finally {
-      loading.value = false
+      if (runId.value === id) loading.value = false
     }
   }
 
   async function fileOf(
     relative: string | null | undefined,
-    id: string | null = runId.value,
+    id: string | null = mediaHeader.value?.id ?? runId.value,
   ): Promise<string | null> {
     if (!relative || !id) return null
     try {
@@ -140,7 +224,7 @@ export function useFlight() {
   async function reveal(): Promise<string | null> {
     if (!runId.value) return null
     try {
-      await invoke('flight_reveal', { id: runId.value })
+      await invoke('flight_reveal', { id: mediaHeader.value?.id ?? runId.value })
       return null
     } catch (error) {
       return problemText(error)
@@ -152,6 +236,11 @@ export function useFlight() {
     runsLoaded,
     runId,
     header,
+    timeline,
+    mediaHeader,
+    mediaOffset,
+    mediaDuration,
+    selectMediaAt,
     steps,
     events,
     calls,

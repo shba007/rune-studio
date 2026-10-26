@@ -321,6 +321,9 @@ function stepLabel(phase: TaskPhase) {
   scroll-snap-type: x proximity;
   padding: 2px 2px 8px;
 }
+.task-carousel::-webkit-scrollbar {
+  height: 0;
+}
 .parallel-tasks {
   border-top: 1px dotted rgb(255 255 255 / 0.25);
   padding-top: 12px;

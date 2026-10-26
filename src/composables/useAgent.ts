@@ -22,6 +22,7 @@ import {
   THINKING,
   type AgentState,
   type BackendStatus,
+  type BackendProbe,
   type BridgeInfo,
   type CaptureReport,
   type ClickReport,
@@ -80,6 +81,14 @@ export function useAgent() {
   const screenRequest = ref<ScreenRequestSnapshot>({ id: null, status: 'idle', waiting: false })
   const state = ref<AgentState>('idle')
   const backend = ref<BackendStatus | null>(null)
+  let backendRevision = 0
+  let backendChecks = 0
+  function applyBackend(probe: BackendProbe) {
+    if (probe && Number.isFinite(probe.revision) && probe.revision >= backendRevision) {
+      backendRevision = probe.revision
+      backend.value = probe.status
+    }
+  }
   const settings = ref<Settings | null>(null)
   const hasApiKey = ref(false)
   const bridge = ref<BridgeInfo | null>(null)
@@ -187,8 +196,24 @@ export function useAgent() {
   const dismiss = () => (mode.value === 'ambient' ? Promise.resolve() : setMode('ambient'))
 
   async function refreshBackend() {
-    backend.value = (await call<BackendStatus>('check_backend')) ?? null
+    backendChecks += 1
+    try {
+      const probe = await call<BackendProbe>('check_backend')
+      if (probe) applyBackend(probe)
+    } finally {
+      backendChecks -= 1
+    }
   }
+
+  useIntervalFn(() => {
+    if (
+      backendChecks === 0 &&
+      !new URLSearchParams(location.search).get('view') &&
+      settings.value &&
+      !settings.value.externalAgent
+    )
+      void refreshBackend()
+  }, 15000)
 
   async function refreshSettings() {
     settings.value = (await call<Settings>('get_settings')) ?? null
@@ -343,6 +368,9 @@ export function useAgent() {
   })
 
   onMounted(async () => {
+    unlisten.push(
+      await listen<BackendProbe>('backend_status', (event) => applyBackend(event.payload)),
+    )
     unlisten.push(
       await listen('task_started', resetTaskView),
       await listen<StateChangedPayload>(STATE_CHANGED, (event) => {

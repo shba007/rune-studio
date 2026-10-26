@@ -240,6 +240,7 @@ function onOrb() {
                 v-if="agent.mode.value === 'analysis'"
                 ref="analysisCard"
                 :analysis="analysis"
+                @close="agent.mode.value === 'analysis' && agent.setMode('open')"
               />
               <section
                 v-if="promptVisible && updater.latest.value"

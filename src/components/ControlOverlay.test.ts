@@ -34,6 +34,27 @@ afterEach(() => {
   harness.handlers.clear()
 })
 
+it('shows thinking and speech beside the orb with an expanded scaled task window', async () => {
+  vi.spyOn(window, 'devicePixelRatio', 'get').mockReturnValue(2)
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
+  harness.invoke.mockImplementation(async (command) => {
+    if (command === 'pill_rect') return { x: 200, y: 100, width: 752, height: 672 }
+    if (command === 'analysis_state') return EMPTY_SNAPSHOT
+    if (command === 'get_settings') return { stopHotkey: 'Escape' }
+    return null
+  })
+  const wrapper = mount(ControlOverlay)
+  await flushPromises()
+  harness.handlers.get('thinking')!({ payload: { text: 'Checking the current step', done: false } })
+  await flushPromises()
+  expect(wrapper.text()).toContain('Checking the current step')
+  harness.handlers.get('task_done')!({ payload: { summary: 'Finished the task' } })
+  await flushPromises()
+  expect(wrapper.text()).toContain('Finished the task')
+  expect(wrapper.text()).not.toContain('Checking the current step')
+  wrapper.unmount()
+})
+
 it('keeps full-screen analysis ripples running throughout reading and stops them on completion', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
   vi.spyOn(performance, 'now').mockReturnValue(1000)
