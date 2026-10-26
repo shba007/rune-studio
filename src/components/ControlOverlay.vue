@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
-import { useEventListener, usePreferredReducedMotion, useRafFn } from '@vueuse/core'
+import { useEventListener, useIntervalFn, usePreferredReducedMotion, useRafFn } from '@vueuse/core'
 import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 
 import { KIND_ICON, TOOL_LABEL, kindOf, type ActionKind } from '@/config/actions'
@@ -23,6 +23,7 @@ import type {
 
 import { useAnalysis } from '@/composables/useAnalysis'
 import { useExternalAgent } from '@/composables/useExternalAgent'
+import { friendly } from '@/config/errors'
 
 import AgentMark from './AgentMark.vue'
 import AnalysisBar from './AnalysisBar.vue'
@@ -420,14 +421,25 @@ const BUBBLE_CHARS = 120
 const bubbleThinking = ref('')
 const bubbleSays = ref('')
 const pill = ref<PillRect | null>(null)
+let refreshingPill = false
+let geometryRevision = 0
 
 async function refreshPill() {
+  if (refreshingPill) return
+  refreshingPill = true
+  const revision = geometryRevision
   try {
-    pill.value = await invoke<PillRect | null>('pill_rect')
+    const rect = await invoke<PillRect | null>('pill_rect')
+    if (revision === geometryRevision) pill.value = rect
   } catch {
-    pill.value = null
+    if (revision === geometryRevision) pill.value = null
+  } finally {
+    refreshingPill = false
   }
 }
+useIntervalFn(() => {
+  if (bubbleThinking.value || bubbleSays.value) void refreshPill()
+}, 100)
 
 const bubble = computed(() => {
   if (!pill.value) return null
@@ -437,9 +449,7 @@ const bubble = computed(() => {
     return { label: 'Thinking', live: true, text: shown }
   }
   if (bubbleSays.value) {
-    const text = bubbleSays.value.replace(/\s+/g, ' ').trim()
-    const shown = text.length > BUBBLE_CHARS ? `${text.slice(0, BUBBLE_CHARS)}…` : text
-    return { label: 'Says', live: false, text: shown }
+    return { label: 'Says', live: false, text: bubbleSays.value.trim() }
   }
   return null
 })
@@ -448,12 +458,15 @@ const bubbleStyle = computed(() => {
   const rect = pill.value
   if (!rect) return {}
   const dpr = window.devicePixelRatio || 1
+  const pillScale = rect.scaleFactor ?? dpr
   const pageWidth = Math.min(
-    PAGE_WIDTH + PAGE_GAP,
-    Math.max(0, rect.width / dpr - ORB_SIZE - DOCK_WIDTH),
+    (PAGE_WIDTH + PAGE_GAP) * pillScale,
+    Math.max(0, rect.width - (ORB_SIZE + DOCK_WIDTH) * pillScale),
   )
-  const right = (rect.x + rect.width) / dpr - window.screenX - pageWidth
-  const top = (rect.y + rect.height) / dpr - ORB_SIZE - window.screenY
+  const originX = overlayInfo.value?.x ?? window.screenX * dpr
+  const originY = overlayInfo.value?.y ?? window.screenY * dpr
+  const right = (rect.x + rect.width - originX - pageWidth) / dpr
+  const top = (rect.y + rect.height - originY - ORB_SIZE * pillScale) / dpr
   return {
     right: `${Math.max(8, window.innerWidth - right)}px`,
     bottom: `${Math.max(8, window.innerHeight - top + 12)}px`,
@@ -467,7 +480,9 @@ function onThinking({ text, done }: ThinkingPayload) {
 
 function onSays(text: string) {
   bubbleThinking.value = ''
-  bubbleSays.value = text
+  bubbleSays.value = /^(?:error[:\s]+)?(?:the )?model server answered \d{3}/i.test(text)
+    ? friendly(text)
+    : text
   void refreshPill()
 }
 
@@ -477,6 +492,10 @@ onMounted(async () => {
   layout()
   draw(performance.now())
   unlisten.push(
+    await listen<PillRect | null>('pill_geometry', ({ payload }) => {
+      geometryRevision++
+      pill.value = payload
+    }),
     await listen<CaptureFeedback>('capture_feedback', (event) => {
       captureFeedback.value = event.payload
     }),
@@ -514,7 +533,6 @@ onMounted(async () => {
       if (next === 'planning') void refreshPill()
       if (next === 'idle' || next === 'stopped') {
         bubbleThinking.value = ''
-        bubbleSays.value = ''
       }
     }),
     await listen<StepStartedPayload>('step_started', (event) => {
@@ -532,6 +550,13 @@ onMounted(async () => {
       }
     }),
     await listen<{ summary: string }>('task_done', (event) => onSays(event.payload.summary)),
+    await listen<string | null>('task_answer', ({ payload }) => {
+      if (payload) onSays(payload)
+      else {
+        bubbleSays.value = ''
+        bubbleThinking.value = ''
+      }
+    }),
     await listen<ObserveStartedPayload>('observe_started', (event) => showObserve(event.payload)),
     await listen<TypedPayload>('typed', (event) => showTyped(event.payload)),
     await listen('observe_stopped', () => (flashes = flashes.filter((flash) => !flash.continuous))),
@@ -547,6 +572,7 @@ onMounted(async () => {
   )
   try {
     overlayInfo.value = await invoke<OverlayInfo>('overlay_info')
+    if (overlayInfo.value.answer) onSays(overlayInfo.value.answer)
     owner.value = overlayInfo.value.mode
     if (overlayInfo.value.recording) standaloneRecording.value = overlayInfo.value.recording
     const pending = overlayInfo.value.captureFeedback
@@ -693,7 +719,12 @@ onBeforeUnmount(() => {
             />
           </span>
         </div>
-        <p class="line-clamp-3 text-label text-white/90">{{ bubble.text }}</p>
+        <p
+          class="m-0 text-label whitespace-pre-wrap text-white/90 [overflow-wrap:anywhere]"
+          :class="bubble.live ? 'line-clamp-3' : ''"
+        >
+          {{ bubble.text }}
+        </p>
         <span class="absolute right-6 -bottom-1 size-2 rotate-45 bg-black/85" />
       </div>
     </Transition>

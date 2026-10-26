@@ -25,12 +25,14 @@ it('requires an explicit answer and includes the record revision when confirming
   expect(wrapper.emitted('answer')!.at(-1)).toEqual([
     { id: 'decision-1', revision: 1, optionId: 'task', text: '' },
   ])
+  expect(wrapper.find('textarea').exists()).toBe(false)
+  await wrapper.setProps({ question: { ...question, kind: 'clarification', revision: 2 } })
   await wrapper.get('textarea').setValue('It combines several long-term outcomes')
   await wrapper.get('form').trigger('submit')
   expect(wrapper.emitted('answer')!.at(-1)).toEqual([
     {
       id: 'decision-1',
-      revision: 1,
+      revision: 2,
       optionId: null,
       text: 'It combines several long-term outcomes',
     },

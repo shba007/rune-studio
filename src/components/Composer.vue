@@ -205,7 +205,7 @@ async function submit() {
       :id="menuId"
       role="listbox"
       aria-label="Composer commands"
-      class="max-h-52 overflow-y-auto rounded-2xl border border-white/10 bg-[#1b1b1b] p-1 text-zinc-100"
+      class="rounded-2xl border border-white/10 bg-[#1b1b1b] p-1 text-zinc-100"
     >
       <button
         v-for="(item, index) in suggestions"

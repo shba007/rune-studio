@@ -142,6 +142,8 @@ export function useAgent() {
 
   let noticeHandle: ReturnType<typeof setTimeout> | undefined
   let wantedHeight = 0
+  let fitting: Promise<void> | undefined
+  let fittedHeight = 0
   const silenceTimer = useTimeoutFn(
     () => {
       if (!heardSound) showNotice('No sound from the microphone. Check Windows microphone access')
@@ -170,6 +172,8 @@ export function useAgent() {
   async function setMode(next: PillMode) {
     if (next === 'ambient' && question.value) return
     const token = ++modeToken
+    if (fitting) await fitting
+    fittedHeight = 0
     const grows = MODE_RANK[next] > MODE_RANK[mode.value]
     if (grows) {
       await call('set_mode', { mode: next })
@@ -185,9 +189,23 @@ export function useAgent() {
   }
 
   async function fitHeight(height: number) {
+    if (!Number.isFinite(height)) return
     if (mode.value === 'open' || mode.value === 'task' || mode.value === 'analysis') {
-      wantedHeight = height
-      await call('fit_height', { height })
+      wantedHeight = Math.max(64, Math.ceil(height))
+      if (!fitting) {
+        fitting = (async () => {
+          // Collect measurements from the same render before crossing IPC.
+          await Promise.resolve()
+          while (mode.value !== 'ambient' && fittedHeight !== wantedHeight) {
+            const next = wantedHeight
+            await call('fit_height', { height: next })
+            fittedHeight = next
+          }
+        })().finally(() => {
+          fitting = undefined
+        })
+      }
+      await fitting
     }
   }
 

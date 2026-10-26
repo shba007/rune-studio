@@ -35,6 +35,7 @@ afterEach(() => {
 })
 
 it('shows thinking and speech beside the orb with an expanded scaled task window', async () => {
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
   vi.spyOn(window, 'devicePixelRatio', 'get').mockReturnValue(2)
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
   let rect = { x: 1000, y: 100, width: 752, height: 672 }
@@ -61,14 +62,25 @@ it('shows thinking and speech beside the orb with an expanded scaled task window
   expect(wrapper.text()).toContain('Finished the task')
   expect(wrapper.text()).not.toContain('Checking the current step')
   rect = { x: 1624, y: 644, width: 128, height: 128 }
-  harness.handlers.get('thinking')!({ payload: { text: 'Collapsed orb', done: false } })
+  await vi.advanceTimersByTimeAsync(100)
   await flushPromises()
+  expect(wrapper.text()).toContain('Finished the task')
   expect((bubble.element as HTMLElement).style.right).toBe(
     `${window.innerWidth - 876 + window.screenX}px`,
   )
   expect((bubble.element as HTMLElement).style.bottom).toBe(
     `${window.innerHeight - 322 + window.screenY + 12}px`,
   )
+  const answer = 'The total is 180. The average is 36. '.repeat(5)
+  harness.handlers.get('task_answer')!({ payload: answer })
+  await flushPromises()
+  expect(wrapper.text()).toContain(answer.trim())
+  harness.handlers.get('state_changed')!({ payload: { state: 'idle' } })
+  await flushPromises()
+  expect(wrapper.text()).toContain(answer.trim())
+  harness.handlers.get('task_answer')!({ payload: null })
+  await flushPromises()
+  expect(wrapper.text()).not.toContain(answer.trim())
   wrapper.unmount()
 })
 

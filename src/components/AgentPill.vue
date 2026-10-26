@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onKeyStroke, useElementSize } from '@vueuse/core'
-import { computed, useTemplateRef, watch } from 'vue'
+import { computed, ref, useTemplateRef, watch } from 'vue'
 
 import { useAgent } from '@/composables/useAgent'
 import { useUpdater } from '@/composables/useUpdater'
@@ -25,10 +25,22 @@ import { useTaskBoard } from '@/composables/useTaskBoard'
 import { taskOrbState } from '@/config/taskActivity'
 import { useDecisions } from '@/composables/useDecisions'
 import DecisionInbox from './DecisionInbox.vue'
+import PersonalitySymbol from './PersonalitySymbol.vue'
+import { usePersonality } from '@/composables/usePersonality'
 
 const agent = useAgent()
+const personality = usePersonality()
 const taskBoard = useTaskBoard()
 const decisions = useDecisions()
+const expandedDecision = ref<string | null>(null)
+const decisionKey = computed(() =>
+  decisions.current.value
+    ? `${decisions.current.value.id}:${decisions.current.value.revision}`
+    : null,
+)
+const decisionInKnowledge = computed(
+  () => !!decisionKey.value && expandedDecision.value === decisionKey.value,
+)
 watch(
   () =>
     decisions.current.value
@@ -131,7 +143,13 @@ if (import.meta.env.DEV) Object.assign(window, { __demoAgent: agent })
 const content = useTemplateRef<HTMLElement>('content')
 const { height: contentHeight } = useElementSize(content)
 watch(contentHeight, (height) => {
-  if (height >= 48) void agent.fitHeight(Math.ceil(height / 8) * 8)
+  const available = Math.min(1200, Math.max(200, window.screen.availHeight * 0.9))
+  if (height > available && decisionKey.value && !decisionInKnowledge.value) {
+    expandedDecision.value = decisionKey.value
+    void agent.openWorkspace(decisions.current.value?.kind === 'goal' ? 'goals' : 'tasks')
+    return
+  }
+  if (height >= 48) void agent.fitHeight(Math.ceil(height))
 })
 
 onKeyStroke('Escape', () => {
@@ -163,8 +181,15 @@ function onOrb() {
     </div>
     <div
       data-tauri-drag-region
+      :title="`Personality: ${personality.name}`"
       class="relative isolate flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-full border-0 bg-[#141414] outline-none [clip-path:circle(50%)]"
     >
+      <span
+        v-if="!agent.settings.value?.externalAgent"
+        class="pointer-events-none absolute bottom-1 left-1/2 z-20 grid size-4 -translate-x-1/2 place-items-center rounded-full bg-black/85 text-[10px] leading-none text-zinc-100"
+        :aria-label="`Active personality: ${personality.name}`"
+        ><PersonalitySymbol :mark="personality.mark" class="size-3"
+      /></span>
       <svg v-if="updating" viewBox="0 0 64 64" class="update-ring" aria-hidden="true">
         <circle cx="32" cy="32" r="30" fill="none" class="update-track" />
         <circle
@@ -255,7 +280,20 @@ function onOrb() {
                 v-if="!decisions.current.value || agent.question.value"
                 :board="taskBoard"
               />
-              <DecisionInbox v-if="!agent.question.value" compact :model="decisions" />
+              <DecisionInbox
+                v-if="!agent.question.value && !decisionInKnowledge"
+                compact
+                :model="decisions"
+              />
+              <button
+                v-if="decisionInKnowledge"
+                class="rounded-2xl border border-white/10 p-3 text-label text-zinc-200"
+                @click="
+                  agent.openWorkspace(decisions.current.value?.kind === 'goal' ? 'goals' : 'tasks')
+                "
+              >
+                Continue your request in Knowledge
+              </button>
               <AnalysisCard
                 v-if="agent.mode.value === 'analysis'"
                 ref="analysisCard"

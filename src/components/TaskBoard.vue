@@ -148,13 +148,29 @@ function stepLabel(phase: TaskPhase) {
         title="Estimated from completed steps"
         >{{ etaText }}</span
       >
+      <button
+        v-if="!isTaskActive(request.phase)"
+        type="button"
+        class="grid size-7 shrink-0 cursor-pointer place-items-center rounded-full text-zinc-400 hover:bg-white/8 hover:text-white"
+        :aria-label="`Dismiss request ${request.id}`"
+        @click="board.dismiss(request.id)"
+      >
+        <AppIcon name="close" size="sm" />
+      </button>
     </header>
-    <p data-testid="goal-title" class="m-0 text-label leading-relaxed [overflow-wrap:anywhere]">
+    <p
+      v-if="tasks.length !== 1"
+      data-testid="goal-title"
+      class="m-0 text-label leading-relaxed [overflow-wrap:anywhere]"
+    >
       {{ title }}
     </p>
-    <div class="flex items-center justify-between gap-2 text-caption text-zinc-500">
+    <div
+      v-if="tasks.length > 1"
+      class="flex items-center justify-between gap-2 text-caption text-zinc-500"
+    >
       <span data-testid="task-count">Tasks {{ taskPosition(tasks) }}</span>
-      <span v-if="tasks.length"
+      <span v-if="tasks.length > 1"
         >{{ tasks.filter((t) => t.phase === 'done').length }} completed</span
       >
     </div>
@@ -218,7 +234,9 @@ function stepLabel(phase: TaskPhase) {
           class="w-full cursor-pointer text-left outline-none focus-visible:ring-1 focus-visible:ring-white/50"
           @click="toggle(task)"
         >
-          <span class="mb-2 flex items-center justify-between gap-2 text-caption text-zinc-500"
+          <span
+            v-if="tasks.length > 1"
+            class="mb-2 flex items-center justify-between gap-2 text-caption text-zinc-500"
             ><span>TASK {{ index + 1 }}</span
             ><span role="status" class="flex items-center gap-1.5"
               ><span
@@ -269,12 +287,6 @@ function stepLabel(phase: TaskPhase) {
               >
             </li>
           </ol>
-          <p
-            v-if="task.result"
-            class="mt-3 mb-0 text-label whitespace-pre-wrap text-zinc-300 [overflow-wrap:anywhere] select-text"
-          >
-            {{ task.result }}
-          </p>
         </div>
         <button
           v-if="isTaskActive(task.phase)"
@@ -288,9 +300,10 @@ function stepLabel(phase: TaskPhase) {
       </article>
     </div>
     <footer
+      v-if="queued || tasks.length > 1 || isTaskActive(request.phase)"
       class="flex items-center justify-between gap-2 border-t border-dotted border-white/10 pt-2 text-caption text-zinc-500"
     >
-      <span>{{
+      <span v-if="queued || tasks.length > 1">{{
         queued
           ? `${queued} request${queued === 1 ? '' : 's'} queued`
           : tasks.length > 1
@@ -298,6 +311,7 @@ function stepLabel(phase: TaskPhase) {
             : 'Steps run in sequence'
       }}</span>
       <button
+        v-if="isTaskActive(request.phase)"
         type="button"
         class="min-h-8 shrink-0 cursor-pointer text-zinc-400 hover:text-white"
         :aria-label="`${isTaskActive(request.phase) ? 'Cancel' : 'Dismiss'} request ${request.id}`"

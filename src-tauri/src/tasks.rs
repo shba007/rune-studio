@@ -622,6 +622,32 @@ impl Board {
 }
 fn publish(app: &AppHandle) {
     let snapshot = tasks_state();
+    let answer = snapshot
+        .requests
+        .iter()
+        .max_by_key(|r| r.id)
+        .filter(|r| r.phase == Phase::Done)
+        .and_then(|r| {
+            let results = snapshot
+                .tasks
+                .iter()
+                .filter(|t| t.request_id == r.id && t.result.is_some())
+                .collect::<Vec<_>>();
+            (!results.is_empty()).then(|| {
+                results
+                    .iter()
+                    .map(|task| {
+                        if results.len() > 1 {
+                            format!("{}\n{}", task.text, task.result.as_deref().unwrap_or(""))
+                        } else {
+                            task.result.clone().unwrap_or_default()
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n\n")
+            })
+        });
+    crate::overlay::sync_answer(app, answer);
     let trace = &app.state::<AppState>().trace;
     for request in &snapshot.requests {
         let mut tasks = snapshot
@@ -1090,7 +1116,7 @@ async fn make_plan(
         "{user}\nOriginal task constraints for this attached step (context only; do not repeat old work): {context}"
     );
     let request = crate::model::client::Request {
-        system: "Return a JSON object matching the supplied task-plan response schema to turn the given prompt into EXACTLY ONE specific goal. Clean grammar and redundancy but preserve the user's concrete target, requested content, timing, output and constraints; do not use vague titles such as complete the request. That goal has 1–12 independent tasks, each a small objective achievable in finite time. Tasks must not depend on results or setup from another task: put interdependent work in the sequential steps of ONE task instead, including open app -> start recording -> type -> stop/save. Do not split that chain into separate tasks. Each task has 1–12 atomic steps, each one concrete action or reasoning operation in execution order. Attach constraints such as leave unsaved, do not send, and preserve existing files to the relevant action step; never turn them into separate steps requiring an invented action. Every goal/task depends_on array must be empty. Set depends_on_requests only when this goal needs results from an earlier goal; goals execute one at a time in submission order regardless. Parallelize independent tasks within the current goal. Use background ONLY for reasoning on supplied inputs or selected read-only Kit tools; use desktop for every screen/input/launch/recording/write task. Desktop actions remain exclusive. Do not invent extra tasks to make a goal look parallel. The planner cannot capture or act. Recording while acting uses start_recording -> actions -> stop_recording; record_screen is blocking. Return only the structured plan.",
+        system: include_str!("../prompts/tasks/plan.txt"),
         user_text: &user,
         screenshot: None,
         audio: None,
@@ -1181,12 +1207,14 @@ async fn background(
             task.steps.len(),
             task.steps[current].text
         );
+        let contract = if result_only {
+            include_str!("../prompts/tasks/reasoning.txt")
+        } else {
+            include_str!("../prompts/tasks/tools.txt")
+        };
+        let system = format!("{contract}{}", crate::personalities::style(app, "")?);
         let request = crate::model::client::Request {
-            system: if result_only {
-                "You perform one independent background reasoning task on the supplied inputs only. You have no tools, live web access, screen access or ability to act. Never claim to have fetched or inspected unavailable information. Return a JSON object matching the supplied schema with summary and success. If the step requires unavailable information or tools, use success=false and explain what the user can do."
-            } else {
-                "You perform one independent background task. You have no screen, capture, recording, mouse, keyboard, application-launch or write tools. Use only the supplied selected read-only tools. Never claim to have inspected the desktop or fetched information without tool evidence. No web tool means no live web access. If the task needs unavailable tools, finish with success=false and explain what the user can do. Call one tool each turn; finish with done."
-            },
+            system: &system,
             user_text: &text,
             screenshot: None,
             audio: None,

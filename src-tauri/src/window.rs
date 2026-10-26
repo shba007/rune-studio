@@ -142,9 +142,14 @@ fn resize_keeping_corner(app: &AppHandle, width: Option<f64>, height: f64) -> ta
         Some(width) => width,
         None => f64::from(old.width) / window.scale_factor()?,
     };
-    window.set_size(LogicalSize::new(width, height))?;
-
-    let new = window.outer_size()?;
+    let scale = window.scale_factor()?;
+    let new = tauri::PhysicalSize::new(
+        (width * scale).round() as u32,
+        (height * scale).round() as u32,
+    );
+    if new == old {
+        return Ok(());
+    }
     let mut x = right - new.width as i32;
     let mut y = bottom - new.height as i32;
     if let Some(monitor) = window.current_monitor()? {
@@ -158,7 +163,29 @@ fn resize_keeping_corner(app: &AppHandle, width: Option<f64>, height: f64) -> ta
             (area.position.y + area.size.height as i32 - new.height as i32).max(area.position.y),
         );
     }
-    window.set_position(PhysicalPosition::new(x, y))
+    #[cfg(windows)]
+    {
+        use windows::Win32::UI::WindowsAndMessaging::{SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos};
+        // Move and resize together so the bottom-right anchor never jumps
+        // between two separately presented native window updates.
+        unsafe {
+            SetWindowPos(
+                window.hwnd()?,
+                None,
+                x,
+                y,
+                new.width as i32,
+                new.height as i32,
+                SWP_NOACTIVATE | SWP_NOZORDER,
+            )
+        }
+        .map_err(|error| tauri::Error::Anyhow(error.into()))
+    }
+    #[cfg(not(windows))]
+    {
+        window.set_size(LogicalSize::new(width, height))?;
+        window.set_position(PhysicalPosition::new(x, y))
+    }
 }
 
 pub fn set_click_through(app: &AppHandle, enabled: bool) {

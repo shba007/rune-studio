@@ -28,6 +28,7 @@ export interface IntakeEntry {
   class: 'general' | 'health' | 'mind' | 'finance'
   kind: string
   status: string
+  category?: string
   question: DecisionQuestion | null
   goal: Record<string, string> | null
   approvedGoal?: Record<string, string> | null

@@ -177,6 +177,7 @@ export interface PillRect {
   y: number
   width: number
   height: number
+  scaleFactor?: number
 }
 
 export interface TypedPayload {
@@ -291,6 +292,7 @@ export interface OverlayInfo {
   scaleFactor: number
   captureFeedback?: CaptureFeedback | null
   recording?: ScreenRecording
+  answer?: string | null
 }
 export const REFLECTION_PROMPT = 'reflection_prompt'
 export const REFLECTION_RESOLVED = 'reflection_resolved'

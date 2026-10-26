@@ -136,6 +136,27 @@ pub fn step(owner: Owner, change: Change) -> (Owner, Effect) {
 }
 
 static OWNER: Mutex<Owner> = Mutex::new(Owner::None);
+static ANSWER: Mutex<Option<String>> = Mutex::new(None);
+
+pub fn sync_answer(app: &AppHandle, answer: Option<String>) {
+    {
+        let Ok(mut current) = ANSWER.lock() else {
+            return;
+        };
+        if *current == answer {
+            return;
+        }
+        *current = answer.clone();
+    }
+    if answer.is_some() {
+        show(app);
+    }
+    let _ = app.emit("task_answer", &answer);
+    if answer.is_none() {
+        let app = app.clone();
+        std::thread::spawn(move || hide_after_fade(&app, FADE_OUT));
+    }
+}
 
 pub const MODE_CHANGED: &str = "overlay_mode";
 
@@ -179,6 +200,7 @@ pub struct OverlayInfo {
     pub scale_factor: f64,
     pub capture_feedback: Option<CaptureFeedback>,
     pub recording: crate::recording::Snapshot,
+    pub answer: Option<String>,
 }
 
 pub fn info(window: &tauri::WebviewWindow) -> OverlayInfo {
@@ -200,6 +222,7 @@ pub fn info(window: &tauri::WebviewWindow) -> OverlayInfo {
         scale_factor: window.scale_factor().unwrap_or(1.0),
         capture_feedback: capture_feedback(),
         recording: crate::recording::snapshot(),
+        answer: ANSWER.lock().ok().and_then(|answer| answer.clone()),
     }
 }
 
@@ -332,6 +355,7 @@ fn hide_after_fade(app: &AppHandle, wait: Duration) {
         || owner() != Owner::None
         || capture_feedback().is_some()
         || crate::recording::capturing()
+        || ANSWER.lock().is_ok_and(|answer| answer.is_some())
     {
         return;
     }

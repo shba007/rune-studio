@@ -1,18 +1,9 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { useEventListener } from '@vueuse/core'
+import { computed } from 'vue'
 import { useDecisions, type DecisionModel } from '@/composables/useDecisions'
 import DecisionCard from './DecisionCard.vue'
 const props = defineProps<{ compact?: boolean; goalsOnly?: boolean; model?: DecisionModel }>()
 const decisions = props.model ?? useDecisions()
-// The floating window fits its content, so a viewport-relative cap feeds back
-// into its own measured height. Screen work-area dimensions stay independent.
-const compactHeight = ref(0)
-function updateCompactHeight() {
-  compactHeight.value = Math.max(80, Math.min(520, (window.screen.availHeight || 720) * 0.9 - 180))
-}
-updateCompactHeight()
-useEventListener(window, 'resize', updateCompactHeight)
 const visible = computed(() =>
   props.compact
     ? decisions.current.value
@@ -22,11 +13,7 @@ const visible = computed(() =>
 )
 </script>
 <template>
-  <div
-    class="flex flex-col gap-3"
-    :class="compact ? 'shrink-0 overflow-y-auto' : ''"
-    :style="compact ? { maxHeight: `${compactHeight}px` } : undefined"
-  >
+  <div class="flex shrink-0 flex-col gap-3">
     <p v-if="decisions.error.value" role="alert" class="m-0 text-label text-[#ff6b72]">
       {{ decisions.error.value }}
     </p>
@@ -39,6 +26,9 @@ const visible = computed(() =>
       class="flex min-w-0 flex-col gap-2 [overflow-wrap:anywhere]"
     >
       <p class="m-0 text-label text-zinc-300 whitespace-pre-wrap">{{ entry.text }}</p>
+      <p v-if="entry.kind === 'goal' && entry.category" class="m-0 text-caption text-zinc-500">
+        Category: {{ entry.category }}
+      </p>
       <p v-if="entry.error" role="alert" class="m-0 text-label text-[#ff6b72]">{{ entry.error }}</p>
       <div
         v-if="entry.approvedGoal && entry.question"

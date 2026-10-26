@@ -24,6 +24,7 @@ pub mod life;
 mod model;
 mod observe;
 mod overlay;
+mod personalities;
 mod prompts;
 mod recording;
 mod reflect;
@@ -48,7 +49,7 @@ use crate::sync::LockExt;
 use std::sync::Mutex;
 
 use tauri::{
-    Manager,
+    Emitter, Manager,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
 };
@@ -93,6 +94,19 @@ pub fn run() {
                 })
                 .build(),
         )
+        .on_window_event(|window, event| {
+            if window.label() == window::MAIN
+                && matches!(
+                    event,
+                    tauri::WindowEvent::Moved(_)
+                        | tauri::WindowEvent::Resized(_)
+                        | tauri::WindowEvent::ScaleFactorChanged { .. }
+                )
+            {
+                let app = window.app_handle();
+                let _ = app.emit("pill_geometry", commands::pill_rect(app.clone()));
+            }
+        })
         .setup(|app| {
             cursor::reset();
             if cfg!(debug_assertions) {
@@ -206,6 +220,9 @@ pub fn run() {
             cursor::set_cursor_images,
             commands::installed_versions,
             tasks::tasks_state,
+            personalities::personalities_state,
+            personalities::personality_save,
+            personalities::personality_propose,
             tasks::submit_independent_task,
             tasks::cancel_independent_task,
             tasks::cancel_planned_request,

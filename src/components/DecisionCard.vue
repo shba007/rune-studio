@@ -20,6 +20,9 @@ const emit = defineEmits<{
 const group = useId()
 const optionId = ref<string | null>(null)
 const text = ref('')
+const allowsFreeform = computed(() =>
+  ['clarification', 'goal_review', 'attachment'].includes(props.question.kind),
+)
 watch(
   () => [props.question.id, props.question.revision],
   () => {
@@ -37,7 +40,7 @@ const answer = (): DecisionAnswer => ({
 const valid = computed(() =>
   optionId.value !== null
     ? props.question.options.some((option) => option.id === optionId.value)
-    : text.value.trim().length > 0,
+    : allowsFreeform.value && text.value.trim().length > 0,
 )
 function choose(id: string | null) {
   optionId.value = id
@@ -79,14 +82,17 @@ function typeAnswer(event: Event) {
           ><span class="block"
             >{{ option.label
             }}<span
-              v-if="index === 0 && !['consent', 'attachment'].includes(question.kind)"
+              v-if="index === 0 && question.kind === 'clarification'"
               class="ml-2 text-caption text-zinc-400"
               >Recommended</span
             ></span
           ><span class="block text-caption text-zinc-400">{{ option.explanation }}</span></span
         >
       </label>
-      <label class="flex flex-col gap-2 rounded-2xl border border-white/10 p-3 text-label">
+      <label
+        v-if="allowsFreeform"
+        class="flex flex-col gap-2 rounded-2xl border border-white/10 p-3 text-label"
+      >
         <span>Your own answer</span>
         <textarea
           :value="text"
@@ -99,12 +105,12 @@ function typeAnswer(event: Event) {
       </label>
     </fieldset>
     <p v-if="error" role="alert" class="m-0 text-label text-[#ff6b72]">{{ error }}</p>
-    <div class="flex gap-2">
+    <div class="flex flex-wrap gap-2">
       <button
         v-if="deferable"
         type="button"
         :disabled="busy"
-        class="min-h-9 cursor-pointer rounded-full px-3 text-label text-zinc-400 disabled:opacity-40"
+        class="min-h-9 shrink-0 cursor-pointer rounded-full px-3 text-label whitespace-nowrap text-zinc-400 disabled:opacity-40"
         @click="emit('defer', question.id)"
       >
         Decide later
@@ -112,7 +118,7 @@ function typeAnswer(event: Event) {
       <button
         type="button"
         :disabled="busy"
-        class="min-h-9 cursor-pointer rounded-full px-3 text-label text-zinc-400 disabled:opacity-40"
+        class="min-h-9 shrink-0 cursor-pointer rounded-full px-3 text-label whitespace-nowrap text-zinc-400 disabled:opacity-40"
         @click="emit('answer', { ...answer(), optionId: 'cancel' })"
       >
         {{ cancelLabel }}
@@ -120,7 +126,7 @@ function typeAnswer(event: Event) {
       <button
         type="submit"
         :disabled="!valid || busy"
-        class="ml-auto min-h-9 cursor-pointer rounded-full bg-zinc-100 px-4 text-label text-zinc-950 disabled:opacity-40"
+        class="ml-auto min-h-9 shrink-0 cursor-pointer rounded-full bg-zinc-100 px-4 text-label whitespace-nowrap text-zinc-950 disabled:opacity-40"
       >
         {{ busy ? 'Saving…' : 'Continue' }}
       </button>

@@ -66,6 +66,20 @@ function fixture(): TaskBoardModel {
   }
 }
 afterEach(() => vi.useRealTimers())
+it('dismisses a completed request from the header and leaves its answer to the orb bubble', async () => {
+  const board = fixture()
+  board.requests.value = [{ ...board.requests.value[0]!, phase: 'done' }]
+  board.tasks.value = [board.tasks.value[1]!]
+  const wrapper = mount(TaskBoard, { props: { board } })
+  await wrapper.get('[aria-label="Expand task 1"]').trigger('click')
+  expect(wrapper.text()).not.toContain('Saved answer')
+  expect(wrapper.find('[data-testid="task-count"]').exists()).toBe(false)
+  expect(wrapper.find('footer').exists()).toBe(false)
+  await wrapper.get('header [aria-label="Dismiss request 1"]').trigger('click')
+  expect(board.dismiss).toHaveBeenCalledExactlyOnceWith(1)
+  expect(board.cancelRequest).not.toHaveBeenCalled()
+  wrapper.unmount()
+})
 it('shows one cleaned goal once, counters on every task, and parallel carousel controls', async () => {
   vi.useFakeTimers()
   vi.setSystemTime(NOW)

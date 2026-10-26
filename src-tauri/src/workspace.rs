@@ -7,6 +7,8 @@ pub const SECTION_EVENT: &str = "workspace_section";
 fn clean(section: Option<&str>) -> &'static str {
     match section {
         Some("goals") => "goals",
+        Some("personalities") => "personalities",
+        Some("overview") => "overview",
         _ => "tasks",
     }
 }
@@ -55,5 +57,6 @@ mod tests {
         assert_eq!(super::clean(Some("artifacts")), "tasks");
         assert_eq!(super::clean(Some("unknown")), "tasks");
         assert_eq!(super::clean(Some("goals")), "goals");
+        assert_eq!(super::clean(Some("overview")), "overview");
     }
 }

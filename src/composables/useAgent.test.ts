@@ -94,3 +94,38 @@ it('shares connectivity between Settings and composer, rejects stale results, an
   main.unmount()
   settings.unmount()
 })
+it('serializes window resizing and skips superseded and duplicate measurements', async () => {
+  let finish: (() => void) | undefined
+  const heights: number[] = []
+  harness.invoke.mockImplementation((command, ...args: unknown[]) => {
+    if (command !== 'fit_height') return Promise.resolve(null)
+    heights.push((args[0] as { height: number }).height)
+    return new Promise<void>((resolve) => {
+      finish = resolve
+    })
+  })
+  let agent!: Agent
+  const wrapper = mount(
+    defineComponent({
+      setup() {
+        agent = useAgent()
+        return () => null
+      },
+    }),
+  )
+  await flushPromises()
+  agent.mode.value = 'open'
+  const first = agent.fitHeight(100)
+  await flushPromises()
+  const intermediate = agent.fitHeight(200)
+  const latest = agent.fitHeight(300)
+  expect(heights).toEqual([100])
+  finish!()
+  await flushPromises()
+  expect(heights).toEqual([100, 300])
+  finish!()
+  await Promise.all([first, intermediate, latest])
+  await agent.fitHeight(300)
+  expect(heights).toEqual([100, 300])
+  wrapper.unmount()
+})

@@ -221,12 +221,14 @@ pub fn set_mode(app: AppHandle, mode: window::Mode) -> AppResult<()> {
     Ok(window::set_mode(&app, mode)?)
 }
 
-#[derive(serde::Serialize)]
+#[derive(Clone, serde::Serialize)]
 pub struct PillRect {
     pub x: i32,
     pub y: i32,
     pub width: u32,
     pub height: u32,
+    #[serde(rename = "scaleFactor")]
+    pub scale_factor: f64,
 }
 
 #[tauri::command]
@@ -242,6 +244,7 @@ pub fn pill_rect(app: AppHandle) -> Option<PillRect> {
         y: position.y,
         width: size.width,
         height: size.height,
+        scale_factor: window.scale_factor().unwrap_or(1.0),
     })
 }
 

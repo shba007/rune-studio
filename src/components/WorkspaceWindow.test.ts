@@ -5,6 +5,7 @@ import WorkspaceWindow from './WorkspaceWindow.vue'
 import TaskHistory from './TaskHistory.vue'
 import FlightPlayer from './FlightPlayer.vue'
 import DecisionInbox from './DecisionInbox.vue'
+import KnowledgeOverview from './KnowledgeOverview.vue'
 
 const harness = vi.hoisted(() => ({
   handler: null as null | ((event: { payload: { section?: string; runId?: string } }) => void),
@@ -30,7 +31,10 @@ it('keeps task history mounted while switching workspace sections', async () => 
   await flushPromises()
   const history = wrapper.getComponent(TaskHistory)
   expect(history.props('active')).toBe(true)
-  await wrapper.findAll('nav button')[0]!.trigger('click')
+  await wrapper
+    .findAll('nav button')
+    .find((button) => button.text() === 'Goals')!
+    .trigger('click')
   expect(wrapper.get('h1').text()).toBe('Goals')
   expect(wrapper.getComponent(TaskHistory).vm).toBe(history.vm)
   expect(history.props('active')).toBe(false)
@@ -48,8 +52,30 @@ it('opens Goals without a Settings button in Knowledge', async () => {
   await flushPromises()
   expect(wrapper.get('h1').text()).toBe('Goals')
   expect(wrapper.getComponent(DecisionInbox).props('goalsOnly')).toBe(true)
-  expect(wrapper.findAll('nav button').map((item) => item.text())).toEqual(['Goals', 'Tasks'])
+  expect(wrapper.findAll('nav button').map((item) => item.text())).toEqual([
+    'Overview',
+    'Goals',
+    'Tasks',
+    'Personalities',
+  ])
   expect(harness.settings).not.toHaveBeenCalled()
+  wrapper.unmount()
+})
+
+it('opens the Overview graph and follows its links without remounting task history', async () => {
+  window.history.replaceState({}, '', '/?view=workspace&section=overview')
+  const wrapper = shallowMount(WorkspaceWindow)
+  await flushPromises()
+  const history = wrapper.getComponent(TaskHistory)
+  expect(history.props('active')).toBe(false)
+  expect(wrapper.get('h1').text()).toBe('Overview')
+  wrapper.getComponent(KnowledgeOverview).vm.$emit('navigate', 'personalities')
+  await flushPromises()
+  expect(wrapper.get('h1').text()).toBe('Personalities')
+  harness.handler!({ payload: { section: 'overview' } })
+  await flushPromises()
+  expect(wrapper.get('h1').text()).toBe('Overview')
+  expect(wrapper.getComponent(TaskHistory).vm).toBe(history.vm)
   wrapper.unmount()
 })
 

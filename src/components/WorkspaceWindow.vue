@@ -7,22 +7,37 @@ import TaskHistory from './TaskHistory.vue'
 import TitleBar from './TitleBar.vue'
 import FlightPlayer from './FlightPlayer.vue'
 import DecisionInbox from './DecisionInbox.vue'
+import PersonalitiesPanel from './PersonalitiesPanel.vue'
+import KnowledgeOverview from './KnowledgeOverview.vue'
+import type { KnowledgeSection } from '@/config/knowledge'
 
-type Section = 'goals' | 'tasks'
+type Section = KnowledgeSection
 const agent = useAgent()
 const initial = new URLSearchParams(location.search).get('section')
-const section = ref<Section>(initial === 'goals' ? 'goals' : 'tasks')
+const section = ref<Section>(
+  initial === 'goals' || initial === 'personalities' || initial === 'overview' ? initial : 'tasks',
+)
 const previewTask = ref<string | null>(new URLSearchParams(location.search).get('run'))
 function navigate(next: Section) {
   previewTask.value = null
   section.value = next
 }
 const sections = [
+  {
+    id: 'overview' as const,
+    label: 'Overview',
+    subtitle: 'Understand Rune, explore its connections, and see what works today.',
+  },
   { id: 'goals' as const, label: 'Goals', subtitle: 'Long-term outcomes, pathways and progress.' },
   {
     id: 'tasks' as const,
     label: 'Tasks',
     subtitle: 'Your work, results, analysis and recordings.',
+  },
+  {
+    id: 'personalities' as const,
+    label: 'Personalities',
+    subtitle: 'Approved coaching styles and their goal categories.',
   },
 ]
 const current = computed(() => sections.find((item) => item.id === section.value)!)
@@ -38,7 +53,13 @@ onMounted(async () => {
           previewTask.value = payload.runId
           return
         }
-        if (payload.section === 'goals' || payload.section === 'tasks') navigate(payload.section)
+        if (
+          payload.section === 'goals' ||
+          payload.section === 'tasks' ||
+          payload.section === 'personalities' ||
+          payload.section === 'overview'
+        )
+          navigate(payload.section)
       },
     )
     if (disposed) off()
@@ -115,6 +136,8 @@ onBeforeUnmount(() => {
           </button>
         </div>
         <DecisionInbox v-if="section === 'tasks'" />
+        <PersonalitiesPanel v-if="section === 'personalities'" />
+        <KnowledgeOverview v-if="section === 'overview'" @navigate="navigate" />
       </section>
     </div>
   </main>
