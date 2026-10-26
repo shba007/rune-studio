@@ -273,15 +273,15 @@ impl Settings {
 pub enum ImageResolution {
     #[serde(rename = "720")]
     Small,
-    #[serde(rename = "1920")]
-    Large,
     #[serde(rename = "2560")]
     ExtraLarge,
     #[serde(rename = "native")]
     Native,
-    #[default]
-    #[serde(rename = "1280", other)]
+    #[serde(rename = "1280")]
     Balanced,
+    #[default]
+    #[serde(rename = "1920", other)]
+    Large,
 }
 impl ImageResolution {
     pub fn max_edge(self) -> u32 {
@@ -345,11 +345,11 @@ impl Default for Settings {
             archive_keep_days: 0,
             verify_mode: VerifyMode::default(),
             record_session_video: RecordVideo::default(),
-            model_image_resolution: ImageResolution::default(),
+            model_image_resolution: ImageResolution::Large,
             recording_resolution: ImageResolution::Native,
             visual_analysis: VisualAnalysis::default(),
             offer_review: OfferReview::default(),
-            demo_mode: true,
+            demo_mode: false,
             reflection_enabled: true,
             idle_minutes: 10,
             skip_swap_for_optional_roles: true,
@@ -467,7 +467,7 @@ mod tests {
     #[test]
     fn capture_resolution_defaults_migrate_and_separate_settings_round_trip() {
         let old: Settings = serde_json::from_str("{}").unwrap();
-        assert_eq!(old.model_image_resolution.max_edge(), 1280);
+        assert_eq!(old.model_image_resolution.max_edge(), 1920);
         assert_eq!(old.recording_resolution, ImageResolution::Native);
         for (name, edge) in [
             ("720", 720),
@@ -488,7 +488,7 @@ mod tests {
         }
         let invalid: Settings =
             serde_json::from_str(r#"{"modelImageResolution":"invalid"}"#).unwrap();
-        assert_eq!(invalid.model_image_resolution.max_edge(), 1280);
+        assert_eq!(invalid.model_image_resolution.max_edge(), 1920);
     }
 
     #[test]
@@ -581,9 +581,16 @@ mod tests {
     }
 
     #[test]
-    fn demo_mode_is_on_by_default_and_a_file_without_it_loads() {
-        assert!(Settings::default().demo_mode);
-        assert!(serde_json::from_str::<Settings>("{}").unwrap().demo_mode);
+    fn demo_mode_is_off_by_default_and_saved_preferences_are_preserved() {
+        assert!(!Settings::default().demo_mode);
+        assert!(!serde_json::from_str::<Settings>("{}").unwrap().demo_mode);
+        let saved = serde_json::from_str::<Settings>(
+            r#"{"demoMode":true,"modelImageResolution":"720","recordingResolution":"1280"}"#,
+        )
+        .unwrap();
+        assert!(saved.demo_mode);
+        assert_eq!(saved.model_image_resolution, ImageResolution::Small);
+        assert_eq!(saved.recording_resolution, ImageResolution::Balanced);
         assert!(
             !serde_json::from_str::<Settings>(r#"{ "demoMode": false }"#)
                 .unwrap()

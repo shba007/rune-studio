@@ -234,6 +234,7 @@ export interface Finding {
 }
 
 export interface Pose {
+  rejected?: number
   keypoints: { label: string; x: number; y: number }[]
   connections: [number, number][]
 }

@@ -30,6 +30,17 @@ describe('saved visual analysis highlights', () => {
             n: index + 1,
             label: group,
             group,
+            pose:
+              group === 'structure'
+                ? {
+                    keypoints: [
+                      { label: 'shoulder', x: 250, y: 250 },
+                      { label: 'elbow', x: 500, y: 500 },
+                    ],
+                    connections: [[0, 1]],
+                    rejected: 1,
+                  }
+                : null,
             kind: 'region',
             box: [250, 250, 750, 750],
             point: null,
@@ -41,6 +52,8 @@ describe('saved visual analysis highlights', () => {
     })
     await flushPromises()
     expect(wrapper.findAll('[data-marker]')).toHaveLength(4)
+    expect(wrapper.findAll('[data-keypoint]')).toHaveLength(2)
+    expect(wrapper.text()).toContain('Some pose data was invalid and omitted')
     const marker = wrapper.get('[data-marker="1"]')
     expect(marker.attributes('style')).toContain('left: 200px')
     expect(marker.attributes('style')).toContain('top: 100px')

@@ -18,7 +18,9 @@ const KIND_ICON: Record<FindingKind, IconName> = {
   other: 'eye',
 }
 
-const positioned = computed(() => props.finding.box !== null)
+const positioned = computed(
+  () => props.finding.box !== null || Boolean(props.finding.pose?.keypoints.length),
+)
 const badge = computed(() => {
   if (props.selected) return 'bg-[#f1f1ef] text-[#141414] border-[#f1f1ef]'
   if (!positioned.value) return 'border-dashed border-white/40 text-zinc-300'
@@ -51,6 +53,9 @@ const badge = computed(() => {
         :class="open ? 'rotate-180' : ''"
       />
     </button>
+    <p v-if="finding.pose?.rejected" role="status" class="m-0 px-3 pb-2 text-label text-amber-300">
+      Some pose data was invalid and omitted. Valid landmarks and connections are shown.
+    </p>
     <div v-if="open" class="flex flex-col gap-1 px-3 pb-3">
       <p v-if="finding.description" class="m-0 text-label text-zinc-200">
         {{ finding.description }}

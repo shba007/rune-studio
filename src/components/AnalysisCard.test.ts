@@ -48,6 +48,22 @@ const submitFromComposer = (wrapper: { vm: unknown }, question: string) =>
   (wrapper.vm as { submit: (question: string) => Promise<boolean> }).submit(question)
 
 describe('AnalysisCard states', () => {
+  it('warns about rejected pose data without hiding valid landmarks', () => {
+    const { analysis } = fake({
+      status: 'done',
+      findings: [
+        finding(1, {
+          group: 'structure',
+          box: null,
+          pose: { keypoints: [{ label: 'wrist', x: 300, y: 400 }], connections: [], rejected: 1 },
+        }),
+      ],
+    })
+    const wrapper = mount(AnalysisCard, { props: { analysis } })
+    expect(wrapper.text()).toContain('Some pose data was invalid and omitted')
+    expect(wrapper.find('[aria-label="Finding 1: Thing 1"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
   it('preselects the primary screen without capturing and preserves a manually selected window on refresh', async () => {
     const options = [
       { target: { kind: 'screen', id: 1 }, label: 'Secondary', primary: false },

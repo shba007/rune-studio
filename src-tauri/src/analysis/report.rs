@@ -69,6 +69,12 @@ pub struct Keypoint {
 pub struct Pose {
     pub keypoints: Vec<Keypoint>,
     pub connections: Vec<[usize; 2]>,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub rejected: usize,
+}
+
+fn is_zero(value: &usize) -> bool {
+    *value == 0
 }
 
 impl Finding {
@@ -78,25 +84,46 @@ impl Finding {
 }
 
 fn parse_pose(value: &Value) -> Option<Pose> {
-    let pose: Pose = serde_json::from_value(value.clone()).ok()?;
-    if pose.keypoints.is_empty()
-        || pose.keypoints.len() > 32
-        || pose.connections.len() > 64
-        || pose.keypoints.iter().any(|p| {
-            p.label.trim().is_empty()
-                || p.label.chars().count() > 24
-                || !p.x.is_finite()
-                || !p.y.is_finite()
-                || !(0.0..=1000.0).contains(&p.x)
-                || !(0.0..=1000.0).contains(&p.y)
-        })
-        || pose
-            .connections
-            .iter()
-            .any(|[a, b]| a == b || *a >= pose.keypoints.len() || *b >= pose.keypoints.len())
-    {
+    let raw_points = value["keypoints"].as_array()?;
+    let raw_edges = value["connections"].as_array()?;
+    let mut pose = Pose {
+        keypoints: Vec::new(),
+        connections: Vec::new(),
+        rejected: 0,
+    };
+    let mut indices = [None; 32];
+    for (index, raw) in raw_points.iter().take(32).enumerate() {
+        let Ok(point) = serde_json::from_value::<Keypoint>(raw.clone()) else {
+            continue;
+        };
+        if point.label.trim().is_empty()
+            || point.label.chars().count() > 24
+            || !point.x.is_finite()
+            || !point.y.is_finite()
+            || !(0.0..=1000.0).contains(&point.x)
+            || !(0.0..=1000.0).contains(&point.y)
+        {
+            continue;
+        }
+        indices[index] = Some(pose.keypoints.len());
+        pose.keypoints.push(point);
+    }
+    if pose.keypoints.is_empty() {
         return None;
     }
+    for raw in raw_edges.iter().take(64) {
+        let Ok([a, b]) = serde_json::from_value::<[usize; 2]>(raw.clone()) else {
+            continue;
+        };
+        if a == b {
+            continue;
+        }
+        if let (Some(Some(a)), Some(Some(b))) = (indices.get(a), indices.get(b)) {
+            pose.connections.push([*a, *b]);
+        }
+    }
+    pose.rejected = (raw_points.len() - pose.keypoints.len())
+        .saturating_add(raw_edges.len() - pose.connections.len());
     Some(pose)
 }
 
@@ -346,19 +373,55 @@ mod tests {
         assert_eq!(serde_json::from_str::<Finding>(&saved).unwrap(), *finding);
         let mut bad = pose.clone();
         bad["connections"] = json!([[0, 2]]);
-        assert!(parse_pose(&bad).is_none());
+        assert_eq!(parse_pose(&bad).unwrap().rejected, 1);
         bad = pose.clone();
         bad["keypoints"][0]["x"] = json!(-1);
-        assert!(parse_pose(&bad).is_none());
+        assert_eq!(parse_pose(&bad).unwrap().rejected, 2);
         bad = pose.clone();
         bad["connections"] = json!([[1, 1]]);
-        assert!(parse_pose(&bad).is_none());
+        assert_eq!(parse_pose(&bad).unwrap().rejected, 1);
         assert!(parse_pose(&Value::Null).is_none());
         let legacy: Finding = serde_json::from_value(
             json!({"n":1,"label":"old","kind":"image","box":null,"description":"","evidence":""}),
         )
         .unwrap();
         assert!(legacy.pose.is_none());
+    }
+
+    #[test]
+    fn reported_twelve_point_pose_keeps_valid_geometry_and_rejects_index_twelve() {
+        let points = (0..12)
+            .map(|i| json!({"label":format!("joint {i}"),"x":330+i,"y":220+i}))
+            .collect::<Vec<_>>();
+        let raw = json!({"keypoints":points,"connections":[[0,1],[0,2],[1,3],[2,4],[3,5],[4,6],[0,7],[1,8],[7,9],[8,10],[9,11],[10,12]]});
+        let pose = parse_pose(&raw).unwrap();
+        assert_eq!(pose.keypoints.len(), 12);
+        assert_eq!(pose.connections.len(), 11);
+        assert_eq!(pose.rejected, 1);
+        assert_eq!(pose.keypoints[0].x, 330.0);
+        assert_eq!(
+            serde_json::from_str::<Pose>(&serde_json::to_string(&pose).unwrap()).unwrap(),
+            pose
+        );
+    }
+
+    #[test]
+    fn invalid_landmarks_drop_only_incident_edges_and_preserve_endpoint_identity() {
+        let pose = parse_pose(&json!({"keypoints":[
+            {"label":"shoulder","x":100,"y":200},
+            {"label":"invalid","x":-1,"y":200},
+            {"label":"wrist","x":300,"y":400}
+        ],"connections":[[0,2],[0,1],[1,2]]}))
+        .unwrap();
+        assert_eq!(
+            pose.keypoints
+                .iter()
+                .map(|p| p.label.as_str())
+                .collect::<Vec<_>>(),
+            vec!["shoulder", "wrist"]
+        );
+        assert_eq!(pose.connections, vec![[0, 1]]);
+        assert_eq!(pose.rejected, 3);
     }
 
     fn found(arguments: Value) -> ParsedReport {

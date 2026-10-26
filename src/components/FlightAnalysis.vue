@@ -130,6 +130,9 @@ watch(
         class="border-t border-white/8 py-3"
       >
         <h3 class="m-0 text-body text-zinc-100">{{ finding.n }} · {{ finding.label }}</h3>
+        <p v-if="finding.pose?.rejected" role="status" class="my-1 text-label text-amber-300">
+          Some pose data was invalid and omitted. Valid landmarks and connections are shown.
+        </p>
         <p class="my-1 text-label text-zinc-400">{{ finding.description }}</p>
         <p class="m-0 text-label text-zinc-500">{{ finding.evidence }}</p>
       </article>
