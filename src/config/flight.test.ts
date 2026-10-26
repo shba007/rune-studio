@@ -326,6 +326,7 @@ describe('the picture and the track', () => {
     expect(failedStep(step(1, null, { result: 'failed' }))).toBe(true)
     expect(failedStep(step(1, null))).toBe(false)
     expect(isOutsideAgent('built-in')).toBe(false)
+    expect(isOutsideAgent('screen-insight')).toBe(false)
     expect(isOutsideAgent('Claude Code')).toBe(true)
   })
 })

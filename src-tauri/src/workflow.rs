@@ -236,6 +236,9 @@ pub async fn run(app: &AppHandle, workflow_id: &str, input: Value) -> Result<(),
             settings_json: Some(settings_json),
             session_dir: None,
         });
+        state
+            .trace
+            .user_prompt(&id, input["question"].as_str().unwrap_or(""));
         analysis.cancel.clone()
     };
     crate::analysis::run::publish(app);

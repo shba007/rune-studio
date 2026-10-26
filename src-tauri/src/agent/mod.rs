@@ -66,6 +66,7 @@ pub fn start_planned(
     task: String,
     plan: Option<Vec<String>>,
     board_id: Option<u64>,
+    original: Option<&str>,
 ) {
     let scope = app.state::<AppState>().begin_run();
     log::info!("run {} started", scope.id);
@@ -101,6 +102,7 @@ pub fn start_planned(
         settings_json: Some(settings_json),
         session_dir: crate::archive::session_dir(&session).map(|dir| dir.display().to_string()),
     });
+    trace.user_prompt(&run_id, original.unwrap_or(&task));
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let work_app = app.clone();

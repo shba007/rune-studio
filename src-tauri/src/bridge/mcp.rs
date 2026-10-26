@@ -446,7 +446,7 @@ async fn begin(app: &AppHandle, arguments: &Value) -> Reply {
     };
     let (_, settings_json) = trace::model_and_snapshot(&state.settings);
     state.trace.begin_run(RunInfo {
-        id: run_id,
+        id: run_id.clone(),
         scope_id: i64::try_from(scope.id).ok(),
         task: task.clone(),
         source: agent.clone(),
@@ -457,6 +457,9 @@ async fn begin(app: &AppHandle, arguments: &Value) -> Reply {
         settings_json: Some(settings_json),
         session_dir: crate::archive::session_dir(&session).map(|dir| dir.display().to_string()),
     });
+    state
+        .trace
+        .user_prompt(&run_id, arguments["task"].as_str().unwrap_or(""));
     events::set_external(app, Some(who));
     events::set_agent_state(app, AgentState::Observing);
     log::info!("agent bridge: {agent} took control for \"{task}\"");

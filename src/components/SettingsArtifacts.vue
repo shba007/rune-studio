@@ -1,13 +1,25 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 
 import type { Agent } from '@/composables/useAgent'
-import { useFlight } from '@/composables/useFlight'
+import { problemText, useFlight } from '@/composables/useFlight'
 
 import ArtifactCard from './ArtifactCard.vue'
 
 const props = defineProps<{ agent: Agent }>()
 const flight = useFlight()
+const deleting = ref<string | null>(null)
+async function remove(id: string) {
+  if (deleting.value) return
+  deleting.value = id
+  try {
+    await flight.remove(id)
+  } catch (error) {
+    flight.problem.value = problemText(error)
+  } finally {
+    deleting.value = null
+  }
+}
 
 onMounted(() => flight.loadRuns())
 </script>
@@ -29,7 +41,10 @@ onMounted(() => flight.loadRuns())
         v-for="run in flight.runs.value"
         :key="run.id"
         :run="run"
+        :deleting="deleting === run.id"
+        :delete-disabled="deleting !== null"
         @open="props.agent.openReview(run.id)"
+        @remove="remove(run.id)"
       />
     </div>
   </div>

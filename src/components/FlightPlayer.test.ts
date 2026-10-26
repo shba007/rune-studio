@@ -125,6 +125,49 @@ describe('FlightPlayer states', () => {
     expect(wrapper.find('[data-testid="no-steps"]').exists()).toBe(true)
   })
 
+  it('shows an Insight capture and answer even though it has no action steps', async () => {
+    world({
+      steps: [],
+      header: makeHeader({
+        source: 'screen-insight',
+        steps: 0,
+        analysis: {
+          answer: 'The port is already in use.',
+          findings: [],
+          model: 'vision',
+          capturedUtc: '2026-10-20T10:00:00Z',
+          captureFile: 'screenshots/capture.png',
+          error: null,
+        },
+      }),
+    })
+    const wrapper = await open()
+    expect(wrapper.find('[data-testid="no-steps"]').exists()).toBe(false)
+    expect(wrapper.get('img[alt="Saved screen analysis capture"]').attributes('src')).toBe(
+      'asset://screenshots/capture.png',
+    )
+    expect(wrapper.get('[data-testid="analysis-answer"]').text()).toContain(
+      'The port is already in use.',
+    )
+    await wrapper.get('img[alt="Saved screen analysis capture"]').trigger('error')
+    expect(wrapper.get('[data-testid="analysis-capture-notice"]').text()).toContain(
+      'deleted or moved',
+    )
+  })
+
+  it('shows the answer and explains why older Insight sessions have no capture', async () => {
+    world({
+      steps: [],
+      header: makeHeader({ source: 'screen-insight', steps: 0, summary: 'An older answer.' }),
+    })
+    const wrapper = await open()
+    expect(wrapper.find('[data-testid="no-steps"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="analysis-answer"]').text()).toBe('An older answer.')
+    expect(wrapper.get('[data-testid="analysis-capture-notice"]').text()).toContain(
+      'Older in-memory images cannot be restored',
+    )
+  })
+
   it('falls back to the screenshots and says why when the video file is missing', async () => {
     world({
       header: makeHeader({ video: { file: 'session.mp4', kind: 'storyboard' } }),

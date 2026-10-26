@@ -268,7 +268,7 @@ pub fn start_task(app: AppHandle, text: String) -> AppResult<()> {
 
 #[cfg(feature = "eval")]
 pub fn begin_task(app: &AppHandle, text: &str, keep_mic: bool) -> AppResult<()> {
-    begin_task_owned(app, text, keep_mic, None, None, None)
+    begin_task_owned(app, text, keep_mic, None, None, None, Some(text))
 }
 
 pub fn begin_task_planned(
@@ -289,6 +289,7 @@ pub(crate) fn begin_board_task(
     steps: Vec<String>,
     keep_mic: bool,
     request_id: u64,
+    original: &str,
 ) -> AppResult<()> {
     begin_task_owned(
         app,
@@ -297,6 +298,7 @@ pub(crate) fn begin_board_task(
         Some(steps),
         Some(id),
         Some(crate::recording::Owner::Request(request_id)),
+        Some(original),
     )
 }
 
@@ -307,6 +309,7 @@ fn begin_task_owned(
     plan: Option<Vec<String>>,
     board_id: Option<u64>,
     recording_owner: Option<crate::recording::Owner>,
+    original: Option<&str>,
 ) -> AppResult<()> {
     let state = app.state::<AppState>();
     let task = text.trim();
@@ -338,7 +341,7 @@ fn begin_task_owned(
     if !keep_mic {
         drop(state.mic.locked().take());
     }
-    agent::start_planned(app, task.to_string(), plan, board_id);
+    agent::start_planned(app, task.to_string(), plan, board_id, original);
     Ok(())
 }
 
@@ -600,12 +603,58 @@ pub fn flight_runs(
     limit: Option<usize>,
     before: Option<String>,
 ) -> AppResult<Vec<crate::flight::FlightRun>> {
-    crate::flight::runs(
+    let state = app.state::<AppState>();
+    let mut runs = crate::flight::runs(
         &trace_db(&app)?,
         limit.unwrap_or(30).min(200),
         before.as_deref(),
     )
-    .map_err(read_error)
+    .map_err(read_error)?;
+    let active = state.trace.open_run_id();
+    for run in &mut runs {
+        run.active = active.as_deref() == Some(run.id.as_str());
+    }
+    Ok(runs)
+}
+
+#[tauri::command]
+pub async fn flight_original_prompt(app: AppHandle, id: String) -> AppResult<String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().trace.sync().map_err(AppError::Invalid)?;
+        crate::flight::original_prompt(&trace_db(&app)?, &id).map_err(read_error)?
+            .ok_or_else(|| AppError::Invalid("The original prompt was not retained for this session. Older records may contain only shortened or expanded execution text.".into()))
+    }).await.map_err(read_error)?
+}
+
+#[tauri::command]
+pub async fn flight_delete(app: AppHandle, id: String) -> AppResult<Option<String>> {
+    static DELETION: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    tauri::async_runtime::spawn_blocking(move || {
+        let _deletion = DELETION.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let state = app.state::<AppState>();
+        if let Err(error) = state.trace.block_session(&id) {
+            return Err(AppError::Invalid(error));
+        }
+        let result = (|| {
+            let db = trace_db(&app)?;
+            let dir = crate::flight::session_dir(&db, &id).map_err(read_error)?;
+            let staged = if let Some(dir) = dir {
+                if crate::flight::folder_shared(&db, &id, &dir).map_err(read_error)? {
+                    return Err(AppError::Invalid("This folder is shared with another session; it cannot be deleted safely.".into()));
+                }
+                crate::archive::stage_session_deletion(&dir, &id).map_err(|error| AppError::Invalid(error.to_string()))?
+            } else { None };
+            crate::flight::delete_record(&db, &id).map_err(read_error)?;
+            let warning = staged.and_then(|staged| staged.finish().err()).map(|error| {
+                let message = format!("Session history was deleted, but some session files could not be removed: {error}");
+                log::warn!("{message}");
+                message
+            });
+            Ok(warning)
+        })();
+        if result.is_err() { state.trace.unblock_session(&id); }
+        result
+    }).await.map_err(read_error)?
 }
 
 #[tauri::command]

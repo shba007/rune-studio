@@ -441,7 +441,6 @@ pub enum Msg {
     Analysis(Box<AnalysisRecord>),
     Reflection(Box<ReflectionRecord>),
     Call(Box<CallRecord>),
-    #[cfg(test)]
     Flush(std::sync::mpsc::Sender<()>),
 }
 
@@ -451,6 +450,7 @@ pub struct Recorder {
     path: Option<std::path::PathBuf>,
     dropped: Arc<AtomicU64>,
     open: Arc<Mutex<Option<String>>>,
+    deleted: Arc<Mutex<std::collections::HashSet<String>>>,
 }
 
 static LAST_WARNING: Mutex<Option<Instant>> = Mutex::new(None);
@@ -472,6 +472,7 @@ impl Recorder {
             path: None,
             dropped: Arc::default(),
             open: Arc::default(),
+            deleted: Arc::default(),
         }
     }
 
@@ -517,6 +518,7 @@ impl Recorder {
                 path: Some(path.to_path_buf()),
                 dropped: Arc::default(),
                 open: Arc::default(),
+                deleted: Arc::default(),
             },
             Err(err) => {
                 log::error!("could not start the trace writer: {err}");
@@ -535,6 +537,25 @@ impl Recorder {
     }
 
     fn send(&self, message: Msg) {
+        let deleted = self
+            .deleted
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let id = match &message {
+            Msg::BeginRun(info) => Some(info.id.as_str()),
+            Msg::SetPlan { run_id, .. }
+            | Msg::Event { run_id, .. }
+            | Msg::EndRun { run_id, .. } => Some(run_id.as_str()),
+            Msg::Step(row) => Some(row.run_id.as_str()),
+            Msg::Verdict(row) => Some(row.run_id.as_str()),
+            Msg::Call(row) => Some(row.run_id.as_str()),
+            Msg::Analysis(row) => Some(row.id.as_str()),
+            Msg::Reflection(row) => Some(row.id.as_str()),
+            _ => None,
+        };
+        if id.is_some_and(|id| deleted.contains(id)) {
+            return;
+        }
         let Some(tx) = &self.tx else { return };
         if tx.try_send(message).is_err() {
             let total = self.dropped.fetch_add(1, Ordering::Relaxed) + 1;
@@ -550,7 +571,6 @@ impl Recorder {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    #[cfg(any(feature = "agent-bridge", feature = "eval", test))]
     pub fn open_run_id(&self) -> Option<String> {
         self.open_run().clone()
     }
@@ -641,16 +661,61 @@ impl Recorder {
         self.send(Msg::PurgeSessions(session_dirs));
     }
 
-    #[cfg(test)]
-    pub(crate) fn flush(&self) {
+    pub fn sync(&self) -> Result<(), String> {
         let (done, wait) = std::sync::mpsc::channel();
         self.tx
             .as_ref()
-            .expect("a started recorder")
+            .ok_or("Session history is unavailable")?
             .send(Msg::Flush(done))
-            .expect("the writer is alive");
-        wait.recv_timeout(Duration::from_secs(10))
-            .expect("the writer answers");
+            .map_err(|_| "Session history writer is closed")?;
+        wait.recv()
+            .map_err(|_| "Session history writer stopped".into())
+    }
+
+    pub fn block_session(&self, id: &str) -> Result<(), String> {
+        if self.open_run().as_deref() == Some(id) {
+            return Err("Finish or stop this session before deleting it".into());
+        }
+        let inserted = self
+            .deleted
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(id.to_string());
+        if !inserted {
+            return Err("This session is already deleted or being deleted".into());
+        }
+        if let Err(error) = self.sync() {
+            self.unblock_session(id);
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    pub fn unblock_session(&self, id: &str) {
+        self.deleted
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(id);
+    }
+
+    pub fn user_prompt(&self, id: &str, text: &str) {
+        let complete = text.chars().count() <= PROMPT_CAP;
+        let text = if complete {
+            text.to_string()
+        } else {
+            cap(text, PROMPT_CAP)
+        };
+        self.send(Msg::Event {
+            run_id: id.to_string(),
+            at_utc: now_utc(),
+            kind: "user_prompt".into(),
+            data_json: serde_json::json!({"text":text,"complete":complete}).to_string(),
+        });
+    }
+
+    #[cfg(test)]
+    pub(crate) fn flush(&self) {
+        self.sync().expect("the writer answers");
     }
 
     #[cfg(test)]
@@ -662,6 +727,7 @@ impl Recorder {
                 path: None,
                 dropped: Arc::default(),
                 open: Arc::default(),
+                deleted: Arc::default(),
             },
             rx,
         )
@@ -680,7 +746,6 @@ fn writer(mut db: Connection, rx: Receiver<Msg>) {
         if let Err(err) = store::write_batch(&mut db, &batch) {
             warn_rarely(|| format!("could not write to the trace database: {err}"));
         }
-        #[cfg(test)]
         for message in batch {
             if let Msg::Flush(done) = message {
                 let _ = done.send(());

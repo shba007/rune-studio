@@ -605,8 +605,7 @@ pub fn submit_independent_task(app: AppHandle, text: String) -> Result<u64, Stri
     submit_request(&app, &text, false)
 }
 pub(crate) fn submit_request(app: &AppHandle, text: &str, keep_mic: bool) -> Result<u64, String> {
-    let text = text.trim();
-    if text.is_empty() || text.chars().count() > 4000 {
+    if text.trim().is_empty() || text.chars().count() > 4000 {
         return Err("Enter a request of 1 to 4000 characters".into());
     }
     if app.state::<AppState>().settings.locked().external_agent {
@@ -786,6 +785,12 @@ async fn schedule(app: AppHandle) {
                             b.finish(task.id, Err("Cancelled".into()));
                             Ok(())
                         } else {
+                            let original = b
+                                .requests
+                                .iter()
+                                .find(|r| r.request.id == task.request_id)
+                                .map(|r| r.request.text.clone())
+                                .unwrap_or_default();
                             let result = crate::commands::begin_board_task(
                                 &app,
                                 &context,
@@ -793,6 +798,7 @@ async fn schedule(app: AppHandle) {
                                 task.steps.iter().map(|s| s.text.clone()).collect(),
                                 task.keep_mic,
                                 task.request_id,
+                                &original,
                             );
                             if result.is_ok() {
                                 b.desktop = Some(task.id);

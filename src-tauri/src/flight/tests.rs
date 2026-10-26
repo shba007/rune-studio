@@ -115,6 +115,88 @@ fn a_header_counts_steps_and_retries_and_a_missing_run_is_none() {
 }
 
 #[test]
+fn insight_history_exposes_capture_and_answer_without_inventing_action_steps() {
+    let dir = TempDir::new();
+    let db = crate::trace::db_path(&dir.0);
+    let folder = dir.0.join("session");
+    std::fs::create_dir_all(folder.join("screenshots")).unwrap();
+    let capture = folder.join("screenshots/capture.png");
+    std::fs::write(&capture, b"png").unwrap();
+    let rec = Recorder::start(&db);
+    rec.begin_run(RunInfo {
+        id: "insight-test".into(),
+        source: "screen-insight".into(),
+        started_utc: "2026-10-20T10:00:00Z".into(),
+        ..Default::default()
+    });
+    rec.analysis(trace::AnalysisRecord {
+        id: "insight-test".into(),
+        answer: "An error is visible.".into(),
+        findings_json: r#"[{"n":1,"label":"Error"}]"#.into(),
+        model: Some("vision".into()),
+        status: "ok".into(),
+        screenshot_path: Some(capture.display().to_string()),
+        ..Default::default()
+    });
+    rec.end_run("insight-test", "succeeded", "An error is visible.");
+    rec.flush();
+    let head = header(&db, "insight-test").unwrap().unwrap();
+    assert_eq!(head.steps, 0);
+    assert_eq!(
+        runs(&db, 10, None).unwrap()[0].thumb.as_deref(),
+        Some("screenshots/capture.png")
+    );
+    let analysis = head.analysis.unwrap();
+    assert_eq!(analysis.answer, "An error is visible.");
+    assert_eq!(analysis.model.as_deref(), Some("vision"));
+    assert_eq!(
+        analysis.capture_file.as_deref(),
+        Some("screenshots/capture.png")
+    );
+    assert_eq!(analysis.findings[0]["label"], "Error");
+    let resolved = session_dir(&db, "insight-test").unwrap().unwrap();
+    assert_eq!(
+        files::resolve(&resolved, "screenshots/capture.png").unwrap(),
+        capture.canonicalize().unwrap()
+    );
+    std::fs::remove_file(capture).unwrap();
+    assert!(
+        header(&db, "insight-test")
+            .unwrap()
+            .unwrap()
+            .analysis
+            .unwrap()
+            .capture_file
+            .is_some()
+    );
+    assert_eq!(
+        files::resolve(&resolved, "screenshots/capture.png"),
+        Err(files::Refused::Missing)
+    );
+
+    rec.begin_run(RunInfo {
+        id: "insight-old".into(),
+        source: "screen-insight".into(),
+        ..Default::default()
+    });
+    rec.analysis(trace::AnalysisRecord {
+        id: "insight-old".into(),
+        answer: "An older answer".into(),
+        findings_json: "[]".into(),
+        ..Default::default()
+    });
+    rec.flush();
+    let old = header(&db, "insight-old")
+        .unwrap()
+        .unwrap()
+        .analysis
+        .unwrap();
+    assert_eq!(old.answer, "An older answer");
+    assert!(old.capture_file.is_none());
+    assert!(session_dir(&db, "insight-old").unwrap().is_none());
+}
+
+#[test]
 fn steps_and_events_are_in_order() {
     let dir = TempDir::new();
     let db = recorded(&dir);
@@ -161,4 +243,53 @@ fn a_missing_database_is_an_error_not_a_panic() {
 fn a_run_id_is_made_safe_for_a_url() {
     assert_eq!(url_safe("120000-1-open-notepad"), "120000-1-open-notepad");
     assert_eq!(url_safe("a b&c=d/../é"), "a%20b%26c%3Dd%2F%2E%2E%2F%C3%A9");
+}
+
+#[test]
+fn original_prompt_is_complete_and_deletion_does_not_resurrect_from_late_writes() {
+    let dir = TempDir::new();
+    let db = recorded(&dir);
+    let rec = Recorder::start(&db);
+    let raw = format!("  Open Notepad\nType exactly: {}  ", "বাংলা ".repeat(400));
+    rec.user_prompt("new", &raw);
+    rec.analysis(trace::AnalysisRecord {
+        id: "new".into(),
+        status: "ok".into(),
+        ..Default::default()
+    });
+    rec.flush();
+    assert_eq!(
+        original_prompt(&db, "new").unwrap().as_deref(),
+        Some(raw.as_str())
+    );
+    assert!(original_prompt(&db, "old").unwrap().is_none());
+    rec.block_session("new").unwrap();
+    delete_record(&db, "new").unwrap();
+    assert!(
+        rec.block_session("new").is_err(),
+        "a repeated delete cannot reopen the trace write guard"
+    );
+    rec.event("new", "late", "{}");
+    rec.verdict(crate::trace::VerdictRecord {
+        run_id: "new".into(),
+        ..Default::default()
+    });
+    rec.analysis(trace::AnalysisRecord {
+        id: "new".into(),
+        ..Default::default()
+    });
+    rec.flush();
+    assert!(store::get_run(&db, "new").unwrap().is_none());
+    assert!(store::get_analysis(&db, "new").unwrap().is_none());
+    assert!(calls(&db, "new", None).unwrap().is_empty());
+    assert_eq!(steps(&db, "old").unwrap().len(), 1);
+    rec.begin_run(RunInfo {
+        id: "active".into(),
+        ..Default::default()
+    });
+    assert!(
+        rec.block_session("active")
+            .unwrap_err()
+            .contains("Finish or stop")
+    );
 }

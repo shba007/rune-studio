@@ -23,6 +23,7 @@ pub struct FlightRun {
     pub steps: i64,
     pub verdict: Option<String>,
     pub thumb: Option<String>,
+    pub active: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -43,6 +44,28 @@ pub struct FlightHeader {
     pub verdict: Option<Value>,
     pub video: Option<Value>,
     pub session_dir: Option<String>,
+    pub analysis: Option<FlightAnalysis>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FlightAnalysis {
+    pub answer: String,
+    pub findings: Value,
+    pub model: Option<String>,
+    pub captured_utc: String,
+    pub capture_file: Option<String>,
+    pub error: Option<String>,
+}
+
+fn insight_directory(record: &trace::AnalysisRecord) -> Option<PathBuf> {
+    let path = Path::new(record.screenshot_path.as_deref()?);
+    let parent = path.parent()?;
+    (path.is_absolute()
+        && path.file_name()? == "capture.png"
+        && parent.file_name()? == "screenshots")
+        .then(|| parent.parent().map(Path::to_path_buf))
+        .flatten()
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -87,7 +110,18 @@ pub fn runs(db: &Path, limit: usize, before: Option<&str>) -> Result<Vec<FlightR
                 .session_dir
                 .as_deref()
                 .zip(row.last_shot.as_deref())
-                .and_then(|(dir, shot)| files::relative_to(Path::new(dir), shot)),
+                .and_then(|(dir, shot)| files::relative_to(Path::new(dir), shot))
+                .or_else(|| {
+                    if row.source.as_deref() != Some("screen-insight") {
+                        return None;
+                    }
+                    store::get_analysis(db, &row.id)
+                        .ok()
+                        .flatten()
+                        .as_ref()
+                        .and_then(insight_directory)
+                        .map(|_| "screenshots/capture.png".into())
+                }),
             id: row.id,
             task: row.task.unwrap_or_default(),
             source: row.source.unwrap_or_default(),
@@ -96,6 +130,7 @@ pub fn runs(db: &Path, limit: usize, before: Option<&str>) -> Result<Vec<FlightR
             ended_utc: row.ended_utc,
             steps: row.steps,
             verdict: row.verdict,
+            active: false,
         })
         .collect())
 }
@@ -120,6 +155,16 @@ pub fn header(db: &Path, id: &str) -> Result<Option<FlightHeader>, StoreError> {
         return Ok(None);
     };
     let info = &detail.run.info;
+    let analysis = if info.source == "screen-insight" {
+        store::get_analysis(db, id)?
+    } else {
+        None
+    };
+    let session = info
+        .session_dir
+        .as_deref()
+        .map(PathBuf::from)
+        .or_else(|| analysis.as_ref().and_then(insight_directory));
     let duration = detail
         .run
         .ended_utc
@@ -150,7 +195,15 @@ pub fn header(db: &Path, id: &str) -> Result<Option<FlightHeader>, StoreError> {
             json!({ "result": verdict.result, "evidence": verdict.evidence, "mode": verdict.mode, "error": verdict.error })
         }),
         video,
-        session_dir: info.session_dir.clone(),
+        session_dir: session.as_ref().map(|dir| dir.display().to_string()),
+        analysis: analysis.map(|record| FlightAnalysis {
+            capture_file: insight_directory(&record).map(|_| "screenshots/capture.png".into()),
+            answer: record.answer,
+            findings: serde_json::from_str(&record.findings_json).unwrap_or_else(|_| json!([])),
+            model: record.model,
+            captured_utc: record.created_utc,
+            error: record.error,
+        }),
     }))
 }
 
@@ -252,10 +305,96 @@ pub fn call_bodies(db: &Path, call_id: i64) -> Result<Option<(String, String)>, 
 }
 
 pub fn session_dir(db: &Path, id: &str) -> Result<Option<PathBuf>, StoreError> {
-    Ok(store::get_run(db, id)?
-        .and_then(|detail| detail.run.info.session_dir)
-        .filter(|dir| !dir.is_empty())
-        .map(PathBuf::from))
+    let Some(detail) = store::get_run(db, id)? else {
+        return Ok(None);
+    };
+    if let Some(dir) = detail.run.info.session_dir.filter(|dir| !dir.is_empty()) {
+        return Ok(Some(PathBuf::from(dir)));
+    }
+    if detail.run.info.source == "screen-insight" {
+        return Ok(store::get_analysis(db, id)?
+            .as_ref()
+            .and_then(insight_directory));
+    }
+    Ok(None)
+}
+
+pub fn original_prompt(db: &Path, id: &str) -> Result<Option<String>, StoreError> {
+    let Some(detail) = store::get_run(db, id)? else {
+        return Ok(None);
+    };
+    Ok(detail
+        .events
+        .iter()
+        .rev()
+        .find(|event| event.kind.as_deref() == Some("user_prompt"))
+        .and_then(|event| event.data_json.as_deref())
+        .and_then(|data| serde_json::from_str::<Value>(data).ok())
+        .filter(|value| value["complete"] == true)
+        .and_then(|value| value["text"].as_str().map(str::to_owned)))
+}
+
+pub fn folder_shared(db: &Path, id: &str, dir: &Path) -> Result<bool, StoreError> {
+    let Ok(dir) = dir.canonicalize() else {
+        return Ok(false);
+    };
+    let conn = store::open_read(db)?;
+    for (table, key, column) in [
+        ("runs", "id", "session_dir"),
+        ("analyses", "id", "screenshot_path"),
+    ] {
+        if !has_table(&conn, table) {
+            continue;
+        }
+        let mut query = conn.prepare(&format!(
+            "SELECT {column} FROM {table} WHERE {key} != ?1 AND {column} IS NOT NULL"
+        ))?;
+        let paths = query.query_map([id], |row| row.get::<_, String>(0))?;
+        for path in paths {
+            if Path::new(&path?)
+                .canonicalize()
+                .is_ok_and(|path| path.starts_with(&dir))
+            {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+pub fn delete_record(db: &Path, id: &str) -> Result<(), StoreError> {
+    let mut conn =
+        rusqlite::Connection::open_with_flags(db, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+    conn.busy_timeout(std::time::Duration::from_secs(5))?;
+    conn.execute_batch("PRAGMA foreign_keys=ON;")?;
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version > trace::schema::VERSION {
+        return Err(StoreError::Newer(version));
+    }
+    let tx = conn.transaction()?;
+    let exists: bool = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM runs WHERE id = ?1)",
+        [id],
+        |row| row.get(0),
+    )?;
+    if !exists {
+        return Err(StoreError::Sqlite("There is no such session".into()));
+    }
+    for (table, key) in [
+        ("calls", "run_id"),
+        ("verdicts", "run_id"),
+        ("events", "run_id"),
+        ("steps", "run_id"),
+        ("analyses", "id"),
+        ("reflections", "id"),
+        ("runs", "id"),
+    ] {
+        if has_table(&tx, table) {
+            tx.execute(&format!("DELETE FROM {table} WHERE {key} = ?1"), [id])?;
+        }
+    }
+    tx.commit()?;
+    Ok(())
 }
 
 pub const WINDOW: &str = "flight";

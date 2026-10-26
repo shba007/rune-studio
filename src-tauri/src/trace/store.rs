@@ -2,8 +2,9 @@ use std::path::Path;
 
 use rusqlite::{Connection, OpenFlags, Row, params, params_from_iter, types::Value};
 
+use super::AnalysisRecord;
 #[cfg(any(feature = "agent-bridge", test))]
-use super::{AnalysisRecord, ReflectionRecord};
+use super::ReflectionRecord;
 use super::{Msg, RunInfo, STEP_COLUMNS, StepRecord, VerdictRecord, schema};
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -156,7 +157,6 @@ fn apply(db: &Connection, message: &Msg) -> rusqlite::Result<()> {
                 db.execute("DELETE FROM runs WHERE session_dir = ?1", [dir])?;
             }
         }
-        #[cfg(test)]
         Msg::Flush(_) => {}
     }
     Ok(())
@@ -389,7 +389,6 @@ pub fn list_reflections(path: &Path, limit: usize) -> Result<Vec<ReflectionRecor
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
-#[cfg(any(feature = "agent-bridge", test))]
 pub fn get_analysis(path: &Path, id: &str) -> Result<Option<AnalysisRecord>, StoreError> {
     let db = open_read(path)?;
     if !has_analyses(&db)? {
@@ -409,10 +408,8 @@ pub fn get_analysis(path: &Path, id: &str) -> Result<Option<AnalysisRecord>, Sto
     }
 }
 
-#[cfg(any(feature = "agent-bridge", test))]
 const ANALYSIS_COLUMNS: &str = "id, created_utc, question, answer, findings_json, model, latency_ms, status, error, screenshot_path, monitor_json";
 
-#[cfg(any(feature = "agent-bridge", test))]
 fn analysis_columns(db: &Connection) -> Result<String, StoreError> {
     let version: i64 = db.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     Ok(format!(
@@ -421,13 +418,11 @@ fn analysis_columns(db: &Connection) -> Result<String, StoreError> {
     ))
 }
 
-#[cfg(any(feature = "agent-bridge", test))]
 fn has_analyses(db: &Connection) -> Result<bool, StoreError> {
     let version: i64 = db.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     Ok(version >= 3)
 }
 
-#[cfg(any(feature = "agent-bridge", test))]
 fn analysis_from_row(row: &Row<'_>) -> rusqlite::Result<AnalysisRecord> {
     let text = |index: usize| {
         row.get::<_, Option<String>>(index)

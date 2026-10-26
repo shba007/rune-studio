@@ -1,4 +1,7 @@
+import type { Finding } from '@/types/protocol'
+
 export interface FlightRun {
+  active?: boolean
   id: string
   task: string
   source: string
@@ -33,6 +36,16 @@ export interface FlightHeader {
   verdict: { result: string; evidence: string | null; mode: string; error: string | null } | null
   video: FlightVideo | null
   sessionDir: string | null
+  analysis?: FlightAnalysis | null
+}
+
+export interface FlightAnalysis {
+  answer: string
+  findings: Finding[]
+  model: string | null
+  capturedUtc: string
+  captureFile: string | null
+  error: string | null
 }
 
 export interface FlightPhases {
@@ -467,7 +480,7 @@ export function failedStep(step: FlightStep): boolean {
 
 export function isOutsideAgent(source: string): boolean {
   const name = source.trim().toLowerCase()
-  return name !== '' && name !== 'built-in' && name !== 'rune'
+  return name !== '' && name !== 'built-in' && name !== 'rune' && name !== 'screen-insight'
 }
 
 export function typedTexts(steps: FlightStep[]): string[] {

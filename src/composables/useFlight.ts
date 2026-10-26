@@ -77,6 +77,12 @@ export function useFlight() {
     }
   }
 
+  async function remove(id: string): Promise<void> {
+    const warning = await invoke<string | null>('flight_delete', { id })
+    runs.value = runs.value.filter((run) => run.id !== id)
+    problem.value = warning
+  }
+
   async function open(id: string): Promise<void> {
     loading.value = true
     problem.value = null
@@ -158,6 +164,7 @@ export function useFlight() {
     segments,
     live,
     loadRuns,
+    remove,
     open,
     fileOf,
     bodies,

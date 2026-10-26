@@ -303,7 +303,7 @@ fn finish(
     question: &str,
     id: &str,
     ended: Ended,
-    screenshot_path: Option<String>,
+    mut screenshot_path: Option<String>,
     latency_ms: u64,
 ) {
     let state = app.state::<AppState>();
@@ -337,11 +337,25 @@ fn finish(
                 mut findings,
                 ..
             } => {
+                let capture_error = if id.starts_with("insight-") {
+                    analysis.frame.as_ref().and_then(|frame| {
+                        match archive::save_completed_insight(id, question, &answer, &frame.png) {
+                            Ok(path) => { screenshot_path = Some(path.display().to_string()); None }
+                            Err(error) => {
+                                let message = format!("Analysis succeeded, but its capture could not be saved: {error}");
+                                log::warn!("{message}");
+                                Some(message)
+                            }
+                        }
+                    })
+                } else {
+                    None
+                };
                 analysis.boxes_rejected = super::boxes::guard(&mut findings);
                 analysis.answer = answer;
                 analysis.findings = findings;
                 analysis.status = Status::Done;
-                ("ok", "succeeded", None)
+                ("ok", "succeeded", capture_error)
             }
             Ended::Failed(why) => {
                 analysis.status = Status::Error;

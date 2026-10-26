@@ -287,6 +287,125 @@ pub fn session_dir(id: &str) -> Option<PathBuf> {
         .map(|session| session.dir.clone())
 }
 
+// Insight archives one completed capture without becoming the active desktop
+// session or enabling the continuous session recorder.
+pub fn save_completed_insight(
+    id: &str,
+    question: &str,
+    answer: &str,
+    png: &[u8],
+) -> Result<PathBuf, ArchiveError> {
+    save_insight_in(root()?, id, question, answer, png, now())
+}
+
+fn save_insight_in(
+    base: &Path,
+    id: &str,
+    question: &str,
+    answer: &str,
+    png: &[u8],
+    at: u64,
+) -> Result<PathBuf, ArchiveError> {
+    let mut session = begin_in(base, question, "screen-insight", at)?;
+    session.id = id.to_string();
+    let result = (|| {
+        let folder = session.dir.join(Kind::Screenshots.folder());
+        fs::create_dir(&folder).map_err(write_error)?;
+        let pending = folder.join("capture.part");
+        let path = folder.join("capture.png");
+        fs::write(&pending, png).map_err(write_error)?;
+        fs::rename(pending, &path).map_err(write_error)?;
+        end_in(&session, "succeeded", answer, at).map_err(write_error)?;
+        Ok(path)
+    })();
+    if result.is_err() {
+        // begin_in created this unique directory for this write only.
+        let _ = fs::remove_dir_all(&session.dir);
+    }
+    result
+}
+
+pub struct SessionDeletion {
+    original: PathBuf,
+    staged: PathBuf,
+    committed: bool,
+}
+impl SessionDeletion {
+    pub fn finish(mut self) -> Result<(), ArchiveError> {
+        self.committed = true;
+        fs::remove_dir_all(&self.staged)
+            .map_err(|error| ArchiveError::Write(format!("{}: {error}", self.staged.display())))
+    }
+}
+impl Drop for SessionDeletion {
+    fn drop(&mut self) {
+        if !self.committed
+            && let Err(error) = fs::rename(&self.staged, &self.original)
+        {
+            log::error!("Could not restore session folder after failed deletion: {error}");
+        }
+    }
+}
+
+pub fn stage_session_deletion(
+    dir: &Path,
+    id: &str,
+) -> Result<Option<SessionDeletion>, ArchiveError> {
+    stage_deletion_in(root()?, dir, id)
+}
+
+fn stage_deletion_in(
+    base: &Path,
+    dir: &Path,
+    id: &str,
+) -> Result<Option<SessionDeletion>, ArchiveError> {
+    let metadata = match fs::symlink_metadata(dir) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(write_error(error)),
+    };
+    if metadata.file_type().is_symlink() {
+        return Err(ArchiveError::Write(
+            "Refusing to delete a linked session folder".into(),
+        ));
+    }
+    let root = base
+        .join(SESSIONS_FOLDER)
+        .canonicalize()
+        .map_err(write_error)?;
+    let original = dir.canonicalize().map_err(write_error)?;
+    let relative = original
+        .strip_prefix(&root)
+        .map_err(|_| ArchiveError::Write("Session folder is outside Studio's archive".into()))?;
+    let parts = relative.components().collect::<Vec<_>>();
+    if parts.len() != 2 || parts[0].as_os_str().to_str().and_then(day_number).is_none() {
+        return Err(ArchiveError::Write(
+            "Refusing to delete a directory that is not one session".into(),
+        ));
+    }
+    let manifest: Value =
+        serde_json::from_slice(&fs::read(original.join(MANIFEST)).map_err(write_error)?)
+            .map_err(write_error)?;
+    if manifest["id"].as_str() != Some(id) {
+        return Err(ArchiveError::Write(
+            "Session folder belongs to a different session".into(),
+        ));
+    }
+    let number = SESSION_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let staged = original.with_file_name(format!(".deleting-{}-{number}", std::process::id()));
+    if staged.exists() {
+        return Err(ArchiveError::Write(
+            "A session deletion is already pending".into(),
+        ));
+    }
+    fs::rename(&original, &staged).map_err(write_error)?;
+    Ok(Some(SessionDeletion {
+        original,
+        staged,
+        committed: false,
+    }))
+}
+
 fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
     let year = if month <= 2 { year - 1 } else { year };
     let era = year.div_euclid(400);
@@ -497,6 +616,66 @@ mod tests {
         assert_eq!(slug(""), "task");
         assert!(slug(&"a ".repeat(100)).chars().count() <= SLUG_MAX);
         assert!(!slug("ends with a dash ----").ends_with('-'));
+    }
+
+    #[test]
+    fn completed_insight_saves_one_capture_without_replacing_the_active_session() {
+        let base = scratch("insight");
+        let original = current().as_ref().map(|session| session.id.clone());
+        let png = b"native-png-bytes";
+        let path = save_insight_in(
+            &base,
+            "insight-test",
+            "What is visible?",
+            "A document",
+            png,
+            1_792_396_752,
+        )
+        .unwrap();
+        assert_eq!(fs::read(&path).unwrap(), png);
+        assert_eq!(path.file_name().unwrap(), "capture.png");
+        let session = path.parent().unwrap().parent().unwrap();
+        let manifest: Value =
+            serde_json::from_slice(&fs::read(session.join("session.json")).unwrap()).unwrap();
+        assert_eq!(manifest["id"], "insight-test");
+        assert_eq!(manifest["source"], "screen-insight");
+        assert_eq!(
+            current().as_ref().map(|session| session.id.clone()),
+            original
+        );
+        assert!(!path.with_extension("part").exists());
+        let _ = fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn session_deletion_checks_ownership_and_can_roll_back_before_commit() {
+        let base = scratch("delete");
+        let at = 1_792_396_752;
+        let session = begin_in(&base, "Delete this", "built-in", at).unwrap();
+        let other = begin_in(&base, "Keep this", "built-in", at).unwrap();
+        assert!(stage_deletion_in(&base, &session.dir, "wrong-id").is_err());
+        assert!(session.dir.exists());
+        let root = base.join(SESSIONS_FOLDER);
+        assert!(stage_deletion_in(&base, &root, &session.id).is_err());
+        let outside = scratch("outside-delete");
+        assert!(stage_deletion_in(&base, &outside, &session.id).is_err());
+        {
+            let staged = stage_deletion_in(&base, &session.dir, &session.id)
+                .unwrap()
+                .unwrap();
+            assert!(!session.dir.exists());
+            drop(staged);
+        }
+        assert!(session.dir.exists());
+        stage_deletion_in(&base, &session.dir, &session.id)
+            .unwrap()
+            .unwrap()
+            .finish()
+            .unwrap();
+        assert!(!session.dir.exists());
+        assert!(other.dir.join(MANIFEST).exists());
+        let _ = fs::remove_dir_all(base);
+        let _ = fs::remove_dir_all(outside);
     }
 
     #[test]

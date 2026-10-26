@@ -10,6 +10,7 @@ import WhenText from '@/components/WhenText.vue'
 import FlightDrawer from '@/components/FlightDrawer.vue'
 import FlightStage from '@/components/FlightStage.vue'
 import FlightTimeline from '@/components/FlightTimeline.vue'
+import FlightAnalysis from '@/components/FlightAnalysis.vue'
 import { useFlight } from '@/composables/useFlight'
 import { durationText } from '@/config/artifacts'
 import {
@@ -340,7 +341,13 @@ const verdictLine = computed(() => {
         </dl>
       </header>
 
-      <p v-if="steps.length === 0" class="m-0 p-6 text-zinc-400" data-testid="no-steps">
+      <FlightAnalysis
+        v-if="header.source === 'screen-insight'"
+        :id="header.id"
+        :analysis="header.analysis"
+        :summary="header.summary"
+      />
+      <p v-else-if="steps.length === 0" class="m-0 p-6 text-zinc-400" data-testid="no-steps">
         This session ended before it took a single step, so there is nothing to replay.
       </p>
 
