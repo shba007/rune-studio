@@ -26,6 +26,7 @@ pub fn open(app: &AppHandle, section: Option<&str>) -> tauri::Result<()> {
     let section = clean(section);
     if let Some(window) = app.get_webview_window(WINDOW) {
         let _ = window.unminimize();
+        window.set_always_on_top(true)?;
         window.show()?;
         window.set_focus()?;
         window.emit(SECTION_EVENT, json!({ "section": section }))?;
@@ -37,10 +38,12 @@ pub fn open(app: &AppHandle, section: Option<&str>) -> tauri::Result<()> {
         .inner_size(960.0, 640.0)
         .min_inner_size(760.0, 520.0)
         .resizable(true)
+        .always_on_top(true)
         .decorations(false)
         .center()
         .build()?;
     crate::window::protect(&window)?;
+    window.set_focus()?;
     Ok(())
 }
 

@@ -139,7 +139,7 @@ fn launch(
     }
     let app_state = app.state::<crate::events::AppState>();
     if crate::analysis::state::in_flight(app_state.analysis.locked().status) {
-        return Err("Finish or cancel Screen Insight before recording".into());
+        return Err("Finish or cancel Visual Analysis before recording".into());
     }
     let id = NEXT.fetch_add(1, Ordering::Relaxed);
     let control = Arc::new(Control {

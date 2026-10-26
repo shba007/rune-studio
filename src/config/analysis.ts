@@ -1,10 +1,12 @@
 import type {
+  AnalysisGroup,
   AnalysisSnapshot,
   AnalysisStatus,
   Box,
   Finding,
   FindingKind,
   MonitorInfo,
+  Pose,
 } from '@/types/protocol'
 
 const STATUSES: AnalysisStatus[] = ['idle', 'capturing', 'asking', 'done', 'error', 'cancelled']
@@ -45,14 +47,60 @@ function readFinding(value: unknown, index: number): Finding {
   const raw = (typeof value === 'object' && value !== null ? value : {}) as Record<string, unknown>
   const kind = KINDS.find((known) => known === raw.kind) ?? 'other'
   return {
+    pose: raw.group === 'structure' ? readPose(raw.pose) : null,
     n: count(raw.n) || index + 1,
     label: text(raw.label),
     kind,
+    group: ['entities', 'regions', 'structure', 'depth'].includes(String(raw.group))
+      ? (raw.group as AnalysisGroup)
+      : kind === 'region'
+        ? 'regions'
+        : 'entities',
     box: readBox(raw.box),
     description: text(raw.description),
     evidence: text(raw.evidence),
     point: readPoint(raw.point),
   }
+}
+
+export function readPose(value: unknown): Pose | null {
+  if (!value || typeof value !== 'object') return null
+  const raw = value as Record<string, unknown>
+  if (
+    !Array.isArray(raw.keypoints) ||
+    !raw.keypoints.length ||
+    raw.keypoints.length > 32 ||
+    !Array.isArray(raw.connections) ||
+    raw.connections.length > 64
+  )
+    return null
+  if (
+    !raw.keypoints.every((p: unknown) => {
+      if (!p || typeof p !== 'object') return false
+      const point = p as Record<string, unknown>
+      return (
+        typeof point.label === 'string' &&
+        point.label.trim().length > 0 &&
+        Array.from(point.label).length <= 24 &&
+        [point.x, point.y].every(
+          (n) => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 1000,
+        )
+      )
+    })
+  )
+    return null
+  const length = raw.keypoints.length
+  if (
+    !raw.connections.every(
+      (edge: unknown) =>
+        Array.isArray(edge) &&
+        edge.length === 2 &&
+        edge.every((n) => Number.isInteger(n) && n >= 0 && n < length) &&
+        edge[0] !== edge[1],
+    )
+  )
+    return null
+  return raw as unknown as Pose
 }
 
 function readMonitor(value: unknown): MonitorInfo | null {
@@ -80,6 +128,7 @@ export function readSnapshot(raw: unknown): AnalysisSnapshot {
       typeof value.screenshot === 'string' && value.screenshot.startsWith('data:image/jpeg;base64,')
         ? value.screenshot
         : null,
+    visibleGroups: readVisibility(value.visibleGroups),
     status: STATUSES.find((known) => known === value.status) ?? 'idle',
     id: text(value.id),
     question: text(value.question),
@@ -140,7 +189,13 @@ export function badgePosition(
 
 export function drawable(snapshot: AnalysisSnapshot): Finding[] {
   if (snapshot.stale) return []
-  return snapshot.findings.filter((finding) => finding.box !== null)
+  return snapshot.findings.filter(
+    (finding) =>
+      (finding.box !== null || readPose(finding.pose) !== null) &&
+      snapshot.visibleGroups?.[
+        finding.group ?? (finding.kind === 'region' ? 'regions' : 'entities')
+      ] !== false,
+  )
 }
 
 export function markerOpacity(n: number, selected: number | null): number {
@@ -186,4 +241,13 @@ export function escape(state: CardsState): CardsState {
   if (state.open !== null) return { ...state, open: null }
   if (state.selected !== null) return { ...state, selected: null }
   return { ...state, shown: false }
+}
+function readVisibility(value: unknown) {
+  const raw = (typeof value === 'object' && value !== null ? value : {}) as Record<string, unknown>
+  return {
+    entities: raw.entities !== false,
+    regions: raw.regions !== false,
+    structure: raw.structure !== false,
+    depth: raw.depth !== false,
+  }
 }

@@ -8,7 +8,13 @@ import type { TaskBoardModel } from '@/composables/useTaskBoard'
 import AppIcon from './AppIcon.vue'
 import { screenRequestText } from '@/config/screenRequest'
 
-const props = defineProps<{ agent: Agent; board?: TaskBoardModel }>()
+const props = defineProps<{
+  agent: Agent
+  board?: TaskBoardModel
+  analysisSubmit?: (text: string) => Promise<boolean>
+  analysisBusy?: boolean
+  cancelAnalysis?: () => unknown
+}>()
 const agent = props.agent
 
 const { textarea: field, input: command } = useTextareaAutosize()
@@ -19,6 +25,15 @@ const isListening = computed(() => agent.state.value === 'listening')
 const needsConfirm = computed(() => agent.state.value === 'awaiting_confirm')
 
 const action = computed(() => {
+  if (props.analysisSubmit)
+    return props.analysisBusy
+      ? ({
+          icon: 'stop',
+          label: 'Cancel analysis',
+          tone: 'red',
+          run: () => props.cancelAnalysis?.(),
+        } as const)
+      : ({ icon: 'send', label: 'Analyze', tone: 'dark', run: submit } as const)
   if (props.board && hasText.value)
     return { icon: 'send', label: 'Add goal', tone: 'dark', run: submit } as const
   if (
@@ -39,6 +54,7 @@ const external = computed(() => agent.settings.value?.externalAgent === true)
 const offline = computed(() => agent.health.value.tone === 'down')
 const placeholder = computed(() => {
   if (external.value) return 'Start tasks in your external agent host'
+  if (props.analysisSubmit) return props.analysisBusy ? 'Analyzing…' : 'Type or say a goal'
   if (needsConfirm.value) return 'Needs your OK'
   if (props.board && agent.isRunning.value) return 'Add a goal'
   if (agent.isRunning.value) return 'Working…'
@@ -54,6 +70,11 @@ watch(agent.focusTick, async () => {
 
 async function submit() {
   const text = command.value.trim()
+  if (props.analysisSubmit) {
+    if (!external.value && !props.analysisBusy && (await props.analysisSubmit(text)))
+      command.value = ''
+    return
+  }
   if (!text || external.value) return
   if (props.board) {
     if (await props.board.submit(text)) {
@@ -103,7 +124,7 @@ async function submit() {
         ref="field"
         v-model="command"
         rows="1"
-        :disabled="external"
+        :disabled="external || (Boolean(analysisSubmit) && analysisBusy)"
         :placeholder="placeholder"
         class="max-h-[152px] min-h-8 min-w-0 flex-1 resize-none bg-transparent px-1 py-1 text-body leading-6 outline-none [--scrollbar-thumb-hover:rgb(0_0_0/0.4)] [--scrollbar-thumb:rgb(0_0_0/0.22)] dark:[--scrollbar-thumb-hover:rgb(255_255_255/0.32)] dark:[--scrollbar-thumb:rgb(255_255_255/0.16)]"
         :class="
@@ -118,11 +139,15 @@ async function submit() {
         type="button"
         class="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full transition"
         :class="
-          action.tone === 'blue'
-            ? 'bg-[#2d71c3] hover:bg-[#245fa8]'
-            : 'bg-[#f1f1ef] !text-[#111] hover:bg-white'
+          action.tone === 'red'
+            ? 'bg-[#d71921] text-white hover:bg-[#b9151c]'
+            : action.tone === 'blue'
+              ? 'bg-[#2d71c3] hover:bg-[#245fa8]'
+              : 'bg-[#f1f1ef] !text-[#111] hover:bg-white'
         "
-        :disabled="(external && !agent.isRunning.value) || board?.pending.value"
+        :disabled="
+          (external && !agent.isRunning.value) || (!analysisSubmit && board?.pending.value)
+        "
         :aria-label="action.label"
         :aria-pressed="action.icon === 'mic' ? isListening : undefined"
         @click="action.run()"

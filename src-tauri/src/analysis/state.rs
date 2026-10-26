@@ -55,6 +55,7 @@ impl Default for AnalysisState {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
+    pub visible_groups: crate::settings::VisualAnalysis,
     pub screenshot: Option<String>,
     pub status: Status,
     pub id: String,
@@ -77,6 +78,7 @@ impl AnalysisState {
     }
     pub fn snapshot(&self) -> Snapshot {
         Snapshot {
+            visible_groups: crate::settings::VisualAnalysis::default(),
             screenshot: if self.id.starts_with("insight-") {
                 self.frame.as_ref().map(|frame| {
                     use base64::Engine;
@@ -255,6 +257,7 @@ mod tests {
             ..AnalysisState::default()
         };
         state.findings.push(Finding {
+            group: crate::analysis::report::Group::default(),
             n: 1,
             label: "x".into(),
             kind: super::super::report::Kind::Other,
@@ -262,6 +265,7 @@ mod tests {
             description: String::new(),
             evidence: String::new(),
             point: None,
+            pose: None,
         });
         let old = state.cancel.clone();
         old.cancel();

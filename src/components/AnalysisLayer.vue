@@ -2,14 +2,9 @@
 import { usePreferredReducedMotion } from '@vueuse/core'
 import { computed } from 'vue'
 
-import {
-  badgePosition,
-  boxToCss,
-  drawable,
-  markerOpacity,
-  type OverlayView,
-} from '@/config/analysis'
+import { boxToCss, drawable, markerOpacity, readPose, type OverlayView } from '@/config/analysis'
 import type { AnalysisSnapshot } from '@/types/protocol'
+import { annotationLayout } from '@/config/annotations'
 
 const props = defineProps<{ snapshot: AnalysisSnapshot; view: OverlayView; scanKey: number }>()
 
@@ -17,11 +12,24 @@ const reduced = usePreferredReducedMotion()
 const markers = computed(() =>
   drawable(props.snapshot)
     .map((finding, index) => {
+      const pose = finding.group === 'structure' ? readPose(finding.pose) : null
+      const points = pose?.keypoints ?? []
+      const bounds = finding.box ?? [
+        Math.min(...points.map((p) => p.x)),
+        Math.min(...points.map((p) => p.y)),
+        Math.max(...points.map((p) => p.x)),
+        Math.max(...points.map((p) => p.y)),
+      ]
       const capture = props.snapshot.id.startsWith('insight-') ? props.snapshot.monitor : null
-      const rect = boxToCss(
-        finding.box!,
-        capture ? { ...props.view, width: capture.width, height: capture.height } : props.view,
-      )
+      const view = capture
+        ? { ...props.view, width: capture.width, height: capture.height }
+        : props.view
+      const rect = boxToCss(bounds as [number, number, number, number], view)
+      const keypoints = points.map((p) => ({
+        ...p,
+        x: (((p.x - bounds[0]!) / 1000) * view.width) / view.scaleFactor,
+        y: (((p.y - bounds[1]!) / 1000) * view.height) / view.scaleFactor,
+      }))
       if (capture) {
         rect.left += (capture.x - (props.view.originX ?? 0)) / props.view.scaleFactor
         rect.top += (capture.y - (props.view.originY ?? 0)) / props.view.scaleFactor
@@ -30,7 +38,7 @@ const markers = computed(() =>
         n: finding.n,
         label: finding.label,
         rect,
-        badge: badgePosition(rect, props.view),
+        pose: pose ? { keypoints, connections: pose.connections } : null,
         opacity: markerOpacity(finding.n, props.snapshot.selected),
         delay: index * 40,
       }
@@ -42,6 +50,14 @@ const markers = computed(() =>
         marker.rect.left < props.view.width / props.view.scaleFactor &&
         marker.rect.top < props.view.height / props.view.scaleFactor,
     ),
+)
+const annotations = computed(() =>
+  annotationLayout(
+    markers.value.map((marker) => marker.rect),
+    props.view.width / props.view.scaleFactor,
+    props.view.height / props.view.scaleFactor,
+    markers.value.map((marker) => `${marker.n} · ${marker.label}`),
+  ),
 )
 </script>
 
@@ -74,8 +90,38 @@ const markers = computed(() =>
       :data-marker="marker.n"
     >
       <div
+        v-if="!marker.pose"
         class="absolute inset-0 rounded-sm bg-[#2d71c3]/10 [background-image:radial-gradient(circle,rgba(45,113,195,.35)_1px,transparent_1px)] [background-size:6px_6px]"
       />
+      <svg
+        v-if="marker.pose"
+        class="absolute top-0 left-0 h-full w-full overflow-visible"
+        :data-pose="marker.n"
+      >
+        <line
+          v-for="([a, b], index) in marker.pose.connections"
+          :key="index"
+          :x1="marker.pose.keypoints[a]!.x"
+          :y1="marker.pose.keypoints[a]!.y"
+          :x2="marker.pose.keypoints[b]!.x"
+          :y2="marker.pose.keypoints[b]!.y"
+          stroke="#67e8f9"
+          stroke-width="2"
+          data-pose-edge=""
+        />
+        <circle
+          v-for="(point, index) in marker.pose.keypoints"
+          :key="index"
+          :cx="point.x"
+          :cy="point.y"
+          r="4"
+          fill="#f1f1ef"
+          stroke="#141414"
+          :data-keypoint="point.label"
+        >
+          <title>{{ point.label }}</title>
+        </circle>
+      </svg>
       <span
         v-for="corner in [
           'top-0 left-0 border-t-2 border-l-2',
@@ -87,32 +133,46 @@ const markers = computed(() =>
         class="absolute size-3 border-[#f1f1ef] [filter:drop-shadow(0_0_1px_#141414)_drop-shadow(0_1px_1px_#141414)]"
         :class="corner"
       />
-      <span
-        class="absolute top-0 left-4 max-w-52 -translate-y-full truncate rounded-t-md bg-[#141414]/90 px-2 py-1 text-caption text-[#f1f1ef] uppercase"
-        >{{ marker.n }} · {{ marker.label }}</span
-      >
-      <span
-        class="absolute top-1/2 left-1/2 size-1.5 -translate-1/2 rounded-full bg-[#f1f1ef] shadow-[0_0_0_2px_#14141466]"
-      />
+      <span class="sr-only">{{ marker.n }} · {{ marker.label }}</span>
     </div>
-    <span
-      v-for="marker in markers"
-      :key="`badge-${snapshot.id}-${marker.n}-${snapshot.selected === marker.n}`"
-      class="absolute grid size-5 place-items-center rounded-full border border-[#141414] bg-[#f1f1ef] text-caption text-[#141414]"
-      :class="[
-        snapshot.selected === marker.n && reduced !== 'reduce' ? 'badge-pulse' : '',
-        reduced === 'reduce' ? '' : 'marker-in',
-      ]"
-      :style="{
-        left: `${marker.badge.x}px`,
-        top: `${marker.badge.y}px`,
-        opacity: marker.opacity,
-        animationDelay: `${marker.delay}ms`,
-      }"
-      :data-badge="marker.n"
-    >
-      {{ marker.n }}
-    </span>
+    <svg class="absolute inset-0 h-full w-full overflow-hidden" aria-hidden="true">
+      <template v-for="(annotation, index) in annotations" :key="markers[index]!.n">
+        <polyline
+          v-if="annotation"
+          :points="annotation.leader"
+          fill="none"
+          stroke="#f1f1ef"
+          stroke-width="1"
+          :opacity="markers[index]!.opacity"
+        />
+        <rect
+          v-if="annotation"
+          :x="annotation.anchor.x - 3"
+          :y="annotation.anchor.y - 3"
+          width="6"
+          height="6"
+          fill="#f1f1ef"
+          :opacity="markers[index]!.opacity"
+          data-annotation-endpoint=""
+        />
+      </template>
+    </svg>
+    <template v-for="(annotation, index) in annotations" :key="`label-${markers[index]!.n}`">
+      <span
+        v-if="annotation"
+        class="absolute truncate rounded-sm bg-[#141414]/80 px-1.5 text-[10px] font-semibold leading-[18px] tracking-wide text-[#f1f1ef] uppercase"
+        :data-annotation="markers[index]!.n"
+        :style="{
+          left: `${annotation.label.left}px`,
+          top: `${annotation.label.top}px`,
+          width: `${annotation.label.width}px`,
+          height: `${annotation.label.height}px`,
+          opacity: markers[index]!.opacity,
+        }"
+      >
+        {{ markers[index]!.n }} · {{ markers[index]!.label }}
+      </span>
+    </template>
   </div>
 </template>
 
@@ -139,10 +199,6 @@ const markers = computed(() =>
   animation: fade-in 160ms ease-out backwards;
 }
 
-.badge-pulse {
-  animation: pulse 360ms ease-out;
-}
-
 @keyframes sweep {
   from {
     --scan-radius: 0px;
@@ -157,12 +213,6 @@ const markers = computed(() =>
 @keyframes fade-in {
   from {
     opacity: 0;
-  }
-}
-
-@keyframes pulse {
-  40% {
-    transform: scale(1.35);
   }
 }
 </style>

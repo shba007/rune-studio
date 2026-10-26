@@ -34,6 +34,60 @@ afterEach(() => {
   harness.handlers.clear()
 })
 
+it('keeps full-screen analysis ripples running throughout reading and stops them on completion', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+  vi.spyOn(performance, 'now').mockReturnValue(1000)
+  const context = {
+    setTransform: vi.fn<(...args: number[]) => void>(),
+    clearRect: vi.fn<(...args: number[]) => void>(),
+    beginPath: vi.fn<() => void>(),
+    arc: vi.fn<(...args: number[]) => void>(),
+    fill: vi.fn<() => void>(),
+  }
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(
+    context as unknown as CanvasRenderingContext2D,
+  )
+  const snapshot = {
+    ...EMPTY_SNAPSHOT,
+    id: 'insight-reading',
+    status: 'asking',
+    monitor: { id: 1, x: 0, y: 0, width: 1024, height: 768, scaleFactor: 1, primary: true },
+  }
+  harness.invoke.mockImplementation(async (command: string) => {
+    if (command === 'overlay_info')
+      return {
+        x: 0,
+        y: 0,
+        width: 1024,
+        height: 768,
+        scaleFactor: 1,
+        primary: true,
+        mode: 'analysis',
+      }
+    if (command === 'analysis_state') return snapshot
+    if (command === 'get_settings') return { stopHotkey: 'Escape' }
+    return null
+  })
+  const wrapper = mount(ControlOverlay)
+  await flushPromises()
+  harness.pause.mockClear()
+  harness.handlers.get('state_changed')!({ payload: { state: 'idle' } })
+  await vi.advanceTimersByTimeAsync(700)
+  expect(harness.pause).not.toHaveBeenCalled()
+  context.arc.mockClear()
+  harness.tick!({ timestamp: 5000 })
+  expect(context.arc.mock.calls.length).toBeGreaterThan(0)
+  context.arc.mockClear()
+  harness.tick!({ timestamp: 8000 })
+  expect(context.arc.mock.calls.length).toBeGreaterThan(0)
+  harness.handlers.get('analysis_updated')!({ payload: { ...snapshot, status: 'done' } })
+  await flushPromises()
+  context.arc.mockClear()
+  harness.tick!({ timestamp: 9000 })
+  expect(context.arc).not.toHaveBeenCalled()
+  wrapper.unmount()
+})
+
 it('recovers a capture on first overlay load, draws it once, and fades without claiming control', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
   vi.spyOn(performance, 'now').mockReturnValue(1000)

@@ -25,6 +25,14 @@ use crate::{
 
 const CALL_TIMEOUT: Duration = Duration::from_secs(60);
 
+fn overlay_wanted(snapshot: &super::state::Snapshot) -> bool {
+    let visible_geometry = snapshot
+        .findings
+        .iter()
+        .any(|finding| finding.has_geometry() && snapshot.visible_groups.shows(finding.group));
+    wants_overlay(snapshot.status, visible_geometry, snapshot.stale)
+}
+
 enum Ended {
     Done {
         answer: String,
@@ -36,18 +44,18 @@ enum Ended {
 }
 
 pub(crate) fn publish(app: &AppHandle) {
-    let (snapshot, wanted) = {
+    let mut snapshot = {
         let state = app.state::<AppState>();
         let analysis = state.analysis.locked();
-        let boxes_on_screen = analysis
-            .findings
-            .iter()
-            .any(|finding| finding.bbox.is_some());
-        (
-            analysis.snapshot(),
-            wants_overlay(analysis.status, boxes_on_screen, analysis.stale),
-        )
+        analysis.snapshot()
     };
+    snapshot.visible_groups = app
+        .state::<AppState>()
+        .settings
+        .locked()
+        .visual_analysis
+        .clone();
+    let wanted = overlay_wanted(&snapshot);
     crate::overlay::sync_analysis(app, wanted);
     let _ = app.emit(events::ANALYSIS_UPDATED, snapshot);
 }
@@ -134,10 +142,11 @@ async fn work(
     let mut path = None;
     if fresh {
         let max_edge = state.settings.locked().model_image_resolution.max_edge();
+        let capture_edge = state.settings.locked().recording_resolution.max_edge();
         let captured = unless_stopped(
             cancel,
             tauri::async_runtime::spawn_blocking(move || {
-                screenshot::capture(None, max_edge, MODEL_JPEG_QUALITY)
+                screenshot::capture(None, max_edge, MODEL_JPEG_QUALITY, capture_edge)
             }),
         )
         .await;
@@ -279,7 +288,7 @@ async fn analyze_with_client(
                 || !reply.call.arguments["findings"].is_array()
             {
                 return Err(AnalysisError::Failed(
-                    "the model returned a malformed screen-analysis report".into(),
+                    "the model returned a malformed visual-analysis report".into(),
                 ));
             }
             let parsed = report::parse(&reply.call.arguments);
@@ -424,7 +433,7 @@ fn watch_for_change(app: &AppHandle, id: String) {
             && analysis
                 .findings
                 .iter()
-                .any(|finding| finding.bbox.is_some())
+                .any(|finding| finding.has_geometry())
     };
     if !has_boxes || id.is_empty() {
         return;
@@ -514,6 +523,25 @@ pub(crate) fn finish_workflow(
 mod model_tests {
     use super::*;
     use serde_json::{Value, json};
+
+    #[test]
+    fn progress_overlay_is_visible_before_findings_exist_even_with_groups_hidden() {
+        let mut snapshot = super::super::state::AnalysisState::default().snapshot();
+        snapshot.visible_groups = crate::settings::VisualAnalysis {
+            entities: false,
+            regions: false,
+            structure: false,
+            depth: false,
+        };
+        for status in [Status::Capturing, Status::Asking] {
+            snapshot.status = status;
+            assert!(overlay_wanted(&snapshot));
+        }
+        for status in [Status::Done, Status::Error, Status::Cancelled, Status::Idle] {
+            snapshot.status = status;
+            assert!(!overlay_wanted(&snapshot));
+        }
+    }
     use std::io::{BufRead, Read, Write};
 
     fn server(
@@ -609,7 +637,7 @@ mod model_tests {
         );
         assert!(
             sent.get("tools").is_none(),
-            "Screen Insight exposes no action or reporting tools"
+            "Visual Analysis exposes no action or reporting tools"
         );
         assert!(sent.get("tool_choice").is_none());
         assert_eq!(sent["response_format"]["type"], "json_schema");
@@ -687,6 +715,7 @@ mod model_tests {
         let frame = screenshot::insight_capture(
             screenshot::CaptureTarget::Screen { id: target.id },
             screenshot::MODEL_MAX_EDGE,
+            u32::MAX,
         )
         .unwrap();
         assert!(

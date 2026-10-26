@@ -33,14 +33,14 @@ async function revealDeveloper() {
 
 <template>
   <div class="flex flex-col gap-8">
-    <HubGroup title="Screen capture">
+    <HubGroup title="Model input">
       <HubRow
-        label="Model image resolution"
-        hint="Limits the longest edge sent to models for screen analysis and desktop tasks. Larger images use more memory and may take longer or exceed the model's limit. Saved screenshots keep their native resolution."
+        label="Model input resolution"
+        hint="Limits images sent to models for faster inference. Independent of saved screenshot and recording quality."
       >
         <select
           v-model="draft.modelImageResolution"
-          aria-label="Model image resolution"
+          aria-label="Model input resolution"
           class="rounded-lg bg-zinc-900 px-3 py-2 text-body text-zinc-100"
         >
           <option value="720">720 px · Faster</option>
@@ -64,14 +64,14 @@ async function revealDeveloper() {
       />
     </HubGroup>
 
-    <HubGroup title="Screen recording">
+    <HubGroup title="Capture quality">
       <HubRow
-        label="Recording resolution"
-        hint="Applies to new screen and session recordings. Limits the longest edge without enlarging smaller captures. Native retains captured dimensions; video stays silent at 2 fps."
+        label="Screenshot and recording resolution"
+        hint="Quality of new saved screenshots and recordings. Limits the longest edge without enlarging captures. Native preserves captured dimensions. Model input resolution is independent; video remains silent at 2 fps."
       >
         <select
           v-model="draft.recordingResolution"
-          aria-label="Recording resolution"
+          aria-label="Screenshot and recording resolution"
           class="rounded-lg bg-zinc-900 px-3 py-2 text-body text-zinc-100"
         >
           <option value="720">720 px</option>

@@ -6,7 +6,7 @@
   "identifier": "dev.shirsendu-bairagi.rune-studio",
   "build": {
     "frontendDist": "../dist",
-    "devUrl": "http://localhost:5173",
+    "devUrl": "http://127.0.0.1:1420",
     "beforeDevCommand": "dotenvx run -f .env.native -- vp dev",
     "beforeBuildCommand": "dotenvx run -f .env.native -- vp build"
   },

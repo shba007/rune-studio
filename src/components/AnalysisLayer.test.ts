@@ -3,6 +3,60 @@ import { expect, it } from 'vite-plus/test'
 import { EMPTY_SNAPSHOT } from '@/config/analysis'
 import AnalysisLayer from './AnalysisLayer.vue'
 
+it.each([
+  { id: 'replay-pose', scaleFactor: 1, x: 0, y: 0, expectedX: 200 },
+  { id: 'insight-pose', scaleFactor: 2, x: -100, y: 50, expectedX: 50 },
+])(
+  'renders pose-only findings in $id and honors Structure visibility',
+  async ({ id, scaleFactor, x, y, expectedX }) => {
+    const snapshot = {
+      ...EMPTY_SNAPSHOT,
+      id,
+      status: 'done' as const,
+      monitor: { id: 1, x, y, width: 800, height: 400, scaleFactor: 1, primary: true },
+      findings: [
+        {
+          n: 1,
+          label: 'Arm pose',
+          kind: 'image' as const,
+          group: 'structure' as const,
+          box: null,
+          point: null,
+          description: '',
+          evidence: '',
+          pose: {
+            keypoints: [
+              { label: 'shoulder', x: 250, y: 250 },
+              { label: 'elbow', x: 500, y: 500 },
+            ],
+            connections: [[0, 1] as [number, number]],
+          },
+        },
+      ],
+    }
+    const wrapper = mount(AnalysisLayer, {
+      props: {
+        snapshot,
+        view: { width: 800, height: 400, scaleFactor },
+        scanKey: 0,
+      },
+    })
+    expect(
+      Number.parseFloat((wrapper.get('[data-marker="1"]').element as HTMLElement).style.left),
+    ).toBe(expectedX)
+    expect(wrapper.findAll('[data-keypoint]')).toHaveLength(2)
+    expect(wrapper.get('[data-pose-edge]').attributes('x2')).toBe(String(200 / scaleFactor))
+    await wrapper.setProps({
+      snapshot: {
+        ...snapshot,
+        visibleGroups: { entities: true, regions: true, structure: false, depth: true },
+      },
+    })
+    expect(wrapper.find('[data-pose]').exists()).toBe(false)
+    wrapper.unmount()
+  },
+)
+
 it('places captured-window findings at the window origin and labels them as observations', () => {
   const wrapper = mount(AnalysisLayer, {
     props: {

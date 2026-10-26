@@ -266,7 +266,7 @@ fn stop_interrupts_typing_mid_sentence() {
 fn the_model_sees_the_target_where_the_mapping_says() {
     make_dpi_aware();
     let monitor = screenshot::monitor(None).unwrap();
-    let frame = screenshot::capture(None, MODEL_MAX_EDGE, MODEL_JPEG_QUALITY).unwrap();
+    let frame = screenshot::capture(None, MODEL_MAX_EDGE, MODEL_JPEG_QUALITY, u32::MAX).unwrap();
     println!(
         "captured {}x{} from a {}x{} monitor in {} ms ({} bytes of JPEG)",
         frame.width,
@@ -317,7 +317,8 @@ fn capture_speed() {
     let mut rows = Vec::new();
     for round in 0..6 {
         let started = Instant::now();
-        let frame = screenshot::capture(None, MODEL_MAX_EDGE, MODEL_JPEG_QUALITY).unwrap();
+        let frame =
+            screenshot::capture(None, MODEL_MAX_EDGE, MODEL_JPEG_QUALITY, u32::MAX).unwrap();
         rows.push((round, started.elapsed().as_millis(), frame.jpeg.len()));
     }
     for (round, ms, bytes) in &rows {

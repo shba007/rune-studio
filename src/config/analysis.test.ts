@@ -12,11 +12,23 @@ import {
   formatElapsed,
   markerOpacity,
   readSnapshot,
+  readPose,
   stageWord,
   toggleOpen,
 } from './analysis'
 
 const monitor = { id: 1, x: 0, y: 0, width: 1920, height: 1080, scaleFactor: 1, primary: true }
+
+it('preserves valid pose data through snapshot parsing and rejects invalid geometry', () => {
+  const pose = { keypoints: [{ label: 'head', x: 500, y: 100 }], connections: [] }
+  const snapshot = readSnapshot({ findings: [{ group: 'structure', pose }] })
+  expect(snapshot.findings[0]!.pose).toEqual(pose)
+  expect(drawable(snapshot)).toHaveLength(1)
+  expect(readPose({ ...pose, connections: [[0, 1]] })).toBeNull()
+  expect(readPose({ ...pose, keypoints: [{ label: 'head', x: 1001, y: 100 }] })).toBeNull()
+  expect(readPose({ ...pose, keypoints: Array(33).fill(pose.keypoints[0]) })).toBeNull()
+  expect(readPose(null)).toBeNull()
+})
 
 describe('boxToCss', () => {
   it('maps 0..1000 onto the overlay window at 100 percent', () => {
@@ -196,4 +208,21 @@ describe('readSnapshot', () => {
     expect(readSnapshot({ findings: 'nope' }).findings).toEqual([])
     expect(readSnapshot({ monitor: { width: 0, height: 5 } }).monitor).toBeNull()
   })
+})
+
+it('hides only unchecked groups from highlights and restores them without losing findings', () => {
+  const snapshot = readSnapshot({
+    status: 'done',
+    findings: [
+      { n: 1, label: 'Person', kind: 'image', group: 'entities', box: [0, 0, 500, 500] },
+      { n: 2, label: 'Pose', kind: 'image', group: 'structure', box: [0, 0, 500, 500] },
+      { n: 3, label: 'Background', kind: 'region', group: 'depth', box: [0, 0, 500, 500] },
+    ],
+    visibleGroups: { structure: false, depth: false },
+  })
+  expect(drawable(snapshot).map((f) => f.n)).toEqual([1])
+  expect(snapshot.findings).toHaveLength(3)
+  snapshot.visibleGroups!.structure = true
+  expect(drawable(snapshot).map((f) => f.n)).toEqual([1, 2])
+  expect(snapshot.findings).toHaveLength(3)
 })

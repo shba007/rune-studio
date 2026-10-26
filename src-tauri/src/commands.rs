@@ -122,11 +122,15 @@ pub fn save_settings(
     let demo_changed = state.settings.locked().demo_mode != settings.demo_mode;
     let hide_previews = state.settings.locked().developer_mode && !settings.developer_mode;
     let mode_changed = was_on != settings.external_agent;
+    let visual_changed = state.settings.locked().visual_analysis != settings.visual_analysis;
     *state.settings.locked() = settings;
     if mode_changed {
         state.screen_requests.locked().cancel();
     }
     drop(analysis);
+    if visual_changed {
+        crate::analysis::run::publish(&app);
+    }
     if hide_previews {
         events::preview_agent_state(&app, events::agent_state(&app));
     }
@@ -335,7 +339,7 @@ fn begin_task_owned(
     }
     if crate::analysis::state::in_flight(analysis.status) {
         return Err(AppError::Invalid(
-            "A screen analysis is still running".into(),
+            "A visual analysis is still running".into(),
         ));
     }
     if !keep_mic {
@@ -507,7 +511,7 @@ pub async fn analyze_screen(app: AppHandle, question: Option<String>) -> AppResu
         }
     }
     Err(AppError::Invalid(
-        "Select a screen/window in Screen Insight before capturing".into(),
+        "Select a screen/window in Visual Analysis before capturing".into(),
     ))
 }
 
@@ -532,7 +536,9 @@ pub async fn analyze_again(app: AppHandle, question: String) -> AppResult<()> {
 
 #[tauri::command]
 pub fn analysis_state(state: State<'_, AppState>) -> crate::analysis::state::Snapshot {
-    state.analysis.locked().snapshot()
+    let mut snapshot = state.analysis.locked().snapshot();
+    snapshot.visible_groups = state.settings.locked().visual_analysis.clone();
+    snapshot
 }
 
 #[tauri::command]

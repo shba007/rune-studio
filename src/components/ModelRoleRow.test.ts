@@ -47,7 +47,7 @@ describe('ModelRoleRow', () => {
   it('requires an explicit Analysis model instead of advertising an agent fallback', () => {
     const wrapper = mount(ModelRoleRow, {
       props: {
-        roleLabel: 'Screen Analysis',
+        roleLabel: 'Visual Analysis',
         roleKey: 'analysis',
         agentModel: 'local-omni',
         modelValue: '',
@@ -63,7 +63,7 @@ describe('ModelRoleRow', () => {
     for (const toolCalls of ['no', 'unknown'] as const) {
       const wrapper = mount(ModelRoleRow, {
         props: {
-          roleLabel: 'Screen Analysis',
+          roleLabel: 'Visual Analysis',
           roleKey: 'analysis',
           agentModel: 'local-omni',
           modelValue: 'local-omni',

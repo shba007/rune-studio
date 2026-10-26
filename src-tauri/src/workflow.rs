@@ -58,7 +58,7 @@ pub fn vision_model(
     let name = settings.models.analysis.trim();
     if name.is_empty() {
         return Err(
-            "Configure an explicit Analysis model in Agents settings before running Screen Insight"
+            "Configure an explicit Analysis model in Agents settings before running Visual Analysis"
                 .into(),
         );
     }
@@ -68,7 +68,7 @@ pub fn vision_model(
         .ok_or("Configured Analysis model is not available from Infer")?;
     if model.image_in != TriState::Yes || model.tool_calls != TriState::Yes {
         return Err(
-            "Screen Insight requires a model explicitly advertising image input and tool calling"
+            "Visual Analysis requires a model explicitly advertising image input and tool calling"
                 .into(),
         );
     }
@@ -78,7 +78,7 @@ impl Workflow for ScreenInsight {
     fn definition(&self) -> Definition {
         Definition {
             id: "screen-insight",
-            name: "Screen Insight",
+            name: "Visual Analysis",
             capabilities: &["screen_capture", "vision_model"],
         }
     }
@@ -125,10 +125,11 @@ impl Workflow for ScreenInsight {
             }
             let captured_utc = crate::trace::now_utc();
             let max_edge = settings.model_image_resolution.max_edge();
+            let capture_edge = settings.recording_resolution.max_edge();
             let frame = tokio::time::timeout(
                 Duration::from_secs(10),
                 tauri::async_runtime::spawn_blocking(move || {
-                    screenshot::insight_capture(input.target, max_edge)
+                    screenshot::insight_capture(input.target, max_edge, capture_edge)
                 }),
             )
             .await
@@ -189,7 +190,7 @@ pub async fn run(app: &AppHandle, workflow_id: &str, input: Value) -> Result<(),
         .ok_or("Unknown workflow")?;
     workflow.validate(&input)?;
     if crate::recording::busy() {
-        return Err("Stop or finish screen recording before starting Screen Insight".into());
+        return Err("Stop or finish screen recording before starting Visual Analysis".into());
     }
     let state = app.state::<AppState>();
     static NEXT: AtomicU64 = AtomicU64::new(1);
@@ -202,7 +203,7 @@ pub async fn run(app: &AppHandle, workflow_id: &str, input: Value) -> Result<(),
         let mut analysis = state.analysis.locked();
         if state.settings.locked().external_agent {
             return Err(
-                "Screen Insight uses API mode. Finish the session and select API mode first."
+                "Visual Analysis uses API mode. Finish the session and select API mode first."
                     .into(),
             );
         }

@@ -99,6 +99,12 @@ pub struct CaptureReport {
 #[tauri::command]
 pub async fn debug_capture(app: AppHandle, monitor: Option<u32>) -> AppResult<CaptureReport> {
     require_idle(&app)?;
+    let capture_edge = app
+        .state::<AppState>()
+        .settings
+        .locked()
+        .recording_resolution
+        .max_edge();
     let max_edge = app
         .state::<AppState>()
         .settings
@@ -106,7 +112,8 @@ pub async fn debug_capture(app: AppHandle, monitor: Option<u32>) -> AppResult<Ca
         .model_image_resolution
         .max_edge();
     tauri::async_runtime::spawn_blocking(move || {
-        let frame = screenshot::capture(monitor, max_edge, MODEL_JPEG_QUALITY).map_err(invalid)?;
+        let frame = screenshot::capture(monitor, max_edge, MODEL_JPEG_QUALITY, capture_edge)
+            .map_err(invalid)?;
         crate::overlay::show_capture(&app, frame.monitor);
         log::info!(
             "debug_capture: {}x{} from a {}x{} monitor, {} KB, {} ms",

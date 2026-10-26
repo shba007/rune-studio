@@ -98,6 +98,8 @@ const ringFinished = computed(() =>
 )
 
 const analysis = useAnalysis()
+const analysisCard = useTemplateRef<InstanceType<typeof AnalysisCard>>('analysisCard')
+const submitAnalysis = (text: string) => analysisCard.value?.submit(text) ?? Promise.resolve(false)
 watch(
   () => analysis.snapshot.value.status,
   (status) => {
@@ -234,7 +236,11 @@ function onOrb() {
                 />
               </Transition>
               <TaskBoard :board="taskBoard" />
-              <AnalysisCard v-if="agent.mode.value === 'analysis'" :analysis="analysis" />
+              <AnalysisCard
+                v-if="agent.mode.value === 'analysis'"
+                ref="analysisCard"
+                :analysis="analysis"
+              />
               <section
                 v-if="promptVisible && updater.latest.value"
                 class="flex w-full flex-col gap-2 rounded-[28px] border border-white/15 bg-[#141414] p-4 text-zinc-100"
@@ -295,7 +301,13 @@ function onOrb() {
                 :key="agent.question.value.id"
                 :agent="agent"
               />
-              <Composer :agent="agent" :board="taskBoard" />
+              <Composer
+                :agent="agent"
+                :board="taskBoard"
+                :analysis-submit="agent.mode.value === 'analysis' ? submitAnalysis : undefined"
+                :analysis-busy="analysis.busy.value"
+                :cancel-analysis="analysis.cancel"
+              />
             </div>
           </Transition>
         </div>

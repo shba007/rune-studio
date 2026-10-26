@@ -273,6 +273,7 @@ mod tests {
 
     fn finding(n: u8, bbox: Option<Box4>) -> Finding {
         Finding {
+            group: crate::analysis::report::Group::default(),
             n,
             label: format!("F{n}"),
             kind: Kind::Region,
@@ -280,6 +281,7 @@ mod tests {
             description: String::new(),
             evidence: String::new(),
             point: None,
+            pose: None,
         }
     }
 

@@ -166,6 +166,8 @@ let flashes: Flash[] = []
 function drawFlashes(ctx: CanvasRenderingContext2D, now: number, still: boolean) {
   flashes = flashes.filter((flash) => flash.continuous || (now - flash.at) / 1000 < WAVE_SECONDS)
   const visible = [...flashes]
+  if (analysisMode.value && analysis.busy.value)
+    visible.push({ x: 0, y: 0, w: width, h: height, at: startedAt, continuous: true })
   if (recording.value && overlayInfo.value?.primary && !isRecording())
     visible.push({ x: 0, y: 0, w: width, h: height, at: startedAt, continuous: true })
   const target =
@@ -492,7 +494,8 @@ onMounted(async () => {
     await listen<{ state: AgentState }>('state_changed', (event) => {
       const next = event.payload.state
       setActive(
-        next === 'acting' ||
+        (owner.value === 'analysis' && analysis.busy.value) ||
+          next === 'acting' ||
           next === 'observing' ||
           next === 'planning' ||
           performance.now() < captureUntil ||

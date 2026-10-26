@@ -226,8 +226,13 @@ pub fn prepare(
     })
 }
 
-pub fn capture(id: Option<u32>, max_edge: u32, quality: u8) -> Result<Frame, ObserveError> {
-    capture_region(id, None, max_edge, quality)
+pub fn capture(
+    id: Option<u32>,
+    max_edge: u32,
+    quality: u8,
+    capture_edge: u32,
+) -> Result<Frame, ObserveError> {
+    capture_region(id, None, max_edge, quality, capture_edge)
 }
 
 const MIN_REGION_PX: u32 = 16;
@@ -237,6 +242,7 @@ pub fn capture_region(
     region: Option<[f64; 4]>,
     max_edge: u32,
     quality: u8,
+    capture_edge: u32,
 ) -> Result<Frame, ObserveError> {
     let started = Instant::now();
     let (xmonitor, monitor) = resolve(id)?;
@@ -267,7 +273,7 @@ pub fn capture_region(
         jpeg,
         image,
     } = prepare(rgba.clone(), max_edge, quality)?;
-    let png = encode_png(&DynamicImage::ImageRgba8(rgba).into_rgb8())?;
+    let png = capture_png(&DynamicImage::ImageRgba8(rgba).into_rgb8(), capture_edge)?;
     let path = crate::archive::save(
         crate::archive::Kind::Screenshots,
         if region.is_some() { "region" } else { "screen" },
@@ -295,6 +301,20 @@ fn encode_png(image: &RgbImage) -> Result<Vec<u8>, ObserveError> {
     Ok(bytes.into_inner())
 }
 
+fn capture_png(image: &RgbImage, max_edge: u32) -> Result<Vec<u8>, ObserveError> {
+    let (width, height) = fit_within(image.width(), image.height(), max_edge);
+    if (width, height) == image.dimensions() {
+        encode_png(image)
+    } else {
+        encode_png(&image::imageops::resize(
+            image,
+            width,
+            height,
+            FilterType::Triangle,
+        ))
+    }
+}
+
 fn encode_jpeg(
     image: &ImageBuffer<Rgb<u8>, Vec<u8>>,
     quality: u8,
@@ -315,6 +335,7 @@ pub enum CaptureTarget {
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TargetOption {
+    pub primary: bool,
     pub target: CaptureTarget,
     pub label: String,
 }
@@ -322,6 +343,7 @@ pub fn insight_targets() -> Result<Vec<TargetOption>, ObserveError> {
     let mut targets = monitors()?
         .into_iter()
         .map(|m| TargetOption {
+            primary: m.primary,
             target: CaptureTarget::Screen { id: m.id },
             label: format!(
                 "Screen {} — {}×{}{}",
@@ -340,6 +362,7 @@ pub fn insight_targets() -> Result<Vec<TargetOption>, ObserveError> {
             && !title.trim().is_empty()
         {
             targets.push(TargetOption {
+                primary: false,
                 target: CaptureTarget::Window { id },
                 label: format!("Window — {}", title.chars().take(120).collect::<String>()),
             });
@@ -347,18 +370,23 @@ pub fn insight_targets() -> Result<Vec<TargetOption>, ObserveError> {
     }
     Ok(targets)
 }
-pub fn insight_capture(target: CaptureTarget, max_edge: u32) -> Result<Frame, ObserveError> {
-    capture_target(target, true, max_edge)
+pub fn insight_capture(
+    target: CaptureTarget,
+    max_edge: u32,
+    capture_edge: u32,
+) -> Result<Frame, ObserveError> {
+    capture_target(target, true, max_edge, capture_edge)
 }
 
 pub fn recording_capture(target: CaptureTarget) -> Result<Frame, ObserveError> {
-    capture_target(target, false, u32::MAX)
+    capture_target(target, false, u32::MAX, u32::MAX)
 }
 
 fn capture_target(
     target: CaptureTarget,
     mask_for_model: bool,
     max_edge: u32,
+    capture_edge: u32,
 ) -> Result<Frame, ObserveError> {
     let started = Instant::now();
     let screen_capture = matches!(target, CaptureTarget::Screen { .. });
@@ -408,7 +436,10 @@ fn capture_target(
         super::mask::apply(&mut rgba, &super::mask::current(), monitor.x, monitor.y);
     }
     let png = if mask_for_model {
-        encode_png(&DynamicImage::ImageRgba8(rgba.clone()).into_rgb8())?
+        capture_png(
+            &DynamicImage::ImageRgba8(rgba.clone()).into_rgb8(),
+            capture_edge,
+        )?
     } else {
         Vec::new()
     };
@@ -432,6 +463,23 @@ fn capture_target(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn saved_capture_resolution_and_model_resolution_are_independent() {
+        let source = image::RgbaImage::from_pixel(1600, 900, image::Rgba([80, 120, 160, 255]));
+        let rgb = DynamicImage::ImageRgba8(source.clone()).into_rgb8();
+        let saved = capture_png(&rgb, 1280).unwrap();
+        assert_eq!(image::load_from_memory(&saved).unwrap().width(), 1280);
+        assert_eq!(image::load_from_memory(&saved).unwrap().height(), 720);
+        let model = prepare(source.clone(), 720, MODEL_JPEG_QUALITY).unwrap();
+        assert_eq!((model.width, model.height), (720, 405));
+        let native = capture_png(&rgb, u32::MAX).unwrap();
+        assert_eq!(image::load_from_memory(&native).unwrap().width(), 1600);
+        // Generating a smaller saved capture never changes the model source.
+        let detailed_model = prepare(source, u32::MAX, MODEL_JPEG_QUALITY).unwrap();
+        assert_eq!((detailed_model.width, detailed_model.height), (1600, 900));
+        assert_eq!(image::load_from_memory(&saved).unwrap().width(), 1280);
+    }
 
     #[test]
     fn model_limits_do_not_reduce_native_png_pixels() {

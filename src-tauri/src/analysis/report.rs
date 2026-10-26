@@ -41,6 +41,10 @@ impl Kind {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Finding {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pose: Option<Pose>,
+    #[serde(default)]
+    pub group: Group,
     pub n: u8,
     pub label: String,
     pub kind: Kind,
@@ -50,6 +54,73 @@ pub struct Finding {
     pub evidence: String,
     #[serde(default)]
     pub point: Option<[f32; 2]>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Keypoint {
+    pub label: String,
+    pub x: f32,
+    pub y: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Pose {
+    pub keypoints: Vec<Keypoint>,
+    pub connections: Vec<[usize; 2]>,
+}
+
+impl Finding {
+    pub fn has_geometry(&self) -> bool {
+        self.bbox.is_some() || self.pose.as_ref().is_some_and(|p| !p.keypoints.is_empty())
+    }
+}
+
+fn parse_pose(value: &Value) -> Option<Pose> {
+    let pose: Pose = serde_json::from_value(value.clone()).ok()?;
+    if pose.keypoints.is_empty()
+        || pose.keypoints.len() > 32
+        || pose.connections.len() > 64
+        || pose.keypoints.iter().any(|p| {
+            p.label.trim().is_empty()
+                || p.label.chars().count() > 24
+                || !p.x.is_finite()
+                || !p.y.is_finite()
+                || !(0.0..=1000.0).contains(&p.x)
+                || !(0.0..=1000.0).contains(&p.y)
+        })
+        || pose
+            .connections
+            .iter()
+            .any(|[a, b]| a == b || *a >= pose.keypoints.len() || *b >= pose.keypoints.len())
+    {
+        return None;
+    }
+    Some(pose)
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Group {
+    #[default]
+    Entities,
+    Regions,
+    Structure,
+    Depth,
+}
+
+impl Group {
+    fn from_value(value: &Value, kind: Kind) -> Self {
+        match value.as_str() {
+            Some("regions") => Self::Regions,
+            Some("structure") => Self::Structure,
+            Some("depth") => Self::Depth,
+            Some("entities") => Self::Entities,
+            _ if kind == Kind::Region => Self::Regions,
+            _ => Self::Entities,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -79,13 +150,25 @@ pub fn schema_with(points: bool) -> Value {
     let mut finding = json!({
         "type": "object", "additionalProperties": false,
         "properties": {
+            "pose": { "type": ["object", "null"], "additionalProperties": false,
+                "description": "For a relevant structure finding, visible landmarks only. Coordinates span the entire screenshot from 0 to 1000. Connections are pairs of zero-based keypoint indices. Use null for other findings or when uncertain; never infer hidden joints.",
+                "properties": {
+                    "keypoints": { "type": "array", "minItems": 1, "maxItems": 32, "items": {
+                        "type": "object", "additionalProperties": false,
+                        "properties": { "label": {"type":"string", "minLength":1, "maxLength":24}, "x":{"type":"number", "minimum":0, "maximum":1000}, "y":{"type":"number", "minimum":0, "maximum":1000} },
+                        "required": ["label", "x", "y"]
+                    } },
+                    "connections": { "type":"array", "maxItems":64, "items": {"type":"array", "minItems":2, "maxItems":2, "items":{"type":"integer", "minimum":0, "maximum":31}} }
+                }, "required": ["keypoints", "connections"]
+            },
+            "group": { "type": "string", "enum": ["entities", "regions", "structure", "depth"], "description": "Choose the group relevant to this finding and the user's question: entities = objects, people, text or UI elements; regions = scene regions, classification or context; structure = pose, joints or landmarks; depth = relative spatial depth. Return only relevant findings, from any combination of groups. Do not invent precise masks, poses or metric distances unsupported by the image." },
             "label": { "type": "string", "maxLength": LABEL_CAP, "description": "A short noun phrase, at most 24 characters." },
             "kind": { "type": "string", "enum": ["text", "control", "image", "region", "issue", "other"] },
             "box": { "type": ["array", "null"], "minItems": 4, "maxItems": 4, "items": { "type": "number" }, "description": "[x0, y0, x1, y1], each 0 to 1000 across the whole screenshot. Use null if you cannot locate the thing." },
             "description": { "type": "string", "maxLength": DESCRIPTION_CAP, "description": "One sentence." },
             "evidence": { "type": "string", "maxLength": EVIDENCE_CAP, "description": "What on the screen supports this." }
         },
-        "required": ["label", "kind", "description", "evidence", "box"]
+        "required": ["group", "label", "kind", "description", "evidence", "box", "pose"]
     });
     if points {
         finding["properties"]["point"] = json!({
@@ -223,6 +306,15 @@ fn finding(index: usize, item: &Value) -> Finding {
     let n = u8::try_from(index + 1).unwrap_or(u8::MAX);
     let label = text(&item["label"], LABEL_CAP);
     Finding {
+        pose: if item["group"] == "structure" {
+            parse_pose(&item["pose"])
+        } else {
+            None
+        },
+        group: Group::from_value(
+            &item["group"],
+            Kind::from_word(item["kind"].as_str().unwrap_or("")),
+        ),
         n,
         label: if label.is_empty() {
             format!("Item {n}")
@@ -242,8 +334,52 @@ mod tests {
     use super::*;
     use crate::model::client::chat_body;
 
+    #[test]
+    fn pose_validation_and_saved_round_trip() {
+        let pose = json!({"keypoints":[{"label":"shoulder","x":200,"y":300},{"label":"elbow","x":250,"y":450}],"connections":[[0,1]]});
+        let parsed =
+            parse(&json!({"answer":"Visible arm", "findings":[{"group":"structure","pose":pose}]}));
+        let finding = &parsed.findings[0];
+        assert!(finding.has_geometry());
+        assert_eq!(finding.pose.as_ref().unwrap().connections, vec![[0, 1]]);
+        let saved = serde_json::to_string(finding).unwrap();
+        assert_eq!(serde_json::from_str::<Finding>(&saved).unwrap(), *finding);
+        let mut bad = pose.clone();
+        bad["connections"] = json!([[0, 2]]);
+        assert!(parse_pose(&bad).is_none());
+        bad = pose.clone();
+        bad["keypoints"][0]["x"] = json!(-1);
+        assert!(parse_pose(&bad).is_none());
+        bad = pose.clone();
+        bad["connections"] = json!([[1, 1]]);
+        assert!(parse_pose(&bad).is_none());
+        assert!(parse_pose(&Value::Null).is_none());
+        let legacy: Finding = serde_json::from_value(
+            json!({"n":1,"label":"old","kind":"image","box":null,"description":"","evidence":""}),
+        )
+        .unwrap();
+        assert!(legacy.pose.is_none());
+    }
+
     fn found(arguments: Value) -> ParsedReport {
         parse(&arguments)
+    }
+
+    #[test]
+    fn groups_follow_model_output_with_legacy_fallback() {
+        let parsed = parse(&json!({"answer":"Visible scene", "findings":[
+            {"kind":"image", "group":"structure"}, {"kind":"image", "group":"depth"},
+            {"kind":"region"}, {"kind":"control"}
+        ]}));
+        assert_eq!(
+            parsed.findings.iter().map(|f| f.group).collect::<Vec<_>>(),
+            vec![
+                Group::Structure,
+                Group::Depth,
+                Group::Regions,
+                Group::Entities
+            ]
+        );
     }
 
     #[test]
@@ -282,6 +418,7 @@ mod tests {
         assert_eq!(
             report.findings[0],
             Finding {
+                group: crate::analysis::report::Group::default(),
                 n: 1,
                 label: "Save button".into(),
                 kind: Kind::Control,
@@ -289,6 +426,7 @@ mod tests {
                 description: "Saves the changes.".into(),
                 evidence: "The button says Save.".into(),
                 point: None,
+                pose: None,
             }
         );
         assert_eq!(
@@ -474,6 +612,7 @@ mod tests {
     #[test]
     fn a_finding_is_written_for_the_ui_with_box_and_camel_case() {
         let f = Finding {
+            group: crate::analysis::report::Group::default(),
             n: 2,
             label: "L".into(),
             kind: Kind::Issue,
@@ -481,10 +620,11 @@ mod tests {
             description: "d".into(),
             evidence: "e".into(),
             point: None,
+            pose: None,
         };
         assert_eq!(
             serde_json::to_value(&f).unwrap(),
-            json!({ "n": 2, "label": "L", "kind": "issue", "box": [1.0, 2.0, 30.0, 40.0], "description": "d", "evidence": "e", "point": null })
+            json!({ "group": "entities", "n": 2, "label": "L", "kind": "issue", "box": [1.0, 2.0, 30.0, 40.0], "description": "d", "evidence": "e", "point": null })
         );
     }
 
@@ -504,7 +644,16 @@ mod tests {
         assert_eq!(props["point"]["minItems"], 2);
         assert_eq!(
             with["properties"]["findings"]["items"]["required"],
-            json!(["label", "kind", "description", "evidence", "box", "point"]),
+            json!([
+                "group",
+                "label",
+                "kind",
+                "description",
+                "evidence",
+                "box",
+                "pose",
+                "point"
+            ]),
             "unknown points are represented by null"
         );
     }
@@ -566,7 +715,15 @@ mod tests {
         assert_eq!(findings["items"]["properties"]["box"]["minItems"], 4);
         assert_eq!(
             findings["items"]["required"],
-            json!(["label", "kind", "description", "evidence", "box"]),
+            json!([
+                "group",
+                "label",
+                "kind",
+                "description",
+                "evidence",
+                "box",
+                "pose"
+            ]),
             "unknown boxes are represented by null"
         );
         assert_eq!(tool["required"], json!(["answer", "findings"]));

@@ -23,11 +23,11 @@ const tool =
     <button
       type="button"
       :class="[tool, 'bottom-0']"
-      aria-label="Analyse the screen"
+      aria-label="Visual Analysis"
       :title="
         agent.settings.value?.externalAgent
-          ? 'Request screen analysis from your external agent'
-          : 'Analyse the screen'
+          ? 'Request visual analysis from your external agent'
+          : 'Visual Analysis'
       "
       :disabled="!agent.settings.value?.externalAgent && agent.isRunning.value"
       @click="agent.analyzeScreen()"

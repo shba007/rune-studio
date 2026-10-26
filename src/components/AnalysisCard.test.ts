@@ -44,9 +44,41 @@ function fake(over: Partial<AnalysisSnapshot> = {}) {
 }
 
 const press = (key: string) => window.dispatchEvent(new KeyboardEvent('keydown', { key }))
+const submitFromComposer = (wrapper: { vm: unknown }, question: string) =>
+  (wrapper.vm as { submit: (question: string) => Promise<boolean> }).submit(question)
 
 describe('AnalysisCard states', () => {
-  it('clears a disappeared target on refresh and disables Ask', async () => {
+  it('preselects the primary screen without capturing and preserves a manually selected window on refresh', async () => {
+    const options = [
+      { target: { kind: 'screen', id: 1 }, label: 'Secondary', primary: false },
+      { target: { kind: 'screen', id: 2 }, label: 'Primary', primary: true },
+      { target: { kind: 'window', id: 42 }, label: 'Acceptance', primary: false },
+    ]
+    vi.mocked(invoke).mockResolvedValueOnce(options).mockResolvedValueOnce(options)
+    const { analysis, calls } = fake()
+    const wrapper = mount(AnalysisCard, { props: { analysis } })
+    await flushPromises()
+    expect(calls.capture).not.toHaveBeenCalled()
+    await submitFromComposer(wrapper, 'Describe this screen')
+    expect(calls.capture).toHaveBeenLastCalledWith('Describe this screen', {
+      kind: 'screen',
+      id: 2,
+    })
+    await wrapper.get('[aria-label="Choose capture target"]').trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('Acceptance'))!
+      .trigger('click')
+    await wrapper.get('[aria-label="Refresh capture targets"]').trigger('click')
+    await flushPromises()
+    await submitFromComposer(wrapper, 'Describe this window')
+    expect(calls.capture).toHaveBeenLastCalledWith('Describe this window', {
+      kind: 'window',
+      id: 42,
+    })
+    wrapper.unmount()
+  })
+  it('clears a disappeared target and refuses submission from the main composer', async () => {
     vi.mocked(invoke)
       .mockResolvedValueOnce([{ target: { kind: 'window', id: 42 }, label: 'Window — Acceptance' }])
       .mockResolvedValueOnce([])
@@ -60,8 +92,8 @@ describe('AnalysisCard states', () => {
       .trigger('click')
     await wrapper.get('[aria-label="Refresh capture targets"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('button[aria-label="Ask"]').attributes('disabled')).toBeDefined()
-    await wrapper.get('form').trigger('submit')
+    expect(wrapper.find('input').exists()).toBe(false)
+    expect(await submitFromComposer(wrapper, 'What changed?')).toBe(false)
     expect(calls.capture).not.toHaveBeenCalled()
     wrapper.unmount()
   })
@@ -79,8 +111,9 @@ describe('AnalysisCard states', () => {
       .findAll('button')
       .find((button) => button.text().includes('Acceptance'))!
       .trigger('click')
-    await wrapper.get('input').setValue('What failed?')
-    await wrapper.get('form').trigger('submit')
+    expect(wrapper.find('input').exists()).toBe(false)
+    calls.capture.mockImplementationOnce(() => new Promise<void>(() => {}))
+    expect(await submitFromComposer(wrapper, 'What failed?')).toBe(true)
     expect(calls.capture).toHaveBeenCalledWith('What failed?', { kind: 'window', id: 42 })
     snapshot.value = {
       ...snapshot.value,
@@ -97,17 +130,16 @@ describe('AnalysisCard states', () => {
     wrapper.unmount()
   })
 
-  it('shows a dot skeleton and a Cancel button while it works, no spinner', () => {
-    const { analysis, calls } = fake({ status: 'asking', question: 'what is here?' })
+  it('keeps the question while loading without duplicating the orb or composer stop control', () => {
+    const { analysis } = fake({ status: 'asking', question: 'what is here?' })
     const wrapper = mount(AnalysisCard, { props: { analysis } })
-    expect(wrapper.findComponent(AnalysisAnswer).props('waiting')).toBe(true)
-    expect(wrapper.findAll('.skeleton-dot')).toHaveLength(49)
+    expect(wrapper.findComponent(AnalysisAnswer).exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Reading your capture')
     expect(wrapper.text()).toContain('what is here?')
+    expect(wrapper.find('p.whitespace-pre-wrap').classes()).not.toContain('truncate')
     expect(wrapper.text()).toContain('READING')
     const cancel = wrapper.find('button[aria-label="Cancel analysis"]')
-    expect(cancel.exists()).toBe(true)
-    void cancel.trigger('click')
-    expect(calls.cancel).toHaveBeenCalled()
+    expect(cancel.exists()).toBe(false)
     expect(wrapper.find('input').exists()).toBe(false)
   })
 
@@ -250,7 +282,7 @@ describe('the status bar', () => {
     const wrapper = mount(AnalysisBar, {
       props: { status: 'asking', elapsedMs: 14_300, hotkey: 'Ctrl + Alt + Escape' },
     })
-    expect(wrapper.text()).toContain('Screen analysis')
+    expect(wrapper.text()).toContain('Visual analysis')
     expect(wrapper.find('[data-testid="stage"]').text()).toBe('READING')
     expect(wrapper.find('[data-testid="timer"]').text()).toBe('00:14')
     expect(wrapper.text()).toContain('Ctrl + Alt + Escape')

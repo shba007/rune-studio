@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vite-plus/test'
 import { friendly, noticeMillis } from './errors'
 
 describe('friendly', () => {
-  it('gives an actionable next step when Screen Insight inference times out', () => {
+  it('gives an actionable next step when Visual Analysis inference times out', () => {
     expect(friendly('the model did not answer within 60 seconds')).toBe(
       'The Analysis model took too long. Retry, or check Infer for a busy or loading model.',
     )

@@ -143,13 +143,13 @@ describe('FlightPlayer states', () => {
     })
     const wrapper = await open()
     expect(wrapper.find('[data-testid="no-steps"]').exists()).toBe(false)
-    expect(wrapper.get('img[alt="Saved screen analysis capture"]').attributes('src')).toBe(
+    expect(wrapper.get('img[alt="Saved visual analysis capture"]').attributes('src')).toBe(
       'asset://screenshots/capture.png',
     )
     expect(wrapper.get('[data-testid="analysis-answer"]').text()).toContain(
       'The port is already in use.',
     )
-    await wrapper.get('img[alt="Saved screen analysis capture"]').trigger('error')
+    await wrapper.get('img[alt="Saved visual analysis capture"]').trigger('error')
     expect(wrapper.get('[data-testid="analysis-capture-notice"]').text()).toContain(
       'deleted or moved',
     )

@@ -745,9 +745,15 @@ async fn run(
             events::set_agent_state(app, AgentState::Observing);
             body::announce_observe(app, None);
             let observing = Instant::now();
+            let capture_edge = app
+                .state::<AppState>()
+                .settings
+                .locked()
+                .recording_resolution
+                .max_edge();
             let (captured, elements) = tokio::join!(
                 tauri::async_runtime::spawn_blocking(move || {
-                    screenshot::capture(None, model_image_edge, MODEL_JPEG_QUALITY)
+                    screenshot::capture(None, model_image_edge, MODEL_JPEG_QUALITY, capture_edge)
                 }),
                 tauri::async_runtime::spawn_blocking(uia::snapshot),
             );

@@ -291,6 +291,16 @@ fn show(app: &AppHandle) {
     if let Some(pill) = app.get_webview_window(crate::window::MAIN) {
         let _ = pill.set_always_on_top(true);
     }
+    // Overlays must stay behind visible settings and replay windows, including
+    // when a new result causes the overlay to be shown again. Do not steal focus.
+    for label in [crate::hub::WINDOW, crate::flight::WINDOW] {
+        if let Some(window) = app.get_webview_window(label)
+            && window.is_visible().unwrap_or(false)
+            && !window.is_minimized().unwrap_or(false)
+        {
+            let _ = window.set_always_on_top(true);
+        }
+    }
 }
 
 fn build(app: &AppHandle, label: &str) -> tauri::Result<tauri::WebviewWindow> {

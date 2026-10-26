@@ -191,7 +191,7 @@ Rune Studio
   rune-studio-cli run <id> [--calls]  Show one recorded run: its steps and events (--calls: every model attempt).
   rune-studio-cli analyses [--limit N]  List the newest screen analyses (default 20).
   rune-studio-cli reflections [--limit N]  List the newest idle reflection runs (default 20).
-  rune-studio-cli analysis <id>    Show one screen analysis: question, answer and findings.
+  rune-studio-cli analysis <id>    Show one visual analysis: question, answer and findings.
   rune-studio-cli life status      Show life module status, consents, and counts.
   rune-studio-cli life export <class|all> <folder>  Export records as JSON and Markdown.
   rune-studio-cli life delete <class|all> --yes     Permanently delete records and vacuum.

@@ -118,6 +118,7 @@ pub struct Settings {
     pub record_session_video: RecordVideo,
     pub model_image_resolution: ImageResolution,
     pub recording_resolution: ImageResolution,
+    pub visual_analysis: VisualAnalysis,
     pub offer_review: OfferReview,
     pub demo_mode: bool,
     pub reflection_enabled: bool,
@@ -151,6 +152,7 @@ struct SettingsDeHelper {
     pub record_session_video: RecordVideo,
     pub model_image_resolution: ImageResolution,
     pub recording_resolution: ImageResolution,
+    pub visual_analysis: VisualAnalysis,
     pub offer_review: OfferReview,
     pub demo_mode: bool,
     pub reflection_enabled: bool,
@@ -185,6 +187,7 @@ impl Default for SettingsDeHelper {
             record_session_video: def.record_session_video,
             model_image_resolution: def.model_image_resolution,
             recording_resolution: def.recording_resolution,
+            visual_analysis: def.visual_analysis,
             offer_review: def.offer_review,
             demo_mode: def.demo_mode,
             reflection_enabled: def.reflection_enabled,
@@ -246,6 +249,7 @@ impl<'de> Deserialize<'de> for Settings {
             record_session_video: helper.record_session_video,
             model_image_resolution: helper.model_image_resolution,
             recording_resolution: helper.recording_resolution,
+            visual_analysis: helper.visual_analysis,
             offer_review: helper.offer_review,
             demo_mode: helper.demo_mode,
             reflection_enabled: helper.reflection_enabled,
@@ -343,6 +347,7 @@ impl Default for Settings {
             record_session_video: RecordVideo::default(),
             model_image_resolution: ImageResolution::default(),
             recording_resolution: ImageResolution::Native,
+            visual_analysis: VisualAnalysis::default(),
             offer_review: OfferReview::default(),
             demo_mode: true,
             reflection_enabled: true,
@@ -700,5 +705,59 @@ mod tests {
         assert!(!custom.life_consent("mind"));
         assert_eq!(custom.retention_days_for("health"), 30);
         assert_eq!(custom.retention_days_for("mind"), 90);
+    }
+}
+
+/// Display preferences only: never remove findings from requests or history.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct VisualAnalysis {
+    pub entities: bool,
+    pub regions: bool,
+    pub structure: bool,
+    pub depth: bool,
+}
+impl Default for VisualAnalysis {
+    fn default() -> Self {
+        Self {
+            entities: true,
+            regions: true,
+            structure: true,
+            depth: true,
+        }
+    }
+}
+impl VisualAnalysis {
+    pub fn shows(&self, group: crate::analysis::report::Group) -> bool {
+        use crate::analysis::report::Group;
+        match group {
+            Group::Entities => self.entities,
+            Group::Regions => self.regions,
+            Group::Structure => self.structure,
+            Group::Depth => self.depth,
+        }
+    }
+}
+
+#[cfg(test)]
+mod visual_analysis_tests {
+    use super::*;
+    #[test]
+    fn old_settings_show_all_groups_and_hidden_preferences_round_trip() {
+        let mut settings: Settings = serde_json::from_str("{}").unwrap();
+        assert_eq!(settings.visual_analysis, VisualAnalysis::default());
+        settings.visual_analysis.depth = false;
+        let saved = serde_json::to_string(&settings).unwrap();
+        let restored: Settings = serde_json::from_str(&saved).unwrap();
+        assert!(
+            !restored
+                .visual_analysis
+                .shows(crate::analysis::report::Group::Depth)
+        );
+        assert!(
+            restored
+                .visual_analysis
+                .shows(crate::analysis::report::Group::Entities)
+        );
     }
 }

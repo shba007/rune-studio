@@ -42,7 +42,11 @@ export interface ModelRoles {
   advisor: string
 }
 
+export type AnalysisGroup = 'entities' | 'regions' | 'structure' | 'depth'
+export type VisualAnalysisVisibility = Record<AnalysisGroup, boolean>
+
 export interface Settings {
+  visualAnalysis?: VisualAnalysisVisibility
   verifyMode: 'off' | 'background' | 'blocking'
   demoMode: boolean
   recordSessionVideo: 'off' | 'motion'
@@ -218,6 +222,8 @@ export type FindingKind = 'text' | 'control' | 'image' | 'region' | 'issue' | 'o
 export type Box = [number, number, number, number]
 
 export interface Finding {
+  pose?: Pose | null
+  group?: AnalysisGroup
   n: number
   label: string
   kind: FindingKind
@@ -227,7 +233,13 @@ export interface Finding {
   point: [number, number] | null
 }
 
+export interface Pose {
+  keypoints: { label: string; x: number; y: number }[]
+  connections: [number, number][]
+}
+
 export interface AnalysisSnapshot {
+  visibleGroups?: VisualAnalysisVisibility
   screenshot?: string | null
   status: AnalysisStatus
   id: string

@@ -15,7 +15,10 @@ import CaptureTargetPicker from './CaptureTargetPicker.vue'
 const props = defineProps<{ analysis: ReturnType<typeof useAnalysis> }>()
 const { snapshot, busy, notice } = props.analysis
 
-const targets = ref<{ target: { kind: string; id: number }; label: string }[]>([])
+const targets = ref<{ target: { kind: string; id: number }; label: string; primary?: boolean }[]>(
+  [],
+)
+let initialSelection = true
 const selectedTarget = ref('')
 const targetNotice = ref('')
 const refreshing = ref(false)
@@ -41,36 +44,41 @@ async function loadTargets() {
   if (!targets.value.some((item) => JSON.stringify(item.target) === selectedTarget.value)) {
     selectedTarget.value = ''
   }
+  if (initialSelection) {
+    const primary = targets.value.find((item) => item.target.kind === 'screen' && item.primary)
+    if (primary) selectedTarget.value = JSON.stringify(primary.target)
+    initialSelection = false
+  }
 }
 onMounted(loadTargets)
-const question = ref('')
 const open = ref<number | null>(null)
 
 const stage = computed(() => stageWord(snapshot.value.status))
 const waiting = computed(() => busy.value)
-const showAnswer = computed(() => busy.value || snapshot.value.status === 'done')
+const showAnswer = computed(() => snapshot.value.status === 'done')
 const failed = computed(() => snapshot.value.status === 'error')
 
-function submit() {
-  if (busy.value) return
+async function submit(question = '') {
+  if (busy.value) return false
   const option = targets.value.find((item) => JSON.stringify(item.target) === selectedTarget.value)
   if (option) {
-    void props.analysis.capture(question.value.trim(), option.target)
-    question.value = ''
-    return
+    void props.analysis.capture(question.trim(), option.target)
+    return true
   }
-  if (snapshot.value.id.startsWith('insight-') || !snapshot.value.monitor) return
-  void (snapshot.value.monitor
-    ? props.analysis.ask(question.value.trim())
-    : props.analysis.capture(question.value.trim()))
-  question.value = ''
+  if (snapshot.value.id.startsWith('insight-') || !snapshot.value.monitor) {
+    targetNotice.value = 'Choose a screen or window before sending your question.'
+    return false
+  }
+  void props.analysis.ask(question.trim())
+  return true
 }
+
+defineExpose({ submit })
 
 function retry() {
   if (busy.value) return
   if (snapshot.value.id.startsWith('insight-')) {
-    question.value = snapshot.value.question
-    submit()
+    void submit(snapshot.value.question)
     return
   }
   const failedQuestion = snapshot.value.question
@@ -102,14 +110,14 @@ onKeyStroke('Escape', (event) => {
 <template>
   <div
     class="analysis-scroll flex max-h-[480px] w-full flex-col gap-2 overflow-x-hidden overflow-y-auto"
-    aria-label="Screen analysis"
+    aria-label="Visual analysis"
   >
     <section
       class="flex w-full flex-col gap-2 rounded-[28px] border border-white/15 bg-[#141414] p-4 text-zinc-100"
     >
       <header class="flex h-6 items-center gap-2">
         <AppIcon name="scan" size="sm" />
-        <span class="text-caption whitespace-nowrap text-zinc-300 uppercase">Screen Insight</span>
+        <span class="text-caption whitespace-nowrap text-zinc-300 uppercase">Visual Analysis</span>
         <span v-if="stage" class="text-caption whitespace-nowrap text-zinc-500 uppercase">{{
           stage
         }}</span>
@@ -142,45 +150,21 @@ onKeyStroke('Escape', (event) => {
       <p v-if="targetNotice && !busy && !failed" role="alert" class="text-label text-[#ff6b72]">
         {{ targetNotice }}
       </p>
-      <form class="flex items-center gap-2" @submit.prevent="submit">
-        <p v-if="busy" class="m-0 min-w-0 flex-1 truncate text-body text-zinc-300">
+      <div v-if="busy" class="flex items-center gap-2">
+        <p
+          v-if="busy"
+          class="m-0 min-w-0 flex-1 whitespace-pre-wrap break-words text-body text-zinc-300"
+        >
           {{ snapshot.question }}
         </p>
-        <input
-          v-else
-          v-model="question"
-          type="text"
-          class="h-8 min-w-0 flex-1 rounded-full bg-white/8 px-3 text-body text-zinc-100 outline-none placeholder:text-zinc-500 focus-visible:ring-2 focus-visible:ring-white/60"
-          placeholder="Ask about the screen"
-          aria-label="Ask about the screen"
-        />
-        <button
-          v-if="busy"
-          type="button"
-          class="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full bg-[#d71921] text-white transition hover:bg-[#b9151c]"
-          aria-label="Cancel analysis"
-          title="Cancel analysis"
-          @click="analysis.cancel()"
-        >
-          <AppIcon name="stop" />
-        </button>
-        <button
-          v-else
-          type="submit"
-          class="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full bg-[#f1f1ef] !text-[#111] transition hover:bg-white"
-          :disabled="!selectedTarget && !snapshot.monitor"
-          aria-label="Ask"
-        >
-          <AppIcon name="send" />
-        </button>
-      </form>
+      </div>
       <p v-if="notice" class="m-0 text-label text-[#ff6b72]">{{ notice }}</p>
     </section>
 
     <section v-if="snapshot.screenshot" class="rounded-2xl bg-[#141414] p-3">
       <img
         :src="snapshot.screenshot"
-        alt="Captured frame at native resolution"
+        alt="Captured frame at the selected capture quality"
         class="w-full rounded-lg"
       />
       <p class="text-label text-zinc-400">

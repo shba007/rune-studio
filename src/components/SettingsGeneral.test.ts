@@ -7,7 +7,7 @@ import type { Agent } from '@/composables/useAgent'
 import type { Settings } from '@/types/protocol'
 
 describe('developer controls', () => {
-  it('keeps model and recording resolution controls independent', async () => {
+  it('keeps model and capture resolution controls independent', async () => {
     const draft = reactive({
       modelImageResolution: '1280',
       recordingResolution: 'native',
@@ -22,10 +22,10 @@ describe('developer controls', () => {
         },
       },
     })
-    await wrapper.get('select[aria-label="Model image resolution"]').setValue('1920')
+    await wrapper.get('select[aria-label="Model input resolution"]').setValue('1920')
     expect(draft.modelImageResolution).toBe('1920')
     expect(draft.recordingResolution).toBe('native')
-    await wrapper.get('select[aria-label="Recording resolution"]').setValue('720')
+    await wrapper.get('select[aria-label="Screenshot and recording resolution"]').setValue('720')
     expect(draft.recordingResolution).toBe('720')
     expect(draft.modelImageResolution).toBe('1920')
     wrapper.unmount()

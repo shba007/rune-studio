@@ -418,6 +418,7 @@ pub fn open(app: &tauri::AppHandle, run: Option<&str>) -> tauri::Result<()> {
     };
     if let Some(window) = app.get_webview_window(WINDOW) {
         let _ = window.unminimize();
+        window.set_always_on_top(true)?;
         window.show()?;
         window.set_focus()?;
         window.emit(OPEN_EVENT, json!({ "runId": run }))?;
@@ -426,6 +427,7 @@ pub fn open(app: &tauri::AppHandle, run: Option<&str>) -> tauri::Result<()> {
     let url = format!("index.html?view=flight&run={}", url_safe(run));
     let window = WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::App(url.into()))
         .title("Rune Preview")
+        .always_on_top(true)
         .inner_size(1180.0, 760.0)
         .min_inner_size(880.0, 560.0)
         .resizable(true)
@@ -433,6 +435,7 @@ pub fn open(app: &tauri::AppHandle, run: Option<&str>) -> tauri::Result<()> {
         .center()
         .build()?;
     crate::window::protect(&window)?;
+    window.set_focus()?;
     Ok(())
 }
 

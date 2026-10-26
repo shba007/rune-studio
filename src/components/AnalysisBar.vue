@@ -16,7 +16,7 @@ const failed = computed(() => props.status === 'error')
 <template>
   <OverlayBarShell aria-live="polite">
     <AgentMark :glyph="null" own class="text-[#f1f1ef]" />
-    <span class="text-caption whitespace-nowrap uppercase">Screen analysis</span>
+    <span class="text-caption whitespace-nowrap uppercase">Visual analysis</span>
     <div class="flex items-center gap-2 border-l border-white/20 pl-3">
       <span
         v-if="stage"

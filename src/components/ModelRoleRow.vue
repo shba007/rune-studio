@@ -29,7 +29,7 @@ const isCloud = computed(() => {
 
 const warning = computed<string | null>(() => {
   if (props.roleKey === 'analysis' && !modelValue.value.trim()) {
-    return 'Choose an explicit Analysis model for Screen Insight.'
+    return 'Choose an explicit Analysis model for Visual Analysis.'
   }
   const caps = currentCaps.value
   if (

@@ -63,7 +63,7 @@ watch(
 
     <HubGroup title="Models">
       <p class="m-0 mb-2 text-label text-zinc-400">
-        Choose a model for each job. Screen Insight requires an explicit Analysis model with image
+        Choose a model for each job. Visual Analysis requires an explicit Analysis model with image
         input and tool calling. Other optional roles can use the agent model when empty. Open Model
         capabilities to check what each model supports.
       </p>
@@ -88,7 +88,7 @@ watch(
       />
       <ModelRoleRow
         v-model="draft.models.analysis"
-        role-label="Screen Analysis"
+        role-label="Visual Analysis"
         role-key="analysis"
         :agent-model="draft.models.agent"
         :models="agent.backend.value?.models ?? []"
