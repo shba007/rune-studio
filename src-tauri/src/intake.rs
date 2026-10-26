@@ -305,7 +305,7 @@ async fn classify(app: &AppHandle, e: &mut Entry) -> Result<(), String> {
     let value = infer(
         app,
         e,
-        include_str!("../prompts/intake/classify.txt"),
+        include_str!("../prompts/intake/classify.md"),
         &json!({"input":e.text,"answers":e.answers}),
         &schema,
     )
@@ -463,7 +463,7 @@ async fn clarify(app: &AppHandle, e: &mut Entry) -> Result<(), String> {
     let value = infer(
         app,
         e,
-        include_str!("../prompts/intake/clarify.txt"),
+        include_str!("../prompts/intake/clarify.md"),
         &json!({"input":e.text,"answers":e.answers,"draft":e.goal}),
         &schema,
     )
@@ -957,7 +957,7 @@ pub async fn decision_pathways(app: AppHandle, id: String, revision: u64) -> Res
         infer(
             &app,
             &e,
-            include_str!("../prompts/intake/pathways.txt"),
+            include_str!("../prompts/intake/pathways.md"),
             &json!({"approvedGoal":approved,"category":e.category}),
             &crate::intake_pathways::schema(),
         ),

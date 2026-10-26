@@ -110,7 +110,7 @@ function triggerExport(classKey: string) {
         Rune Life Harness stores evidence-based records of claims, habits, health, mind, and
         finances. Sensitive domains (health, mind, finance) are encrypted at rest with authenticated
         AES-256-GCM using a key in your OS keyring, and are strictly local-only: they never leave
-        this PC.
+        this device.
       </p>
       <p class="m-0 leading-relaxed text-zinc-500 italic">
         Disclaimer: Rune is not a clinician, therapist, or financial advisor. It provides structured

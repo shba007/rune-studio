@@ -39,6 +39,7 @@ async function load() {
   }
 }
 function create() {
+  if (busy.value) return
   expected.value = null
   draft.value = { id: '', name: '', mark: 'companion', categories: [], prompt: '' }
   categories.value = ''
@@ -99,140 +100,175 @@ onMounted(load)
 onBeforeUnmount(() => {
   disposed = true
 })
+defineExpose({ create })
 </script>
 <template>
-  <div class="flex flex-col gap-5">
-    <p class="m-0 text-label text-zinc-400">
-      Personalities change how Rune communicates. Execution permissions, consent, and output
-      contracts remain protected. Unassigned categories use the base personality.
-    </p>
-    <p v-if="catalog" class="m-0 text-caption text-zinc-500 select-text [overflow-wrap:anywhere]">
-      Prompt folder: {{ catalog.folder }}
-    </p>
-    <form
-      class="flex max-w-2xl flex-col gap-3 rounded-2xl border border-white/10 p-4"
-      aria-label="Suggest a personality"
-      @submit.prevent="suggest"
-    >
-      <label class="flex flex-col gap-2 text-label text-zinc-300"
-        >Goal category<input
-          v-model="suggestionCategory"
-          :disabled="busy"
-          maxlength="80"
-          required
-          placeholder="For example, fitness or learning"
-          class="rounded-xl bg-white/5 p-3 text-zinc-100"
-      /></label>
-      <p class="m-0 text-caption text-zinc-500">
-        Only this category label is sent to your configured model after it is verified as local. The
-        suggestion stays unsaved until you approve it.
+  <div class="flex flex-col gap-6">
+    <div class="flex items-center gap-3 border-b border-white/10 pb-5 text-label text-zinc-400">
+      <PersonalitySymbol mark="companion" class="size-8 shrink-0 text-zinc-200" />
+      <p class="m-0 max-w-xl leading-relaxed">
+        A different voice for each goal. Unassigned categories use Rune.
       </p>
-      <button
-        type="submit"
-        :disabled="busy || !suggestionCategory.trim()"
-        class="self-start cursor-pointer rounded-full border border-white/20 px-4 py-2 text-label text-zinc-200 disabled:opacity-40"
-      >
-        {{ generating ? 'Drafting style…' : 'Suggest personality' }}
-      </button>
-    </form>
-    <p v-if="suggestion" role="status" class="m-0 text-label text-zinc-300">
-      Unsaved suggestion. Review its name, symbol, categories, and communication style before
-      approving.
-    </p>
-    <div class="flex flex-wrap gap-2">
-      <button
-        v-for="profile in catalog?.entries"
-        :key="profile.id"
-        :disabled="busy"
-        class="cursor-pointer rounded-full border border-white/15 px-4 py-2 text-label text-zinc-200"
-        :aria-pressed="draft?.id === profile.id"
-        @click="edit(profile)"
-      >
-        <PersonalitySymbol :mark="profile.mark" class="mr-2 inline-block size-4 align-middle" />{{
-          profile.name
-        }}
-      </button>
-      <button
-        :disabled="busy"
-        class="cursor-pointer rounded-full border border-white/15 px-4 py-2 text-label text-zinc-200"
-        @click="create"
-      >
-        Add personality
-      </button>
     </div>
-    <form
-      v-if="draft"
-      aria-label="Edit personality"
-      class="flex max-w-2xl flex-col gap-4 rounded-2xl border border-white/10 p-5 text-label"
-      @submit.prevent="save"
-    >
-      <fieldset :disabled="busy" class="m-0 flex flex-col gap-4 border-0 p-0">
-        <label class="flex flex-col gap-2"
-          >ID<input
-            v-model="draft.id"
-            required
-            pattern="[a-z0-9-]+"
-            maxlength="64"
-            :disabled="expected !== null"
-            class="rounded-xl bg-white/5 p-3 text-zinc-100"
-        /></label>
-        <div class="flex gap-3">
-          <label class="flex flex-1 flex-col gap-2"
-            >Name<input
-              v-model="draft.name"
-              required
-              maxlength="80"
-              class="min-w-0 rounded-xl bg-white/5 p-3 text-zinc-100"
-          /></label>
-          <label class="flex w-44 flex-col gap-2"
-            >Orb symbol<span class="flex items-center gap-2"
-              ><PersonalitySymbol :mark="draft.mark" class="size-5 shrink-0" /><select
-                v-model="draft.mark"
-                class="min-w-0 rounded-xl bg-[#1b1b1b] p-3 text-zinc-100"
-              >
-                <option v-for="symbol in personalitySymbols" :key="symbol.id" :value="symbol.id">
-                  {{ symbol.label }}
-                </option>
-              </select></span
-            ></label
-          >
-        </div>
-        <label v-if="draft.id !== 'base'" class="flex flex-col gap-2"
-          >Categories (comma separated)<input
-            v-model="categories"
-            placeholder="fitness, running"
-            class="rounded-xl bg-white/5 p-3 text-zinc-100"
-        /></label>
-        <label class="flex flex-col gap-2"
-          >Communication style<textarea
-            v-model="draft.prompt"
-            required
-            rows="7"
-            maxlength="8000"
-            class="resize-y rounded-xl bg-white/5 p-3 text-zinc-100"
-          />
-        </label>
-        <p class="m-0 text-caption text-zinc-400">
-          Keep personal records in protected goal conversations. These editable style files contain
-          instructions, not your private goal context. Saving explicitly approves this personality
-          and its category assignments.
-        </p>
-        <div class="flex flex-wrap gap-3">
+    <div class="grid items-start gap-8 lg:grid-cols-[200px_minmax(0,1fr)]">
+      <aside class="flex flex-col gap-5">
+        <nav aria-label="Saved personalities" class="flex flex-wrap gap-2 lg:flex-col">
           <button
-            type="submit"
-            class="cursor-pointer rounded-full bg-zinc-100 px-5 py-2 text-zinc-950"
+            v-for="profile in catalog?.entries"
+            :key="profile.id"
+            :disabled="busy"
+            class="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-3 text-left text-label transition disabled:opacity-40"
+            :class="
+              draft?.id === profile.id
+                ? 'bg-white/10 text-zinc-100'
+                : 'text-zinc-400 hover:bg-white/5'
+            "
+            :aria-pressed="draft?.id === profile.id"
+            @click="edit(profile)"
           >
-            {{ pending ? 'Saving…' : 'Approve and save' }}</button
-          ><button
-            type="button"
-            class="cursor-pointer rounded-full border border-white/15 px-5 py-2 text-zinc-200"
-            @click="load"
-          >
-            Reload saved version
+            <span class="grid size-9 shrink-0 place-items-center rounded-xl bg-white/5"
+              ><PersonalitySymbol :mark="profile.mark" class="size-5"
+            /></span>
+            <span class="min-w-0"
+              ><span class="block truncate">{{ profile.name }}</span
+              ><span class="mt-1 block text-caption text-zinc-500">{{
+                profile.id === 'base'
+                  ? 'Default companion'
+                  : profile.categories.join(' · ') || 'No categories'
+              }}</span></span
+            >
           </button>
-        </div>
-      </fieldset>
-    </form>
+        </nav>
+        <details class="border-t border-white/10 pt-4 text-label text-zinc-400">
+          <summary class="cursor-pointer">Draft with Rune</summary>
+          <form
+            class="mt-4 flex flex-col gap-3"
+            aria-label="Suggest a personality"
+            @submit.prevent="suggest"
+          >
+            <label class="flex flex-col gap-2"
+              >Goal category<input
+                v-model="suggestionCategory"
+                :disabled="busy"
+                maxlength="80"
+                required
+                placeholder="Fitness, learning…"
+                class="min-w-0 rounded-lg bg-white/5 p-3 text-zinc-100"
+            /></label>
+            <p class="m-0 text-caption leading-relaxed text-zinc-500">
+              Only the category is sent to a verified local model. Review before saving.
+            </p>
+            <button
+              type="submit"
+              :disabled="busy || !suggestionCategory.trim()"
+              class="cursor-pointer rounded-full border border-white/15 px-3 py-2 text-zinc-200 disabled:opacity-40"
+            >
+              {{ generating ? 'Drafting…' : 'Suggest personality' }}
+            </button>
+          </form>
+        </details>
+      </aside>
+      <div class="min-w-0">
+        <p v-if="suggestion" role="status" class="mb-5 text-label text-zinc-300">
+          Unsaved suggestion · review and approve below.
+        </p>
+        <form
+          v-if="draft"
+          aria-label="Edit personality"
+          class="flex flex-col gap-5 text-label"
+          @submit.prevent="save"
+        >
+          <header class="flex items-center gap-3">
+            <span class="grid size-12 place-items-center rounded-2xl bg-white/5"
+              ><PersonalitySymbol :mark="draft.mark" class="size-6 text-zinc-100"
+            /></span>
+            <div>
+              <h2 class="m-0 text-body text-zinc-100">
+                {{ expected ? draft.name : 'New personality' }}
+              </h2>
+              <p class="mt-1 mb-0 text-caption text-zinc-500">
+                {{
+                  draft.id === 'base'
+                    ? 'Fallback for every unassigned goal'
+                    : 'Communication style and goal categories'
+                }}
+              </p>
+            </div>
+          </header>
+          <fieldset :disabled="busy" class="m-0 flex min-w-0 flex-col gap-5 border-0 p-0">
+            <div class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_180px]">
+              <label class="flex min-w-0 flex-col gap-2 text-zinc-400"
+                >Name<input
+                  v-model="draft.name"
+                  required
+                  maxlength="80"
+                  class="min-w-0 rounded-xl bg-white/5 p-3 text-zinc-100"
+              /></label>
+              <label class="flex min-w-0 flex-col gap-2 text-zinc-400"
+                >Orb symbol<select
+                  v-model="draft.mark"
+                  class="min-w-0 rounded-xl bg-[#1b1b1b] p-3 text-zinc-100"
+                >
+                  <option v-for="symbol in personalitySymbols" :key="symbol.id" :value="symbol.id">
+                    {{ symbol.label }}
+                  </option>
+                </select></label
+              >
+            </div>
+            <label v-if="!expected" class="flex flex-col gap-2 text-zinc-400"
+              >File ID<input
+                v-model="draft.id"
+                required
+                pattern="[a-z0-9-]+"
+                maxlength="64"
+                placeholder="fitness-coach"
+                class="rounded-xl bg-white/5 p-3 text-zinc-100"
+            /></label>
+            <label v-if="draft.id !== 'base'" class="flex flex-col gap-2 text-zinc-400"
+              >Goal categories<input
+                v-model="categories"
+                placeholder="fitness, running"
+                class="rounded-xl bg-white/5 p-3 text-zinc-100"
+            /></label>
+            <label class="flex flex-col gap-2 text-zinc-400"
+              >Communication style<textarea
+                v-model="draft.prompt"
+                required
+                rows="8"
+                maxlength="8000"
+                class="resize-y rounded-xl bg-white/5 p-4 text-body leading-relaxed text-zinc-100"
+              />
+            </label>
+            <div class="flex flex-wrap items-center gap-4 border-t border-white/10 pt-5">
+              <button
+                type="submit"
+                class="cursor-pointer rounded-full bg-zinc-100 px-5 py-2 text-zinc-950"
+              >
+                {{ pending ? 'Saving…' : 'Approve and save' }}
+              </button>
+              <button
+                type="button"
+                class="cursor-pointer text-zinc-400 hover:text-white"
+                @click="load"
+              >
+                Reload saved version
+              </button>
+            </div>
+          </fieldset>
+        </form>
+        <details class="mt-6 text-caption leading-relaxed text-zinc-500">
+          <summary class="cursor-pointer">Storage &amp; boundaries</summary>
+          <p>
+            Styles change communication. Execution permissions, consent and output contracts remain
+            protected. Saving approves the style and category assignments. Keep personal records in
+            protected goal conversations.
+          </p>
+          <p v-if="catalog" class="select-text [overflow-wrap:anywhere]">
+            Prompt folder: {{ catalog.folder }}
+          </p>
+        </details>
+      </div>
+    </div>
     <p v-if="error" role="alert" class="m-0 text-label text-[#ff6b72]">
       {{ error }} Your draft is preserved.
     </p>

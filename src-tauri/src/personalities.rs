@@ -54,7 +54,7 @@ fn base() -> Personality {
         name: "Rune".into(),
         mark: "companion".into(),
         categories: vec![],
-        prompt: include_str!("../prompts/personalities/base.txt")
+        prompt: include_str!("../prompts/personalities/base.md")
             .trim()
             .into(),
     }
@@ -245,7 +245,7 @@ pub async fn personality_propose(app: AppHandle, category: String) -> Result<Per
     };
     let input = serde_json::json!({"category":category}).to_string();
     let request = crate::model::client::Request {
-        system: include_str!("../prompts/personalities/propose.txt"),
+        system: include_str!("../prompts/personalities/propose.md"),
         user_text: &input,
         max_tokens: Some(1200),
         ..Default::default()
@@ -287,7 +287,7 @@ pub fn style(app: &AppHandle, category: &str) -> Result<String, String> {
     let _ = app.emit("personality_active", badge);
     Ok(format!(
         "\n{}\n{}",
-        include_str!("../prompts/personalities/style-contract.txt"),
+        include_str!("../prompts/personalities/style-contract.md"),
         profile.prompt
     ))
 }

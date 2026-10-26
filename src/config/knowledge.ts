@@ -60,7 +60,7 @@ export const knowledgeConcepts: KnowledgeConcept[] = [
     example:
       'Calculate an average, translate a sentence, and type a phrase in Notepad as three independent tasks.',
     today:
-      'Create manual activities, Rune-executed work or Visual Analysis tasks, optionally linked to an approved goal. Calendar and activity views show schedules and history. One-time, daily, weekly and monthly reminders ask before each run. Rune must be open; after time away, overdue occurrences become one pending check-in. Independent execution may run concurrently; desktop interaction remains exclusive. Old history stays standalone until explicitly linked.',
+      'Create manual activities, Rune-executed work or Visual Analysis tasks, optionally linked to an approved goal. The activity timeline shows previews, schedules and history. One-time, daily, weekly and monthly reminders ask before each run. Rune must be open; after time away, overdue occurrences become one pending check-in. Independent execution may run concurrently; device interaction remains exclusive. Old history stays standalone until explicitly linked.',
     section: 'tasks',
   },
   {

@@ -60,9 +60,9 @@ it('opens Goals without a Settings button in Knowledge', async () => {
   expect(wrapper.getComponent(DecisionInbox).props('goalsOnly')).toBe(true)
   expect(wrapper.findAll('nav button').map((item) => item.text())).toEqual([
     'Overview',
+    'Personalities',
     'Goals',
     'Tasks',
-    'Personalities',
   ])
   expect(harness.settings).not.toHaveBeenCalled()
   wrapper.unmount()

@@ -183,7 +183,7 @@ Rune Studio
   rune-studio-cli connect --print  Show the settings to paste into any other MCP-capable agent.
   rune-studio-cli skill            Install or refresh the Claude Code skill only (--remove deletes it).
   rune-studio-cli disconnect <agent>  Remove Rune Studio from claude or antigravity (tools and skill).
-  rune-studio-cli enable           Allow outside agents to see and use this PC through Rune Studio.
+  rune-studio-cli enable           Allow outside agents to see and use this device through Rune Studio.
   rune-studio-cli disable          Turn that off again.
   rune-studio-cli status           Show whether Rune Studio is running and what is allowed.
   rune-studio-cli guide            Print the guide an agent reads.
@@ -803,7 +803,7 @@ fn connect_claude(exe: &str) -> i32 {
                 }
             };
             say(&format!(
-                "Connected. Claude Code can now use Rune Studio in every project.{skill_note} Restart Claude Code, then ask it to do something on your PC."
+                "Connected. Claude Code can now use Rune Studio in every project.{skill_note} Restart Claude Code, then ask it to do something on your device."
             ));
             0
         }
@@ -850,7 +850,7 @@ Nothing was changed. Add Rune Studio by hand: run  rune-studio connect --print  
         "{} Antigravity can now use Rune Studio.{}
   Settings: {}
   Skill:    {}
-In Antigravity, refresh MCP servers (agent panel > MCP Servers > Manage MCP Servers, or Settings > Customizations > Installed MCP Servers) or restart it, then ask it to do something on your PC.",
+In Antigravity, refresh MCP servers (agent panel > MCP Servers > Manage MCP Servers, or Settings > Customizations > Installed MCP Servers) or restart it, then ask it to do something on your device.",
         if changed { "Connected." } else { "Already connected." },
         skill_note,
         paths.config.display(),

@@ -12,6 +12,7 @@ import AnalysisAnswer from './AnalysisAnswer.vue'
 import AnalysisFindingRow from './AnalysisFindingRow.vue'
 import AppIcon from './AppIcon.vue'
 import CaptureTargetPicker from './CaptureTargetPicker.vue'
+import WhenText from './WhenText.vue'
 
 const props = defineProps<{ analysis: ReturnType<typeof useAnalysis> }>()
 const emit = defineEmits<{ close: [] }>()
@@ -173,7 +174,7 @@ onKeyStroke('Escape', (event) => {
         class="w-full rounded-lg"
       />
       <p class="text-label text-zinc-400">
-        Captured {{ snapshot.createdUtc }} ·
+        Captured <WhenText :iso="snapshot.createdUtc" /> ·
         <ModelIcon v-if="snapshot.model" :model="snapshot.model" class="mr-1" />{{
           snapshot.model || 'Resolving model'
         }}

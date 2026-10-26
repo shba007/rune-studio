@@ -1,1 +1,3 @@
+# skills / captcha
+
 A CAPTCHA seems to be shown. Never try to solve it: use ask_user, or finish with done and success=false.

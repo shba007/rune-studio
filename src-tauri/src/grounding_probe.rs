@@ -110,7 +110,7 @@ fn system_prompt(convention: Convention, width: u32, height: u32) -> String {
             .to_string(),
     };
     if convention == Convention::Box {
-        return "You operate a Windows PC by looking at screenshots. To locate an element, call the locate tool with the tightest bounding box around it, as [x0, y0, x1, y1]: the top-left corner then the bottom-right corner. \
+        return "You operate a device by looking at screenshots. To locate an element, call the locate tool with the tightest bounding box around it, as [x0, y0, x1, y1]: the top-left corner then the bottom-right corner. \
                 Coordinates are normalized: x and y each run from 0 to 1000 across the full width and height of the screenshot, with (0, 0) at the top-left and (1000, 1000) at the bottom-right. \
                 Do not explain or think aloud. Call the tool immediately with your best estimate."
             .to_string();
@@ -121,7 +121,7 @@ fn system_prompt(convention: Convention, width: u32, height: u32) -> String {
         ""
     };
     format!(
-        "You operate a Windows PC by looking at screenshots. To act, call the click tool with the exact centre of the element to click. {how}{brevity}"
+        "You operate a device by looking at screenshots. To act, call the click tool with the exact centre of the element to click. {how}{brevity}"
     )
 }
 

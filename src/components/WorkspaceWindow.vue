@@ -18,6 +18,7 @@ import type { FlightRun } from '@/config/flight'
 
 type Section = KnowledgeSection
 const agent = useAgent()
+const personalities = ref<InstanceType<typeof PersonalitiesPanel> | null>(null)
 const decisions = useDecisions()
 const workspace = useWorkspaceTasks()
 const approvedGoals = computed(() =>
@@ -83,16 +84,16 @@ const sections = [
     label: 'Overview',
     subtitle: 'Understand Rune, explore its connections, and see what works today.',
   },
+  {
+    id: 'personalities' as const,
+    label: 'Personalities',
+    subtitle: 'Choose the style that supports each goal.',
+  },
   { id: 'goals' as const, label: 'Goals', subtitle: 'Long-term outcomes, pathways and progress.' },
   {
     id: 'tasks' as const,
     label: 'Tasks',
     subtitle: 'Your work, results, analysis and recordings.',
-  },
-  {
-    id: 'personalities' as const,
-    label: 'Personalities',
-    subtitle: 'Approved coaching styles and their goal categories.',
   },
 ]
 const current = computed(() => sections.find((item) => item.id === section.value)!)
@@ -162,7 +163,17 @@ onBeforeUnmount(() => {
           :aria-current="section === item.id ? 'page' : undefined"
           @click="navigate(item.id)"
         >
-          <AppIcon :name="item.id === 'goals' ? 'thinking' : 'history'" />{{ item.label }}
+          <AppIcon
+            :name="
+              item.id === 'personalities'
+                ? 'personality'
+                : item.id === 'overview'
+                  ? 'graph'
+                  : item.id === 'goals'
+                    ? 'target'
+                    : 'history'
+            "
+          />{{ item.label }}
         </button>
       </nav>
       <section class="min-w-0 flex-1 overflow-y-auto px-8 py-6">
@@ -176,6 +187,14 @@ onBeforeUnmount(() => {
               @click="creation = { kind: section === 'goals' ? 'goal' : 'task' }"
             >
               + New {{ section === 'goals' ? 'goal' : 'task' }}
+            </button>
+            <button
+              v-if="section === 'personalities'"
+              type="button"
+              class="cursor-pointer rounded-full bg-zinc-100 px-4 py-2 text-label text-zinc-950"
+              @click="personalities?.create()"
+            >
+              + New personality
             </button>
           </div>
           <p class="mt-1 text-label text-zinc-500">{{ current.subtitle }}</p>
@@ -235,7 +254,7 @@ onBeforeUnmount(() => {
           </button>
         </div>
         <DecisionInbox v-if="section === 'tasks'" :model="decisions" />
-        <PersonalitiesPanel v-if="section === 'personalities'" />
+        <PersonalitiesPanel v-if="section === 'personalities'" ref="personalities" />
         <KnowledgeOverview v-if="section === 'overview'" @navigate="navigate" />
       </section>
     </div>

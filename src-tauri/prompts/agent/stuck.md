@@ -1,1 +1,3 @@
+# agent / stuck
+
 The screen has not changed after your last {unchanged} actions, so they are not working. Do not repeat them: try another control, a keyboard shortcut or scrolling, or ask the user.

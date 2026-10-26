@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import type { Agent } from '@/composables/useAgent'
 import { useWorkspaceTasks } from '@/composables/useWorkspaceTasks'
+import WhenText from './WhenText.vue'
 const props = defineProps<{ agent: Agent }>()
 const workspace = useWorkspaceTasks()
 const deferred = ref(new Set<string>())
@@ -37,8 +38,8 @@ watch(
     </header>
     <p class="m-0 leading-relaxed">{{ task.title }}</p>
     <p class="m-0 text-caption text-zinc-500">
-      Due {{ new Date(task.occurrences.at(-1)!.dueMs!).toLocaleString() }}. If Rune was away,
-      confirm what actually happened.
+      Due <WhenText :iso="new Date(task.occurrences.at(-1)!.dueMs!).toISOString()" />. If Rune was
+      away, confirm what actually happened.
     </p>
     <div class="flex flex-wrap gap-2">
       <button

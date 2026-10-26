@@ -996,7 +996,7 @@ async fn run(
             "{}{}\n{}",
             crate::prompts::agent_system(),
             style,
-            include_str!("../../prompts/agent/kit-contract.txt")
+            include_str!("../../prompts/agent/kit-contract.md")
         );
         let planned_tools;
         let turn_tools = if handoff.locked().board_id.is_some() {

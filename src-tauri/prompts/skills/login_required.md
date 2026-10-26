@@ -1,1 +1,3 @@
+# skills / login required
+
 The page seems to ask for a login. Never enter credentials: use ask_user, or finish with done and success=false.

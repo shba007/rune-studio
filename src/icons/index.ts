@@ -36,8 +36,14 @@ import IconRuneMark from '~icons/custom/rune-mark'
 import IconStopCircle from '~icons/ph/stop-fill'
 import IconVideo from '~icons/ph/video-camera-fill'
 import IconTrash from '~icons/ph/trash-fill'
+import IconMasks from '~icons/ph/mask-happy-fill'
+import IconGraph from '~icons/ph/graph-fill'
+import IconTarget from '~icons/ph/target-bold'
 
 export const icons = {
+  personality: IconMasks,
+  graph: IconGraph,
+  target: IconTarget,
   app: IconAppWindow,
   back: IconArrowLeft,
   chevron: IconCaretDown,

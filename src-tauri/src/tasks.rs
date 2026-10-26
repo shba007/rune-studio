@@ -1118,7 +1118,7 @@ async fn make_plan(
         "{user}\nOriginal task constraints for this attached step (context only; do not repeat old work): {context}"
     );
     let request = crate::model::client::Request {
-        system: include_str!("../prompts/tasks/plan.txt"),
+        system: include_str!("../prompts/tasks/plan.md"),
         user_text: &user,
         screenshot: None,
         audio: None,
@@ -1213,9 +1213,9 @@ async fn background(
             task.steps[current].text
         );
         let contract = if result_only {
-            include_str!("../prompts/tasks/reasoning.txt")
+            include_str!("../prompts/tasks/reasoning.md")
         } else {
-            include_str!("../prompts/tasks/tools.txt")
+            include_str!("../prompts/tasks/tools.md")
         };
         let system = format!("{contract}{}", crate::personalities::style(app, "")?);
         let request = crate::model::client::Request {

@@ -147,7 +147,8 @@ export function useAgent() {
   let fittedHeight = 0
   const silenceTimer = useTimeoutFn(
     () => {
-      if (!heardSound) showNotice('No sound from the microphone. Check Windows microphone access')
+      if (!heardSound)
+        showNotice('No sound from the microphone. Check your device’s microphone permissions')
     },
     SILENCE_MS,
     { immediate: false },
