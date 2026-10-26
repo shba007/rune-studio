@@ -199,6 +199,9 @@ pub async fn ask(
     images: &[String],
     questions: &[Question],
 ) -> Option<Answers> {
+    if crate::workspace_tasks::protected_execution_context(app) {
+        return None;
+    }
     let state = app.state::<AppState>();
     let (enabled, url, model, skip_swap, allowance_secs) = {
         let settings = state.settings.locked();

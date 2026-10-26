@@ -40,6 +40,7 @@ impl LifeStore {
                 | OpenFlags::SQLITE_OPEN_CREATE
                 | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
 
         match schema::open_or_create(&mut conn, crypto.key_id())? {
             Opened::Ready => Ok(Self {

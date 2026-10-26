@@ -15,6 +15,41 @@ vi.mock('@tauri-apps/api/event', () => ({
     return harness.off
   },
 }))
+it('versions pathway requests and selection without dispatching executable tasks', async () => {
+  harness.invoke.mockReset()
+  const entry = {
+    id: 'goal',
+    revision: 9,
+    kind: 'goal',
+    status: 'goal_ready',
+    question: null,
+  } as IntakeEntry
+  harness.invoke.mockImplementation(async (command) =>
+    command === 'decisions_state' ? [entry] : null,
+  )
+  let decisions!: ReturnType<typeof useDecisions>
+  const wrapper = mount(
+    defineComponent({
+      setup() {
+        decisions = useDecisions()
+        return () => null
+      },
+    }),
+  )
+  await flushPromises()
+  await decisions.comparePathways(entry)
+  expect(harness.invoke).toHaveBeenCalledWith('decision_pathways', { id: 'goal', revision: 9 })
+  await decisions.selectPathway(entry, 'route-1')
+  expect(harness.invoke).toHaveBeenCalledWith('decision_select_pathway', {
+    id: 'goal',
+    revision: 9,
+    pathwayId: 'route-1',
+  })
+  expect(harness.invoke.mock.calls.some(([command]) => /submit|start_task/.test(command))).toBe(
+    false,
+  )
+  wrapper.unmount()
+})
 it('ignores stale refreshes and sends only one answer with the saved revision', async () => {
   let initial: ((value: IntakeEntry[]) => void) | undefined
   let finish: (() => void) | undefined

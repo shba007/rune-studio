@@ -7,10 +7,29 @@ import type { Agent } from '@/composables/useAgent'
 import { problemText, useFlight } from '@/composables/useFlight'
 
 import ArtifactCard from './ArtifactCard.vue'
+import WorkspaceTaskTimeline from './WorkspaceTaskTimeline.vue'
+import type { WorkspaceTasksModel } from '@/composables/useWorkspaceTasks'
+import type { IntakeEntry } from '@/types/decisions'
+import type { WorkspaceTask } from '@/types/workspace'
+import type { FlightRun } from '@/config/flight'
+const emit = defineEmits<{
+  goal: [id: string]
+  schedule: [task: WorkspaceTask]
+  organize: [run: FlightRun]
+  clear: []
+}>()
 
 const props = withDefaults(
-  defineProps<{ agent: Agent; active?: boolean; openTask?: (id: string) => void }>(),
-  { active: true },
+  defineProps<{
+    agent: Agent
+    active?: boolean
+    openTask?: (id: string) => void
+    workspace?: WorkspaceTasksModel
+    goals?: IntakeEntry[]
+    parentFilter?: string | null
+    focusTaskId?: string | null
+  }>(),
+  { active: true, goals: () => [] },
 )
 const flight = useFlight()
 const deleting = ref<string | null>(null)
@@ -78,13 +97,28 @@ onBeforeUnmount(() => {
       {{ flight.problem.value }}
     </p>
     <p
-      v-else-if="flight.runsLoaded.value && flight.runs.value.length === 0"
+      v-else-if="!workspace && flight.runsLoaded.value && flight.runs.value.length === 0"
       class="m-0 py-10 text-center text-label text-zinc-500"
       data-testid="empty"
     >
       Nothing recorded yet. Run a task and it shows up here.
     </p>
-    <div class="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
+    <WorkspaceTaskTimeline
+      v-if="workspace"
+      :workspace="workspace"
+      :history="flight.runs.value"
+      :goals="goals"
+      :active="active"
+      :parent-filter="parentFilter"
+      :focus-task-id="focusTaskId"
+      @open="(id) => (props.openTask ? props.openTask(id) : props.agent.openReview(id))"
+      @goal="(id) => emit('goal', id)"
+      @schedule="(task) => emit('schedule', task)"
+      @organize="(run) => emit('organize', run)"
+      @clear="emit('clear')"
+      @remove="remove"
+    />
+    <div v-else class="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
       <ArtifactCard
         v-for="run in flight.runs.value"
         :key="run.id"

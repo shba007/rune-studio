@@ -46,6 +46,25 @@ const failed = (phase: string) => ['failed', 'blocked'].includes(phase)
         @keydown.left.prevent="emit('seek', Math.max(0, timeMs - 1000))"
         @keydown.right.prevent="emit('seek', Math.min(timeline.total, timeMs + 1000))"
       >
+        <button
+          v-for="segment in task.preparation"
+          :key="`${segment.title}-${segment.start}`"
+          :data-preparation-phase="segment.title"
+          type="button"
+          class="absolute inset-y-0 cursor-pointer overflow-hidden border-r border-dashed border-white/15 bg-white/[0.025] text-left text-zinc-500 hover:bg-white/5"
+          :style="{
+            left: `${(segment.start / timeline.total) * 100}%`,
+            width: `${((segment.end - segment.start) / timeline.total) * 100}%`,
+          }"
+          :aria-label="`${task.title}: ${segment.title}`"
+          :title="`${segment.title} · ${clock(segment.end - segment.start)}`"
+          @click.stop="emit('seek', segment.start)"
+        >
+          <span class="absolute top-2 left-2 text-caption">{{ segment.title }}</span
+          ><span
+            class="pointer-events-none absolute right-0 bottom-3 left-0 h-3 timeline-dots opacity-25"
+          />
+        </button>
         <div
           class="absolute inset-y-0 border-l border-white/10"
           :class="failed(task.phase) ? '!border-[#d71921]/50 !bg-[#d71921]/10' : ''"
@@ -58,6 +77,7 @@ const failed = (phase: string) => ['failed', 'blocked'].includes(phase)
         <button
           v-for="(step, index) in task.steps"
           :key="index"
+          data-task-step=""
           type="button"
           class="absolute inset-y-0 min-w-1 cursor-pointer overflow-hidden border-l border-white/10 text-zinc-200 hover:bg-white/[0.07]"
           :class="

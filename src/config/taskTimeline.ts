@@ -6,6 +6,7 @@ export interface TaskLane {
   runId: string | null
   start: number
   end: number
+  preparation?: { title: string; start: number; end: number }[]
   steps: { title: string; phase: string; start: number; end: number }[]
 }
 export interface TaskTimeline {
@@ -46,6 +47,15 @@ export function taskTimeline(raw: unknown): TaskTimeline | null {
     .map((task) => {
       const start = offset(task.startedAt, timestamp(task.finishedAt) ?? end)
       const finish = offset(task.finishedAt, end)
+      const introduced = history.find((item) => {
+        const tasks = object(item.snapshot).tasks
+        return Array.isArray(tasks) && tasks.some((value) => object(value).id === task.id)
+      })
+      const planned = Math.min(start, offset(introduced?.atMs, origin))
+      const preparation = [
+        { title: 'Planning', start: 0, end: planned },
+        { title: 'Queued', start: planned, end: start },
+      ].filter((segment) => segment.end > segment.start)
       const steps = Array.isArray(task.steps)
         ? task.steps
             .map(object)
@@ -57,6 +67,13 @@ export function taskTimeline(raw: unknown): TaskTimeline | null {
               end: offset(step.finishedAt, timestamp(task.finishedAt) ?? end),
             }))
         : []
+      let cursor = start
+      for (const step of [...steps].sort((a, b) => a.start - b.start)) {
+        if (step.start > cursor)
+          preparation.push({ title: 'Task active', start: cursor, end: step.start })
+        cursor = Math.max(cursor, step.end)
+      }
+      if (cursor < finish) preparation.push({ title: 'Task active', start: cursor, end: finish })
       return {
         id: Number(task.id),
         title: text(task.text),
@@ -65,6 +82,7 @@ export function taskTimeline(raw: unknown): TaskTimeline | null {
         runId: text(task.runId) || null,
         start,
         end: Math.max(start, finish),
+        preparation,
         steps,
       }
     })

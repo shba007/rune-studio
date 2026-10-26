@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ModelIcon from './ModelIcon.vue'
 import { useClipboard } from '@vueuse/core'
 import { computed, ref, watch } from 'vue'
 
@@ -465,10 +466,13 @@ const rawText = computed(() => {
         </div>
         <div v-if="pickedCall" class="mt-3 space-y-2" data-testid="bodies">
           <div
-            v-if="pickedCall.servedModel || pickedCall.swapMs || pickedCall.locality"
+            v-if="
+              pickedCall.model || pickedCall.servedModel || pickedCall.swapMs || pickedCall.locality
+            "
             class="flex flex-wrap items-center gap-2 text-status"
             data-testid="call-model-info"
           >
+            <ModelIcon :model="pickedCall.servedModel || pickedCall.model" />
             <span
               v-if="pickedCall.servedModel && pickedCall.servedModel !== pickedCall.model"
               class="rounded bg-amber-500/20 px-1.5 py-0.5 font-medium text-amber-300"
@@ -479,6 +483,7 @@ const rawText = computed(() => {
             <span v-else-if="pickedCall.servedModel" class="text-zinc-400">
               Model: {{ pickedCall.servedModel }}
             </span>
+            <span v-else class="text-zinc-400">Model: {{ pickedCall.model }}</span>
             <span v-if="pickedCall.locality" class="text-zinc-400"
               >Locality: {{ pickedCall.locality }}</span
             >

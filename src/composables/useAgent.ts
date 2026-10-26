@@ -102,6 +102,7 @@ export function useAgent() {
   const notice = ref<string | null>(null)
   const noticeKind = ref<'error' | 'info'>('error')
   const focusTick = ref(0)
+  const prefillRequest = ref<{ text: string; serial: number } | null>(null)
   const level = ref(0)
 
   const isRunning = computed(() => RUNNING.includes(state.value))
@@ -391,6 +392,16 @@ export function useAgent() {
       await listen<BackendProbe>('backend_status', (event) => applyBackend(event.payload)),
     )
     unlisten.push(
+      await listen<string>('workspace_analysis_request', (event) => {
+        if (new URLSearchParams(location.search).get('view')) return
+        prefillRequest.value = {
+          text: event.payload,
+          serial: (prefillRequest.value?.serial ?? 0) + 1,
+        }
+        void setMode('analysis').then(() => {
+          focusTick.value++
+        })
+      }),
       await listen('task_started', resetTaskView),
       await listen<StateChangedPayload>(STATE_CHANGED, (event) => {
         state.value = event.payload.state
@@ -499,6 +510,7 @@ export function useAgent() {
     noticeKind,
     notify: showNotice,
     focusTick,
+    prefillRequest,
     level,
     setMode,
     toggleOpen,

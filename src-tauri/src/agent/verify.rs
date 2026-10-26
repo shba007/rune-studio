@@ -47,6 +47,7 @@ pub fn schema() -> Value {
 }
 
 pub struct VerifyInput<'a> {
+    pub data_class: Option<crate::life::DataClass>,
     pub task: &'a str,
     pub goals: &'a [String],
     pub history: &'a [Entry],
@@ -160,7 +161,7 @@ async fn verify_within(
         tools: &Value::Null,
         think: false,
         max_tokens: None,
-        data_class: None,
+        data_class: input.data_class,
         background: false,
     };
     match tokio::time::timeout(limit, client.call_json(&request, &schema)).await {
@@ -455,6 +456,7 @@ mod tests {
 
     fn input<'a>() -> VerifyInput<'a> {
         VerifyInput {
+            data_class: None,
             task: "write hello",
             goals: &[],
             history: &[],

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ModelIcon from './ModelIcon.vue'
 import { computed, ref, watch } from 'vue'
 import { useElementSize } from '@vueuse/core'
 import { invoke } from '@tauri-apps/api/core'
@@ -99,7 +100,9 @@ watch(
       </div>
       <figcaption v-if="analysis" class="mt-3 flex flex-wrap gap-x-3 text-label text-zinc-500">
         <span>Captured <WhenText :iso="analysis.capturedUtc" /></span>
-        <span v-if="analysis.model">{{ analysis.model }}</span>
+        <span v-if="analysis.model" class="inline-flex items-center gap-2"
+          ><ModelIcon :model="analysis.model" />{{ analysis.model }}</span
+        >
       </figcaption>
     </figure>
     <aside

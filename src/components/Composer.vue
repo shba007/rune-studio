@@ -25,6 +25,12 @@ const agent = props.agent
 
 const { textarea: field, input: command } = useTextareaAutosize()
 const { focused } = useFocus(field)
+watch(
+  () => agent.prefillRequest?.value,
+  (request) => {
+    if (request) command.value = request.text
+  },
+)
 
 const hasText = computed(() => command.value.trim().length > 0)
 const isListening = computed(() => agent.state.value === 'listening')

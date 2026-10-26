@@ -39,11 +39,11 @@ pub struct Question {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Entry {
-    id: String,
-    revision: u64,
+    pub(crate) id: String,
+    pub(crate) revision: u64,
     text: String,
-    class: DataClass,
-    kind: String,
+    pub(crate) class: DataClass,
+    pub(crate) kind: String,
     status: String,
     #[serde(default)]
     category: String,
@@ -51,7 +51,13 @@ pub struct Entry {
     answers: Vec<Value>,
     goal: Option<Value>,
     #[serde(default)]
-    approved_goal: Option<Value>,
+    pub(crate) approved_goal: Option<Value>,
+    #[serde(default)]
+    outcome_metric: Option<crate::workspace_tasks::OutcomeMetric>,
+    #[serde(default)]
+    requested_kind: Option<String>,
+    #[serde(default)]
+    pathways: Option<crate::intake_pathways::PathwaySet>,
     error: Option<String>,
     created: String,
     task_id: Option<String>,
@@ -67,7 +73,7 @@ pub struct Entry {
     #[serde(skip)]
     voice_wav: Vec<u8>,
 }
-fn uid() -> Result<String, String> {
+pub(crate) fn uid() -> Result<String, String> {
     let mut bytes = [0_u8; 16];
     getrandom::fill(&mut bytes).map_err(|e| e.to_string())?;
     Ok(format!(
@@ -75,7 +81,7 @@ fn uid() -> Result<String, String> {
         bytes.iter().map(|b| format!("{b:02x}")).collect::<String>()
     ))
 }
-fn consent(app: &AppHandle, class: DataClass) -> bool {
+pub(crate) fn consent(app: &AppHandle, class: DataClass) -> bool {
     let s = app.state::<AppState>();
     let s = s.settings.locked();
     s.life_enabled
@@ -84,7 +90,7 @@ fn consent(app: &AppHandle, class: DataClass) -> bool {
             .copied()
             .unwrap_or(false)
 }
-fn store(app: &AppHandle) -> Result<LifeStore, String> {
+pub(crate) fn store(app: &AppHandle) -> Result<LifeStore, String> {
     let path = crate::life::db_path(&app.path().app_config_dir().map_err(|e| e.to_string())?);
     let crypto = if path.exists() {
         LifeCrypto::from_keyring_existing()
@@ -151,6 +157,10 @@ fn decode_entry(store: &LifeStore, body: &str) -> Result<Entry, String> {
     if entry.status == "dispatching" {
         entry.status = "interrupted".into();
         entry.error=Some("Execution dispatch was interrupted. Inspect task history before submitting another attempt.".into());
+    }
+    if entry.status == "pathway_planning" {
+        entry.status = "goal_ready".into();
+        entry.error=Some("Pathway comparison was interrupted. Your previously approved choice is preserved; compare again when ready.".into());
     }
     Ok(entry)
 }
@@ -314,6 +324,9 @@ async fn classify(app: &AppHandle, e: &mut Entry) -> Result<(), String> {
         .take(80)
         .collect();
     e.class = serde_json::from_value(value["class"].clone()).map_err(|err| err.to_string())?;
+    if let Some(kind) = e.requested_kind.take() {
+        e.kind = kind;
+    }
     e.persistable = true;
     if !matches!(e.kind.as_str(), "goal" | "task" | "step") {
         return Err("Invalid input classification".into());
@@ -583,6 +596,16 @@ pub fn submit_voice(
     keep_mic: bool,
     voice_wav: Vec<u8>,
 ) -> Result<u64, String> {
+    submit_intent(app, text, keep_mic, voice_wav, None, None)
+}
+fn submit_intent(
+    app: &AppHandle,
+    text: &str,
+    keep_mic: bool,
+    voice_wav: Vec<u8>,
+    requested_kind: Option<String>,
+    supplied_id: Option<String>,
+) -> Result<u64, String> {
     if text.trim().is_empty() || text.chars().count() > 4000 {
         return Err("Enter a request of 1 to 4000 characters".into());
     }
@@ -599,17 +622,20 @@ pub fn submit_voice(
         return Err("Resolve or cancel pending decisions before adding more requests".into());
     }
     let mut e = Entry {
-        id: uid()?,
+        id: supplied_id.map_or_else(uid, Ok)?,
         revision: 0,
         text: text.trim().into(),
         class: DataClass::General,
-        kind: String::new(),
+        kind: requested_kind.clone().unwrap_or_default(),
         category: String::new(),
         status: "classifying".into(),
         question: None,
         answers: Vec::new(),
         goal: None,
         approved_goal: None,
+        outcome_metric: None,
+        requested_kind,
+        pathways: None,
         error: None,
         created: crate::trace::now_utc(),
         task_id: None,
@@ -662,7 +688,7 @@ pub fn stop() {
     for entry in ENTRIES.locked().values() {
         if matches!(
             entry.status.as_str(),
-            "classifying" | "clarifying" | "dispatching"
+            "classifying" | "clarifying" | "dispatching" | "pathway_planning"
         ) {
             entry.token.cancel();
         }
@@ -672,7 +698,7 @@ pub fn busy() -> bool {
     ENTRIES.locked().values().any(|e| {
         matches!(
             e.status.as_str(),
-            "classifying" | "clarifying" | "dispatching"
+            "classifying" | "clarifying" | "dispatching" | "pathway_planning"
         )
     })
 }
@@ -728,6 +754,9 @@ mod tests {
             answers: vec![json!({"kind":"clarification","answer":"CANARY_ANSWER"})],
             goal: None,
             approved_goal: None,
+            outcome_metric: None,
+            requested_kind: None,
+            pathways: None,
             error: None,
             created: crate::trace::now_utc(),
             task_id: None,
@@ -746,6 +775,14 @@ mod tests {
             let store = LifeStore::open(&path, LifeCrypto::in_memory_random()).unwrap();
             let mut e = sample(*class);
             e.voice_wav = b"VOICE_BYTES_MUST_REMAIN_EPHEMERAL".to_vec();
+            e.pathways = Some(crate::intake_pathways::PathwaySet {
+                assessment: "PATHWAY_CANARY".into(),
+                similar_outcome: String::new(),
+                options: vec![],
+                goal: json!({"outcome":"PATHWAY_GOAL_CANARY"}),
+                selected: None,
+                approved: None,
+            });
             assert!(store_entry(&store, &e).is_err());
             store.set_consent(*class, true, "test").unwrap();
             store_entry(&store, &e).unwrap();
@@ -767,6 +804,10 @@ mod tests {
             assert_eq!(restored.answers, e.answers);
             assert_eq!(restored.text, e.text);
             assert!(restored.voice_wav.is_empty());
+            assert_eq!(
+                restored.pathways.as_ref().unwrap().assessment,
+                "PATHWAY_CANARY"
+            );
             e.revision = 2;
             e.status = "dispatching".into();
             e.question = None;
@@ -775,6 +816,13 @@ mod tests {
             let recovered = decode_entry(&store, &saved.body).unwrap();
             assert_eq!(recovered.status, "interrupted");
             assert!(recovered.question.is_none());
+            e.revision = 3;
+            e.status = "pathway_planning".into();
+            store_entry(&store, &e).unwrap();
+            let saved = store.get_record("intake-test-3").unwrap().unwrap();
+            let recovered = decode_entry(&store, &saved.body).unwrap();
+            assert_eq!(recovered.status, "goal_ready");
+            assert_eq!(recovered.pathways.unwrap().assessment, "PATHWAY_CANARY");
             drop(store);
             let _ = std::fs::remove_file(&path);
         }
@@ -826,6 +874,136 @@ pub async fn decision_refine(app: AppHandle, id: String, revision: u64) -> Resul
             ),
         ],
     );
+    commit(&app, &mut e)
+}
+
+fn ready_goal(app: &AppHandle, id: &str, revision: u64) -> Result<Entry, String> {
+    load(app)?;
+    let e = ENTRIES
+        .locked()
+        .get(id)
+        .cloned()
+        .ok_or("This goal no longer exists")?;
+    if e.revision != revision
+        || e.kind != "goal"
+        || e.status != "goal_ready"
+        || e.approved_goal.is_none()
+    {
+        return Err(
+            "Conflict: review the latest approved goal before changing its pathways".into(),
+        );
+    }
+    if !consent(app, e.class) {
+        return Err("Protected storage consent is required for goal pathways".into());
+    }
+    Ok(e)
+}
+#[tauri::command]
+pub fn workspace_new_goal(app: AppHandle, text: String) -> Result<String, String> {
+    let id = uid()?;
+    submit_intent(
+        &app,
+        &text,
+        false,
+        vec![],
+        Some("goal".into()),
+        Some(id.clone()),
+    )?;
+    Ok(id)
+}
+#[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri command arguments are the explicit measurement fields.
+pub async fn goal_measurement(
+    app: AppHandle,
+    id: String,
+    revision: u64,
+    current: f64,
+    baseline: f64,
+    target: f64,
+    unit: String,
+    note: String,
+) -> Result<(), String> {
+    let _serial = SERIAL.lock().await;
+    let mut e = ready_goal(&app, &id, revision)?;
+    let baseline = e.outcome_metric.as_ref().map_or(baseline, |m| m.baseline);
+    if let Some(old) = &e.outcome_metric
+        && (old.target != target || old.unit != unit.trim())
+    {
+        return Err("This goal already has a measure. Its target and unit stay fixed while recording progress.".into());
+    }
+    let metric = crate::workspace_tasks::OutcomeMetric {
+        baseline,
+        current,
+        target,
+        unit: unit.trim().into(),
+        note,
+        updated_at: crate::trace::now_utc(),
+    };
+    metric.validate()?;
+    e.outcome_metric = Some(metric);
+    commit(&app, &mut e)
+}
+#[tauri::command]
+pub async fn decision_pathways(app: AppHandle, id: String, revision: u64) -> Result<(), String> {
+    let _serial = SERIAL.lock().await;
+    let mut e = ready_goal(&app, &id, revision)?;
+    let approved = e.approved_goal.clone().ok_or("Approve the goal first")?;
+    e.token = CancelToken::default();
+    e.status = "pathway_planning".into();
+    e.error = None;
+    commit(&app, &mut e)?;
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(90),
+        infer(
+            &app,
+            &e,
+            include_str!("../prompts/intake/pathways.txt"),
+            &json!({"approvedGoal":approved,"category":e.category}),
+            &crate::intake_pathways::schema(),
+        ),
+    )
+    .await
+    .map_err(|_| "Pathway comparison timed out".to_string())
+    .and_then(|value| value)
+    .and_then(|value| crate::intake_pathways::parse(value, &approved));
+    e.status = "goal_ready".into();
+    if !consent(&app, e.class) {
+        e.error = Some("Goal storage consent was removed. No pathway changes were saved.".into());
+        ENTRIES.locked().insert(e.id.clone(), e);
+        let _ = app.emit("decisions_changed", ());
+        return Err("Goal storage consent was removed. No pathway changes were saved.".into());
+    }
+    if e.token.is_cancelled() {
+        e.error = Some("Pathway comparison stopped. Your earlier choice is preserved.".into());
+        commit(&app, &mut e)?;
+        return Err("Pathway comparison stopped".into());
+    }
+    match result {
+        Ok(mut set) => {
+            crate::intake_pathways::preserve_preference(&mut set, e.pathways.as_ref());
+            e.pathways = Some(set);
+            commit(&app, &mut e)
+        }
+        Err(error) => {
+            e.error = Some(error.clone());
+            commit(&app, &mut e)?;
+            Err(error)
+        }
+    }
+}
+#[tauri::command]
+pub async fn decision_select_pathway(
+    app: AppHandle,
+    id: String,
+    revision: u64,
+    pathway_id: String,
+) -> Result<(), String> {
+    let _serial = SERIAL.lock().await;
+    let mut e = ready_goal(&app, &id, revision)?;
+    let approved = e.approved_goal.clone().ok_or("Approve the goal first")?;
+    let set = e.pathways.as_mut().ok_or("Compare pathways first")?;
+    crate::intake_pathways::select(set, &approved, &pathway_id)?;
+    e.error = None;
     commit(&app, &mut e)
 }
 
@@ -912,6 +1090,16 @@ pub async fn decision_answer(
         }
         "goal_review" => {
             if choice == "approve" {
+                if e.approved_goal != e.goal {
+                    e.pathways = None;
+                    if e.approved_goal
+                        .as_ref()
+                        .map(|g| (&g["outcome"], &g["success"]))
+                        != e.goal.as_ref().map(|g| (&g["outcome"], &g["success"]))
+                    {
+                        e.outcome_metric = None;
+                    }
+                }
                 e.approved_goal = e.goal.clone();
                 e.status = "goal_ready".into();
                 e.question = None;

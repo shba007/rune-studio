@@ -27,6 +27,7 @@ import { useDecisions } from '@/composables/useDecisions'
 import DecisionInbox from './DecisionInbox.vue'
 import PersonalitySymbol from './PersonalitySymbol.vue'
 import { usePersonality } from '@/composables/usePersonality'
+import TaskReminder from './TaskReminder.vue'
 
 const agent = useAgent()
 const personality = usePersonality()
@@ -279,6 +280,10 @@ function onOrb() {
               <TaskBoard
                 v-if="!decisions.current.value || agent.question.value"
                 :board="taskBoard"
+              />
+              <TaskReminder
+                v-if="!agent.question.value && !decisions.current.value"
+                :agent="agent"
               />
               <DecisionInbox
                 v-if="!agent.question.value && !decisionInKnowledge"

@@ -1,0 +1,185 @@
+<script setup lang="ts">
+import type { IntakeEntry } from '@/types/decisions'
+import AppIcon from './AppIcon.vue'
+defineProps<{ entry: IntakeEntry; busy: boolean }>()
+defineEmits<{ select: [id: string] }>()
+</script>
+<template>
+  <section
+    v-if="entry.pathways"
+    aria-label="Goal pathways"
+    class="flex flex-col gap-5 border-t border-white/10 pt-6 text-label"
+  >
+    <header class="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <p class="m-0 mb-1 text-caption uppercase tracking-wider text-zinc-500">
+          Choose your approach
+        </p>
+        <h3 class="m-0 text-[18px] font-medium text-zinc-100">
+          {{
+            entry.pathways.options.length
+              ? `${entry.pathways.options.length} pathways to consider`
+              : 'More context needed'
+          }}
+        </h3>
+      </div>
+      <span class="text-caption text-zinc-500">Ranked by fit · estimates, not guarantees</span>
+    </header>
+    <div
+      v-if="entry.pathways.approved"
+      role="status"
+      class="flex items-start gap-3 border-l-2 border-zinc-200 py-1 pl-4"
+    >
+      <AppIcon name="ok" class="mt-1 shrink-0 text-zinc-200" />
+      <div>
+        <p class="m-0 text-caption text-zinc-500">Your preferred route</p>
+        <p class="m-0 mt-1 text-body text-zinc-100">{{ entry.pathways.approved.title }}</p>
+        <p class="m-0 mt-1 text-caption text-zinc-500">Saved as a preference only.</p>
+      </div>
+    </div>
+    <details
+      class="text-label text-zinc-400"
+      :open="
+        !entry.pathways.options.some((route) =>
+          ['feasible', 'conditional'].includes(route.feasibility),
+        )
+      "
+    >
+      <summary class="w-fit cursor-pointer py-1 hover:text-zinc-100">
+        Read the feasibility assessment
+      </summary>
+      <p class="mb-0 max-w-3xl leading-relaxed">{{ entry.pathways.assessment }}</p>
+      <p v-if="entry.pathways.similarOutcome" class="mb-0 max-w-3xl leading-relaxed">
+        <span class="text-zinc-200">Alternative outcome to clarify:</span>
+        {{ entry.pathways.similarOutcome }}
+      </p>
+    </details>
+    <p v-if="!entry.pathways.options.length" class="m-0 max-w-2xl leading-relaxed text-zinc-400">
+      No supported route was proposed. Refine the goal or provide the missing context before
+      comparing again.
+    </p>
+    <div class="grid items-stretch gap-4 lg:grid-cols-3">
+      <article
+        v-for="(route, index) in entry.pathways.options"
+        :key="route.id"
+        class="flex min-w-0 flex-col rounded-2xl border p-5"
+        :class="
+          entry.pathways.selected === route.id
+            ? 'border-zinc-400 bg-white/[0.045]'
+            : 'border-white/10 bg-[#101010]'
+        "
+      >
+        <header class="mb-4 flex items-center justify-between gap-2">
+          <span class="text-[28px] leading-none font-light tabular-nums text-zinc-600">{{
+            String(index + 1).padStart(2, '0')
+          }}</span
+          ><span
+            v-if="entry.pathways.selected === route.id"
+            class="inline-flex items-center gap-1 text-caption text-zinc-200"
+            ><AppIcon name="ok" size="sm" />Preferred</span
+          ><span
+            v-else-if="index === 0 && ['feasible', 'conditional'].includes(route.feasibility)"
+            class="rounded-full bg-white/8 px-2.5 py-1 text-caption text-zinc-200"
+            >Recommended</span
+          >
+        </header>
+        <h4 class="m-0 text-body leading-relaxed font-medium text-zinc-100">{{ route.title }}</h4>
+        <p class="mt-2 mb-5 line-clamp-3 leading-relaxed text-zinc-400">{{ route.summary }}</p>
+        <dl class="m-0 flex flex-col gap-3 border-y border-white/8 py-4 text-caption">
+          <div class="flex items-start gap-2.5">
+            <AppIcon name="wait" size="sm" class="mt-0.5 shrink-0 text-zinc-500" />
+            <div class="min-w-0">
+              <dt class="text-zinc-500">Estimated duration</dt>
+              <dd class="m-0 mt-1 line-clamp-2 text-zinc-200">{{ route.duration }}</dd>
+            </div>
+          </div>
+          <div class="flex items-center gap-2.5">
+            <AppIcon
+              :name="route.feasibility === 'feasible' ? 'ok' : 'shield'"
+              size="sm"
+              class="shrink-0 text-zinc-500"
+            />
+            <div>
+              <dt class="sr-only">Feasibility</dt>
+              <dd class="m-0 capitalize text-zinc-300">{{ route.feasibility }}</dd>
+            </div>
+          </div>
+        </dl>
+        <div class="flex flex-col gap-3 py-4 text-caption leading-relaxed">
+          <div v-if="route.pros.length" class="flex gap-2.5">
+            <span class="text-zinc-300" aria-hidden="true">+</span>
+            <p class="m-0 line-clamp-2 text-zinc-300">{{ route.pros[0] }}</p>
+          </div>
+          <div v-if="route.cons.length" class="flex gap-2.5">
+            <span class="text-zinc-500" aria-hidden="true">−</span>
+            <p class="m-0 line-clamp-2 text-zinc-500">{{ route.cons[0] }}</p>
+          </div>
+        </div>
+        <details class="mb-5 text-caption text-zinc-400">
+          <summary class="cursor-pointer py-1 hover:text-zinc-100">
+            {{
+              route.missingInformation.length
+                ? `${route.missingInformation.length} open question${route.missingInformation.length === 1 ? '' : 's'} · `
+                : ''
+            }}Route details
+          </summary>
+          <p class="leading-relaxed">{{ route.summary }}</p>
+          <p class="leading-relaxed">
+            <span class="text-zinc-200">Why this ranking:</span> {{ route.rationale }}
+          </p>
+          <p><span class="text-zinc-500">Duration:</span> {{ route.duration }}</p>
+          <dl class="m-0 flex flex-col gap-3">
+            <div
+              v-for="field in ['pros', 'cons', 'resources', 'missingInformation'] as const"
+              :key="field"
+            >
+              <dt class="mb-1 text-zinc-200">
+                {{
+                  {
+                    pros: 'Pros',
+                    cons: 'Cons',
+                    resources: 'Resources needed',
+                    missingInformation: 'Missing information',
+                  }[field]
+                }}
+              </dt>
+              <dd class="m-0">
+                <ul v-if="route[field].length" class="m-0 list-disc space-y-1 pl-4 leading-relaxed">
+                  <li v-for="item in route[field]" :key="item">{{ item }}</li>
+                </ul>
+                <span v-else>None stated by the model</span>
+              </dd>
+            </div>
+          </dl>
+        </details>
+        <button
+          :disabled="
+            busy ||
+            entry.status !== 'goal_ready' ||
+            !['feasible', 'conditional'].includes(route.feasibility) ||
+            entry.pathways.selected === route.id
+          "
+          class="mt-auto min-h-10 w-full cursor-pointer rounded-full px-4 py-2 text-label disabled:cursor-default disabled:opacity-40"
+          :class="
+            index === 0 && entry.pathways.selected !== route.id
+              ? 'bg-zinc-100 text-zinc-950'
+              : 'border border-white/20 text-zinc-200 hover:bg-white/5'
+          "
+          @click="$emit('select', route.id)"
+        >
+          {{
+            entry.pathways.selected === route.id
+              ? 'Preferred route saved'
+              : !['feasible', 'conditional'].includes(route.feasibility)
+                ? 'Clarify feasibility first'
+                : 'Save as preferred route'
+          }}
+        </button>
+      </article>
+    </div>
+    <p class="m-0 flex items-start gap-2 text-caption leading-relaxed text-zinc-500">
+      <AppIcon name="shield" size="sm" class="mt-0.5 shrink-0" />Saving a preferred route does not
+      create tasks, reminders, schedules, or authorize execution.
+    </p>
+  </section>
+</template>

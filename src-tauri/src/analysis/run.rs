@@ -244,7 +244,14 @@ pub(crate) async fn analyze_image_with_settings(
     let api_key = settings::api_key();
     let call_log = state.trace.call_log(run_id, "analysis");
     let analysis_model = settings.model_for_role(crate::model::role::ModelRole::Analysis);
-    let profile = crate::model::profile::resolve_profile(analysis_model, None, None);
+    let profile = crate::workspace_tasks::execution_profile(
+        app,
+        &settings.base_url,
+        api_key.as_deref(),
+        analysis_model,
+    )
+    .await
+    .map_err(AnalysisError::Failed)?;
     let client = ChatClient {
         http: &state.http,
         base_url: &settings.base_url,
@@ -255,9 +262,19 @@ pub(crate) async fn analyze_image_with_settings(
         no_swap: false,
         on_loading: None,
     };
-    analyze_with_client(&client, question, image, cancel, CALL_TIMEOUT).await
+    analyze_with_class(
+        &client,
+        question,
+        image,
+        cancel,
+        CALL_TIMEOUT,
+        crate::workspace_tasks::protected_execution_context(app)
+            .then_some(crate::life::DataClass::Finance),
+    )
+    .await
 }
 
+#[cfg(test)]
 async fn analyze_with_client(
     client: &ChatClient<'_>,
     question: &str,
@@ -265,11 +282,22 @@ async fn analyze_with_client(
     cancel: &CancelToken,
     timeout: Duration,
 ) -> Result<ModelAnalysis, AnalysisError> {
+    analyze_with_class(client, question, image, cancel, timeout, None).await
+}
+async fn analyze_with_class(
+    client: &ChatClient<'_>,
+    question: &str,
+    image: &str,
+    cancel: &CancelToken,
+    timeout: Duration,
+    data_class: Option<crate::life::DataClass>,
+) -> Result<ModelAnalysis, AnalysisError> {
     if cancel.is_cancelled() {
         return Err(AnalysisError::Cancelled);
     }
     let schema = report::schema();
-    let request = report::request(question, image);
+    let mut request = report::request(question, image);
+    request.data_class = data_class;
     let call = async {
         tokio::time::timeout(timeout, client.call_json_reply_retrying(&request, &schema)).await
     };

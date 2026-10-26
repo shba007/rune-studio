@@ -348,7 +348,27 @@ fn spawn_background_check(app: &AppHandle, run_id: String, evidence: Option<Evid
                 return;
             }
         }
-        let profile = crate::model::profile::resolve_profile(verify_model, None, None);
+        let profile = match crate::workspace_tasks::execution_profile(
+            &app,
+            &settings.base_url,
+            api_key.as_deref(),
+            verify_model,
+        )
+        .await
+        {
+            Ok(profile) => profile,
+            Err(error) => {
+                state.trace.verdict(verdict_record(
+                    &run_id,
+                    VerifyMode::Background,
+                    verify_model,
+                    &Err(error),
+                    Some(0),
+                    false,
+                ));
+                return;
+            }
+        };
         let client = ChatClient {
             http: &state.http,
             base_url: &settings.base_url,
@@ -372,6 +392,8 @@ fn spawn_background_check(app: &AppHandle, run_id: String, evidence: Option<Evid
                 let input = VerifyInput {
                     task,
                     goals,
+                    data_class: crate::workspace_tasks::protected_execution_context(&app)
+                        .then_some(crate::life::DataClass::Finance),
                     history,
                     claim_summary,
                     screenshot,
@@ -562,7 +584,8 @@ async fn make_plan(
         tools: &serde_json::Value::Null,
         think,
         max_tokens: None,
-        data_class: None,
+        data_class: crate::workspace_tasks::protected_execution_context(app)
+            .then_some(crate::life::DataClass::Finance),
         background: false,
     };
     let mut send_thinking = thinking_sender(app);
@@ -647,7 +670,17 @@ async fn run(
     let model_image_edge = settings.model_image_resolution.max_edge();
     let call_log = trace.call_log(run_id, "plan");
     let agent_model = settings.model_for_role(crate::model::role::ModelRole::Agent);
-    let agent_profile = crate::model::profile::resolve_profile(agent_model, None, None);
+    let agent_profile = match crate::workspace_tasks::execution_profile(
+        app,
+        &settings.base_url,
+        api_key.as_deref(),
+        agent_model,
+    )
+    .await
+    {
+        Ok(profile) => profile,
+        Err(error) => return Outcome::Failed(error),
+    };
     let app_for_loading = app.clone();
     let on_loading = move || {
         events::set_agent_state(&app_for_loading, AgentState::LoadingModel);
@@ -663,7 +696,21 @@ async fn run(
         on_loading: Some(&on_loading),
     };
     let verifier_model = settings.model_for_role(crate::model::role::ModelRole::Verifier);
-    let verifier_profile = crate::model::profile::resolve_profile(verifier_model, None, None);
+    let verifier_profile = if settings.verify_mode == VerifyMode::Blocking {
+        match crate::workspace_tasks::execution_profile(
+            app,
+            &settings.base_url,
+            api_key.as_deref(),
+            verifier_model,
+        )
+        .await
+        {
+            Ok(profile) => profile,
+            Err(error) => return Outcome::Failed(error),
+        }
+    } else {
+        crate::model::profile::resolve_profile(verifier_model, None, None)
+    };
     let verifier_client = ChatClient {
         http: &state.http,
         base_url: &settings.base_url,
@@ -880,6 +927,8 @@ async fn run(
                     let input = VerifyInput {
                         task,
                         goals: &plan,
+                        data_class: crate::workspace_tasks::protected_execution_context(app)
+                            .then_some(crate::life::DataClass::Finance),
                         history: &history,
                         claim_summary: &summary,
                         screenshot: &screenshot,
@@ -964,7 +1013,8 @@ async fn run(
             tools: turn_tools,
             think,
             max_tokens: None,
-            data_class: None,
+            data_class: crate::workspace_tasks::protected_execution_context(app)
+                .then_some(crate::life::DataClass::Finance),
             background: false,
         };
         let mut send_thinking = thinking_sender(app);
@@ -1114,6 +1164,8 @@ async fn run(
                 let input = VerifyInput {
                     task,
                     goals: &plan,
+                    data_class: crate::workspace_tasks::protected_execution_context(app)
+                        .then_some(crate::life::DataClass::Finance),
                     history: &history,
                     claim_summary: &summary,
                     screenshot: &screenshot,

@@ -490,7 +490,7 @@ impl ChatClient<'_> {
         if let Some(key) = self.api_key {
             http = http.bearer_auth(key);
         }
-        if self.no_swap {
+        if self.no_swap || request.data_class.is_some_and(|class| class.is_sensitive()) {
             http = http.header("x-no-swap", "true");
         }
         if request.background {

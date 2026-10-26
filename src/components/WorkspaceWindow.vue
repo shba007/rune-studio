@@ -10,14 +10,69 @@ import DecisionInbox from './DecisionInbox.vue'
 import PersonalitiesPanel from './PersonalitiesPanel.vue'
 import KnowledgeOverview from './KnowledgeOverview.vue'
 import type { KnowledgeSection } from '@/config/knowledge'
+import { useDecisions } from '@/composables/useDecisions'
+import { useWorkspaceTasks } from '@/composables/useWorkspaceTasks'
+import NewWorkForm from './NewWorkForm.vue'
+import type { WorkspaceTask } from '@/types/workspace'
+import type { FlightRun } from '@/config/flight'
 
 type Section = KnowledgeSection
 const agent = useAgent()
+const decisions = useDecisions()
+const workspace = useWorkspaceTasks()
+const approvedGoals = computed(() =>
+  decisions.entries.value.filter((goal) => goal.kind === 'goal' && goal.approvedGoal),
+)
+const focusGoalId = ref<string | null>(null)
+const parentFilter = ref<string | null>(null)
+const focusTaskId = ref<string | null>(null)
+const creation = ref<{
+  kind: 'goal' | 'task'
+  parent?: string | null
+  task?: WorkspaceTask
+  run?: FlightRun
+} | null>(null)
+function openGoal(id: string) {
+  section.value = 'goals'
+  previewTask.value = null
+  focusGoalId.value = id
+}
+function goalTasks(id: string) {
+  section.value = 'tasks'
+  previewTask.value = null
+  parentFilter.value = id
+  focusTaskId.value = null
+}
+function openTask(id: string) {
+  section.value = 'tasks'
+  if (workspace.tasks.value.some((task) => task.id === id)) {
+    parentFilter.value = null
+    focusTaskId.value = id
+    previewTask.value = null
+  } else previewTask.value = id
+}
+async function created(kind: 'goal' | 'task', id?: string) {
+  creation.value = null
+  section.value = kind === 'goal' ? 'goals' : 'tasks'
+  focusGoalId.value = kind === 'goal' ? (id ?? null) : null
+  focusTaskId.value = kind === 'task' ? (id ?? null) : null
+  parentFilter.value = null
+  await Promise.all([decisions.refresh(), workspace.refresh()])
+}
 const initial = new URLSearchParams(location.search).get('section')
 const section = ref<Section>(
   initial === 'goals' || initial === 'personalities' || initial === 'overview' ? initial : 'tasks',
 )
 const previewTask = ref<string | null>(new URLSearchParams(location.search).get('run'))
+const previewParent = computed(() => {
+  const task = workspace.tasks.value.find(
+    (task) =>
+      task.legacyTaskId === previewTask.value ||
+      task.occurrences.some((o) => o.runId === previewTask.value),
+  )
+  const goal = approvedGoals.value.find((goal) => goal.id === task?.parentGoalId)
+  return goal ? { id: goal.id, title: goal.approvedGoal?.outcome ?? goal.text } : null
+})
 function navigate(next: Section) {
   previewTask.value = null
   section.value = next
@@ -85,6 +140,8 @@ onBeforeUnmount(() => {
       :key="previewTask"
       embedded
       :task-id="previewTask"
+      :parent-goal="previewParent"
+      @goal="openGoal"
       @back="navigate('tasks')"
     />
     <div v-show="!previewTask" class="flex min-h-0 flex-1">
@@ -110,9 +167,31 @@ onBeforeUnmount(() => {
       </nav>
       <section class="min-w-0 flex-1 overflow-y-auto px-8 py-6">
         <header class="mb-6">
-          <h1 class="m-0 text-title">{{ current.label }}</h1>
+          <div class="flex items-center justify-between gap-4">
+            <h1 class="m-0 text-title">{{ current.label }}</h1>
+            <button
+              v-if="section === 'goals' || section === 'tasks'"
+              type="button"
+              class="cursor-pointer rounded-full bg-zinc-100 px-4 py-2 text-label text-zinc-950"
+              @click="creation = { kind: section === 'goals' ? 'goal' : 'task' }"
+            >
+              + New {{ section === 'goals' ? 'goal' : 'task' }}
+            </button>
+          </div>
           <p class="mt-1 text-label text-zinc-500">{{ current.subtitle }}</p>
         </header>
+        <NewWorkForm
+          v-if="creation"
+          :key="`${creation.kind}-${creation.task?.id ?? creation.run?.id ?? creation.parent ?? 'new'}`"
+          :kind="creation.kind"
+          :goals="approvedGoals"
+          :parent-goal-id="creation.parent"
+          :task="creation.task"
+          :legacy-run-id="creation.run?.id"
+          :initial-title="creation.run?.task"
+          @close="creation = null"
+          @saved="created"
+        />
         <p v-if="agent.notice.value" role="alert" class="text-label text-zinc-400">
           {{ agent.notice.value }}
         </p>
@@ -120,22 +199,42 @@ onBeforeUnmount(() => {
           v-show="section === 'tasks'"
           :active="section === 'tasks' && !previewTask"
           :agent="agent"
-          :open-task="(id) => (previewTask = id)"
+          :open-task="openTask"
+          :workspace="workspace"
+          :goals="approvedGoals"
+          :parent-filter="parentFilter"
+          :focus-task-id="focusTaskId"
+          @goal="openGoal"
+          @schedule="(task) => (creation = { kind: 'task', task })"
+          @organize="(run) => (creation = { kind: 'task', run })"
+          @clear="parentFilter = null"
         />
-        <div
-          v-if="section === 'goals'"
-          class="rounded-2xl border border-dotted border-white/15 p-6 text-label text-zinc-400"
-        >
-          <DecisionInbox goals-only />
+        <div v-if="section === 'goals'" class="text-zinc-400">
+          <button
+            v-if="focusGoalId"
+            class="mb-5 cursor-pointer text-label text-zinc-400"
+            @click="focusGoalId = null"
+          >
+            ← All goals
+          </button>
+          <DecisionInbox
+            goals-only
+            :model="decisions"
+            :workspace="workspace"
+            :focus-goal-id="focusGoalId"
+            @goal-tasks="goalTasks"
+            @task="openTask"
+            @create-task="(id) => (creation = { kind: 'task', parent: id })"
+          />
           <button
             type="button"
-            class="mt-4 block cursor-pointer text-zinc-100 underline underline-offset-4"
+            class="mt-8 block cursor-pointer text-label text-zinc-500 hover:text-zinc-200"
             @click="section = 'tasks'"
           >
             View tasks
           </button>
         </div>
-        <DecisionInbox v-if="section === 'tasks'" />
+        <DecisionInbox v-if="section === 'tasks'" :model="decisions" />
         <PersonalitiesPanel v-if="section === 'personalities'" />
         <KnowledgeOverview v-if="section === 'overview'" @navigate="navigate" />
       </section>

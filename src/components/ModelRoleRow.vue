@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ModelIcon from './ModelIcon.vue'
 import { computed, useId } from 'vue'
 import type { ModelCapabilities } from '@/types/protocol'
 
@@ -75,7 +76,12 @@ function statusLabel(status: string) {
   <div class="flex min-w-0 flex-col gap-3 border-b border-white/8 py-5 last:border-b-0">
     <div class="flex flex-wrap items-center justify-between gap-3">
       <label :for="inputId" class="text-body font-medium text-zinc-100">{{ roleLabel }}</label>
-      <div class="w-full min-w-0 sm:w-72">
+      <div class="relative w-full min-w-0 sm:w-72">
+        <ModelIcon
+          v-if="effectiveModelId"
+          :model="effectiveModelId"
+          class="pointer-events-none absolute top-3 left-3 text-zinc-300"
+        />
         <input
           :id="inputId"
           v-model="modelValue"
@@ -92,6 +98,7 @@ function statusLabel(status: string) {
           "
           spellcheck="false"
           autocomplete="off"
+          :class="effectiveModelId ? 'pl-9' : ''"
           class="h-10 w-full min-w-0 rounded-xl border-0 bg-white/6 px-3 text-body text-zinc-100 outline-none placeholder:text-zinc-400 focus-visible:ring-2 focus-visible:ring-white/40"
         />
       </div>

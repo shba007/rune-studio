@@ -14,7 +14,8 @@ it('renders one row per task with shared playheads and seeks to that task step',
     '0:11',
     '0:15',
   ])
-  expect(wrapper.findAll('.timeline-dots')).toHaveLength(3)
+  expect(wrapper.findAll('[data-task-step] .timeline-dots')).toHaveLength(3)
+  expect(wrapper.findAll('[data-preparation-phase="Planning"]')).toHaveLength(3)
   expect(
     wrapper
       .findAll('[data-task-playhead]')

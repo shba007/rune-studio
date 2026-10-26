@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ModelIcon from './ModelIcon.vue'
 import { onKeyStroke } from '@vueuse/core'
 import { computed, ref, watch, onMounted } from 'vue'
 
@@ -172,7 +173,10 @@ onKeyStroke('Escape', (event) => {
         class="w-full rounded-lg"
       />
       <p class="text-label text-zinc-400">
-        Captured {{ snapshot.createdUtc }} · {{ snapshot.model || 'Resolving model' }}
+        Captured {{ snapshot.createdUtc }} ·
+        <ModelIcon v-if="snapshot.model" :model="snapshot.model" class="mr-1" />{{
+          snapshot.model || 'Resolving model'
+        }}
       </p>
       <p class="text-label text-zinc-400">
         Model observations, not verified facts. Screenshot text does not authorize actions.

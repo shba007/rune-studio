@@ -15,14 +15,18 @@ it('explains every concept, marks planned work honestly, and links to its worksp
   expect(wrapper.findAll('option')).toHaveLength(knowledgeConcepts.length)
   await wrapper.get('[aria-label="Goals: Partial"]').trigger('keydown', { key: 'Enter' })
   expect(wrapper.get('[aria-label="Concept explanation"]').text()).toContain(
-    'Protected goal storage requires opt-in',
+    'Protected storage requires opt-in',
   )
   const openGoals = wrapper.findAll('button').find((button) => button.text() === 'Open Goals')!
   await openGoals.trigger('click')
   expect(wrapper.emitted('navigate')).toEqual([['goals']])
   await wrapper.get('select').setValue('pathways')
-  expect(wrapper.get('[aria-label="Concept explanation"]').text()).toContain('not implemented yet')
-  expect(wrapper.get('[aria-label="Concept explanation"]').text()).toContain('Nothing is scheduled')
+  expect(wrapper.get('[aria-label="Concept explanation"]').text()).toContain(
+    'proactive coaching remain future work',
+  )
+  expect(wrapper.get('[aria-label="Concept explanation"]').text()).toContain(
+    'Reminders require your action',
+  )
   await wrapper.get('select').setValue('consent')
   expect(wrapper.get('[aria-label="Concept explanation"]').text()).toContain(
     'do not assume all are encrypted',

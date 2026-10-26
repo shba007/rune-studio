@@ -21,6 +21,12 @@ vi.mock('@tauri-apps/api/event', () => ({
 vi.mock('@/composables/useAgent', () => ({
   useAgent: () => ({ notice: ref(null), openSettings: harness.settings }),
 }))
+vi.mock('@/composables/useDecisions', () => ({
+  useDecisions: () => ({ entries: ref([]), refresh: async () => {} }),
+}))
+vi.mock('@/composables/useWorkspaceTasks', () => ({
+  useWorkspaceTasks: () => ({ tasks: ref([]), refresh: async () => {} }),
+}))
 afterEach(() => {
   window.history.replaceState({}, '', '/')
   vi.clearAllMocks()

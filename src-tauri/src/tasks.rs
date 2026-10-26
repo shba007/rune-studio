@@ -1072,7 +1072,9 @@ async fn make_plan(
     let settings = state.settings.locked().clone();
     let key = crate::settings::api_key();
     let model = settings.model_for_role(crate::model::role::ModelRole::Agent);
-    let profile = crate::model::profile::resolve_profile(model, None, None);
+    let profile =
+        crate::workspace_tasks::execution_profile(app, &settings.base_url, key.as_deref(), model)
+            .await?;
     let history_id = BOARD
         .locked()
         .requests
@@ -1123,7 +1125,8 @@ async fn make_plan(
         tools: &Value::Null,
         think: false,
         max_tokens: Some(4096),
-        data_class: None,
+        data_class: crate::workspace_tasks::protected_execution_context(app)
+            .then_some(crate::life::DataClass::Finance),
         background: false,
     };
     let plan = crate::agent::unless_stopped(cancel, client.call_json_retrying(&request, &schema))
@@ -1185,7 +1188,9 @@ async fn background(
     let result_schema = background_result_schema(&tools);
     let result_only = result_schema.is_some();
     let model = settings.model_for_role(crate::model::role::ModelRole::Agent);
-    let profile = crate::model::profile::resolve_profile(model, None, None);
+    let profile =
+        crate::workspace_tasks::execution_profile(app, &settings.base_url, key.as_deref(), model)
+            .await?;
     let call_log = state.trace.call_log(run_id, "background");
     let client = crate::model::client::ChatClient {
         http: &state.http,
@@ -1221,7 +1226,8 @@ async fn background(
             tools: &tools,
             think: false,
             max_tokens: None,
-            data_class: None,
+            data_class: crate::workspace_tasks::protected_execution_context(app)
+                .then_some(crate::life::DataClass::Finance),
             background: false,
         };
         let (name, arguments) = if let Some(schema) = &result_schema {

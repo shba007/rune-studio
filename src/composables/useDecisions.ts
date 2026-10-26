@@ -14,7 +14,9 @@ export function useDecisions() {
   let sequence = 0
   const off: (() => void)[] = []
   const busy = computed(() =>
-    entries.value.some((e) => ['classifying', 'clarifying', 'dispatching'].includes(e.status)),
+    entries.value.some((e) =>
+      ['classifying', 'clarifying', 'dispatching', 'pathway_planning'].includes(e.status),
+    ),
   )
   const questions = computed(() => entries.value.filter((e) => e.question))
   const current = computed(() =>
@@ -64,6 +66,23 @@ export function useDecisions() {
       await refresh()
     }
   }
+  async function pathwayAction(entry: IntakeEntry, pathwayId?: string) {
+    if (pending.value) return
+    pending.value = true
+    error.value = ''
+    try {
+      await invoke(pathwayId ? 'decision_select_pathway' : 'decision_pathways', {
+        id: entry.id,
+        revision: entry.revision,
+        ...(pathwayId ? { pathwayId } : {}),
+      })
+    } catch (err) {
+      error.value = problemText(err)
+    } finally {
+      pending.value = false
+      await refresh()
+    }
+  }
   return {
     entries,
     questions,
@@ -73,6 +92,8 @@ export function useDecisions() {
     error,
     refresh,
     answer,
+    comparePathways: (entry: IntakeEntry) => pathwayAction(entry),
+    selectPathway: (entry: IntakeEntry, id: string) => pathwayAction(entry, id),
     refine: async (entry: IntakeEntry) => {
       if (pending.value) return
       pending.value = true

@@ -46,7 +46,7 @@ export const knowledgeConcepts: KnowledgeConcept[] = [
       'Longer-term outcomes with a clear starting point, desired result, horizon, resources, and constraints. One ambiguous request may contain several outcomes.',
     example: '“Save 10,000 by year end” or “be fit enough to jog comfortably.”',
     today:
-      'Rune asks focused questions with ranked options, then asks you to approve the goal definition. Protected goal storage requires opt-in. Pathways, recurring coaching, scheduling, and automatic progress tracking are later work.',
+      'Rune asks focused questions with ranked options, then asks you to approve the goal definition. Protected storage requires opt-in. Add tasks explicitly and navigate between a goal and its children. Plan progress counts completed created or due work; outcome progress uses your reported starting, current and target values. Saving a preferred pathway does not create tasks or schedules.',
     section: 'goals',
   },
   {
@@ -60,7 +60,7 @@ export const knowledgeConcepts: KnowledgeConcept[] = [
     example:
       'Calculate an average, translate a sentence, and type a phrase in Notepad as three independent tasks.',
     today:
-      'Independent tasks may run concurrently. Desktop interaction is exclusive. Later requests queue. Tasks own their execution history, results, recordings, and replay. Linking approved long-term goals into executable pathways is still planned.',
+      'Create manual activities, Rune-executed work or Visual Analysis tasks, optionally linked to an approved goal. Calendar and activity views show schedules and history. One-time, daily, weekly and monthly reminders ask before each run. Rune must be open; after time away, overdue occurrences become one pending check-in. Independent execution may run concurrently; desktop interaction remains exclusive. Old history stays standalone until explicitly linked.',
     section: 'tasks',
   },
   {
@@ -190,7 +190,7 @@ export const knowledgeConcepts: KnowledgeConcept[] = [
       'Models interpret requests, produce structured plans and findings, and guide supported execution.',
     example: 'An Analysis model examines an image; an Agent model plans bounded work.',
     today:
-      'Studio connects to a configured endpoint. Protected goal intake requires a model verified as local. Structured JSON defines planning/reporting; executable actions still use tools. API sessions and external-agent sessions remain separate.',
+      'Studio connects to a configured endpoint. Protected intake and managed-task execution require models verified as local. After protected execution starts, this Studio process keeps helper inference local too and skips optional alternate-endpoint checks. Structured JSON defines planning/reporting; executable actions still use tools. API and external-agent sessions remain separate.',
   },
   {
     id: 'kit',
@@ -208,7 +208,7 @@ export const knowledgeConcepts: KnowledgeConcept[] = [
   {
     id: 'pathways',
     title: 'Pathways & reminders',
-    status: 'Planned',
+    status: 'Partial',
     x: 450,
     y: 190,
     meaning:
@@ -216,7 +216,7 @@ export const knowledgeConcepts: KnowledgeConcept[] = [
     example:
       'Agree on a feasible fitness plan, then receive an approved 7 AM jogging reminder and a progress question.',
     today:
-      'This is the intended Life Harness direction. Goal definition exists; automatic pathway planning, recurring reminders, proactive coaching, and progress tracking are not implemented yet. Nothing is scheduled merely because you described a goal.',
+      'Compare ranked routes using an approved goal and its personality, then explicitly save a preferred route. Create and schedule tasks separately; daily, weekly and monthly schedules keep the recorded timezone, and short months use their last day. Reminders require your action. Visual Analysis reminders open fresh capture selection; you confirm completion. Automatic pathway-to-task generation and proactive coaching remain future work.',
   },
 ]
 export const knowledgeLinks = [
@@ -230,7 +230,7 @@ export const knowledgeLinks = [
   ['goals', 'personalities', 'uses an approved communication style'],
   ['goals', 'models', 'clarified with a verified-local model'],
   ['goals', 'consent', 'requires approval for protected storage'],
-  ['goals', 'tasks', 'planned: connects outcomes to bounded work'],
+  ['goals', 'tasks', 'explicit parent and child links'],
   ['categories', 'personalities', 'selects an approved style'],
   ['goals', 'context', 'clarified using'],
   ['context', 'consent', 'stored according to'],
@@ -242,6 +242,6 @@ export const knowledgeLinks = [
   ['kit', 'tasks', 'offers selected tools'],
   ['safety', 'tasks', 'gates execution'],
   ['safety', 'personalities', 'checks conflicting edits'],
-  ['goals', 'pathways', 'planned: explores routes'],
+  ['goals', 'pathways', 'compares proposed routes'],
   ['pathways', 'tasks', 'planned: proposes work'],
 ] as const

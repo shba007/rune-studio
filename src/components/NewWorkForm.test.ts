@@ -1,0 +1,51 @@
+import { mount, flushPromises } from '@vue/test-utils'
+import { beforeEach, expect, it, vi } from 'vite-plus/test'
+import NewWorkForm from './NewWorkForm.vue'
+const invoke = vi.hoisted(() => vi.fn<(command: string, args?: unknown) => Promise<string>>())
+vi.mock('@tauri-apps/api/core', () => ({ invoke }))
+beforeEach(() => {
+  invoke
+    .mockReset()
+    .mockImplementation((command) =>
+      Promise.resolve(command === 'workspace_task_zone' ? 'UTC' : 'created-id'),
+    )
+})
+it('saves manual work without dispatching execution', async () => {
+  const wrapper = mount(NewWorkForm, { props: { kind: 'task', goals: [] } })
+  await flushPromises()
+  await wrapper.get('textarea').setValue('Go jogging')
+  await wrapper.get('form').trigger('submit')
+  await flushPromises()
+  expect(invoke).toHaveBeenCalledWith(
+    'workspace_task_create',
+    expect.objectContaining({ title: 'Go jogging', executionMode: 'manual', schedule: null }),
+  )
+  expect(invoke.mock.calls.some(([command]) => command === 'workspace_task_action')).toBe(false)
+  expect(wrapper.emitted('saved')).toEqual([['task', 'created-id']])
+})
+it('starts explicit goal clarification and returns the stable id', async () => {
+  const wrapper = mount(NewWorkForm, { props: { kind: 'goal', goals: [] } })
+  await wrapper.get('textarea').setValue('Be physically fit')
+  await wrapper.get('form').trigger('submit')
+  await flushPromises()
+  expect(invoke).toHaveBeenCalledWith('workspace_new_goal', { text: 'Be physically fit' })
+  expect(wrapper.emitted('saved')).toEqual([['goal', 'created-id']])
+})
+it('saves a monthly Visual Analysis reminder with its original monthly day', async () => {
+  const wrapper = mount(NewWorkForm, { props: { kind: 'task', goals: [] } })
+  await flushPromises()
+  await wrapper.get('textarea').setValue('Inspect this screen')
+  await wrapper.findAll('select')[0]!.setValue('analysis')
+  await wrapper.get('input[type="checkbox"]').setValue(true)
+  await wrapper.get('input[type="datetime-local"]').setValue('2027-01-31T07:00')
+  await wrapper.findAll('select').at(-1)!.setValue('monthly')
+  await wrapper.get('form').trigger('submit')
+  await flushPromises()
+  expect(invoke).toHaveBeenCalledWith(
+    'workspace_task_create',
+    expect.objectContaining({
+      executionMode: 'analysis',
+      schedule: { local: '2027-01-31T07:00', zone: 'UTC', repeat: 'monthly', anchorDay: 31 },
+    }),
+  )
+})

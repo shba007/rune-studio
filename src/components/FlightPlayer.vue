@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ModelIcon from './ModelIcon.vue'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
@@ -33,8 +34,12 @@ import {
   type TabId,
 } from '@/config/flight'
 
-const props = defineProps<{ embedded?: boolean; taskId?: string }>()
-const emit = defineEmits<{ back: [] }>()
+const props = defineProps<{
+  embedded?: boolean
+  taskId?: string
+  parentGoal?: { id: string; title: string } | null
+}>()
+const emit = defineEmits<{ back: []; goal: [id: string] }>()
 const flight = useFlight()
 const attempts = ref<string[]>([])
 const selectedAttempt = ref('')
@@ -411,6 +416,13 @@ const verdictLine = computed(() => {
               Attempt {{ index + 1 }}{{ index === attempts.length - 1 ? ' · Latest' : '' }}
             </option>
           </select>
+          <button
+            v-if="parentGoal"
+            class="max-w-xs cursor-pointer truncate text-left text-label text-zinc-400 hover:text-white"
+            @click="emit('goal', parentGoal.id)"
+          >
+            ← {{ parentGoal.title }}
+          </button>
           <h1 class="m-0 truncate text-title" :title="header.task" data-testid="task">
             {{ header.task }}
           </h1>
@@ -454,7 +466,9 @@ const verdictLine = computed(() => {
           </div>
           <div v-if="!outside && header.model" class="flex flex-col">
             <dt class="text-zinc-500">Model</dt>
-            <dd class="m-0 text-zinc-100 tabular-nums">{{ header.model }}</dd>
+            <dd class="m-0 flex items-center gap-2 text-zinc-100 tabular-nums">
+              <ModelIcon :model="header.model" />{{ header.model }}
+            </dd>
           </div>
         </dl>
       </header>

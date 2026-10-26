@@ -19,6 +19,7 @@ mod flight;
 mod hotkeys;
 mod hub;
 mod intake;
+mod intake_pathways;
 mod kit;
 pub mod life;
 mod model;
@@ -32,6 +33,7 @@ mod review;
 mod safety;
 mod settings;
 mod sync;
+mod task_calendar;
 mod tasks;
 mod trace;
 mod video;
@@ -39,6 +41,7 @@ mod voice;
 mod window;
 mod workflow;
 mod workspace;
+mod workspace_tasks;
 
 #[cfg(test)]
 mod grounding_probe;
@@ -176,6 +179,7 @@ pub fn run() {
             video::start_worker(app.handle());
             review::start_watcher(app.handle());
             video::start_motion_recorder(app.handle());
+            workspace_tasks::start(app.handle());
             if let Some(pill) = app.get_webview_window(window::MAIN) {
                 window::protect(&pill)?;
                 window::set_mode(app.handle(), window::Mode::Ambient)?;
@@ -266,6 +270,19 @@ pub fn run() {
             crate::intake::decisions_state,
             crate::intake::decision_answer,
             crate::intake::decision_refine,
+            crate::intake::decision_pathways,
+            crate::intake::decision_select_pathway,
+            crate::intake::workspace_new_goal,
+            crate::intake::goal_measurement,
+            workspace_tasks::workspace_tasks_state,
+            workspace_tasks::workspace_task_create,
+            workspace_tasks::workspace_task_zone,
+            workspace_tasks::workspace_task_action,
+            workspace_tasks::workspace_task_link,
+            workspace_tasks::workspace_task_import,
+            workspace_tasks::workspace_task_schedule,
+            workspace_tasks::workspace_history_progress,
+            workspace_tasks::workspace_calendar,
             commands::task_attempts,
             commands::flight_runs,
             commands::flight_task_history,
