@@ -12,7 +12,7 @@ import FlightStage from '@/components/FlightStage.vue'
 import FlightTimeline from '@/components/FlightTimeline.vue'
 import FlightAnalysis from '@/components/FlightAnalysis.vue'
 import FlightTaskTimeline from '@/components/FlightTaskTimeline.vue'
-import { useFlight } from '@/composables/useFlight'
+import { problemText, useFlight } from '@/composables/useFlight'
 import { durationText } from '@/config/artifacts'
 import {
   SPEEDS,
@@ -233,9 +233,10 @@ async function openRun(id: string) {
 async function back() {
   await pause()
   try {
-    await invoke('open_settings_window', { section: 'artifacts' })
-  } catch {
-    notice.value = null
+    await invoke('open_workspace', { section: 'tasks' })
+  } catch (error) {
+    notice.value = problemText(error)
+    return
   }
   await closeWindow()
 }

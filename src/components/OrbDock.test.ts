@@ -4,21 +4,21 @@ import { describe, expect, it, vi } from 'vite-plus/test'
 import OrbDock from './OrbDock.vue'
 import type { Agent } from '@/composables/useAgent'
 
-describe('Visual Analysis button routing', () => {
-  it('allows external requests during a session while keeping API captures blocked during a task', async () => {
+describe('Goals button routing', () => {
+  it('opens Goals even while a task is running in either execution mode', async () => {
     const settings = ref({ externalAgent: true })
     const running = ref(true)
-    const analyzeScreen = vi.fn<() => void>()
-    const agent = { settings, isRunning: running, analyzeScreen } as unknown as Agent
+    const openWorkspace = vi.fn<(section: string) => void>()
+    const agent = { settings, isRunning: running, openWorkspace } as unknown as Agent
     const wrapper = mount(OrbDock, { props: { agent } })
-    const button = wrapper.get('button[aria-label="Visual Analysis"]')
+    const button = wrapper.get('button[aria-label="Goals"]')
     expect(button.attributes('disabled')).toBeUndefined()
-    expect(button.attributes('title')).toContain('external agent')
     await button.trigger('click')
-    expect(analyzeScreen).toHaveBeenCalledOnce()
+    expect(openWorkspace).toHaveBeenCalledWith('goals')
+    expect(wrapper.find('button[aria-label="Visual Analysis"]').exists()).toBe(false)
     settings.value.externalAgent = false
     await wrapper.vm.$nextTick()
-    expect(button.attributes('disabled')).toBeDefined()
+    expect(button.attributes('disabled')).toBeUndefined()
     running.value = false
     await wrapper.vm.$nextTick()
     expect(button.attributes('disabled')).toBeUndefined()

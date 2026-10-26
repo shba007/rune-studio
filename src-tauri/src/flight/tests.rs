@@ -117,6 +117,9 @@ fn parallel_tasks_are_one_session_and_delete_as_one_group() {
     let listed = runs(&db, 1, None).unwrap();
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].id, "request");
+    assert_eq!(crate::domain::task_id(&db, "child-2").unwrap(), "request");
+    assert_eq!(crate::domain::task_id(&db, "request").unwrap(), "request");
+    assert_eq!(crate::domain::task_id(&db, "old").unwrap(), "old");
     assert_eq!(listed[0].steps, 3);
     assert_eq!(runs(&db, 10, None).unwrap().len(), 3);
     assert_eq!(session_members(&db, "request").unwrap().len(), 4);
@@ -128,6 +131,16 @@ fn parallel_tasks_are_one_session_and_delete_as_one_group() {
         assert!(store::task_history(&db, id).unwrap().is_empty());
     }
     assert_eq!(runs(&db, 10, None).unwrap().len(), 2);
+}
+
+#[test]
+fn task_identity_preserves_legacy_records_without_links() {
+    let dir = TempDir::new();
+    let db = recorded(&dir);
+    let conn = rusqlite::Connection::open(&db).unwrap();
+    conn.execute_batch("DROP TABLE task_links;").unwrap();
+    assert_eq!(crate::domain::task_id(&db, "new").unwrap(), "new");
+    assert_eq!(crate::domain::task_id(&db, "missing").unwrap(), "missing");
 }
 
 #[test]

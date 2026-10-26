@@ -5,14 +5,7 @@ pub const WINDOW: &str = "settings";
 pub const SECTION_EVENT: &str = "settings_section";
 pub const CHANGED_EVENT: &str = "settings_changed";
 
-const SECTIONS: [&str; 6] = [
-    "general",
-    "agents",
-    "tools",
-    "artifacts",
-    "shortcuts",
-    "about",
-];
+const SECTIONS: [&str; 5] = ["general", "agents", "tools", "shortcuts", "about"];
 
 fn clean(section: Option<&str>) -> &'static str {
     SECTIONS
@@ -23,6 +16,9 @@ fn clean(section: Option<&str>) -> &'static str {
 }
 
 pub fn open(app: &AppHandle, section: Option<&str>) -> tauri::Result<()> {
+    if matches!(section, Some("artifacts" | "tasks" | "goals")) {
+        return crate::workspace::open(app, section);
+    }
     let section = clean(section);
     if let Some(window) = app.get_webview_window(WINDOW) {
         let _ = window.unminimize();
@@ -58,7 +54,7 @@ mod tests {
     #[test]
     fn an_unknown_section_opens_general() {
         assert_eq!(clean(Some("about")), "about");
-        assert_eq!(clean(Some("artifacts")), "artifacts");
+        assert_eq!(clean(Some("artifacts")), "general");
         assert_eq!(clean(Some("nonsense")), "general");
         assert_eq!(clean(None), "general");
     }

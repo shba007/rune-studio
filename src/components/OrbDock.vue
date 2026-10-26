@@ -23,16 +23,11 @@ const tool =
     <button
       type="button"
       :class="[tool, 'bottom-0']"
-      aria-label="Visual Analysis"
-      :title="
-        agent.settings.value?.externalAgent
-          ? 'Request visual analysis from your external agent'
-          : 'Visual Analysis'
-      "
-      :disabled="!agent.settings.value?.externalAgent && agent.isRunning.value"
-      @click="agent.analyzeScreen()"
+      aria-label="Goals"
+      title="Goals"
+      @click="agent.openWorkspace('goals')"
     >
-      <AppIcon name="scan" />
+      <AppIcon name="thinking" />
     </button>
   </div>
 </template>

@@ -170,7 +170,7 @@ pub fn open_settings(app: &AppHandle) {
 }
 
 pub fn open_artifacts(app: &AppHandle) {
-    let _ = crate::hub::open(app, Some("artifacts"));
+    let _ = crate::workspace::open(app, Some("tasks"));
 }
 
 pub fn toggle_visibility(app: &AppHandle) {

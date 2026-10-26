@@ -10,13 +10,12 @@ import type { Settings } from '@/types/protocol'
 import AppIcon from './AppIcon.vue'
 import SettingsAbout from './SettingsAbout.vue'
 import SettingsAgents from './SettingsAgents.vue'
-import SettingsArtifacts from './SettingsArtifacts.vue'
 import SettingsGeneral from './SettingsGeneral.vue'
 import SettingsShortcuts from './SettingsShortcuts.vue'
 import TitleBar from './TitleBar.vue'
 import SettingsTools from './SettingsTools.vue'
 
-type Section = 'general' | 'shortcuts' | 'agents' | 'artifacts' | 'about' | 'tools'
+type Section = 'general' | 'shortcuts' | 'agents' | 'about' | 'tools'
 
 const agent = useAgent()
 
@@ -30,12 +29,6 @@ const SECTIONS: { id: Section; label: string; subtitle: string; icon: IconName }
   },
   { id: 'tools', label: 'Tools', subtitle: 'Selected read-only Kit tools.', icon: 'plug' },
   {
-    id: 'artifacts',
-    label: 'Tasks',
-    subtitle: 'Task history, results and recordings. Pick a task to open Rune Preview.',
-    icon: 'history',
-  },
-  {
     id: 'shortcuts',
     label: 'Shortcuts',
     subtitle: 'Keys that work from anywhere.',
@@ -46,6 +39,8 @@ const SECTIONS: { id: Section; label: string; subtitle: string; icon: IconName }
 const visible = SECTIONS
 
 const asked = new URLSearchParams(location.search).get('section')
+if (['artifacts', 'tasks', 'goals'].includes(asked ?? ''))
+  void agent.openWorkspace(asked === 'goals' ? 'goals' : 'tasks')
 const section = ref<Section>(
   SECTIONS.some((item) => item.id === asked) ? (asked as Section) : 'general',
 )
@@ -137,6 +132,13 @@ onBeforeUnmount(() => {
           <AppIcon :name="item.icon" />
           {{ item.label }}
         </button>
+        <button
+          type="button"
+          class="mt-3 flex h-10 w-full cursor-pointer items-center gap-3 rounded-xl px-3 text-left text-body text-zinc-400 hover:bg-white/5 hover:text-zinc-100"
+          @click="agent.openWorkspace()"
+        >
+          <AppIcon name="history" />Goals &amp; Tasks
+        </button>
       </nav>
 
       <section class="flex min-w-0 flex-1 flex-col overflow-y-auto px-10 py-8">
@@ -173,8 +175,7 @@ onBeforeUnmount(() => {
             @commit-key="commitKey"
           />
         </template>
-        <SettingsArtifacts v-if="section === 'artifacts'" :agent="agent" />
-        <SettingsAbout v-else-if="section === 'about'" :agent="agent" />
+        <SettingsAbout v-if="section === 'about'" :agent="agent" />
       </section>
     </div>
   </main>

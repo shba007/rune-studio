@@ -54,6 +54,7 @@ const TONE = {
     ref="card"
     class="group flex w-full shrink-0 flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#101010] text-left text-zinc-100 transition hover:border-white/30"
     data-testid="artifact"
+    :data-task-id="run.id"
   >
     <button
       type="button"

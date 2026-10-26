@@ -6,6 +6,7 @@ import { makeCall, makeHeader, makeStep, stubResizeObserver } from './flightTest
 import FlightPlayer from './FlightPlayer.vue'
 
 const invoke = vi.fn<(command: string, args?: Record<string, unknown>) => Promise<unknown>>()
+const nativeWindow = vi.hoisted(() => ({ close: vi.fn<() => void>() }))
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: (command: string, args?: Record<string, unknown>) => invoke(command, args),
   convertFileSrc: (path: string) => `asset://${path}`,
@@ -14,7 +15,7 @@ vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn<() => Promise<() => void>>(async () => () => {}),
 }))
 vi.mock('@tauri-apps/api/window', () => ({
-  getCurrentWindow: () => ({ close: vi.fn<() => void>() }),
+  getCurrentWindow: () => nativeWindow,
 }))
 vi.mock('@videojs/html/video/player', () => ({}))
 vi.mock('@videojs/html/ui/container', () => ({}))
@@ -79,6 +80,7 @@ async function open(run: string | null = 'r1') {
 
 beforeEach(() => {
   invoke.mockReset()
+  nativeWindow.close.mockClear()
   stubResizeObserver(800, 450)
   document.body.innerHTML = ''
 })
@@ -196,7 +198,17 @@ describe('FlightPlayer states', () => {
   it('goes back to Sessions when no run is asked for', async () => {
     world({})
     await open(null)
-    expect(invoke).toHaveBeenCalledWith('open_settings_window', { section: 'artifacts' })
+    expect(invoke).toHaveBeenCalledWith('open_workspace', { section: 'tasks' })
+  })
+  it('keeps Preview open and reports a workspace navigation failure', async () => {
+    world({})
+    const wrapper = await open('r1')
+    invoke.mockRejectedValueOnce('Could not open Goals & Tasks')
+    await wrapper.get('[data-testid="back"]').trigger('click')
+    await flushPromises()
+    expect(nativeWindow.close).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('Could not open Goals & Tasks')
+    wrapper.unmount()
   })
 
   it('shows one line when the record cannot be read, never a crash', async () => {

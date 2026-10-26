@@ -438,7 +438,7 @@ pub fn open(app: &tauri::AppHandle, run: Option<&str>) -> tauri::Result<()> {
 
     let run = run.filter(|id| !id.is_empty());
     let Some(run) = run else {
-        return crate::hub::open(app, Some("artifacts"));
+        return crate::workspace::open(app, Some("tasks"));
     };
     if let Some(window) = app.get_webview_window(WINDOW) {
         let _ = window.unminimize();

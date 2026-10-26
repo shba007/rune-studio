@@ -181,6 +181,12 @@ pub fn set_api_key(app: AppHandle, key: String) -> AppResult<()> {
 }
 
 #[tauri::command]
+pub async fn open_workspace(app: AppHandle, section: Option<String>) -> AppResult<()> {
+    crate::workspace::open(&app, section.as_deref())
+        .map_err(|err| AppError::Invalid(format!("Could not open Goals & Tasks: {err}")))
+}
+
+#[tauri::command]
 pub async fn open_settings_window(app: AppHandle, section: Option<String>) -> AppResult<()> {
     crate::hub::open(&app, section.as_deref())
         .map_err(|err| AppError::Invalid(format!("Could not open Settings: {err}")))
@@ -760,6 +766,10 @@ pub fn flight_file(app: AppHandle, id: String, relative: String) -> AppResult<St
 
 #[tauri::command]
 pub async fn open_flight(app: AppHandle, run_id: Option<String>) -> AppResult<()> {
+    let run_id = run_id
+        .filter(|id| !id.is_empty())
+        .map(|id| crate::domain::task_id(&trace_db(&app)?, &id).map_err(read_error))
+        .transpose()?;
     crate::flight::open(&app, run_id.as_deref())
         .map_err(|err| AppError::Invalid(format!("Could not open the Flight Player: {err}")))
 }

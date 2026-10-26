@@ -9,6 +9,7 @@ mod commands;
 mod credentials;
 mod cursor;
 mod debug;
+mod domain;
 mod error;
 #[cfg(feature = "eval")]
 mod eval;
@@ -35,6 +36,7 @@ mod video;
 mod voice;
 mod window;
 mod workflow;
+mod workspace;
 
 #[cfg(test)]
 mod grounding_probe;
@@ -174,7 +176,7 @@ pub fn run() {
 
             let show = MenuItem::with_id(app, "show", "Show / hide", true, None::<&str>)?;
             let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
-            let flight = MenuItem::with_id(app, "artifacts", "Open Tasks", true, None::<&str>)?;
+            let flight = MenuItem::with_id(app, "artifacts", "Goals & Tasks…", true, None::<&str>)?;
             let stop = MenuItem::with_id(app, "stop", "Stop", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &settings, &flight, &stop, &quit])?;
@@ -242,6 +244,7 @@ pub fn run() {
             commands::get_control_label,
             commands::session_feedback,
             commands::open_settings_window,
+            commands::open_workspace,
             commands::flight_runs,
             commands::flight_task_history,
             commands::flight_original_prompt,

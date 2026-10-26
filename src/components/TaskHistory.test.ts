@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
-import SettingsArtifacts from './SettingsArtifacts.vue'
+import TaskHistory from './TaskHistory.vue'
 import type { Agent } from '@/composables/useAgent'
 
 const invoke = vi.fn<(command: string, args?: Record<string, unknown>) => Promise<unknown>>()
@@ -8,6 +8,7 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: (command: string, args?: Record<string, unknown>) => invoke(command, args),
   convertFileSrc: (path: string) => path,
 }))
+vi.mock('@tauri-apps/api/event', () => ({ listen: async () => () => {} }))
 vi.mock('@vueuse/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@vueuse/core')>()),
   useIntersectionObserver: () => ({ stop: vi.fn<() => void>() }),
@@ -35,12 +36,23 @@ async function show(failure = false) {
     if (command === 'flight_delete' && failure) throw 'Deletion refused: finish this session first'
     return null
   })
-  const wrapper = mount(SettingsArtifacts, { props: { agent: { openReview } as unknown as Agent } })
+  const wrapper = mount(TaskHistory, { props: { agent: { openReview } as unknown as Agent } })
   await flushPromises()
   return wrapper
 }
 
-describe('session deletion', () => {
+describe('task history', () => {
+  it('keeps the persisted task reference when opening replay after a refresh', async () => {
+    const wrapper = await show()
+    await wrapper.get('button[aria-label="Open task: First session"]').trigger('click')
+    expect(openReview).toHaveBeenLastCalledWith('0')
+    await wrapper.get('button').trigger('click')
+    await flushPromises()
+    expect(
+      wrapper.findAll('[data-task-id]').map((node) => node.attributes('data-task-id')),
+    ).toEqual(['0', '1'])
+    wrapper.unmount()
+  })
   it('removes only the selected card after deletion succeeds', async () => {
     const wrapper = await show()
     await wrapper.findAll('button[aria-label="Delete task"]')[0]!.trigger('click')

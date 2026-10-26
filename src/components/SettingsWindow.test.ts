@@ -10,7 +10,13 @@ import type { Settings } from '@/types/protocol'
 vi.mock('@tauri-apps/api/event', () => ({ listen: async () => () => {} }))
 vi.mock('@/composables/useAgent', () => ({
   useAgent: vi.fn<() => Agent>(
-    () => ({ settings: ref(null), notice: ref(null), bridge: ref(null) }) as unknown as Agent,
+    () =>
+      ({
+        settings: ref(null),
+        notice: ref(null),
+        bridge: ref(null),
+        openWorkspace: vi.fn<() => void>(),
+      }) as unknown as Agent,
   ),
 }))
 
@@ -26,11 +32,21 @@ describe('release settings availability', () => {
       'General',
       'Agents',
       'Tools',
-      'Tasks',
       'Shortcuts',
       'About',
+      'Goals & Tasks',
     ])
     expect(wrapper.find('[data-testid="saved"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+  it('opens task history in the workspace rather than a Settings section, including old links', async () => {
+    window.history.replaceState({}, '', '/?section=artifacts')
+    const wrapper = shallowMount(SettingsWindow)
+    const agent = vi.mocked(useAgent).mock.results.at(-1)!.value
+    expect(agent.openWorkspace).toHaveBeenCalledWith('tasks')
+    expect(wrapper.find('[data-testid="nav-artifacts"]').exists()).toBe(false)
+    await wrapper.findAll('nav button').at(-1)!.trigger('click')
+    expect(agent.openWorkspace).toHaveBeenCalledTimes(2)
     wrapper.unmount()
   })
   it('saves nested Analysis model edits without mutating the saved settings', async () => {
