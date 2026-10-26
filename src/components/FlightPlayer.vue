@@ -36,6 +36,18 @@ import {
 const props = defineProps<{ embedded?: boolean; taskId?: string }>()
 const emit = defineEmits<{ back: [] }>()
 const flight = useFlight()
+const attempts = ref<string[]>([])
+const selectedAttempt = ref('')
+async function openTask(id: string) {
+  try {
+    const ids = await invoke<string[]>('task_attempts', { id })
+    attempts.value = Array.isArray(ids) && ids.length ? ids : [id]
+  } catch {
+    attempts.value = [id]
+  }
+  selectedAttempt.value = attempts.value.at(-1) ?? id
+  await openRun(selectedAttempt.value)
+}
 const stage = ref<InstanceType<typeof FlightStage> | null>(null)
 
 const timeMs = ref(0)
@@ -292,7 +304,7 @@ let disposed = false
 watch(
   () => props.taskId,
   (id) => {
-    if (props.embedded && id) void openRun(id)
+    if (props.embedded && id) void openTask(id)
   },
 )
 onMounted(async () => {
@@ -305,13 +317,13 @@ onMounted(async () => {
     developer.value = false
   }
   if (disposed) return
-  if (asked) await openRun(asked)
+  if (asked) await openTask(asked)
   else await back()
   if (props.embedded || disposed) return
   try {
     const off = await listen<{ runId?: string | null }>('flight_open', async (event) => {
       const id = event.payload?.runId
-      if (id) await openRun(id)
+      if (id) await openTask(id)
       else await back()
     })
     if (disposed) off()
@@ -388,6 +400,17 @@ const verdictLine = computed(() => {
           <AppIcon name="back" />
         </button>
         <div class="flex min-w-0 flex-1 flex-col">
+          <select
+            v-if="attempts.length > 1"
+            v-model="selectedAttempt"
+            aria-label="Execution attempt"
+            class="mb-2 self-start rounded-lg bg-white/10 px-2 py-1 text-label text-zinc-100"
+            @change="openRun(selectedAttempt)"
+          >
+            <option v-for="(id, index) in attempts" :key="id" :value="id">
+              Attempt {{ index + 1 }}{{ index === attempts.length - 1 ? ' · Latest' : '' }}
+            </option>
+          </select>
           <h1 class="m-0 truncate text-title" :title="header.task" data-testid="task">
             {{ header.task }}
           </h1>

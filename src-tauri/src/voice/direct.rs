@@ -132,13 +132,13 @@ pub async fn listen(
         tools: &Value::Null,
         think: false,
         max_tokens: Some(MAX_TRANSCRIPT_TOKENS),
-        data_class: None,
+        data_class: Some(crate::life::DataClass::Finance),
         background: false,
     };
     let reply = client.call_json(&request, &schema).await?;
     let listened = parse(&reply);
     if let Some(reason) = ignore_reason(&reply) {
-        log::info!("voice ignored: {reason} ({reply})");
+        log::info!("voice ignored: {reason}");
     }
     Ok(listened)
 }

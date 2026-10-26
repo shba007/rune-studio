@@ -33,6 +33,7 @@ const RUN = {
 }
 
 interface World {
+  attempts?: string[]
   history?: unknown
   mediaHeaders?: Record<string, unknown>
   runs?: unknown
@@ -48,6 +49,8 @@ function world(w: World) {
   invoke.mockImplementation(async (command, args) => {
     if (w.fail) throw w.fail
     switch (command) {
+      case 'task_attempts':
+        return w.attempts ?? null
       case 'get_settings':
         return { developerMode: w.developer ?? true }
       case 'flight_runs':
@@ -86,6 +89,19 @@ beforeEach(() => {
 })
 
 describe('FlightPlayer states', () => {
+  it('opens the latest attempt and can replay the original attempt without changing the owning task', async () => {
+    world({
+      attempts: ['r1', 'attempt-2'],
+      mediaHeaders: { 'attempt-2': makeHeader({ id: 'attempt-2', task: 'Added step' }) },
+    })
+    const wrapper = await open('r1')
+    expect(wrapper.get('[data-testid="task"]').text()).toBe('Added step')
+    await wrapper.get('select[aria-label="Execution attempt"]').setValue('r1')
+    await flushPromises()
+    expect(invoke).toHaveBeenCalledWith('flight_run', { id: 'r1' })
+    expect(wrapper.get('[data-testid="task"]').text()).toBe('Open notepad')
+    wrapper.unmount()
+  })
   it('embedded Preview returns to history without opening or closing a native window', async () => {
     world({})
     const wrapper = mount(FlightPlayer, { props: { embedded: true, taskId: 'r1' } })

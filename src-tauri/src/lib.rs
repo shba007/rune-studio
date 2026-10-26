@@ -18,6 +18,7 @@ mod exec;
 mod flight;
 mod hotkeys;
 mod hub;
+mod intake;
 mod kit;
 pub mod life;
 mod model;
@@ -245,6 +246,10 @@ pub fn run() {
             commands::session_feedback,
             commands::open_settings_window,
             commands::open_workspace,
+            crate::intake::decisions_state,
+            crate::intake::decision_answer,
+            crate::intake::decision_refine,
+            commands::task_attempts,
             commands::flight_runs,
             commands::flight_task_history,
             commands::flight_original_prompt,

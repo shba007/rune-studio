@@ -6,6 +6,7 @@ import AppIcon from './AppIcon.vue'
 import TaskHistory from './TaskHistory.vue'
 import TitleBar from './TitleBar.vue'
 import FlightPlayer from './FlightPlayer.vue'
+import DecisionInbox from './DecisionInbox.vue'
 
 type Section = 'goals' | 'tasks'
 const agent = useAgent()
@@ -104,7 +105,7 @@ onBeforeUnmount(() => {
           v-if="section === 'goals'"
           class="rounded-2xl border border-dotted border-white/15 p-6 text-label text-zinc-400"
         >
-          Goal planning is not available yet. Your existing work is available under Tasks.
+          <DecisionInbox goals-only />
           <button
             type="button"
             class="mt-4 block cursor-pointer text-zinc-100 underline underline-offset-4"
@@ -113,6 +114,7 @@ onBeforeUnmount(() => {
             View tasks
           </button>
         </div>
+        <DecisionInbox v-if="section === 'tasks'" />
       </section>
     </div>
   </main>

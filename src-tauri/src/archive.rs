@@ -568,6 +568,15 @@ pub fn save(
     bytes: &[u8],
 ) -> Result<PathBuf, ArchiveError> {
     let path = path_for(kind, label, extension)?;
+    save_to(path, bytes)
+}
+
+pub fn save_unscoped_voice(bytes: &[u8]) -> Result<PathBuf, ArchiveError> {
+    let path = path_in(root()?, None, Kind::Voice, "utterance", "wav", now())?;
+    save_to(path, bytes)
+}
+
+fn save_to(path: PathBuf, bytes: &[u8]) -> Result<PathBuf, ArchiveError> {
     if path.as_os_str().is_empty() {
         return Ok(path);
     }

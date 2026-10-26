@@ -10,6 +10,7 @@ import HubToggle from './HubToggle.vue'
 import HubRow from './HubRow.vue'
 import SettingsReview from './SettingsReview.vue'
 import RecordingControls from './RecordingControls.vue'
+import SettingsGoalContext from './SettingsGoalContext.vue'
 
 defineProps<{ agent: Agent; draft: Settings }>()
 
@@ -33,6 +34,7 @@ async function revealDeveloper() {
 
 <template>
   <div class="flex flex-col gap-8">
+    <SettingsGoalContext :draft="draft" />
     <HubGroup title="Model input">
       <HubRow
         label="Model input resolution"

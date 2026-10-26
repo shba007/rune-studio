@@ -369,15 +369,28 @@ pub fn session_members(db: &Path, id: &str) -> Result<Vec<String>, StoreError> {
 
 fn members_in(conn: &rusqlite::Connection, id: &str) -> Result<Vec<String>, StoreError> {
     let mut members = vec![id.to_string()];
-    if has_table(conn, "task_links") {
-        let mut query =
-            conn.prepare("SELECT run_id FROM task_links WHERE request_id=?1 AND run_id!=?1")?;
+    if has_table(conn, "task_attempts") {
+        let mut query = conn.prepare("SELECT run_id FROM task_attempts WHERE task_id=?1")?;
         members.extend(
             query
-                .query_map([id], |row| row.get::<_, String>(0))?
+                .query_map([id], |r| r.get::<_, String>(0))?
                 .collect::<Result<Vec<_>, _>>()?,
         );
     }
+    if has_table(conn, "task_links") {
+        let mut query =
+            conn.prepare("SELECT run_id FROM task_links WHERE request_id=?1 AND run_id!=?1")?;
+        let roots = members.clone();
+        for root in roots {
+            members.extend(
+                query
+                    .query_map([&root], |row| row.get::<_, String>(0))?
+                    .collect::<Result<Vec<_>, _>>()?,
+            );
+        }
+    }
+    members.sort();
+    members.dedup();
     Ok(members)
 }
 
@@ -400,6 +413,9 @@ pub fn delete_record(db: &Path, id: &str) -> Result<(), StoreError> {
         return Err(StoreError::Sqlite("There is no such task".into()));
     }
     for member in members_in(&tx, id)? {
+        if has_table(&tx, "task_attempts") {
+            tx.execute("DELETE FROM task_attempts WHERE run_id=?1", [&member])?;
+        }
         if has_table(&tx, "task_links") {
             store::unlink_task_run(&tx, &member)?;
         }

@@ -66,6 +66,7 @@ export interface Settings {
   externalAgentSince: number
   showThinking: boolean
   askEveryAction: boolean
+  inputClassification?: 'automatic' | 'always_confirm'
   developerMode: boolean
   fastChecks: boolean
   decisionModel: string

@@ -247,6 +247,11 @@ pub fn pill_rect(app: AppHandle) -> Option<PillRect> {
 
 #[tauri::command]
 pub fn stop(app: AppHandle) {
+    crate::intake::stop();
+    app.state::<AppState>().stop_current();
+    let _domain = crate::domain::MUTATION
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     crate::tasks::cancel_all(&app);
     stop_desktop(app);
 }
@@ -284,7 +289,7 @@ pub(crate) fn stop_desktop(app: AppHandle) {
 
 #[tauri::command]
 pub fn start_task(app: AppHandle, text: String) -> AppResult<()> {
-    crate::tasks::submit_request(&app, &text, false)
+    crate::intake::submit(&app, &text, false)
         .map(|_| ())
         .map_err(AppError::Invalid)
 }
@@ -300,7 +305,7 @@ pub fn begin_task_planned(
     keep_mic: bool,
     _plan: Option<Vec<String>>,
 ) -> AppResult<()> {
-    crate::tasks::submit_request(app, text, keep_mic)
+    crate::intake::submit(app, text, keep_mic)
         .map(|_| ())
         .map_err(AppError::Invalid)
 }
@@ -636,9 +641,22 @@ pub fn flight_runs(
     )
     .map_err(read_error)?;
     for run in &mut runs {
-        run.active = state.trace.is_active(&run.id);
+        let attempts = crate::domain::attempts(&trace_db(&app)?, &run.id).map_err(read_error)?;
+        if let Some(last) = attempts.last().filter(|id| *id != &run.id)
+            && let Some(header) =
+                crate::flight::header(&trace_db(&app)?, last).map_err(read_error)?
+        {
+            run.outcome = header.outcome;
+            run.ended_utc = header.ended_utc;
+        }
+        run.active = attempts.iter().any(|id| state.trace.is_active(id));
     }
     Ok(runs)
+}
+
+#[tauri::command]
+pub fn task_attempts(app: AppHandle, id: String) -> AppResult<Vec<String>> {
+    crate::domain::attempts(&trace_db(&app)?, &id).map_err(read_error)
 }
 
 #[tauri::command]
@@ -664,6 +682,9 @@ pub async fn flight_delete(app: AppHandle, id: String) -> AppResult<Option<Strin
     static DELETION: std::sync::Mutex<()> = std::sync::Mutex::new(());
     tauri::async_runtime::spawn_blocking(move || {
         let _deletion = DELETION
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _domain = crate::domain::MUTATION
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let state = app.state::<AppState>();

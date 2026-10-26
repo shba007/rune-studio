@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from 'vite-plus/test'
 import WorkspaceWindow from './WorkspaceWindow.vue'
 import TaskHistory from './TaskHistory.vue'
 import FlightPlayer from './FlightPlayer.vue'
+import DecisionInbox from './DecisionInbox.vue'
 
 const harness = vi.hoisted(() => ({
   handler: null as null | ((event: { payload: { section?: string; runId?: string } }) => void),
@@ -46,7 +47,7 @@ it('opens Goals without a Settings button in Knowledge', async () => {
   const wrapper = shallowMount(WorkspaceWindow)
   await flushPromises()
   expect(wrapper.get('h1').text()).toBe('Goals')
-  expect(wrapper.text()).toContain('Goal planning is not available yet')
+  expect(wrapper.getComponent(DecisionInbox).props('goalsOnly')).toBe(true)
   expect(wrapper.findAll('nav button').map((item) => item.text())).toEqual(['Goals', 'Tasks'])
   expect(harness.settings).not.toHaveBeenCalled()
   wrapper.unmount()

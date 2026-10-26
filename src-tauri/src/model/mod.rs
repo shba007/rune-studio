@@ -6,5 +6,6 @@ pub mod decision;
 #[cfg(test)]
 pub mod probe;
 pub mod profile;
+pub mod protected;
 pub mod role;
 pub mod swap;

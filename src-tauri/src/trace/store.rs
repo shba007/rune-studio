@@ -308,10 +308,17 @@ pub fn list_sessions(path: &Path, limit: usize) -> Result<Vec<RunSummary>, Store
         [],
         |row| row.get(0),
     )?;
+    let attempts: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='task_attempts')",
+        [],
+        |r| r.get(0),
+    )?;
     list_runs_filtered(
         &db,
         limit,
-        if linked {
+        if linked && attempts {
+            "WHERE NOT EXISTS(SELECT 1 FROM task_links l JOIN runs parent ON parent.id=l.request_id WHERE l.run_id=r.id AND l.run_id!=l.request_id) AND NOT EXISTS(SELECT 1 FROM task_attempts a JOIN runs parent ON parent.id=a.task_id WHERE a.run_id=r.id)"
+        } else if linked {
             "WHERE NOT EXISTS(SELECT 1 FROM task_links l JOIN runs parent ON parent.id=l.request_id WHERE l.run_id=r.id AND l.run_id!=l.request_id)"
         } else {
             ""
@@ -324,7 +331,9 @@ fn list_runs_filtered(
     limit: usize,
     filter: &str,
 ) -> Result<Vec<RunSummary>, StoreError> {
-    let step_filter = if filter.is_empty() {
+    let step_filter = if filter.contains("task_attempts") {
+        "(s.run_id=r.id OR s.run_id IN (SELECT run_id FROM task_links WHERE request_id=r.id OR request_id IN (SELECT run_id FROM task_attempts WHERE task_id=r.id)) OR s.run_id IN (SELECT run_id FROM task_attempts WHERE task_id=r.id))"
+    } else if filter.is_empty() {
         "s.run_id = r.id"
     } else {
         "(s.run_id = r.id OR s.run_id IN (SELECT run_id FROM task_links WHERE request_id=r.id))"

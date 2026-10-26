@@ -64,11 +64,19 @@ onBeforeUnmount(() => unlisten?.())
 const draft = ref<Settings | null>(null)
 const apiKey = ref('')
 const saved = ref(true)
+function copySettings(value: Settings): Settings {
+  return {
+    ...value,
+    models: { ...value.models },
+    lifeConsents: value.lifeConsents ? { ...value.lifeConsents } : undefined,
+    retentionDays: value.retentionDays ? { ...value.retentionDays } : undefined,
+  }
+}
 
 watch(
   agent.settings,
   (value) => {
-    if (value && saved.value) draft.value = { ...value, models: { ...value.models } }
+    if (value && saved.value) draft.value = copySettings(value)
   },
   { immediate: true },
 )
@@ -77,8 +85,7 @@ const save = useDebounceFn(async () => {
   if (!draft.value) return
   await agent.saveSettings(draft.value)
   saved.value = true
-  if (agent.settings.value)
-    draft.value = { ...agent.settings.value, models: { ...agent.settings.value.models } }
+  if (agent.settings.value) draft.value = copySettings(agent.settings.value)
 }, 600)
 
 watch(

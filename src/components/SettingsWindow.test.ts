@@ -51,7 +51,10 @@ describe('release settings availability', () => {
   })
   it('saves nested Analysis model edits without mutating the saved settings', async () => {
     vi.useFakeTimers()
-    const settings = ref({ models: { agent: 'vision', analysis: '' } } as Settings)
+    const settings = ref({
+      models: { agent: 'vision', analysis: '' },
+      lifeConsents: { health: false },
+    } as unknown as Settings)
     const saveSettings = vi.fn<(next: Settings) => Promise<void>>(async (next) => {
       settings.value = JSON.parse(JSON.stringify(next)) as Settings
     })
@@ -64,11 +67,14 @@ describe('release settings availability', () => {
     const wrapper = shallowMount(SettingsWindow)
     const draft = wrapper.getComponent(SettingsGeneral).props('draft') as Settings
     draft.models.analysis = 'vision'
+    draft.lifeConsents!.health = true
     await wrapper.vm.$nextTick()
     expect(settings.value.models.analysis).toBe('')
+    expect(settings.value.lifeConsents!.health).toBe(false)
     await vi.advanceTimersByTimeAsync(650)
     expect(saveSettings).toHaveBeenCalledOnce()
     expect(settings.value.models.analysis).toBe('vision')
+    expect(settings.value.lifeConsents!.health).toBe(true)
     wrapper.unmount()
     vi.useRealTimers()
   })

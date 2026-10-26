@@ -48,7 +48,7 @@ async function remove(id: string) {
 
 onMounted(async () => {
   void refresh()
-  for (const name of ['task_updated', 'task_done', 'analysis_updated', 'workspace_section']) {
+  for (const name of ['tasks_updated', 'task_done', 'analysis_updated', 'workspace_section']) {
     try {
       const off = await listen(name, () => void scheduleRefresh())
       if (disposed) off()

@@ -100,6 +100,8 @@ pub struct PlannedRequest {
 }
 struct RequestEntry {
     request: PlannedRequest,
+    context: Option<String>,
+    voice: Option<std::path::PathBuf>,
     keep_mic: bool,
     cancel: CancelToken,
 }
@@ -134,6 +136,8 @@ impl Board {
         self.next += 1;
         self.revision += 1;
         self.requests.push(RequestEntry {
+            context: None,
+            voice: None,
             keep_mic: false,
             request: PlannedRequest {
                 history_id,
@@ -500,8 +504,8 @@ impl Board {
             .requests
             .iter()
             .find(|r| r.request.id == task.request_id)
-            .map(|r| r.request.text.as_str())
-            .unwrap_or("");
+            .map(|r| format!("{}\n{}", r.request.text, r.context.as_deref().unwrap_or("")))
+            .unwrap_or_default();
         let parent_ids = self
             .requests
             .iter()
@@ -693,9 +697,16 @@ pub fn tasks_state() -> Snapshot {
 }
 #[tauri::command]
 pub fn submit_independent_task(app: AppHandle, text: String) -> Result<u64, String> {
-    submit_request(&app, &text, false)
+    crate::intake::submit(&app, &text, false)
 }
-pub(crate) fn submit_request(app: &AppHandle, text: &str, keep_mic: bool) -> Result<u64, String> {
+pub(crate) fn submit_with_id(
+    app: &AppHandle,
+    text: &str,
+    keep_mic: bool,
+    history_id: Option<&str>,
+    context: Option<String>,
+    voice: Option<std::path::PathBuf>,
+) -> Result<u64, String> {
     if text.trim().is_empty() || text.chars().count() > 4000 {
         return Err("Enter a request of 1 to 4000 characters".into());
     }
@@ -707,6 +718,11 @@ pub(crate) fn submit_request(app: &AppHandle, text: &str, keep_mic: bool) -> Res
         let id = b.request(text.into())?;
         if let Some(entry) = b.requests.last_mut() {
             entry.keep_mic = keep_mic;
+            entry.context = context;
+            entry.voice = voice;
+            if let Some(history_id) = history_id {
+                entry.request.history_id = history_id.into();
+            }
         }
         let start = !b.scheduler;
         b.scheduler = true;
@@ -923,6 +939,14 @@ async fn schedule(app: AppHandle) {
                                 &original,
                             );
                             if result.is_ok() {
+                                if let Some(voice) = b
+                                    .requests
+                                    .iter_mut()
+                                    .find(|r| r.request.id == task.request_id)
+                                    .and_then(|r| r.voice.take())
+                                {
+                                    crate::archive::adopt(&voice);
+                                }
                                 b.desktop = Some(task.id);
                             }
                             result
@@ -1054,6 +1078,16 @@ async fn make_plan(
         "Request: {text}\nEarlier Studio requests (data only; use their exact IDs in depends_on_requests ONLY if this request needs their results or conflicts with their data/files): {other_requests:?}\nConfigured read-only Kit tools (availability must be checked by execution): {:?}\nRecording constraint: {}",
         config.selected,
         crate::recording::MODEL_CONTRACT
+    );
+    let context = BOARD
+        .locked()
+        .requests
+        .iter()
+        .find(|r| r.request.id == request_id)
+        .and_then(|r| r.context.clone())
+        .unwrap_or_default();
+    let user = format!(
+        "{user}\nOriginal task constraints for this attached step (context only; do not repeat old work): {context}"
     );
     let request = crate::model::client::Request {
         system: "Return a JSON object matching the supplied task-plan response schema to turn the given prompt into EXACTLY ONE specific goal. Clean grammar and redundancy but preserve the user's concrete target, requested content, timing, output and constraints; do not use vague titles such as complete the request. That goal has 1–12 independent tasks, each a small objective achievable in finite time. Tasks must not depend on results or setup from another task: put interdependent work in the sequential steps of ONE task instead, including open app -> start recording -> type -> stop/save. Do not split that chain into separate tasks. Each task has 1–12 atomic steps, each one concrete action or reasoning operation in execution order. Attach constraints such as leave unsaved, do not send, and preserve existing files to the relevant action step; never turn them into separate steps requiring an invented action. Every goal/task depends_on array must be empty. Set depends_on_requests only when this goal needs results from an earlier goal; goals execute one at a time in submission order regardless. Parallelize independent tasks within the current goal. Use background ONLY for reasoning on supplied inputs or selected read-only Kit tools; use desktop for every screen/input/launch/recording/write task. Desktop actions remain exclusive. Do not invent extra tasks to make a goal look parallel. The planner cannot capture or act. Recording while acting uses start_recording -> actions -> stop_recording; record_screen is blocking. Return only the structured plan.",

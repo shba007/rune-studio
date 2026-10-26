@@ -1,6 +1,6 @@
 use rusqlite::Connection;
 
-pub const VERSION: i64 = 9;
+pub const VERSION: i64 = 10;
 
 pub const CREATE_V1: &str = "
 CREATE TABLE runs (
@@ -168,6 +168,10 @@ pub fn open(db: &Connection) -> rusqlite::Result<Opened> {
         (
             9,
             "CREATE TABLE IF NOT EXISTS task_history (request_id TEXT NOT NULL, revision INTEGER NOT NULL, at_ms INTEGER NOT NULL, snapshot_json TEXT NOT NULL, PRIMARY KEY(request_id, revision)); CREATE TABLE IF NOT EXISTS task_links (run_id TEXT PRIMARY KEY, request_id TEXT NOT NULL, task_id INTEGER NOT NULL); CREATE INDEX IF NOT EXISTS task_links_request ON task_links(request_id);",
+        ),
+        (
+            10,
+            "CREATE TABLE IF NOT EXISTS task_attempts (run_id TEXT PRIMARY KEY, task_id TEXT NOT NULL); CREATE INDEX task_attempts_task ON task_attempts(task_id);",
         ),
     ] {
         if found < version {

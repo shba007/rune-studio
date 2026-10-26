@@ -134,6 +134,39 @@ fn parallel_tasks_are_one_session_and_delete_as_one_group() {
 }
 
 #[test]
+fn new_attempts_keep_one_task_identity_and_preserve_both_replays() {
+    let dir = TempDir::new();
+    let db = recorded(&dir);
+    crate::domain::link_attempt(&db, "new", "attempt-2").unwrap();
+    crate::domain::link_attempt(&db, "new", "attempt-2").unwrap();
+    assert!(crate::domain::link_attempt(&db, "old", "attempt-2").is_err());
+    let rec = Recorder::start(&db);
+    rec.begin_background_run(RunInfo {
+        id: "attempt-2".into(),
+        source: "task-request".into(),
+        started_utc: "2026-10-22T10:00:00Z".into(),
+        ..Default::default()
+    });
+    rec.task_link("attempt-2", "attempt-2", 0);
+    rec.step(StepRecord::new("attempt-2", 1));
+    rec.end_run("attempt-2", "succeeded", "done");
+    rec.flush();
+    assert_eq!(crate::domain::task_id(&db, "attempt-2").unwrap(), "new");
+    assert_eq!(
+        crate::domain::attempts(&db, "new").unwrap(),
+        ["new", "attempt-2"]
+    );
+    let listed = runs(&db, 10, None).unwrap();
+    assert_eq!(listed.len(), 2);
+    assert_eq!(listed.iter().find(|r| r.id == "new").unwrap().steps, 3);
+    assert_eq!(steps(&db, "new").unwrap().len(), 2);
+    assert_eq!(steps(&db, "attempt-2").unwrap().len(), 1);
+    delete_record(&db, "new").unwrap();
+    assert!(header(&db, "attempt-2").unwrap().is_none());
+    assert!(header(&db, "old").unwrap().is_some());
+}
+
+#[test]
 fn task_identity_preserves_legacy_records_without_links() {
     let dir = TempDir::new();
     let db = recorded(&dir);

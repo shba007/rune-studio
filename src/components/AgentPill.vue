@@ -23,16 +23,32 @@ import TaskPanel from './TaskPanel.vue'
 import TaskBoard from './TaskBoard.vue'
 import { useTaskBoard } from '@/composables/useTaskBoard'
 import { taskOrbState } from '@/config/taskActivity'
+import { useDecisions } from '@/composables/useDecisions'
+import DecisionInbox from './DecisionInbox.vue'
 
 const agent = useAgent()
 const taskBoard = useTaskBoard()
+const decisions = useDecisions()
+watch(
+  () =>
+    decisions.current.value
+      ? `${decisions.current.value.id}:${decisions.current.value.revision}`
+      : undefined,
+  (id) => {
+    if (id && agent.mode.value === 'ambient') void agent.setMode('open')
+  },
+)
 const workState = computed(() =>
   agent.settings.value?.externalAgent
     ? agent.state.value
-    : taskOrbState(agent.state.value, taskBoard.requests.value),
+    : decisions.busy.value && !agent.isRunning.value
+      ? 'planning'
+      : taskOrbState(agent.state.value, taskBoard.requests.value),
 )
-const boardWorking = computed(() =>
-  taskBoard.requests.value.some((r) => ['queued', 'planning', 'running'].includes(r.phase)),
+const boardWorking = computed(
+  () =>
+    decisions.busy.value ||
+    taskBoard.requests.value.some((r) => ['queued', 'planning', 'running'].includes(r.phase)),
 )
 const updater = useUpdater()
 
@@ -235,7 +251,11 @@ function onOrb() {
                   :agent="agent"
                 />
               </Transition>
-              <TaskBoard :board="taskBoard" />
+              <TaskBoard
+                v-if="!decisions.current.value || agent.question.value"
+                :board="taskBoard"
+              />
+              <DecisionInbox v-if="!agent.question.value" compact :model="decisions" />
               <AnalysisCard
                 v-if="agent.mode.value === 'analysis'"
                 ref="analysisCard"
@@ -305,6 +325,7 @@ function onOrb() {
               <Composer
                 :agent="agent"
                 :board="taskBoard"
+                :intake-busy="decisions.busy.value"
                 :analysis-submit="agent.mode.value === 'analysis' ? submitAnalysis : undefined"
                 :analysis-busy="analysis.busy.value"
                 :cancel-analysis="analysis.cancel"

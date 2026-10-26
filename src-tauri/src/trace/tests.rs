@@ -130,7 +130,7 @@ fn version_eight_migrates_without_changing_legacy_sessions() {
     let dir = TempDir::new();
     let db = Connection::open(dir.db()).unwrap();
     schema::open(&db).unwrap();
-    db.execute_batch("DROP TABLE task_links; DROP TABLE task_history; PRAGMA user_version=8; INSERT INTO runs(id,task) VALUES('old','keep this');").unwrap();
+    db.execute_batch("DROP TABLE task_attempts; DROP TABLE task_links; DROP TABLE task_history; PRAGMA user_version=8; INSERT INTO runs(id,task) VALUES('old','keep this');").unwrap();
     drop(db);
     let recorder = Recorder::start(&dir.db());
     recorder.flush();
@@ -167,6 +167,7 @@ fn a_new_database_is_created_at_the_current_version() {
             "reflections",
             "runs",
             "steps",
+            "task_attempts",
             "task_history",
             "task_links",
             "verdicts"
@@ -195,7 +196,7 @@ fn a_newer_database_is_left_untouched_and_nothing_is_recorded() {
     let dir = TempDir::new();
     {
         let db = Connection::open(dir.db()).unwrap();
-        db.execute_batch("CREATE TABLE future (x INTEGER); PRAGMA user_version = 10;")
+        db.execute_batch("CREATE TABLE future (x INTEGER); PRAGMA user_version = 11;")
             .unwrap();
     }
     let recorder = Recorder::start(&dir.db());
@@ -204,9 +205,9 @@ fn a_newer_database_is_left_untouched_and_nothing_is_recorded() {
         recorder.tx.is_none(),
         "a newer schema means a no-op recorder"
     );
-    assert_eq!(version_of(&dir.db()), 10);
+    assert_eq!(version_of(&dir.db()), 11);
     assert_eq!(tables_of(&dir.db()), ["future"]);
-    assert_eq!(list_runs(&dir.db(), 10), Err(StoreError::Newer(10)));
+    assert_eq!(list_runs(&dir.db(), 10), Err(StoreError::Newer(11)));
 }
 
 #[test]
@@ -1169,7 +1170,7 @@ fn version_7_calls_gain_locality_and_round_trip() {
     {
         let db = Connection::open(dir.db()).unwrap();
         assert_eq!(schema::open(&db).unwrap(), schema::Opened::Ready);
-        db.execute_batch("ALTER TABLE calls DROP COLUMN locality; PRAGMA user_version = 7;")
+        db.execute_batch("DROP TABLE task_attempts; ALTER TABLE calls DROP COLUMN locality; PRAGMA user_version = 7;")
             .unwrap();
         db.execute("INSERT INTO runs (id, task) VALUES ('r7', 'task')", [])
             .unwrap();

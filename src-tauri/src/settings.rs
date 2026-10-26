@@ -109,6 +109,7 @@ pub struct Settings {
     pub external_agent_since: u64,
     pub show_thinking: bool,
     pub ask_every_action: bool,
+    pub input_classification: InputClassification,
     pub developer_mode: bool,
     pub fast_checks: bool,
     pub decision_model: String,
@@ -143,6 +144,7 @@ struct SettingsDeHelper {
     pub external_agent_since: u64,
     pub show_thinking: bool,
     pub ask_every_action: bool,
+    pub input_classification: InputClassification,
     pub developer_mode: bool,
     pub fast_checks: bool,
     pub decision_model: Option<String>,
@@ -178,6 +180,7 @@ impl Default for SettingsDeHelper {
             external_agent_since: def.external_agent_since,
             show_thinking: def.show_thinking,
             ask_every_action: def.ask_every_action,
+            input_classification: def.input_classification,
             developer_mode: def.developer_mode,
             fast_checks: def.fast_checks,
             decision_model: None,
@@ -240,6 +243,7 @@ impl<'de> Deserialize<'de> for Settings {
             external_agent_since: helper.external_agent_since,
             show_thinking: helper.show_thinking,
             ask_every_action: helper.ask_every_action,
+            input_classification: helper.input_classification,
             developer_mode: helper.developer_mode,
             fast_checks: helper.fast_checks,
             decision_model: synced_decision,
@@ -267,6 +271,15 @@ impl Settings {
     pub fn model_for_role(&self, role: ModelRole) -> &str {
         self.models.model_for_role(role)
     }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InputClassification {
+    AlwaysConfirm,
+    #[default]
+    #[serde(other)]
+    Automatic,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -338,6 +351,7 @@ impl Default for Settings {
             external_agent_since: 0,
             show_thinking: false,
             ask_every_action: false,
+            input_classification: InputClassification::Automatic,
             developer_mode: false,
             fast_checks: false,
             decision_model: "liquid-d1-3b".into(),
@@ -462,6 +476,21 @@ pub fn set_api_key(key: &str) -> AppResult<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn classification_preference_defaults_and_round_trips() {
+        use super::{InputClassification, Settings};
+        for json in ["{}", r#"{"inputClassification":"unknown"}"#] {
+            let settings: Settings = serde_json::from_str(json).unwrap();
+            assert_eq!(
+                settings.input_classification,
+                InputClassification::Automatic
+            );
+        }
+        let settings: Settings =
+            serde_json::from_str(r#"{"inputClassification":"always_confirm"}"#).unwrap();
+        let encoded = serde_json::to_value(&settings).unwrap();
+        assert_eq!(encoded["inputClassification"], "always_confirm");
+    }
     use super::*;
 
     #[test]

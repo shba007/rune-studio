@@ -19,6 +19,7 @@ const props = defineProps<{
   analysisSubmit?: (text: string) => Promise<boolean>
   analysisBusy?: boolean
   cancelAnalysis?: () => unknown
+  intakeBusy?: boolean
 }>()
 const agent = props.agent
 
@@ -107,9 +108,10 @@ const action = computed(() => {
     return { icon: 'send', label: 'Add request', tone: 'dark', run: submit } as const
   if (
     agent.isRunning.value ||
+    props.intakeBusy ||
     props.board?.requests.value.some((r) => ['queued', 'planning', 'running'].includes(r.phase))
   )
-    return { icon: 'stop', label: 'Stop', tone: 'blue', run: () => agent.stop() } as const
+    return { icon: 'stop', label: 'Stop', tone: 'red', run: () => agent.stop() } as const
   if (hasText.value) return { icon: 'send', label: 'Send', tone: 'dark', run: submit } as const
   return {
     icon: 'mic',

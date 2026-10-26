@@ -76,15 +76,20 @@ pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
     };
     let api_key = settings::api_key();
     let wav = direct::wav(&utterance);
-    let saved = match crate::archive::save(crate::archive::Kind::Voice, "utterance", "wav", &wav) {
-        Ok(path) => path,
-        Err(err) => {
-            log::error!("{err}");
-            heard(app, "", "Not acted on: the recording could not be stored");
+    let profile = match crate::model::protected::discover(
+        &state.http,
+        &base_url,
+        api_key.as_deref(),
+        &voice_model,
+    )
+    .await
+    {
+        Ok(profile) => profile,
+        Err(error) => {
+            heard(app, "", error);
             return;
         }
     };
-    let profile = crate::model::profile::resolve_profile(&voice_model, None, None);
     if let Some(reason) = seam::voice_disabled_reason(&voice_model, &profile) {
         log::warn!("voice disabled: {reason}");
         heard(app, "", reason);
@@ -104,8 +109,41 @@ pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
     };
     use seam::Transcriber;
     let transcriber = seam::ChatModelAudio { client: &client };
-    match transcriber.transcribe(&wav, events::agent_state(app)).await {
+    let mode = events::agent_state(app);
+    let mode = if crate::intake::busy() && !mode.is_running() {
+        AgentState::Planning
+    } else {
+        mode
+    };
+    match transcriber.transcribe(&wav, mode).await {
         Ok(Some(listened)) => {
+            if let Intent::Say(said) = &listened.intent
+                && !events::agent_state(app).is_running()
+            {
+                let (app, said) = (app.clone(), said.clone());
+                heard(&app, &said, "Submitting in 2 s. Press Stop to cancel");
+                let stops = STOPS.load(std::sync::atomic::Ordering::SeqCst);
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(START_DELAY).await;
+                    if STOPS.load(std::sync::atomic::Ordering::SeqCst) != stops {
+                        heard(&app, &said, "Cancelled");
+                        return;
+                    }
+                    match crate::intake::submit_voice(&app, &said, true, wav) {
+                        Ok(_) => heard(&app, &said, "Submitted"),
+                        Err(error) => heard(&app, &said, error),
+                    }
+                });
+                return;
+            }
+            let saved =
+                match crate::archive::save(crate::archive::Kind::Voice, "utterance", "wav", &wav) {
+                    Ok(path) => path,
+                    Err(error) => {
+                        heard(app, "", error.to_string());
+                        return;
+                    }
+                };
             log::info!("heard: {:?}", listened.intent);
             apply(
                 app,
@@ -137,7 +175,7 @@ fn apply(
     let now = events::agent_state(app);
     match intent {
         Intent::Stop => {
-            if now.is_running() {
+            if now.is_running() || crate::intake::busy() {
                 heard(app, text, "Stopped");
                 crate::commands::stop(app.clone());
             }
@@ -187,7 +225,7 @@ fn apply(
                     match crate::commands::begin_task_planned(&app, &said, true, goals) {
                         Ok(()) => {
                             crate::archive::adopt(&recording);
-                            heard(&app, &said, "Starting");
+                            heard(&app, &said, "Submitted");
                         }
                         Err(err) => heard(&app, &said, err.to_string()),
                     }
@@ -198,7 +236,7 @@ fn apply(
                         if let Some(recording) = recording {
                             crate::archive::adopt(recording);
                         }
-                        heard(app, &said, "Starting");
+                        heard(app, &said, "Submitted");
                     }
                     Err(err) => heard(app, &said, err.to_string()),
                 }
