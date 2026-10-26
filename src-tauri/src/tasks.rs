@@ -707,15 +707,28 @@ pub fn validate_step(
         Some(g) => (g as usize)
             .checked_sub(1)
             .ok_or("Step numbers start at 1")?,
-        None => current,
+        None => {
+            return Err(format!(
+                "Missing or invalid goal: use integer goal={} for current step {} of {count}, or goal={} only after completing it. Include goal on every desktop action and on done.",
+                current + 1,
+                current + 1,
+                (current + 2).min(count)
+            ));
+        }
     };
     if next >= count || next < current || next > current + 1 {
-        return Err("Planned steps must execute in order. Continue the current step or advance exactly one completed step; do not skip or go backwards.".into());
+        return Err(format!(
+            "Planned steps must execute in order. Current step is {} of {count}; use goal={} to continue, or goal={} only after completing it. Do not skip or go backwards.",
+            current + 1,
+            current + 1,
+            (current + 2).min(count)
+        ));
     }
     if finishing && next + 1 < count {
-        return Err(
-            "Complete the remaining planned steps in order before reporting success.".into(),
-        );
+        return Err(format!(
+            "Cannot finish at step {} of {count}. Continue the remaining planned steps in order and include their goal numbers. If the next and final step is a condition such as leaving a document unsaved, confirm that condition with done and goal={count}; do not perform an unnecessary OS action.",
+            next + 1
+        ));
     }
     Ok(())
 }
@@ -878,7 +891,7 @@ async fn make_plan(
         crate::recording::MODEL_CONTRACT
     );
     let request = crate::model::client::Request {
-        system: "Return a JSON object matching the supplied task-plan response schema to turn the given prompt into EXACTLY ONE specific goal. Clean grammar and redundancy but preserve the user's concrete target, requested content, timing, output and constraints; do not use vague titles such as complete the request. That goal has 1–12 independent tasks, each a small objective achievable in finite time. Tasks must not depend on results or setup from another task: put interdependent work in the sequential steps of ONE task instead, including open app -> start recording -> type -> stop/save. Do not split that chain into separate tasks. Each task has 1–12 atomic steps, each one concrete action or reasoning operation in execution order. Every goal/task depends_on array must be empty. Set depends_on_requests only when this goal needs results from an earlier goal; goals execute one at a time in submission order regardless. Parallelize independent tasks within the current goal. Use background ONLY for reasoning on supplied inputs or selected read-only Kit tools; use desktop for every screen/input/launch/recording/write task. Desktop actions remain exclusive. Do not invent extra tasks to make a goal look parallel. The planner cannot capture or act. Recording while acting uses start_recording -> actions -> stop_recording; record_screen is blocking. Return only the structured plan.",
+        system: "Return a JSON object matching the supplied task-plan response schema to turn the given prompt into EXACTLY ONE specific goal. Clean grammar and redundancy but preserve the user's concrete target, requested content, timing, output and constraints; do not use vague titles such as complete the request. That goal has 1–12 independent tasks, each a small objective achievable in finite time. Tasks must not depend on results or setup from another task: put interdependent work in the sequential steps of ONE task instead, including open app -> start recording -> type -> stop/save. Do not split that chain into separate tasks. Each task has 1–12 atomic steps, each one concrete action or reasoning operation in execution order. Attach constraints such as leave unsaved, do not send, and preserve existing files to the relevant action step; never turn them into separate steps requiring an invented action. Every goal/task depends_on array must be empty. Set depends_on_requests only when this goal needs results from an earlier goal; goals execute one at a time in submission order regardless. Parallelize independent tasks within the current goal. Use background ONLY for reasoning on supplied inputs or selected read-only Kit tools; use desktop for every screen/input/launch/recording/write task. Desktop actions remain exclusive. Do not invent extra tasks to make a goal look parallel. The planner cannot capture or act. Recording while acting uses start_recording -> actions -> stop_recording; record_screen is blocking. Return only the structured plan.",
         user_text: &user,
         screenshot: None,
         audio: None,
@@ -1117,6 +1130,20 @@ mod tests {
         assert!(validate_step(0, Some(2), 3, false).is_ok());
         assert!(validate_step(1, Some(3), 3, true).is_ok());
         assert!(validate_step(0, Some(9), 3, false).is_err());
+    }
+
+    #[test]
+    fn missing_progress_is_actionable_and_a_final_condition_needs_no_fake_action() {
+        let missing = validate_step(0, None, 3, false).unwrap_err();
+        assert!(missing.contains("goal=1") && missing.contains("goal=2"));
+        // Recorded failure: open Notepad, focus, type, then done without metadata.
+        assert!(validate_step(0, Some(1), 3, false).is_ok());
+        assert!(validate_step(0, Some(1), 3, false).is_ok());
+        assert!(validate_step(0, Some(2), 3, false).is_ok());
+        assert!(validate_step(1, None, 3, true).is_err());
+        assert!(validate_step(1, Some(3), 3, true).is_ok());
+        assert!(validate_step(0, Some(3), 3, true).is_err());
+        assert!(validate_step(0, Some(1), 1, true).is_ok());
     }
     #[test]
     fn independent_tasks_fill_parallel_slots_within_the_current_goal() {

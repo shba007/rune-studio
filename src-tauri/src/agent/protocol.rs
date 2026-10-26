@@ -413,6 +413,29 @@ fn tool(name: &str, description: &str, properties: Value, required: &[&str]) -> 
     }})
 }
 
+pub fn with_step_metadata(tools: &Value, current: usize, count: usize) -> Value {
+    let mut tools = tools.clone();
+    for tool in tools.as_array_mut().into_iter().flatten() {
+        if tool["function"]["name"]
+            .as_str()
+            .is_some_and(|name| name.starts_with("kit__"))
+        {
+            continue;
+        }
+        let parameters = &mut tool["function"]["parameters"];
+        parameters["properties"]["goal"] = json!({
+            "type":"integer", "minimum":current + 1, "maximum":(current + 2).min(count),
+            "description":"Required planned step number. Stay on the current step while working on it; advance exactly one step only after the current step is completed. done may acknowledge a final condition without an OS action."
+        });
+        if let Some(required) = parameters["required"].as_array_mut()
+            && !required.iter().any(|field| field == "goal")
+        {
+            required.push(json!("goal"));
+        }
+    }
+    tools
+}
+
 pub fn tools() -> Value {
     let mut click_properties = json!({
         "x": { "type": "integer", "description": "Horizontal position, 0 to 1000, left to right across the screenshot" },
@@ -526,6 +549,38 @@ pub fn tools() -> Value {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn planned_tools_require_bounded_step_metadata_without_changing_kit_contracts() {
+        let mut original = super::tools();
+        let kit = serde_json::json!({"type":"function","function":{"name":"kit__read","parameters":{"type":"object","properties":{},"required":[]}}});
+        original.as_array_mut().unwrap().push(kit.clone());
+        let bounded = super::with_step_metadata(&original, 1, 3);
+        for tool in bounded.as_array().unwrap() {
+            if tool["function"]["name"] == "kit__read" {
+                assert_eq!(*tool, kit);
+                continue;
+            }
+            let p = &tool["function"]["parameters"];
+            assert!(
+                p["required"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&serde_json::json!("goal"))
+            );
+            assert_eq!(p["properties"]["goal"]["minimum"], 2);
+            assert_eq!(p["properties"]["goal"]["maximum"], 3);
+        }
+        let final_turn = super::with_step_metadata(&original, 2, 3);
+        assert_eq!(
+            final_turn[0]["function"]["parameters"]["properties"]["goal"]["maximum"],
+            3
+        );
+        assert!(
+            original[0]["function"]["parameters"]["properties"]["goal"]
+                .get("minimum")
+                .is_none()
+        );
+    }
     use super::*;
 
     #[test]

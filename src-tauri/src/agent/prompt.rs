@@ -62,6 +62,7 @@ pub fn user_message(
             text.push_str(&format!("{}. {goal} ({mark})\n", index + 1));
         }
         text.push('\n');
+        text.push_str(&format!("Current planned step: {} of {}. Include its integer goal number on every desktop action, including done. Advance exactly one step only after the current step is complete. For a final condition (for example leave unsaved), acknowledge it with done at that step; do not invent an OS action.\n\n", current + 1, plan.len()));
     }
     if history.is_empty() {
         text.push_str("No actions yet.\n");
