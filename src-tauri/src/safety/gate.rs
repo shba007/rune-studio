@@ -242,10 +242,10 @@ pub async fn ask_restart(
         app,
         cancel,
         source,
-        "restart the stopped external-agent session",
+        "restart the stopped external-agent task",
         task,
         Risk::Medium,
-        &["You pressed Stop. Allowing starts a new session; old actions are not replayed.".into()],
+        &["You pressed Stop. Allowing starts a new task; old actions are not replayed.".into()],
         "restart",
     )
     .await

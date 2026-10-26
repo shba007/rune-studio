@@ -26,7 +26,7 @@ fn permission(enabled: bool, busy: bool) -> AppResult<()> {
     }
     if busy {
         return Err(invalid(
-            "Finish or stop the session before using developer controls",
+            "Finish or stop the task before using developer controls",
         ));
     }
     Ok(())

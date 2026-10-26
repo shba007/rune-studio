@@ -31,8 +31,8 @@ const SECTIONS: { id: Section; label: string; subtitle: string; icon: IconName }
   { id: 'tools', label: 'Tools', subtitle: 'Selected read-only Kit tools.', icon: 'plug' },
   {
     id: 'artifacts',
-    label: 'Sessions',
-    subtitle: 'Recorded sessions. Pick one to play it in Rune Preview.',
+    label: 'Tasks',
+    subtitle: 'Task history, results and recordings. Pick a task to open Rune Preview.',
     icon: 'history',
   },
   {

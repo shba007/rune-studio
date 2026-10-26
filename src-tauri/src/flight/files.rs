@@ -11,9 +11,9 @@ pub enum Refused {
 impl Refused {
     pub fn why(&self) -> &'static str {
         match self {
-            Refused::NotRelative => "the path must be relative to the session folder",
-            Refused::Climbs => "the path may not climb out of the session folder",
-            Refused::Outside => "the file is outside the session folder",
+            Refused::NotRelative => "the path must be relative to the task folder",
+            Refused::Climbs => "the path may not climb out of the task folder",
+            Refused::Outside => "the file is outside the task folder",
             Refused::Missing => "there is no such file",
         }
     }

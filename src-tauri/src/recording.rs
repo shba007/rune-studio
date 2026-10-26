@@ -540,7 +540,7 @@ pub fn start_screen_recording(
 ) -> Result<Snapshot, String> {
     let state = app.state::<crate::events::AppState>();
     if crate::events::agent_state(&app).is_running() || state.lease.locked().is_held() {
-        return Err("Finish or stop the agent session before starting a manual recording".into());
+        return Err("Finish or stop the agent task before starting a manual recording".into());
     }
     launch(&app, target, seconds, None, Owner::Manual)?;
     Ok(snapshot())

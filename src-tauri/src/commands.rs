@@ -150,7 +150,7 @@ pub fn save_settings(
 fn validate_mode_change(current: bool, next: bool, busy: bool) -> AppResult<()> {
     if current != next && busy {
         return Err(AppError::Invalid(
-            "Finish or stop the current session before changing execution mode".into(),
+            "Finish or stop the current task before changing execution mode".into(),
         ));
     }
     Ok(())
@@ -332,7 +332,7 @@ fn begin_task_owned(
     let task = text.trim();
     let analysis = state.analysis.locked();
     if state.settings.locked().external_agent {
-        return Err(AppError::Invalid("External agent mode is selected. Start tasks in your agent host, or select API mode before a new session.".into()));
+        return Err(AppError::Invalid("External agent mode is selected. Start tasks in your agent host, or select API mode before a new task.".into()));
     }
     crate::reflect::touch(app, crate::reflect::idle::Input::Task);
     state.steer.locked().clear();
@@ -649,7 +649,7 @@ pub async fn flight_original_prompt(app: AppHandle, id: String) -> AppResult<Str
     tauri::async_runtime::spawn_blocking(move || {
         app.state::<AppState>().trace.sync().map_err(AppError::Invalid)?;
         crate::flight::original_prompt(&trace_db(&app)?, &id).map_err(read_error)?
-            .ok_or_else(|| AppError::Invalid("The original prompt was not retained for this session. Older records may contain only shortened or expanded execution text.".into()))
+            .ok_or_else(|| AppError::Invalid("The original prompt was not retained for this task. Older records may contain only shortened or expanded execution text.".into()))
     }).await.map_err(read_error)?
 }
 
@@ -657,39 +657,62 @@ pub async fn flight_original_prompt(app: AppHandle, id: String) -> AppResult<Str
 pub async fn flight_delete(app: AppHandle, id: String) -> AppResult<Option<String>> {
     static DELETION: std::sync::Mutex<()> = std::sync::Mutex::new(());
     tauri::async_runtime::spawn_blocking(move || {
-        let _deletion = DELETION.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _deletion = DELETION
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let state = app.state::<AppState>();
         state.trace.sync().map_err(AppError::Invalid)?;
         let db = trace_db(&app)?;
         let members = crate::flight::session_members(&db, &id).map_err(read_error)?;
         for (index, member) in members.iter().enumerate() {
             if let Err(error) = state.trace.block_session(member) {
-                for blocked in &members[..index] { state.trace.unblock_session(blocked); }
+                for blocked in &members[..index] {
+                    state.trace.unblock_session(blocked);
+                }
                 return Err(AppError::Invalid(error));
             }
         }
         let result = (|| {
             let mut staged = Vec::new();
             for member in &members {
-            if let Some(dir) = crate::flight::session_dir(&db, member).map_err(read_error)? {
-                if crate::flight::folder_shared(&db, member, &dir).map_err(read_error)? {
-                    return Err(AppError::Invalid("This folder is shared with another session; it cannot be deleted safely.".into()));
+                if let Some(dir) = crate::flight::session_dir(&db, member).map_err(read_error)? {
+                    if crate::flight::folder_shared(&db, member, &dir).map_err(read_error)? {
+                        return Err(AppError::Invalid(
+                            "This folder is shared with another task; it cannot be deleted safely."
+                                .into(),
+                        ));
+                    }
+                    if let Some(folder) = crate::archive::stage_session_deletion(&dir, member)
+                        .map_err(|error| AppError::Invalid(error.to_string()))?
+                    {
+                        staged.push(folder);
+                    }
                 }
-                if let Some(folder) = crate::archive::stage_session_deletion(&dir, member).map_err(|error| AppError::Invalid(error.to_string()))? { staged.push(folder); }
-            }
             }
             crate::flight::delete_record(&db, &id).map_err(read_error)?;
-            let failures = staged.into_iter().filter_map(|folder| folder.finish().err().map(|error| error.to_string())).collect::<Vec<_>>();
+            let failures = staged
+                .into_iter()
+                .filter_map(|folder| folder.finish().err().map(|error| error.to_string()))
+                .collect::<Vec<_>>();
             let warning = (!failures.is_empty()).then(|| {
-                let message = format!("Session history was deleted, but some session files could not be removed: {}", failures.join("; "));
+                let message = format!(
+                    "Task history was deleted, but some task files could not be removed: {}",
+                    failures.join("; ")
+                );
                 log::warn!("{message}");
                 message
             });
             Ok(warning)
         })();
-        if result.is_err() { for member in &members { state.trace.unblock_session(member); } }
+        if result.is_err() {
+            for member in &members {
+                state.trace.unblock_session(member);
+            }
+        }
         result
-    }).await.map_err(read_error)?
+    })
+    .await
+    .map_err(read_error)?
 }
 
 #[tauri::command]
@@ -725,7 +748,7 @@ pub fn flight_call_body(app: AppHandle, call_id: i64) -> AppResult<Option<(Strin
 pub fn flight_file(app: AppHandle, id: String, relative: String) -> AppResult<String> {
     let dir = crate::flight::session_dir(&trace_db(&app)?, &id)
         .map_err(read_error)?
-        .ok_or_else(|| AppError::Invalid("This run has no session folder.".into()))?;
+        .ok_or_else(|| AppError::Invalid("This task has no recording folder.".into()))?;
     let path = crate::flight::files::resolve(&dir, &relative).map_err(|refused| {
         AppError::Invalid(format!("That file cannot be opened: {}.", refused.why()))
     })?;
@@ -746,7 +769,7 @@ pub fn flight_reveal(app: AppHandle, id: String) -> AppResult<()> {
     let dir = crate::flight::session_dir(&trace_db(&app)?, &id)
         .map_err(read_error)?
         .filter(|dir| dir.is_dir())
-        .ok_or_else(|| AppError::Invalid("This run has no session folder on disk.".into()))?;
+        .ok_or_else(|| AppError::Invalid("This task has no recording folder on disk.".into()))?;
     crate::flight::reveal(&dir)
         .map_err(|err| AppError::Invalid(format!("Could not open the folder: {err}")))
 }

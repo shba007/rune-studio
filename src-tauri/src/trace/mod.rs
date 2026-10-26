@@ -725,16 +725,16 @@ impl Recorder {
         let (done, wait) = std::sync::mpsc::channel();
         self.tx
             .as_ref()
-            .ok_or("Session history is unavailable")?
+            .ok_or("Task history is unavailable")?
             .send(Msg::Flush(done))
-            .map_err(|_| "Session history writer is closed")?;
+            .map_err(|_| "Task history writer is closed")?;
         wait.recv()
-            .map_err(|_| "Session history writer stopped".into())
+            .map_err(|_| "Task history writer stopped".into())
     }
 
     pub fn block_session(&self, id: &str) -> Result<(), String> {
         if self.is_active(id) {
-            return Err("Finish or stop this session before deleting it".into());
+            return Err("Finish or stop this task before deleting it".into());
         }
         let inserted = self
             .deleted
@@ -742,7 +742,7 @@ impl Recorder {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert(id.to_string());
         if !inserted {
-            return Err("This session is already deleted or being deleted".into());
+            return Err("This task is already deleted or being deleted".into());
         }
         if let Err(error) = self.sync() {
             self.unblock_session(id);

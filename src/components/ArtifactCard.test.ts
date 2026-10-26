@@ -56,12 +56,12 @@ describe('session card actions', () => {
 
   it('deletes only through its dedicated action and protects active sessions', async () => {
     const wrapper = mount(ArtifactCard, { props: { run } })
-    await wrapper.get('button[aria-label="Delete session"]').trigger('click')
+    await wrapper.get('button[aria-label="Delete task"]').trigger('click')
     expect(wrapper.emitted('remove')).toHaveLength(1)
     expect(wrapper.emitted('open')).toBeUndefined()
     await wrapper.setProps({ run: { ...run, active: true } })
-    expect(wrapper.get('button[aria-label="Delete session"]').attributes('disabled')).toBeDefined()
-    await wrapper.get('button[aria-label="Delete session"]').trigger('click')
+    expect(wrapper.get('button[aria-label="Delete task"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('button[aria-label="Delete task"]').trigger('click')
     expect(wrapper.emitted('remove')).toHaveLength(1)
   })
 })

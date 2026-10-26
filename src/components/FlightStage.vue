@@ -155,7 +155,7 @@ defineExpose({
             playsinline
             preload="auto"
             data-testid="video"
-            aria-label="Session video"
+            aria-label="Task video"
             @loadedmetadata="onMetadata"
             @play="onPlay"
             @pause="onPause"

@@ -366,7 +366,7 @@ fn stage_deletion_in(
     };
     if metadata.file_type().is_symlink() {
         return Err(ArchiveError::Write(
-            "Refusing to delete a linked session folder".into(),
+            "Refusing to delete a linked task folder".into(),
         ));
     }
     let root = base
@@ -376,11 +376,11 @@ fn stage_deletion_in(
     let original = dir.canonicalize().map_err(write_error)?;
     let relative = original
         .strip_prefix(&root)
-        .map_err(|_| ArchiveError::Write("Session folder is outside Studio's archive".into()))?;
+        .map_err(|_| ArchiveError::Write("Task folder is outside Studio's archive".into()))?;
     let parts = relative.components().collect::<Vec<_>>();
     if parts.len() != 2 || parts[0].as_os_str().to_str().and_then(day_number).is_none() {
         return Err(ArchiveError::Write(
-            "Refusing to delete a directory that is not one session".into(),
+            "Refusing to delete a directory that is not one task".into(),
         ));
     }
     let manifest: Value =
@@ -388,14 +388,14 @@ fn stage_deletion_in(
             .map_err(write_error)?;
     if manifest["id"].as_str() != Some(id) {
         return Err(ArchiveError::Write(
-            "Session folder belongs to a different session".into(),
+            "Task folder belongs to a different task".into(),
         ));
     }
     let number = SESSION_COUNTER.fetch_add(1, Ordering::Relaxed);
     let staged = original.with_file_name(format!(".deleting-{}-{number}", std::process::id()));
     if staged.exists() {
         return Err(ArchiveError::Write(
-            "A session deletion is already pending".into(),
+            "A task deletion is already pending".into(),
         ));
     }
     fs::rename(&original, &staged).map_err(write_error)?;

@@ -59,7 +59,7 @@ const TONE = {
       type="button"
       class="flex w-full cursor-pointer flex-col border-0 bg-transparent p-0 text-left text-inherit disabled:opacity-50"
       :disabled="deleting"
-      :aria-label="`Open session: ${run.task}`"
+      :aria-label="`Open task: ${run.task}`"
       @click="$emit('open')"
     >
       <span class="relative block aspect-video w-full overflow-hidden bg-black">
@@ -115,11 +115,11 @@ const TONE = {
       </button>
       <button
         type="button"
-        aria-label="Delete session"
+        aria-label="Delete task"
         :title="
           run.active
-            ? 'Finish or stop this session before deleting it'
-            : 'Delete session and its saved files'
+            ? 'Finish or stop this task before deleting it'
+            : 'Delete task and its saved files'
         "
         :disabled="run.active || deleting || deleteDisabled"
         class="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full border-0 bg-transparent text-zinc-400 transition hover:bg-white/8 hover:text-[#ff6b72] disabled:cursor-default disabled:opacity-40"

@@ -83,7 +83,7 @@ onMounted(() => no.value?.focus())
         "
         @click="agent.answer(true)"
       >
-        {{ restarting ? 'Restart session' : asking ? 'Yes' : 'Yes, allow' }}
+        {{ restarting ? 'Restart task' : asking ? 'Yes' : 'Yes, allow' }}
       </button>
     </div>
     <p class="text-center text-caption text-zinc-500 uppercase">

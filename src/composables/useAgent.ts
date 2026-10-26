@@ -108,7 +108,7 @@ export function useAgent() {
 
   const health = computed<{ tone: 'ok' | 'warn' | 'down' | 'checking'; title: string }>(() => {
     if (settings.value?.externalAgent)
-      return { tone: 'ok', title: 'External agent mode — use your host to start a session' }
+      return { tone: 'ok', title: 'External agent mode — use your host to start a task' }
     const status = backend.value
     const model = settings.value?.model ?? ''
     if (!status) return { tone: 'checking', title: 'Checking the model server' }

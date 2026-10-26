@@ -105,12 +105,12 @@ export function useFlight() {
   ): Promise<{ url: string | null; note: string | null }> {
     const video = head.video
     if (!video) {
-      return { url: null, note: 'This session has no video; the screenshots are shown instead.' }
+      return { url: null, note: 'This task has no video; the screenshots are shown instead.' }
     }
     if (!video.file) {
       const note = video.unavailable
         ? `No video could be made on this computer (${video.unavailable}); the screenshots are shown instead.`
-        : 'This session has no video; the screenshots are shown instead.'
+        : 'This task has no video; the screenshots are shown instead.'
       return { url: null, note }
     }
     try {

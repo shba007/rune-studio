@@ -6,6 +6,61 @@ All AI inference goes to **rune-infer**, a local OpenAI-compatible server. The a
 
 > **Source of truth.** This document describes what the code in `src-tauri/` and `src/` does today. Where a line says "not built" or "known gap", the code does not do it. Measurements in the appendix were taken at the time stated and have not been re-run against the current code.
 
+## Life Harness direction: shared conflict resolution (planned, not implemented)
+
+The owner has made Life Harness the product's core. Inputs may describe a goal, task or step. Goals represent longer-term outcomes and may contain related goals; tasks may stand alone or support a goal, and steps belong to tasks. Task history includes results, Visual Analysis, execution attempts, recordings and replay. A separate Goals & Tasks workspace will bring these together while preserving existing capabilities.
+
+**Owner requirement.** Conflict resolution is a shared capability across the architecture, rather than a separate implementation for each feature. Rune identifies potential conflicts and presents them to the user for resolution, analogous to reviewing a Git merge conflict. This includes goals, pathways, plans, schedules, resource constraints, context from connected sources, task dependencies and conflicting updates. Detection cannot guarantee that every conflict is found.
+
+Examples:
+
+| Conflict                                                                | What the user reviews                                                                                                                           |
+| ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| A proposed 7 a.m. jogging task overlaps an existing appointment         | The two commitments, their sources and times, and options to reschedule or keep the appointment.                                                |
+| Two goals require more time or money than the known available resources | The combined demand, available capacity, uncertainties, and alternatives such as changing priority, scope or deadline.                          |
+| A connected source disagrees with a recorded progress update            | Both claims, their provenance and freshness; a discrepancy is presented for clarification rather than treated as proof that either is false.    |
+| A plan was edited while Rune prepared a revision                        | The common baseline when available, the current version, the proposed changes and their consequences. No baseline is invented when none exists. |
+
+**Proposed implementation contract, to be delivered in approved cycles:**
+
+- Domain components detect concrete constraint violations and submit them to a common conflict service. Models may also propose potential conflicts, with their supporting context and uncertainty. All use the same user-resolution flow.
+- A conflict links the affected records and their versions, competing values or proposals, provenance, explanation, consequences and candidate resolutions. Where applicable, show the baseline, current state and incoming proposal side by side.
+- Offer relevant resolutions in recommendation order, with the strongest supported recommendation first, plus freeform input. Allow keeping an existing choice, accepting a proposal, combining compatible changes, revising or deferring where meaningful. Recommendations must explain their basis.
+- Persist the user's resolution and the resulting changes with an audit trail. Recheck the affected versions and constraints before applying it; if the context changed, reopen the conflict rather than silently applying a stale decision.
+- Hold dependent changes that require the unresolved decision, while unrelated work may continue. Resolving a conflict does not replace the existing action-approval and execution-permission mechanisms.
+- The Goals & Tasks workspace owns the durable conflict view; the orb can notify the user and open the relevant decision. Connected services integrate through Kit and Tools using the same conflict records and source permissions.
+
+This section records the architectural direction only. It does not claim that goal planning, connected context collection or universal conflict detection exists in the current runtime. Exact schemas, domain detectors, interfaces and scheduling policies remain subject to cycle-by-cycle design approval.
+
+### Approved foundations and delivery order (planned, not implemented)
+
+The owner approved the following foundations as incremental additions, preserving all existing features:
+
+1. **Durable domain layer.** Rust owns stable goal, task and step identities, validated state changes and persistence beneath the UI and model. Plans, execution attempts, evidence, reminders, recordings, replay and conflicts refer to those identities. Models propose structured changes; Rust validates and persists them; Vue presents the state and collects decisions. Existing execution traces remain available through references, without requiring a wholesale rewrite or exposing parallel execution records as duplicate tasks.
+2. **Shared decision interface.** Goal clarification, pathway selection, action approvals, conflict resolution and progress check-ins share presentation and resumable decision records, while retaining distinct domain rules and permissions. Goal questions offer three relevant options ordered from most to least recommended, plus freeform input. Recommendations explain their supporting context and uncertainty.
+3. **Editable goal definition.** Store the current position, desired outcome, success criteria, deadline or horizon, resources, constraints and unresolved questions. Goals may contain related goals. Always clarify a goal before proposing pathways; each pathway explains tradeoffs, estimated duration and feasibility. Distinguish missing information from known infeasibility and suggest similar feasible outcomes when constraints rule out the original goal.
+4. **Durable reminders and follow-through.** Approved schedules create recurring tasks and progress check-ins, delivered through the orb. Scheduling and delivery state survive restart. If Rune was closed or the computer asleep, ask when the user returns; do not infer that the activity itself was missed. Pathway and schedule changes require approval.
+5. **Context with provenance and freshness.** Important claims retain their source, observation time and confirmation status. Keep user reports distinguishable from connected evidence. Initially prove the complete loop using explicitly supplied information; later expand through permissioned Kit and Tools integrations with services and apps. Preserve existing sensitive-data protections.
+6. **Concrete conflict checks first.** Start with schedule overlaps, resource-budget overruns, dependency cycles and changes based on outdated record versions. Feed these into the shared resolution flow before expanding to broader model-assisted conflict discovery.
+
+Input classification is configurable: **Automatic** is the default and asks when ambiguous; **Always confirm** waits for the user to confirm Goal, Task or Step. Classification does not replace goal clarification. Standalone tasks may execute under existing permissions; goals require approval of their clarified outcome and selected pathway before executable work is generated.
+
+The separate **Goals & Tasks workspace** manages goals, pathways, tasks, progress, decisions and linked history. Settings contains preferences rather than the goal-management workspace. Include explanations of recommendations, differences between approved and proposed plans, and resumption of unfinished clarification, pending decisions and reminders after restart.
+
+Approved priorities are not authorization for a single large implementation. Continue with small, independently deployable cycles and owner acceptance:
+
+| Cycle | Deployable outcome                                                                                                                                                                       |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | Unify user-facing Sessions into Tasks and make composer wording neutral; preserve stored history and existing features. Implementation completed; owner live acceptance remains pending. |
+| 2     | Introduce the Goals & Tasks workspace and stable task references, with existing history and replay attached.                                                                             |
+| 3     | Introduce persisted, resumable decisions and the shared question interface, including the input-classification preference.                                                               |
+| 4     | Add editable goal definitions and adaptive clarification using explicit user context.                                                                                                    |
+| 5     | Compare pathways, explain feasibility and plan changes, and link the approved choice to executable tasks.                                                                                |
+| 6     | Add durable scheduling, orb reminders, return-time catch-up questions and progress check-ins.                                                                                            |
+| 7     | Add provenance-based progress reviews, the initial deterministic conflict checks and user-approved replanning.                                                                           |
+
+Split any cycle further if its implementation cannot remain small and reviewable. Capture provenance from the first stored goal or decision rather than retrofitting it in cycle 7. Broad automatic context collection, complex forecasting and a fully generalized conflict engine are deferred until the clarify → approve → schedule → act → check progress → adjust loop is proven useful.
+
 ## 1. Product decisions
 
 | Decision  | Choice                                                                                                         | Notes                                                                                            |

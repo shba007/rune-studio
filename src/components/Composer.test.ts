@@ -34,7 +34,7 @@ it('submits requests without user scheduling controls while another task runs', 
   const wrapper = mount(Composer, { props: { agent, board } })
   expect(wrapper.find('[aria-label="Task execution mode"]').exists()).toBe(false)
   await wrapper.get('textarea').setValue('Summarize this supplied text independently')
-  await wrapper.get('[aria-label="Add goal"]').trigger('click')
+  await wrapper.get('[aria-label="Add request"]').trigger('click')
   await flushPromises()
   expect(board.submit).toHaveBeenCalledWith('Summarize this supplied text independently')
   expect(startTask).not.toHaveBeenCalled()

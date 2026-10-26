@@ -347,7 +347,7 @@ const verdictLine = computed(() => {
         <button
           type="button"
           class="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full border-0 bg-transparent text-zinc-300 hover:bg-white/10"
-          aria-label="Back to Sessions"
+          aria-label="Back to Tasks"
           data-testid="back"
           @click="back"
         >
@@ -413,7 +413,7 @@ const verdictLine = computed(() => {
         class="m-0 p-6 text-zinc-400"
         data-testid="no-steps"
       >
-        This session ended before it took a single step, so there is nothing to replay.
+        This task ended before it took a single step, so there is nothing to replay.
       </p>
 
       <div v-else class="relative flex min-h-0 flex-1">

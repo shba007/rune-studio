@@ -27,7 +27,7 @@ function setVisible(key: AnalysisGroup, event: Event) {
   <HubGroup title="Visual Analysis">
     <p class="m-0 text-label text-zinc-400">
       The model chooses observations relevant to your question. Uncheck a group to hide its screen
-      highlights. Findings remain in the answer and saved session; these settings do not limit
+      highlights. Findings remain in the answer and saved task; these settings do not limit
       analysis.
     </p>
     <label

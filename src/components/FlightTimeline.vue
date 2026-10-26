@@ -140,7 +140,7 @@ const playheadLeft = computed(() => props.timeMs * pxPerMs.value - scrollLeft.va
       class="relative h-20 cursor-pointer touch-none overflow-hidden rounded-xl border border-white/10 bg-[#101010] select-none"
       role="slider"
       tabindex="0"
-      aria-label="Session timeline"
+      aria-label="Task timeline"
       aria-orientation="horizontal"
       :aria-valuemin="0"
       :aria-valuemax="Math.round(total / 1000)"

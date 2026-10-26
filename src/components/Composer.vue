@@ -35,7 +35,7 @@ const action = computed(() => {
         } as const)
       : ({ icon: 'send', label: 'Analyze', tone: 'dark', run: submit } as const)
   if (props.board && hasText.value)
-    return { icon: 'send', label: 'Add goal', tone: 'dark', run: submit } as const
+    return { icon: 'send', label: 'Add request', tone: 'dark', run: submit } as const
   if (
     agent.isRunning.value ||
     props.board?.requests.value.some((r) => ['queued', 'planning', 'running'].includes(r.phase))
@@ -54,13 +54,13 @@ const external = computed(() => agent.settings.value?.externalAgent === true)
 const offline = computed(() => agent.health.value.tone === 'down')
 const placeholder = computed(() => {
   if (external.value) return 'Start tasks in your external agent host'
-  if (props.analysisSubmit) return props.analysisBusy ? 'Analyzing…' : 'Type or say a goal'
+  if (props.analysisSubmit) return props.analysisBusy ? 'Analyzing…' : 'Type or say a request'
   if (needsConfirm.value) return 'Needs your OK'
-  if (props.board && agent.isRunning.value) return 'Add a goal'
+  if (props.board && agent.isRunning.value) return 'Add a request'
   if (agent.isRunning.value) return 'Working…'
   if (isListening.value) return 'Listening…'
   if (offline.value) return 'Model server offline'
-  return props.board ? 'Type or say a goal' : 'Type or say a task'
+  return 'Type or say a request'
 })
 
 watch(agent.focusTick, async () => {

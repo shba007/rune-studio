@@ -78,7 +78,7 @@ it('shows one cleaned goal once, counters on every task, and parallel carousel c
   )
   expect(wrapper.text()).not.toContain('raw original prompt')
   expect(wrapper.text()).not.toContain('Do not show this queued goal yet')
-  expect(wrapper.text()).toContain('1 goal queued')
+  expect(wrapper.text()).toContain('1 request queued')
   expect(wrapper.get('[data-testid="task-count"]').text()).toBe('Tasks 1/3')
   expect(wrapper.get('[data-testid="goal-eta"]').text()).toContain('left')
   expect(wrapper.findAll('[data-testid="task-elapsed"]')).toHaveLength(3)

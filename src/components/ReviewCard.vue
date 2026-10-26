@@ -31,7 +31,7 @@ const CHIP = {
     v-if="offer"
     class="flex w-full flex-col gap-2 rounded-[28px] border border-white/15 bg-[#141414] p-4 text-zinc-100"
     role="alertdialog"
-    aria-label="Review the session"
+    aria-label="Review the task"
   >
     <header class="flex h-6 items-center gap-2">
       <span

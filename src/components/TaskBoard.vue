@@ -292,7 +292,7 @@ function stepLabel(phase: TaskPhase) {
     >
       <span>{{
         queued
-          ? `${queued} goal${queued === 1 ? '' : 's'} queued`
+          ? `${queued} request${queued === 1 ? '' : 's'} queued`
           : tasks.length > 1
             ? 'Steps run in sequence within each task'
             : 'Steps run in sequence'
@@ -305,7 +305,7 @@ function stepLabel(phase: TaskPhase) {
           isTaskActive(request.phase) ? board.cancelRequest(request.id) : board.dismiss(request.id)
         "
       >
-        {{ isTaskActive(request.phase) ? 'Cancel goal' : 'Dismiss' }}
+        {{ isTaskActive(request.phase) ? 'Cancel request' : 'Dismiss' }}
       </button>
     </footer>
   </section>

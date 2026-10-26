@@ -26,7 +26,7 @@ describe('release settings availability', () => {
       'General',
       'Agents',
       'Tools',
-      'Sessions',
+      'Tasks',
       'Shortcuts',
       'About',
     ])

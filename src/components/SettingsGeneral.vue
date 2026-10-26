@@ -92,7 +92,7 @@ async function revealDeveloper() {
       <HubToggle
         v-model="draft.developerMode"
         label="Developer mode"
-        hint="Show screen capture, input tests, animation previews and raw session records."
+        hint="Show screen capture, input tests, animation previews and raw task records."
       />
     </HubGroup>
 

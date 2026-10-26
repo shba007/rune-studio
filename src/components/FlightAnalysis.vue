@@ -66,7 +66,7 @@ watch(
 <template>
   <section
     class="flex min-h-0 flex-1 flex-col overflow-auto md:flex-row"
-    aria-label="Visual analysis session"
+    aria-label="Visual analysis task"
   >
     <figure class="m-0 flex min-h-64 min-w-0 flex-1 flex-col bg-[#0a0a0a] p-4">
       <div class="flex min-h-0 flex-1 items-center justify-center">
@@ -93,7 +93,7 @@ watch(
               ? 'Loading capture…'
               : missing
                 ? 'The saved capture is unavailable. It may have been deleted or moved.'
-                : 'No capture was saved for this session. Older in-memory images cannot be restored.'
+                : 'No capture was saved for this task. Older in-memory images cannot be restored.'
           }}
         </p>
       </div>

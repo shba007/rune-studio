@@ -43,7 +43,7 @@ async function show(failure = false) {
 describe('session deletion', () => {
   it('removes only the selected card after deletion succeeds', async () => {
     const wrapper = await show()
-    await wrapper.findAll('button[aria-label="Delete session"]')[0]!.trigger('click')
+    await wrapper.findAll('button[aria-label="Delete task"]')[0]!.trigger('click')
     await flushPromises()
     expect(invoke).toHaveBeenCalledWith('flight_delete', { id: '0' })
     expect(wrapper.findAll('[data-testid="artifact"]')).toHaveLength(1)
@@ -53,7 +53,7 @@ describe('session deletion', () => {
 
   it('keeps the cards and reports a failed deletion', async () => {
     const wrapper = await show(true)
-    await wrapper.findAll('button[aria-label="Delete session"]')[0]!.trigger('click')
+    await wrapper.findAll('button[aria-label="Delete task"]')[0]!.trigger('click')
     await flushPromises()
     expect(wrapper.findAll('[data-testid="artifact"]')).toHaveLength(2)
     expect(wrapper.get('[role="alert"]').text()).toContain('Deletion refused')

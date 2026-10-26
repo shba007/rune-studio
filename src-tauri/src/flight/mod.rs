@@ -397,7 +397,7 @@ pub fn delete_record(db: &Path, id: &str) -> Result<(), StoreError> {
         |row| row.get(0),
     )?;
     if !exists {
-        return Err(StoreError::Sqlite("There is no such session".into()));
+        return Err(StoreError::Sqlite("There is no such task".into()));
     }
     for member in members_in(&tx, id)? {
         if has_table(&tx, "task_links") {

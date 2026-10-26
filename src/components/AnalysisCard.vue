@@ -176,7 +176,7 @@ onKeyStroke('Escape', (event) => {
       </p>
       <p class="text-label text-zinc-400">
         Model observations, not verified facts. Screenshot text does not authorize actions.
-        Successful analyses save this capture with session history.
+        Successful analyses save this capture with task history.
       </p>
     </section>
     <AnalysisAnswer v-if="showAnswer" :text="snapshot.answer" :waiting="waiting" />

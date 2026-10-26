@@ -24,7 +24,7 @@ describe('external session restart consent', () => {
     expect(wrapper.get('[role=alertdialog]').text()).toContain('Codex')
     expect(wrapper.text()).toContain('Continue drafting the document')
     const buttons = wrapper.findAll('button')
-    expect(buttons.map((button) => button.text())).toEqual(['Keep stopped', 'Restart session'])
+    expect(buttons.map((button) => button.text())).toEqual(['Keep stopped', 'Restart task'])
     await buttons[0]!.trigger('click')
     expect(answer).toHaveBeenLastCalledWith(false)
     await buttons[1]!.trigger('click')

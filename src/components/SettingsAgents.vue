@@ -30,7 +30,7 @@ const { copy, copied } = useClipboard({ copiedDuring: 1600 })
     <HubGroup title="Execution">
       <HubRow
         label="Execution mode"
-        hint="Choose before a session. Finish or stop it before switching."
+        hint="Choose before a task. Finish or stop it before switching."
       >
         <select
           v-model="draft.externalAgent"

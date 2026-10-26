@@ -251,7 +251,7 @@ const rawText = computed(() => {
             <span class="text-title">{{ toolLabel }}</span>
             <span class="text-caption text-zinc-500 uppercase"
               >Step {{ index + 1 }} of {{ header.steps
-              }}<template v-if="step.goal !== null"> · Goal {{ step.goal }}</template></span
+              }}<template v-if="step.goal !== null"> · Plan item {{ step.goal }}</template></span
             >
           </div>
           <span

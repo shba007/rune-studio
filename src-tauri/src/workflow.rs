@@ -203,8 +203,7 @@ pub async fn run(app: &AppHandle, workflow_id: &str, input: Value) -> Result<(),
         let mut analysis = state.analysis.locked();
         if state.settings.locked().external_agent {
             return Err(
-                "Visual Analysis uses API mode. Finish the session and select API mode first."
-                    .into(),
+                "Visual Analysis uses API mode. Finish the task and select API mode first.".into(),
             );
         }
         if events::agent_state(app).is_running() || state.lease.locked().is_held() {
