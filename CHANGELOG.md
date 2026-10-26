@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.3.0
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.2.0...v0.3.0)
+
+### 🚀 Enhancements
+
+- Add screen recording functionality and task board enhancements ([3c0b7ba](https://github.com/shba007/rune-studio/commit/3c0b7ba))
+- Add independent model and recording resolution settings ([8285441](https://github.com/shba007/rune-studio/commit/8285441))
+- Enhance flight analysis and session management ([1b40f5a](https://github.com/shba007/rune-studio/commit/1b40f5a))
+
+### 💅 Refactors
+
+- Voice assistant and agent protocols to use JSON schemas ([aff815a](https://github.com/shba007/rune-studio/commit/aff815a))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+
 ## v0.2.0
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.1.0...v0.2.0)
