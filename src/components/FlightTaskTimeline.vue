@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { clock } from '@/config/flight'
+import AppIcon from './AppIcon.vue'
 import type { TaskTimeline } from '@/config/taskTimeline'
 defineProps<{ timeline: TaskTimeline; timeMs: number }>()
 const emit = defineEmits<{ seek: [ms: number] }>()
@@ -33,7 +34,7 @@ const failed = (phase: string) => ['failed', 'blocked'].includes(phase)
         </p>
       </div>
       <div
-        class="relative min-w-24 flex-1 overflow-hidden bg-[#0a0a0a]"
+        class="relative min-h-20 min-w-24 flex-1 overflow-hidden bg-[#101010]"
         role="slider"
         tabindex="0"
         :aria-label="`Seek ${task.title}`"
@@ -46,7 +47,7 @@ const failed = (phase: string) => ['failed', 'blocked'].includes(phase)
         @keydown.right.prevent="emit('seek', Math.min(timeline.total, timeMs + 1000))"
       >
         <div
-          class="absolute inset-y-3 border border-white/20 bg-white/5"
+          class="absolute inset-y-0 border-l border-white/10"
           :class="failed(task.phase) ? '!border-[#d71921]/50 !bg-[#d71921]/10' : ''"
           :style="{
             left: `${(task.start / timeline.total) * 100}%`,
@@ -58,12 +59,12 @@ const failed = (phase: string) => ['failed', 'blocked'].includes(phase)
           v-for="(step, index) in task.steps"
           :key="index"
           type="button"
-          class="absolute inset-y-4 min-w-1 cursor-pointer border-l border-white/40 bg-white/15 hover:bg-white/30"
+          class="absolute inset-y-0 min-w-1 cursor-pointer overflow-hidden border-l border-white/10 text-zinc-200 hover:bg-white/[0.07]"
           :class="
             failed(step.phase)
-              ? '!bg-[#d71921]/40'
+              ? '!text-[#ff6b72]'
               : step.phase === 'cancelled'
-                ? '!bg-zinc-600/40'
+                ? '!text-zinc-500'
                 : ''
           "
           :style="{
@@ -71,9 +72,19 @@ const failed = (phase: string) => ['failed', 'blocked'].includes(phase)
             width: `${(Math.max(0, step.end - step.start) / timeline.total) * 100}%`,
           }"
           :aria-label="`${task.title}, step ${index + 1}: ${step.title}, ${step.phase}`"
-          :title="`${step.title} · ${step.phase}`"
+          :title="`${step.title} · ${step.phase} · ${clock(Math.max(0, step.end - step.start))}`"
           @click.stop="emit('seek', step.start)"
-        />
+        >
+          <AppIcon
+            :name="task.kind === 'desktop' ? 'monitor' : 'thinking'"
+            size="sm"
+            class="absolute top-2 left-1.5 opacity-80"
+          />
+          <span class="absolute top-2 right-1.5 text-caption tabular-nums" data-step-duration>{{
+            clock(Math.max(0, step.end - step.start))
+          }}</span>
+          <span class="pointer-events-none absolute right-0 bottom-3 left-0 h-3 timeline-dots" />
+        </button>
         <span
           class="pointer-events-none absolute inset-y-0 w-px bg-[#f1f1ef]"
           :style="{ left: `${(timeMs / timeline.total) * 100}%` }"
@@ -83,3 +94,10 @@ const failed = (phase: string) => ['failed', 'blocked'].includes(phase)
     </div>
   </section>
 </template>
+<style scoped>
+.timeline-dots {
+  background-image: radial-gradient(circle, currentColor 1.1px, transparent 1.6px);
+  background-size: 5px 5px;
+  opacity: 0.65;
+}
+</style>

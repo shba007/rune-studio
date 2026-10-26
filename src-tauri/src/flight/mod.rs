@@ -100,7 +100,7 @@ fn has_table(db: &rusqlite::Connection, name: &str) -> bool {
 }
 
 pub fn runs(db: &Path, limit: usize, before: Option<&str>) -> Result<Vec<FlightRun>, StoreError> {
-    let all = store::list_runs(db, limit.saturating_add(200).min(5_000))?;
+    let all = store::list_sessions(db, limit.saturating_add(200).min(5_000))?;
     Ok(all
         .into_iter()
         .filter(|row| before.is_none_or(|cut| row.started_utc.as_deref().is_some_and(|s| s < cut)))
@@ -362,6 +362,25 @@ pub fn folder_shared(db: &Path, id: &str, dir: &Path) -> Result<bool, StoreError
     Ok(false)
 }
 
+pub fn session_members(db: &Path, id: &str) -> Result<Vec<String>, StoreError> {
+    let conn = store::open_read(db)?;
+    members_in(&conn, id)
+}
+
+fn members_in(conn: &rusqlite::Connection, id: &str) -> Result<Vec<String>, StoreError> {
+    let mut members = vec![id.to_string()];
+    if has_table(conn, "task_links") {
+        let mut query =
+            conn.prepare("SELECT run_id FROM task_links WHERE request_id=?1 AND run_id!=?1")?;
+        members.extend(
+            query
+                .query_map([id], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?,
+        );
+    }
+    Ok(members)
+}
+
 pub fn delete_record(db: &Path, id: &str) -> Result<(), StoreError> {
     let mut conn =
         rusqlite::Connection::open_with_flags(db, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)?;
@@ -380,20 +399,22 @@ pub fn delete_record(db: &Path, id: &str) -> Result<(), StoreError> {
     if !exists {
         return Err(StoreError::Sqlite("There is no such session".into()));
     }
-    if has_table(&tx, "task_links") {
-        store::unlink_task_run(&tx, id)?;
-    }
-    for (table, key) in [
-        ("calls", "run_id"),
-        ("verdicts", "run_id"),
-        ("events", "run_id"),
-        ("steps", "run_id"),
-        ("analyses", "id"),
-        ("reflections", "id"),
-        ("runs", "id"),
-    ] {
-        if has_table(&tx, table) {
-            tx.execute(&format!("DELETE FROM {table} WHERE {key} = ?1"), [id])?;
+    for member in members_in(&tx, id)? {
+        if has_table(&tx, "task_links") {
+            store::unlink_task_run(&tx, &member)?;
+        }
+        for (table, key) in [
+            ("calls", "run_id"),
+            ("verdicts", "run_id"),
+            ("events", "run_id"),
+            ("steps", "run_id"),
+            ("analyses", "id"),
+            ("reflections", "id"),
+            ("runs", "id"),
+        ] {
+            if has_table(&tx, table) {
+                tx.execute(&format!("DELETE FROM {table} WHERE {key} = ?1"), [&member])?;
+            }
         }
     }
     tx.commit()?;

@@ -174,6 +174,9 @@ const playheadLeft = computed(() => props.timeMs * pxPerMs.value - scrollLeft.va
           size="sm"
           class="absolute top-2 left-1.5 opacity-80"
         />
+        <span class="absolute top-2 right-1.5 text-caption tabular-nums" data-step-duration>{{
+          clock(segment.length)
+        }}</span>
         <span
           v-if="retried.has(segment.index)"
           class="absolute top-0 left-0 h-2 w-px bg-zinc-100"

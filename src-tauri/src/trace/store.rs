@@ -298,15 +298,46 @@ fn has_verdicts(db: &Connection) -> Result<bool, StoreError> {
 }
 
 pub fn list_runs_in(db: &Connection, limit: usize) -> Result<Vec<RunSummary>, StoreError> {
+    list_runs_filtered(db, limit, "")
+}
+
+pub fn list_sessions(path: &Path, limit: usize) -> Result<Vec<RunSummary>, StoreError> {
+    let db = open_read(path)?;
+    let linked: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='task_links')",
+        [],
+        |row| row.get(0),
+    )?;
+    list_runs_filtered(
+        &db,
+        limit,
+        if linked {
+            "WHERE NOT EXISTS(SELECT 1 FROM task_links l JOIN runs parent ON parent.id=l.request_id WHERE l.run_id=r.id AND l.run_id!=l.request_id)"
+        } else {
+            ""
+        },
+    )
+}
+
+fn list_runs_filtered(
+    db: &Connection,
+    limit: usize,
+    filter: &str,
+) -> Result<Vec<RunSummary>, StoreError> {
+    let step_filter = if filter.is_empty() {
+        "s.run_id = r.id"
+    } else {
+        "(s.run_id = r.id OR s.run_id IN (SELECT run_id FROM task_links WHERE request_id=r.id))"
+    };
     let verdict = if has_verdicts(db)? {
         "(SELECT v.result FROM verdicts v WHERE v.run_id = r.id)"
     } else {
         "NULL"
     };
     let mut statement = db.prepare(&format!(
-        "SELECT r.id, r.started_utc, r.ended_utc, r.source, r.outcome, r.task, (SELECT COUNT(*) FROM steps s WHERE s.run_id = r.id), {verdict}, r.session_dir,
+        "SELECT r.id, r.started_utc, r.ended_utc, r.source, r.outcome, r.task, (SELECT COUNT(*) FROM steps s WHERE {step_filter}), {verdict}, r.session_dir,
                 (SELECT s.observation_path FROM steps s WHERE s.run_id = r.id AND s.observation_path IS NOT NULL ORDER BY s.step DESC LIMIT 1)
-         FROM runs r ORDER BY r.started_utc DESC, r.rowid DESC LIMIT ?1"
+         FROM runs r {filter} ORDER BY r.started_utc DESC, r.rowid DESC LIMIT ?1"
     ))?;
     let rows = statement.query_map([i64::try_from(limit).unwrap_or(i64::MAX)], |row| {
         Ok(RunSummary {

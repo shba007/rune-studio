@@ -85,6 +85,52 @@ fn recorded(dir: &TempDir) -> PathBuf {
 }
 
 #[test]
+fn parallel_tasks_are_one_session_and_delete_as_one_group() {
+    let dir = TempDir::new();
+    let db = recorded(&dir);
+    let rec = Recorder::start(&db);
+    rec.begin_background_run(RunInfo {
+        id: "request".into(),
+        source: "task-request".into(),
+        started_utc: "2026-10-21T10:00:00Z".into(),
+        ..Default::default()
+    });
+    rec.task_link("request", "request", 0);
+    rec.task_history("request", 1, 1000, &serde_json::json!({"tasks":[]}));
+    for (index, source) in ["background-task", "background-task", "built-in"]
+        .iter()
+        .enumerate()
+    {
+        let id = format!("child-{index}");
+        rec.begin_background_run(RunInfo {
+            id: id.clone(),
+            source: (*source).into(),
+            started_utc: "2026-10-21T10:00:01Z".into(),
+            ..Default::default()
+        });
+        rec.task_link(&id, "request", index as u64 + 1);
+        rec.step(StepRecord::new(&id, 1));
+        rec.end_run(&id, "succeeded", "done");
+    }
+    rec.end_run("request", "succeeded", "done");
+    rec.flush();
+    let listed = runs(&db, 1, None).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].id, "request");
+    assert_eq!(listed[0].steps, 3);
+    assert_eq!(runs(&db, 10, None).unwrap().len(), 3);
+    assert_eq!(session_members(&db, "request").unwrap().len(), 4);
+    assert_eq!(steps(&db, "child-2").unwrap().len(), 1);
+    assert_eq!(store::task_history(&db, "child-1").unwrap().len(), 1);
+    delete_record(&db, "request").unwrap();
+    for id in ["request", "child-0", "child-1", "child-2"] {
+        assert!(header(&db, id).unwrap().is_none());
+        assert!(store::task_history(&db, id).unwrap().is_empty());
+    }
+    assert_eq!(runs(&db, 10, None).unwrap().len(), 2);
+}
+
+#[test]
 fn runs_come_newest_first_and_page_by_start_time() {
     let dir = TempDir::new();
     let db = recorded(&dir);

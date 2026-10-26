@@ -659,27 +659,35 @@ pub async fn flight_delete(app: AppHandle, id: String) -> AppResult<Option<Strin
     tauri::async_runtime::spawn_blocking(move || {
         let _deletion = DELETION.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let state = app.state::<AppState>();
-        if let Err(error) = state.trace.block_session(&id) {
-            return Err(AppError::Invalid(error));
+        state.trace.sync().map_err(AppError::Invalid)?;
+        let db = trace_db(&app)?;
+        let members = crate::flight::session_members(&db, &id).map_err(read_error)?;
+        for (index, member) in members.iter().enumerate() {
+            if let Err(error) = state.trace.block_session(member) {
+                for blocked in &members[..index] { state.trace.unblock_session(blocked); }
+                return Err(AppError::Invalid(error));
+            }
         }
         let result = (|| {
-            let db = trace_db(&app)?;
-            let dir = crate::flight::session_dir(&db, &id).map_err(read_error)?;
-            let staged = if let Some(dir) = dir {
-                if crate::flight::folder_shared(&db, &id, &dir).map_err(read_error)? {
+            let mut staged = Vec::new();
+            for member in &members {
+            if let Some(dir) = crate::flight::session_dir(&db, member).map_err(read_error)? {
+                if crate::flight::folder_shared(&db, member, &dir).map_err(read_error)? {
                     return Err(AppError::Invalid("This folder is shared with another session; it cannot be deleted safely.".into()));
                 }
-                crate::archive::stage_session_deletion(&dir, &id).map_err(|error| AppError::Invalid(error.to_string()))?
-            } else { None };
+                if let Some(folder) = crate::archive::stage_session_deletion(&dir, member).map_err(|error| AppError::Invalid(error.to_string()))? { staged.push(folder); }
+            }
+            }
             crate::flight::delete_record(&db, &id).map_err(read_error)?;
-            let warning = staged.and_then(|staged| staged.finish().err()).map(|error| {
-                let message = format!("Session history was deleted, but some session files could not be removed: {error}");
+            let failures = staged.into_iter().filter_map(|folder| folder.finish().err().map(|error| error.to_string())).collect::<Vec<_>>();
+            let warning = (!failures.is_empty()).then(|| {
+                let message = format!("Session history was deleted, but some session files could not be removed: {}", failures.join("; "));
                 log::warn!("{message}");
                 message
             });
             Ok(warning)
         })();
-        if result.is_err() { state.trace.unblock_session(&id); }
+        if result.is_err() { for member in &members { state.trace.unblock_session(member); } }
         result
     }).await.map_err(read_error)?
 }

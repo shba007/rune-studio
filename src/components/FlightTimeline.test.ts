@@ -30,6 +30,14 @@ describe('FlightTimeline', () => {
     const wrapper = mount(FlightTimeline, { props: props(6, { timeMs: 2500 }) })
     await flushPromises()
     expect(wrapper.findAll('[data-testid="segment"]')).toHaveLength(6)
+    expect(wrapper.findAll('[data-step-duration]').map((node) => node.text())).toEqual([
+      '0:01',
+      '0:01',
+      '0:01',
+      '0:01',
+      '0:01',
+      '0:00',
+    ])
     expect(wrapper.find('[data-testid="track"]').attributes('aria-valuetext')).toBe(
       '0:02, step 3 of 6',
     )
