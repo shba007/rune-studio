@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vite-plus/test'
 
 import {
   actionLayer,
+  isOutsideAgent,
   promptSections,
   riskLevel,
   argsText,
@@ -27,6 +28,12 @@ import {
   visibleRows,
   type FlightStep,
 } from './flight'
+
+it('keeps request and background history in API mode while retaining external-agent identity', () => {
+  expect(isOutsideAgent('task-request')).toBe(false)
+  expect(isOutsideAgent('background-task')).toBe(false)
+  expect(isOutsideAgent('codex')).toBe(true)
+})
 
 function step(n: number, at: string | null, extra: Partial<FlightStep> = {}): FlightStep {
   return {

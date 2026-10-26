@@ -418,6 +418,18 @@ pub fn db_path_without_app() -> Option<std::path::PathBuf> {
 }
 
 pub enum Msg {
+    BeginConcurrentRun(Box<RunInfo>),
+    TaskHistory {
+        request_id: String,
+        revision: i64,
+        at_ms: i64,
+        snapshot_json: String,
+    },
+    TaskLink {
+        run_id: String,
+        request_id: String,
+        task_id: i64,
+    },
     BeginRun(Box<RunInfo>),
     SetPlan {
         run_id: String,
@@ -450,6 +462,7 @@ pub struct Recorder {
     path: Option<std::path::PathBuf>,
     dropped: Arc<AtomicU64>,
     open: Arc<Mutex<Option<String>>>,
+    concurrent: Arc<Mutex<std::collections::HashSet<String>>>,
     deleted: Arc<Mutex<std::collections::HashSet<String>>>,
 }
 
@@ -472,6 +485,7 @@ impl Recorder {
             path: None,
             dropped: Arc::default(),
             open: Arc::default(),
+            concurrent: Arc::default(),
             deleted: Arc::default(),
         }
     }
@@ -518,6 +532,7 @@ impl Recorder {
                 path: Some(path.to_path_buf()),
                 dropped: Arc::default(),
                 open: Arc::default(),
+                concurrent: Arc::default(),
                 deleted: Arc::default(),
             },
             Err(err) => {
@@ -542,8 +557,10 @@ impl Recorder {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let id = match &message {
-            Msg::BeginRun(info) => Some(info.id.as_str()),
+            Msg::BeginRun(info) | Msg::BeginConcurrentRun(info) => Some(info.id.as_str()),
+            Msg::TaskHistory { request_id, .. } => Some(request_id.as_str()),
             Msg::SetPlan { run_id, .. }
+            | Msg::TaskLink { run_id, .. }
             | Msg::Event { run_id, .. }
             | Msg::EndRun { run_id, .. } => Some(run_id.as_str()),
             Msg::Step(row) => Some(row.run_id.as_str()),
@@ -584,6 +601,45 @@ impl Recorder {
         self.send(Msg::BeginRun(Box::new(info)));
     }
 
+    pub fn begin_background_run(&self, info: RunInfo) {
+        self.concurrent
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(info.id.clone());
+        self.send(Msg::BeginConcurrentRun(Box::new(RunInfo {
+            task: cap(&info.task, TEXT_CAP),
+            ..info
+        })));
+    }
+
+    pub fn task_history(
+        &self,
+        request_id: &str,
+        revision: u64,
+        at_ms: u64,
+        snapshot: &serde_json::Value,
+    ) {
+        let snapshot_json = snapshot.to_string();
+        if snapshot_json.len() > 1_048_576 {
+            warn_rarely(|| "Task history snapshot exceeded its size bound; not recorded".into());
+            return;
+        }
+        self.send(Msg::TaskHistory {
+            request_id: request_id.into(),
+            revision: revision.min(i64::MAX as u64) as i64,
+            at_ms: at_ms.min(i64::MAX as u64) as i64,
+            snapshot_json,
+        });
+    }
+
+    pub fn task_link(&self, run_id: &str, request_id: &str, task_id: u64) {
+        self.send(Msg::TaskLink {
+            run_id: run_id.into(),
+            request_id: request_id.into(),
+            task_id: task_id.min(i64::MAX as u64) as i64,
+        });
+    }
+
     pub fn end_open_run(&self, outcome: &str, summary: &str) {
         let open = self.open_run().take();
         if let Some(id) = open {
@@ -612,6 +668,10 @@ impl Recorder {
     }
 
     pub fn end_run(&self, run_id: &str, outcome: &str, summary: &str) {
+        self.concurrent
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(run_id);
         let mut open = self.open_run();
         if open.as_deref() == Some(run_id) {
             *open = None;
@@ -673,7 +733,7 @@ impl Recorder {
     }
 
     pub fn block_session(&self, id: &str) -> Result<(), String> {
-        if self.open_run().as_deref() == Some(id) {
+        if self.is_active(id) {
             return Err("Finish or stop this session before deleting it".into());
         }
         let inserted = self
@@ -689,6 +749,15 @@ impl Recorder {
             return Err(error);
         }
         Ok(())
+    }
+
+    pub fn is_active(&self, id: &str) -> bool {
+        self.open_run().as_deref() == Some(id)
+            || self
+                .concurrent
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .contains(id)
     }
 
     pub fn unblock_session(&self, id: &str) {
@@ -727,6 +796,7 @@ impl Recorder {
                 path: None,
                 dropped: Arc::default(),
                 open: Arc::default(),
+                concurrent: Arc::default(),
                 deleted: Arc::default(),
             },
             rx,

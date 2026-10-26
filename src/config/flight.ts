@@ -480,7 +480,9 @@ export function failedStep(step: FlightStep): boolean {
 
 export function isOutsideAgent(source: string): boolean {
   const name = source.trim().toLowerCase()
-  return name !== '' && name !== 'built-in' && name !== 'rune' && name !== 'screen-insight'
+  return !['', 'built-in', 'rune', 'screen-insight', 'task-request', 'background-task'].includes(
+    name,
+  )
 }
 
 export function typedTexts(steps: FlightStep[]): string[] {

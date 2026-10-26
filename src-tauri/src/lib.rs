@@ -243,6 +243,7 @@ pub fn run() {
             commands::session_feedback,
             commands::open_settings_window,
             commands::flight_runs,
+            commands::flight_task_history,
             commands::flight_original_prompt,
             commands::flight_delete,
             commands::flight_run,

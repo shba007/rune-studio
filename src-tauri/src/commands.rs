@@ -616,11 +616,19 @@ pub fn flight_runs(
         before.as_deref(),
     )
     .map_err(read_error)?;
-    let active = state.trace.open_run_id();
     for run in &mut runs {
-        run.active = active.as_deref() == Some(run.id.as_str());
+        run.active = state.trace.is_active(&run.id);
     }
     Ok(runs)
+}
+
+#[tauri::command]
+pub fn flight_task_history(app: AppHandle, id: String) -> AppResult<Vec<serde_json::Value>> {
+    app.state::<AppState>()
+        .trace
+        .sync()
+        .map_err(AppError::Invalid)?;
+    crate::trace::store::task_history(&trace_db(&app)?, &id).map_err(read_error)
 }
 
 #[tauri::command]

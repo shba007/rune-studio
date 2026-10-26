@@ -1,6 +1,6 @@
 use rusqlite::Connection;
 
-pub const VERSION: i64 = 8;
+pub const VERSION: i64 = 9;
 
 pub const CREATE_V1: &str = "
 CREATE TABLE runs (
@@ -165,6 +165,10 @@ pub fn open(db: &Connection) -> rusqlite::Result<Opened> {
         (6, CREATE_V6),
         (7, CREATE_V7),
         (8, "ALTER TABLE calls ADD COLUMN locality TEXT;"),
+        (
+            9,
+            "CREATE TABLE IF NOT EXISTS task_history (request_id TEXT NOT NULL, revision INTEGER NOT NULL, at_ms INTEGER NOT NULL, snapshot_json TEXT NOT NULL, PRIMARY KEY(request_id, revision)); CREATE TABLE IF NOT EXISTS task_links (run_id TEXT PRIMARY KEY, request_id TEXT NOT NULL, task_id INTEGER NOT NULL); CREATE INDEX IF NOT EXISTS task_links_request ON task_links(request_id);",
+        ),
     ] {
         if found < version {
             batch.push_str(ddl);

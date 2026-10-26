@@ -1,6 +1,8 @@
 use std::path::Path;
 
-use rusqlite::{Connection, OpenFlags, Row, params, params_from_iter, types::Value};
+use rusqlite::{
+    Connection, OpenFlags, OptionalExtension, Row, params, params_from_iter, types::Value,
+};
 
 use super::AnalysisRecord;
 #[cfg(any(feature = "agent-bridge", test))]
@@ -40,10 +42,73 @@ fn ensure_run(db: &Connection, run_id: &str) -> rusqlite::Result<()> {
     Ok(())
 }
 
+pub fn unlink_task_run(db: &Connection, run_id: &str) -> rusqlite::Result<()> {
+    let request = db
+        .query_row(
+            "SELECT request_id FROM task_links WHERE run_id=?1",
+            [run_id],
+            |r| r.get::<_, String>(0),
+        )
+        .optional()?;
+    db.execute("DELETE FROM task_links WHERE run_id=?1", [run_id])?;
+    if let Some(request) = request {
+        db.execute("DELETE FROM task_history WHERE request_id=?1 AND NOT EXISTS(SELECT 1 FROM task_links WHERE request_id=?1)", [&request])?;
+    }
+    Ok(())
+}
+
+/// Return ordered snapshots for a linked request/task run. Legacy sessions have none.
+pub fn task_history(path: &Path, run_id: &str) -> Result<Vec<serde_json::Value>, StoreError> {
+    let db = open_read(path)?;
+    let exists: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='task_links')",
+        [],
+        |r| r.get(0),
+    )?;
+    if !exists {
+        return Ok(Vec::new());
+    }
+    let mut query = db.prepare("SELECT revision,at_ms,snapshot_json FROM task_history WHERE request_id=(SELECT request_id FROM task_links WHERE run_id=?1) ORDER BY revision")?;
+    let rows = query.query_map([run_id], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, String>(2)?,
+        ))
+    })?;
+    rows.map(|row| {
+        let (revision, at_ms, json) = row?;
+        let snapshot: serde_json::Value =
+            serde_json::from_str(&json).map_err(|e| StoreError::Sqlite(e.to_string()))?;
+        Ok(serde_json::json!({"revision":revision,"atMs":at_ms,"snapshot":snapshot}))
+    })
+    .collect()
+}
+
 fn apply(db: &Connection, message: &Msg) -> rusqlite::Result<()> {
     match message {
-        Msg::BeginRun(info) => {
-            db.execute("UPDATE runs SET ended_utc = ?1, outcome = 'replaced' WHERE ended_utc IS NULL AND id != ?2", params![info.started_utc, info.id])?;
+        Msg::TaskHistory {
+            request_id,
+            revision,
+            at_ms,
+            snapshot_json,
+        } => {
+            db.execute("INSERT OR IGNORE INTO task_history(request_id,revision,at_ms,snapshot_json) SELECT ?1,?2,?3,?4 WHERE NOT EXISTS(SELECT 1 FROM task_history WHERE request_id=?1 AND revision=(SELECT MAX(revision) FROM task_history WHERE request_id=?1) AND snapshot_json=?4)", params![request_id,revision,at_ms,snapshot_json])?;
+        }
+        Msg::TaskLink {
+            run_id,
+            request_id,
+            task_id,
+        } => {
+            db.execute(
+                "INSERT OR IGNORE INTO task_links(run_id,request_id,task_id) VALUES (?1,?2,?3)",
+                params![run_id, request_id, task_id],
+            )?;
+        }
+        Msg::BeginRun(info) | Msg::BeginConcurrentRun(info) => {
+            if matches!(message, Msg::BeginRun(_)) {
+                db.execute("UPDATE runs SET ended_utc = ?1, outcome = 'replaced' WHERE ended_utc IS NULL AND id != ?2 AND COALESCE(source,'') NOT IN ('task-request','background-task')", params![info.started_utc, info.id])?;
+            }
             db.execute(
                 "INSERT INTO runs (id, scope_id, task, source, started_utc, plan_json, model, app_version, settings_json, session_dir)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
@@ -150,6 +215,13 @@ fn apply(db: &Connection, message: &Msg) -> rusqlite::Result<()> {
         }
         Msg::PurgeSessions(dirs) => {
             for dir in dirs {
+                let ids = db
+                    .prepare("SELECT id FROM runs WHERE session_dir=?1")?
+                    .query_map([dir], |r| r.get::<_, String>(0))?
+                    .collect::<rusqlite::Result<Vec<_>>>()?;
+                for id in ids {
+                    unlink_task_run(db, &id)?;
+                }
                 db.execute("DELETE FROM calls WHERE run_id IN (SELECT id FROM runs WHERE session_dir = ?1)", [dir])?;
                 db.execute("DELETE FROM verdicts WHERE run_id IN (SELECT id FROM runs WHERE session_dir = ?1)", [dir])?;
                 db.execute("DELETE FROM events WHERE run_id IN (SELECT id FROM runs WHERE session_dir = ?1)", [dir])?;

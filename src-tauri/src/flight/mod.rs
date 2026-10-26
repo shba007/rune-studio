@@ -380,6 +380,9 @@ pub fn delete_record(db: &Path, id: &str) -> Result<(), StoreError> {
     if !exists {
         return Err(StoreError::Sqlite("There is no such session".into()));
     }
+    if has_table(&tx, "task_links") {
+        store::unlink_task_run(&tx, id)?;
+    }
     for (table, key) in [
         ("calls", "run_id"),
         ("verdicts", "run_id"),

@@ -52,6 +52,96 @@ fn version_of(path: &std::path::Path) -> i64 {
         .unwrap()
 }
 
+#[test]
+fn concurrent_task_runs_do_not_replace_each_other_or_the_desktop() {
+    let dir = TempDir::new();
+    let recorder = Recorder::start(&dir.db());
+    recorder.begin_run(run("desktop-a", "2026-10-26T00:00:00Z"));
+    let mut info = run("background", "2026-10-26T00:00:01Z");
+    info.source = "background-task".into();
+    recorder.begin_background_run(info);
+    assert_eq!(recorder.open_run_id().as_deref(), Some("desktop-a"));
+    assert!(recorder.block_session("background").is_err());
+    recorder.begin_run(run("desktop-b", "2026-10-26T00:00:02Z"));
+    recorder.flush();
+    let db = Connection::open(dir.db()).unwrap();
+    let outcome: Option<String> = db
+        .query_row("SELECT outcome FROM runs WHERE id='background'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(outcome, None);
+    recorder.end_run("background", "succeeded", "result");
+    assert!(!recorder.is_active("background"));
+}
+
+#[test]
+fn request_history_round_trips_all_tasks_and_cancellation_in_revision_order() {
+    let dir = TempDir::new();
+    let recorder = Recorder::start(&dir.db());
+    recorder.begin_background_run(run("parent", "2026-10-26T00:00:00Z"));
+    recorder.task_link("parent", "parent", 0);
+    for id in ["calculation", "translation", "desktop"] {
+        recorder.begin_background_run(run(id, "2026-10-26T00:00:00Z"));
+        recorder.task_link(id, "parent", 1);
+    }
+    let snapshot = serde_json::json!({"request":{"historyId":"parent","phase":"running"},"tasks":[
+        {"id":1,"kind":"background","phase":"done","result":"180; average 36","startedAt":100,"finishedAt":200},
+        {"id":2,"kind":"background","phase":"running","startedAt":100},
+        {"id":3,"kind":"desktop","phase":"running","steps":[{"text":"type","phase":"running","startedAt":150}]}
+    ]});
+    recorder.task_history("parent", 1, 100, &snapshot);
+    recorder.task_history("parent", 2, 110, &snapshot); // unchanged snapshots are not duplicated
+    let mut cancelled = snapshot.clone();
+    cancelled["tasks"][2]["phase"] = serde_json::json!("cancelled");
+    recorder.task_history("parent", 4, 200, &cancelled);
+    recorder.task_history("parent", 3, 180, &snapshot); // deliberately out-of-order delivery
+    recorder.flush();
+    let history = task_history(&dir.db(), "desktop").unwrap();
+    assert_eq!(history.len(), 3);
+    assert_eq!(
+        history.last().unwrap()["snapshot"]["tasks"][2]["phase"],
+        "cancelled"
+    );
+    assert_eq!(
+        history[0]["snapshot"]["tasks"][0]["result"],
+        "180; average 36"
+    );
+    let reopened = Recorder::start(&dir.db());
+    reopened.flush();
+    assert_eq!(task_history(&dir.db(), "translation").unwrap(), history);
+    assert!(task_history(&dir.db(), "legacy").unwrap().is_empty());
+    crate::flight::delete_record(&dir.db(), "desktop").unwrap();
+    assert_eq!(task_history(&dir.db(), "calculation").unwrap(), history);
+    for id in ["calculation", "translation", "parent"] {
+        crate::flight::delete_record(&dir.db(), id).unwrap();
+    }
+    let db = Connection::open(dir.db()).unwrap();
+    assert_eq!(
+        db.query_row("SELECT COUNT(*) FROM task_history", [], |r| r
+            .get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
+}
+
+#[test]
+fn version_eight_migrates_without_changing_legacy_sessions() {
+    let dir = TempDir::new();
+    let db = Connection::open(dir.db()).unwrap();
+    schema::open(&db).unwrap();
+    db.execute_batch("DROP TABLE task_links; DROP TABLE task_history; PRAGMA user_version=8; INSERT INTO runs(id,task) VALUES('old','keep this');").unwrap();
+    drop(db);
+    let recorder = Recorder::start(&dir.db());
+    recorder.flush();
+    assert_eq!(version_of(&dir.db()), schema::VERSION);
+    assert!(task_history(&dir.db(), "old").unwrap().is_empty());
+    assert_eq!(
+        get_run(&dir.db(), "old").unwrap().unwrap().run.info.task,
+        "keep this"
+    );
+}
+
 fn tables_of(path: &std::path::Path) -> Vec<String> {
     let db = Connection::open(path).unwrap();
     let mut statement = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").unwrap();
@@ -67,7 +157,7 @@ fn a_new_database_is_created_at_the_current_version() {
     let dir = TempDir::new();
     let recorder = Recorder::start(&dir.db());
     recorder.flush();
-    assert_eq!(version_of(&dir.db()), 8);
+    assert_eq!(version_of(&dir.db()), schema::VERSION);
     assert_eq!(
         tables_of(&dir.db()),
         [
@@ -77,6 +167,8 @@ fn a_new_database_is_created_at_the_current_version() {
             "reflections",
             "runs",
             "steps",
+            "task_history",
+            "task_links",
             "verdicts"
         ]
     );
@@ -90,7 +182,7 @@ fn opening_twice_is_idempotent() {
     first.flush();
     let second = Recorder::start(&dir.db());
     second.flush();
-    assert_eq!(version_of(&dir.db()), 8);
+    assert_eq!(version_of(&dir.db()), schema::VERSION);
     assert_eq!(
         list_runs(&dir.db(), 10).unwrap().len(),
         1,
@@ -103,7 +195,7 @@ fn a_newer_database_is_left_untouched_and_nothing_is_recorded() {
     let dir = TempDir::new();
     {
         let db = Connection::open(dir.db()).unwrap();
-        db.execute_batch("CREATE TABLE future (x INTEGER); PRAGMA user_version = 9;")
+        db.execute_batch("CREATE TABLE future (x INTEGER); PRAGMA user_version = 10;")
             .unwrap();
     }
     let recorder = Recorder::start(&dir.db());
@@ -112,9 +204,9 @@ fn a_newer_database_is_left_untouched_and_nothing_is_recorded() {
         recorder.tx.is_none(),
         "a newer schema means a no-op recorder"
     );
-    assert_eq!(version_of(&dir.db()), 9);
+    assert_eq!(version_of(&dir.db()), 10);
     assert_eq!(tables_of(&dir.db()), ["future"]);
-    assert_eq!(list_runs(&dir.db(), 10), Err(StoreError::Newer(9)));
+    assert_eq!(list_runs(&dir.db(), 10), Err(StoreError::Newer(10)));
 }
 
 #[test]
@@ -496,7 +588,7 @@ fn a_version_1_database_is_migrated_without_losing_a_run() {
 
     let recorder = Recorder::start(&dir.db());
     recorder.flush();
-    assert_eq!(version_of(&dir.db()), 8);
+    assert_eq!(version_of(&dir.db()), schema::VERSION);
     assert!(tables_of(&dir.db()).contains(&"verdicts".to_string()));
     let after = get_run(&dir.db(), "old").unwrap().expect("and still reads");
     assert_eq!(
@@ -651,7 +743,7 @@ fn a_version_2_database_is_migrated_and_reads_as_having_no_analyses() {
     assert_eq!(get_analysis(&dir.db(), "any").unwrap(), None);
     let recorder = Recorder::start(&dir.db());
     recorder.flush();
-    assert_eq!(version_of(&dir.db()), 8);
+    assert_eq!(version_of(&dir.db()), schema::VERSION);
     assert!(tables_of(&dir.db()).contains(&"analyses".to_string()));
     assert_eq!(
         list_runs(&dir.db(), 5).unwrap().len(),
@@ -760,7 +852,7 @@ fn a_version_3_database_is_migrated_to_4_and_reads_as_having_no_reflections() {
     assert_eq!(list_reflections(&dir.db(), 5).unwrap(), vec![]);
     let recorder = Recorder::start(&dir.db());
     recorder.flush();
-    assert_eq!(version_of(&dir.db()), 8);
+    assert_eq!(version_of(&dir.db()), schema::VERSION);
     assert!(tables_of(&dir.db()).contains(&"reflections".to_string()));
     assert_eq!(
         list_runs(&dir.db(), 5).unwrap().len(),
@@ -814,7 +906,7 @@ fn a_version_4_database_gains_boxes_rejected_and_old_rows_read_as_zero() {
     );
     let recorder = Recorder::start(&dir.db());
     recorder.flush();
-    assert_eq!(version_of(&dir.db()), 8);
+    assert_eq!(version_of(&dir.db()), schema::VERSION);
     assert_eq!(
         get_analysis(&dir.db(), "old")
             .unwrap()
@@ -884,7 +976,7 @@ fn a_version_5_database_gets_calls_and_the_run_counters() {
     }
     let recorder = Recorder::start(&dir.db());
     recorder.flush();
-    assert_eq!(version_of(&dir.db()), 8);
+    assert_eq!(version_of(&dir.db()), schema::VERSION);
     assert!(tables_of(&dir.db()).contains(&"calls".to_string()));
     let db = Connection::open(dir.db()).unwrap();
     let old: (Option<i64>, Option<i64>) = db
@@ -918,7 +1010,7 @@ fn a_version_6_database_gains_served_model_and_swap_ms() {
     }
     let recorder = Recorder::start(&dir.db());
     recorder.flush();
-    assert_eq!(version_of(&dir.db()), 8);
+    assert_eq!(version_of(&dir.db()), schema::VERSION);
     let run = get_run(&dir.db(), "r6")
         .unwrap()
         .expect("reads migrated run");
@@ -1094,7 +1186,7 @@ fn version_7_calls_gain_locality_and_round_trip() {
     recorder.call(record);
     recorder.flush();
     let calls = crate::flight::calls(&dir.db(), "r7", None).unwrap();
-    assert_eq!(version_of(&dir.db()), 8);
+    assert_eq!(version_of(&dir.db()), schema::VERSION);
     assert_eq!(calls[0].locality, None);
     assert_eq!(calls[0].served_model.as_deref(), Some("canonical"));
     assert_eq!(calls[1].locality.as_deref(), Some("local"));

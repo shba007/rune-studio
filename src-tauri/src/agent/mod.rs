@@ -105,6 +105,9 @@ pub fn start_planned(
     trace.user_prompt(&run_id, original.unwrap_or(&task));
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
+        if let Some(task_id) = board_id {
+            crate::tasks::link_run(&app, task_id, &run_id);
+        }
         let work_app = app.clone();
         let leftovers = scope.token.clone();
         let work_id = run_id.clone();
