@@ -137,7 +137,7 @@ onBeforeUnmount(() => {
           class="mt-3 flex h-10 w-full cursor-pointer items-center gap-3 rounded-xl px-3 text-left text-body text-zinc-400 hover:bg-white/5 hover:text-zinc-100"
           @click="agent.openWorkspace()"
         >
-          <AppIcon name="history" />Goals &amp; Tasks
+          <AppIcon name="history" />Knowledge
         </button>
       </nav>
 

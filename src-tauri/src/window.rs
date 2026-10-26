@@ -5,6 +5,18 @@ use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, WebviewW
 use crate::events::SUMMON;
 
 pub const MAIN: &str = "main";
+pub const PANEL_WIDTH: f64 = 1180.0;
+pub const PANEL_HEIGHT: f64 = 760.0;
+
+pub fn show_panel(window: &WebviewWindow) -> tauri::Result<()> {
+    window.unminimize()?;
+    window.unmaximize()?;
+    window.set_size(LogicalSize::new(PANEL_WIDTH, PANEL_HEIGHT))?;
+    window.center()?;
+    window.set_always_on_top(true)?;
+    window.show()?;
+    window.set_focus()
+}
 
 const EDGE_MARGIN: f64 = 16.0;
 

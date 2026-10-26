@@ -21,17 +21,14 @@ pub fn open(app: &AppHandle, section: Option<&str>) -> tauri::Result<()> {
     }
     let section = clean(section);
     if let Some(window) = app.get_webview_window(WINDOW) {
-        let _ = window.unminimize();
-        window.set_always_on_top(true)?;
-        window.show()?;
-        window.set_focus()?;
+        crate::window::show_panel(&window)?;
         window.emit(SECTION_EVENT, json!({ "section": section }))?;
         return Ok(());
     }
     let url = format!("index.html?view=settings&section={section}");
     let window = WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::App(url.into()))
         .title("Rune Studio Settings")
-        .inner_size(960.0, 640.0)
+        .inner_size(crate::window::PANEL_WIDTH, crate::window::PANEL_HEIGHT)
         .min_inner_size(760.0, 520.0)
         .resizable(true)
         .always_on_top(true)

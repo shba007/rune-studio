@@ -421,10 +421,7 @@ pub fn delete_record(db: &Path, id: &str) -> Result<(), StoreError> {
     Ok(())
 }
 
-pub const WINDOW: &str = "flight";
-pub const OPEN_EVENT: &str = "flight_open";
-
-fn url_safe(text: &str) -> String {
+pub(crate) fn url_safe(text: &str) -> String {
     text.bytes()
         .map(|byte| match byte {
             b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'_' => char::from(byte).to_string(),
@@ -434,33 +431,11 @@ fn url_safe(text: &str) -> String {
 }
 
 pub fn open(app: &tauri::AppHandle, run: Option<&str>) -> tauri::Result<()> {
-    use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
-
     let run = run.filter(|id| !id.is_empty());
     let Some(run) = run else {
         return crate::workspace::open(app, Some("tasks"));
     };
-    if let Some(window) = app.get_webview_window(WINDOW) {
-        let _ = window.unminimize();
-        window.set_always_on_top(true)?;
-        window.show()?;
-        window.set_focus()?;
-        window.emit(OPEN_EVENT, json!({ "runId": run }))?;
-        return Ok(());
-    }
-    let url = format!("index.html?view=flight&run={}", url_safe(run));
-    let window = WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::App(url.into()))
-        .title("Rune Preview")
-        .always_on_top(true)
-        .inner_size(1180.0, 760.0)
-        .min_inner_size(880.0, 560.0)
-        .resizable(true)
-        .decorations(false)
-        .center()
-        .build()?;
-    crate::window::protect(&window)?;
-    window.set_focus()?;
-    Ok(())
+    crate::workspace::open_task(app, run)
 }
 
 pub fn reveal(dir: &Path) -> std::io::Result<()> {

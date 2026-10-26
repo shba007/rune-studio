@@ -183,7 +183,7 @@ pub fn set_api_key(app: AppHandle, key: String) -> AppResult<()> {
 #[tauri::command]
 pub async fn open_workspace(app: AppHandle, section: Option<String>) -> AppResult<()> {
     crate::workspace::open(&app, section.as_deref())
-        .map_err(|err| AppError::Invalid(format!("Could not open Goals & Tasks: {err}")))
+        .map_err(|err| AppError::Invalid(format!("Could not open Knowledge: {err}")))
 }
 
 #[tauri::command]

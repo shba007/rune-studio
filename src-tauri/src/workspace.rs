@@ -12,19 +12,30 @@ fn clean(section: Option<&str>) -> &'static str {
 }
 
 pub fn open(app: &AppHandle, section: Option<&str>) -> tauri::Result<()> {
+    open_view(app, section, None)
+}
+
+pub fn open_task(app: &AppHandle, id: &str) -> tauri::Result<()> {
+    open_view(app, Some("tasks"), Some(id))
+}
+
+fn open_view(app: &AppHandle, section: Option<&str>, run: Option<&str>) -> tauri::Result<()> {
     let section = clean(section);
     if let Some(window) = app.get_webview_window(WINDOW) {
-        let _ = window.unminimize();
-        window.set_always_on_top(true)?;
-        window.show()?;
-        window.set_focus()?;
-        window.emit(SECTION_EVENT, json!({ "section": section }))?;
+        crate::window::show_panel(&window)?;
+        window.emit(SECTION_EVENT, json!({ "section": section, "runId": run }))?;
         return Ok(());
     }
-    let url = format!("index.html?view=workspace&section={section}");
+    let url = match run {
+        Some(id) => format!(
+            "index.html?view=workspace&section={section}&run={}",
+            crate::flight::url_safe(id)
+        ),
+        None => format!("index.html?view=workspace&section={section}"),
+    };
     let window = WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::App(url.into()))
-        .title("Rune Goals & Tasks")
-        .inner_size(1100.0, 740.0)
+        .title("Knowledge")
+        .inner_size(crate::window::PANEL_WIDTH, crate::window::PANEL_HEIGHT)
         .min_inner_size(760.0, 520.0)
         .resizable(true)
         .always_on_top(true)

@@ -5,6 +5,7 @@ import { useEventListener, usePreferredReducedMotion, useRafFn } from '@vueuse/c
 import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 
 import { KIND_ICON, TOOL_LABEL, kindOf, type ActionKind } from '@/config/actions'
+import { DOCK_WIDTH, ORB_SIZE, PAGE_GAP, PAGE_WIDTH } from '@/config/layout'
 import { OVERLAY_MODE } from '@/types/protocol'
 import type {
   AgentState,
@@ -447,8 +448,12 @@ const bubbleStyle = computed(() => {
   const rect = pill.value
   if (!rect) return {}
   const dpr = window.devicePixelRatio || 1
-  const right = (rect.x + rect.width) / dpr - window.screenX
-  const top = (rect.y + rect.height) / dpr - 64 - window.screenY
+  const pageWidth = Math.min(
+    PAGE_WIDTH + PAGE_GAP,
+    Math.max(0, rect.width / dpr - ORB_SIZE - DOCK_WIDTH),
+  )
+  const right = (rect.x + rect.width) / dpr - window.screenX - pageWidth
+  const top = (rect.y + rect.height) / dpr - ORB_SIZE - window.screenY
   return {
     right: `${Math.max(8, window.innerWidth - right)}px`,
     bottom: `${Math.max(8, window.innerHeight - top + 12)}px`,

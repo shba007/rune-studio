@@ -4,7 +4,6 @@ import 'unfonts.css'
 
 import App from './App.vue'
 import ControlOverlay from './components/ControlOverlay.vue'
-import FlightPlayer from './components/FlightPlayer.vue'
 import SettingsWindow from './components/SettingsWindow.vue'
 import WorkspaceWindow from './components/WorkspaceWindow.vue'
 import './style.css'
@@ -25,7 +24,7 @@ const root =
   view === 'overlay'
     ? ControlOverlay
     : view === 'flight'
-      ? FlightPlayer
+      ? WorkspaceWindow
       : view === 'settings'
         ? SettingsWindow
         : view === 'workspace'

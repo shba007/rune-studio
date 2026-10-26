@@ -33,6 +33,8 @@ import {
   type TabId,
 } from '@/config/flight'
 
+const props = defineProps<{ embedded?: boolean; taskId?: string }>()
+const emit = defineEmits<{ back: [] }>()
 const flight = useFlight()
 const stage = ref<InstanceType<typeof FlightStage> | null>(null)
 
@@ -232,6 +234,10 @@ async function openRun(id: string) {
 }
 async function back() {
   await pause()
+  if (props.embedded) {
+    emit('back')
+    return
+  }
   try {
     await invoke('open_workspace', { section: 'tasks' })
   } catch (error) {
@@ -244,6 +250,10 @@ async function reveal() {
   notice.value = await flight.reveal()
 }
 async function closeWindow() {
+  if (props.embedded) {
+    await back()
+    return
+  }
   try {
     await getCurrentWindow().close()
   } catch {
@@ -278,26 +288,38 @@ function onKey(event: KeyboardEvent) {
 }
 
 let unlisten: (() => void) | null = null
+let disposed = false
+watch(
+  () => props.taskId,
+  (id) => {
+    if (props.embedded && id) void openRun(id)
+  },
+)
 onMounted(async () => {
   window.addEventListener('keydown', onKey)
-  const asked = new URLSearchParams(location.search).get('run')
+  const asked = props.taskId ?? new URLSearchParams(location.search).get('run')
   try {
     developer.value =
       (await invoke<{ developerMode?: boolean }>('get_settings')).developerMode === true
   } catch {
     developer.value = false
   }
+  if (disposed) return
   if (asked) await openRun(asked)
   else await back()
+  if (props.embedded || disposed) return
   try {
-    unlisten = await listen<{ runId?: string | null }>('flight_open', async (event) => {
+    const off = await listen<{ runId?: string | null }>('flight_open', async (event) => {
       const id = event.payload?.runId
       if (id) await openRun(id)
       else await back()
     })
+    if (disposed) off()
+    else unlisten = off
   } catch {}
 })
 onBeforeUnmount(() => {
+  disposed = true
   window.removeEventListener('keydown', onKey)
   if (frame) cancelAnimationFrame(frame)
   unlisten?.()
@@ -327,9 +349,20 @@ const verdictLine = computed(() => {
 </script>
 
 <template>
-  <main class="flex h-screen flex-col overflow-hidden bg-black text-zinc-100" data-testid="flight">
-    <TitleBar title="Rune Preview" />
+  <main
+    class="flex min-h-0 flex-col overflow-hidden bg-black text-zinc-100"
+    :class="embedded ? 'h-full flex-1' : 'h-screen'"
+    data-testid="flight"
+  >
+    <TitleBar v-if="!embedded" title="Knowledge" />
     <section v-if="!header" class="flex min-h-0 flex-1 flex-col gap-3 p-6">
+      <button
+        type="button"
+        class="self-start cursor-pointer text-label text-zinc-300 hover:text-white"
+        @click="back"
+      >
+        Back to Tasks
+      </button>
       <p v-if="flight.loading.value" class="m-0 text-zinc-400" data-testid="loading">Loading…</p>
       <p
         v-else-if="flight.problem.value"

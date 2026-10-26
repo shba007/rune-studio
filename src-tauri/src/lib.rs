@@ -176,7 +176,7 @@ pub fn run() {
 
             let show = MenuItem::with_id(app, "show", "Show / hide", true, None::<&str>)?;
             let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
-            let flight = MenuItem::with_id(app, "artifacts", "Goals & Tasks…", true, None::<&str>)?;
+            let flight = MenuItem::with_id(app, "artifacts", "Knowledge…", true, None::<&str>)?;
             let stop = MenuItem::with_id(app, "stop", "Stop", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &settings, &flight, &stop, &quit])?;

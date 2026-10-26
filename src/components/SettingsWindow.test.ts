@@ -34,7 +34,7 @@ describe('release settings availability', () => {
       'Tools',
       'Shortcuts',
       'About',
-      'Goals & Tasks',
+      'Knowledge',
     ])
     expect(wrapper.find('[data-testid="saved"]').exists()).toBe(false)
     wrapper.unmount()

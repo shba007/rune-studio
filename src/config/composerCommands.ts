@@ -7,7 +7,7 @@ export const COMPOSER_COMMANDS = [
     description: 'Choose a screen or window to analyze',
     icon: 'scan',
   },
-  { id: 'goals', command: '/goals', description: 'Open your Goals workspace', icon: 'thinking' },
+  { id: 'goals', command: '/goals', description: 'Open Goals in Knowledge', icon: 'thinking' },
   {
     id: 'tasks',
     command: '/tasks',

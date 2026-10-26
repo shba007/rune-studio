@@ -37,8 +37,9 @@ afterEach(() => {
 it('shows thinking and speech beside the orb with an expanded scaled task window', async () => {
   vi.spyOn(window, 'devicePixelRatio', 'get').mockReturnValue(2)
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
+  let rect = { x: 1000, y: 100, width: 752, height: 672 }
   harness.invoke.mockImplementation(async (command) => {
-    if (command === 'pill_rect') return { x: 200, y: 100, width: 752, height: 672 }
+    if (command === 'pill_rect') return rect
     if (command === 'analysis_state') return EMPTY_SNAPSHOT
     if (command === 'get_settings') return { stopHotkey: 'Escape' }
     return null
@@ -48,10 +49,26 @@ it('shows thinking and speech beside the orb with an expanded scaled task window
   harness.handlers.get('thinking')!({ payload: { text: 'Checking the current step', done: false } })
   await flushPromises()
   expect(wrapper.text()).toContain('Checking the current step')
+  const bubble = wrapper.get('.w-\\[280px\\]')
+  expect((bubble.element as HTMLElement).style.right).toBe(
+    `${window.innerWidth - 596 + window.screenX}px`,
+  )
+  expect((bubble.element as HTMLElement).style.bottom).toBe(
+    `${window.innerHeight - 322 + window.screenY + 12}px`,
+  )
   harness.handlers.get('task_done')!({ payload: { summary: 'Finished the task' } })
   await flushPromises()
   expect(wrapper.text()).toContain('Finished the task')
   expect(wrapper.text()).not.toContain('Checking the current step')
+  rect = { x: 1624, y: 644, width: 128, height: 128 }
+  harness.handlers.get('thinking')!({ payload: { text: 'Collapsed orb', done: false } })
+  await flushPromises()
+  expect((bubble.element as HTMLElement).style.right).toBe(
+    `${window.innerWidth - 876 + window.screenX}px`,
+  )
+  expect((bubble.element as HTMLElement).style.bottom).toBe(
+    `${window.innerHeight - 322 + window.screenY + 12}px`,
+  )
   wrapper.unmount()
 })
 

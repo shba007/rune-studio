@@ -8,7 +8,10 @@ import { problemText, useFlight } from '@/composables/useFlight'
 
 import ArtifactCard from './ArtifactCard.vue'
 
-const props = withDefaults(defineProps<{ agent: Agent; active?: boolean }>(), { active: true })
+const props = withDefaults(
+  defineProps<{ agent: Agent; active?: boolean; openTask?: (id: string) => void }>(),
+  { active: true },
+)
 const flight = useFlight()
 const deleting = ref<string | null>(null)
 const refreshing = ref(false)
@@ -88,7 +91,7 @@ onBeforeUnmount(() => {
         :run="run"
         :deleting="deleting === run.id"
         :delete-disabled="deleting !== null || refreshing"
-        @open="props.agent.openReview(run.id)"
+        @open="props.openTask ? props.openTask(run.id) : props.agent.openReview(run.id)"
         @remove="remove(run.id)"
       />
     </div>

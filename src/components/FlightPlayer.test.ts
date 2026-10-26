@@ -86,6 +86,23 @@ beforeEach(() => {
 })
 
 describe('FlightPlayer states', () => {
+  it('embedded Preview returns to history without opening or closing a native window', async () => {
+    world({})
+    const wrapper = mount(FlightPlayer, { props: { embedded: true, taskId: 'r1' } })
+    await flushPromises()
+    expect(invoke).toHaveBeenCalledWith('flight_run', { id: 'r1' })
+    expect(wrapper.findComponent({ name: 'TitleBar' }).exists()).toBe(false)
+    await wrapper.get('[data-testid="back"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('back')).toHaveLength(1)
+    expect(invoke).not.toHaveBeenCalledWith('open_workspace', expect.anything())
+    expect(nativeWindow.close).not.toHaveBeenCalled()
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await flushPromises()
+    expect(wrapper.emitted('back')).toHaveLength(2)
+    expect(nativeWindow.close).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
   it('seeks the correct desktop video using local video time on the shared task clock', async () => {
     const origin = Date.parse('2026-10-20T10:00:00Z')
     const task = (id: number, start: number, end: number) => ({
