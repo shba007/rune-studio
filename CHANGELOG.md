@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.4.0
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.3.0...v0.4.0)
+
+### 🚀 Enhancements
+
+- Enhance visual analysis features and improve related components ([04dbbae](https://github.com/shba007/rune-studio/commit/04dbbae))
+- Add pose rejection handling and update related components ([1a65326](https://github.com/shba007/rune-studio/commit/1a65326))
+- Enhance step validation and tool metadata handling for planned actions ([be47244](https://github.com/shba007/rune-studio/commit/be47244))
+- Implement task history and linking functionality for background runs ([c4a1e23](https://github.com/shba007/rune-studio/commit/c4a1e23))
+- Implement task timeline and history management for flight tasks ([c7a2173](https://github.com/shba007/rune-studio/commit/c7a2173))
+- Enhance session management and deletion functionality for flight tasks ([3f36ecb](https://github.com/shba007/rune-studio/commit/3f36ecb))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+
 ## v0.3.0
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.2.0...v0.3.0)
