@@ -58,8 +58,8 @@ onMounted(async () => {
 <template>
   <div class="flex flex-col gap-5 text-body">
     <p v-if="toolCalls === 'no'" role="alert">
-      The selected agent model does not support tool calling. Choose a tool-capable model in General
-      settings.
+      The selected agent model does not support tool calling. Choose a tool-capable model in
+      Connections settings.
     </p>
     <label
       ><input

@@ -10,7 +10,9 @@ import HubGroup from './HubGroup.vue'
 import HubRow from './HubRow.vue'
 import SettingsConnectionModels from './SettingsConnectionModels.vue'
 
-defineProps<{ agent: Agent; draft: Settings }>()
+withDefaults(defineProps<{ agent: Agent; draft: Settings; executionOnly?: boolean }>(), {
+  executionOnly: false,
+})
 
 const apiKey = defineModel<string>('apiKey', { default: '' })
 defineEmits<{ 'commit-key': [] }>()
@@ -21,12 +23,13 @@ const { copy, copied } = useClipboard({ copiedDuring: 1600 })
 <template>
   <div class="flex flex-col gap-8">
     <SettingsConnectionModels
+      v-if="!executionOnly"
       :agent="agent"
       :draft="draft"
       v-model:api-key="apiKey"
       @commit-key="$emit('commit-key')"
     />
-    <SettingsVisualAnalysis :draft="draft" />
+    <SettingsVisualAnalysis v-if="!executionOnly" :draft="draft" />
     <HubGroup title="Execution">
       <HubRow
         label="Execution mode"

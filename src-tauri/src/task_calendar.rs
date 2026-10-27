@@ -188,6 +188,41 @@ pub fn current_zone() -> Result<String, String> {
     }
 }
 #[cfg(windows)]
+pub fn local_now(key: &str) -> Result<String, String> {
+    use windows::Win32::{
+        Foundation::{FILETIME, SYSTEMTIME},
+        System::Time::*,
+    };
+    let ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_millis() as u64;
+    let ticks = (ms + 11_644_473_600_000) * 10000;
+    let ft = FILETIME {
+        dwLowDateTime: ticks as u32,
+        dwHighDateTime: (ticks >> 32) as u32,
+    };
+    let mut utc = SYSTEMTIME::default();
+    let mut local = SYSTEMTIME::default();
+    let z = zone(key)?;
+    unsafe {
+        FileTimeToSystemTime(&ft, &mut utc)
+            .and_then(|_| SystemTimeToTzSpecificLocalTimeEx(Some(&z), &utc, &mut local))
+    }
+    .map_err(|e| e.to_string())?;
+    Ok(text(Civil {
+        y: local.wYear as i32,
+        m: local.wMonth as u32,
+        d: local.wDay as u32,
+        h: local.wHour as u32,
+        min: local.wMinute as u32,
+    }))
+}
+#[cfg(not(windows))]
+pub fn local_now(_: &str) -> Result<String, String> {
+    Err("Calendar scheduling requires Windows".into())
+}
+#[cfg(windows)]
 pub fn to_utc(c: Civil, key: &str) -> Result<u64, String> {
     use windows::Win32::{
         Foundation::{FILETIME, SYSTEMTIME},

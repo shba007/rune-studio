@@ -39,8 +39,12 @@ import IconTrash from '~icons/ph/trash-fill'
 import IconMasks from '~icons/ph/mask-happy-fill'
 import IconGraph from '~icons/ph/graph-fill'
 import IconTarget from '~icons/ph/target-bold'
+import IconMagnifyingGlass from '~icons/ph/magnifying-glass-bold'
+import IconDatabase from '~icons/ph/database-bold'
 
 export const icons = {
+  search: IconMagnifyingGlass,
+  data: IconDatabase,
   personality: IconMasks,
   graph: IconGraph,
   target: IconTarget,

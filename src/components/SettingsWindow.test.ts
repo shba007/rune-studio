@@ -30,13 +30,32 @@ describe('release settings availability', () => {
     const wrapper = shallowMount(SettingsWindow)
     expect(wrapper.findAll('nav button').map((button) => button.text())).toEqual([
       'General',
+      'Connections',
       'Agents',
-      'Tools',
+      'Tools & connections',
+      'Capture & recording',
+      'Data & privacy',
       'Shortcuts',
+      'Developer',
       'About',
       'Knowledge',
     ])
     expect(wrapper.find('[data-testid="saved"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+  it('searches applicable sections by settings keywords and retains Knowledge access', async () => {
+    const wrapper = shallowMount(SettingsWindow)
+    await wrapper.get('input[aria-label="Search settings"]').setValue('unmatched-setting')
+    expect(wrapper.text()).toContain('No matching sections')
+    await wrapper.get('input[aria-label="Search settings"]').setValue('voice')
+    expect(wrapper.findAll('nav button').map((button) => button.text())).toEqual([
+      'Connections',
+      'Knowledge',
+    ])
+    await wrapper.get('[data-testid="nav-models"]').trigger('click')
+    expect(wrapper.get('h1').text()).toBe('Connections')
+    await wrapper.get('input[aria-label="Search settings"]').setValue('')
+    expect(wrapper.find('[data-testid="nav-capture"]').exists()).toBe(true)
     wrapper.unmount()
   })
   it('opens task history in the workspace rather than a Settings section, including old links', async () => {

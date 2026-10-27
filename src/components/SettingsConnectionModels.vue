@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { Agent } from '@/composables/useAgent'
 import type { Settings } from '@/types/protocol'
 import BackendBadge from './BackendBadge.vue'
@@ -12,6 +12,30 @@ import AppIcon from './AppIcon.vue'
 const props = defineProps<{ agent: Agent; draft: Settings }>()
 const apiKey = defineModel<string>('apiKey', { default: '' })
 defineEmits<{ 'commit-key': [] }>()
+const detail = ref(false)
+const checking = ref(false)
+const modelSearch = ref('')
+const visibleStatus = computed(() =>
+  props.draft.baseUrl === props.agent.settings.value?.baseUrl ? props.agent.backend.value : null,
+)
+const discovered = computed(() => visibleStatus.value?.models ?? [])
+const filteredModels = computed(() => {
+  const query = modelSearch.value.trim().toLowerCase()
+  return discovered.value.filter((model) => model.id.toLowerCase().includes(query))
+})
+const listAvailable = computed(() => {
+  const status = visibleStatus.value
+  return !!status?.reachable && status.authOk && !status.error && Array.isArray(status.models)
+})
+async function refresh() {
+  if (checking.value) return
+  checking.value = true
+  try {
+    await props.agent.refreshBackend()
+  } finally {
+    checking.value = false
+  }
+}
 watch(
   () => props.draft.models.agent,
   (value) => {
@@ -27,101 +51,239 @@ watch(
 </script>
 <template>
   <div class="flex flex-col gap-8">
-    <HubGroup title="Connection">
-      <HubRow label="Backend">
-        <div class="max-w-96 min-w-0"><BackendBadge :status="agent.backend.value" /></div>
+    <template v-if="!detail">
+      <div
+        class="overflow-hidden rounded-2xl border border-white/10 bg-[#101010]"
+        aria-label="Model connections"
+      >
+        <div
+          class="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 px-5 py-4"
+        >
+          <span class="text-label text-zinc-400">Configured connection</span>
+          <span class="text-caption text-zinc-500">{{
+            listAvailable
+              ? `${discovered.length} ${discovered.length === 1 ? 'model' : 'models'}`
+              : 'Model list unavailable'
+          }}</span>
+        </div>
+        <div class="flex flex-wrap items-center gap-4 px-5 py-5">
+          <span
+            class="grid size-12 shrink-0 place-items-center rounded-xl border border-white/10 bg-black"
+            ><AppIcon name="logo" class="text-zinc-200"
+          /></span>
+          <button
+            type="button"
+            class="min-w-0 flex-1 cursor-pointer text-left"
+            aria-label="Edit model connection"
+            @click="detail = true"
+          >
+            <span class="block text-body font-medium text-zinc-100">Model connection</span>
+            <span class="mt-1 block break-all text-label text-zinc-400">{{ draft.baseUrl }}</span>
+            <span
+              v-if="listAvailable && discovered.length"
+              class="mt-2 block truncate text-caption text-zinc-500"
+              >{{
+                discovered
+                  .slice(0, 4)
+                  .map((model) => model.id)
+                  .join(' · ')
+              }}{{ discovered.length > 4 ? ' · …' : '' }}</span
+            >
+          </button>
+          <div class="flex flex-wrap items-center gap-3">
+            <span v-if="checking" role="status" class="text-label text-zinc-400">Checking…</span>
+            <BackendBadge v-else :status="visibleStatus" />
+            <button
+              type="button"
+              :disabled="checking"
+              class="grid size-9 cursor-pointer place-items-center rounded-full text-zinc-400 hover:bg-white/8 hover:text-white disabled:opacity-40"
+              aria-label="Check the backend again"
+              @click="refresh"
+            >
+              <AppIcon name="refresh" />
+            </button>
+            <button
+              type="button"
+              class="cursor-pointer rounded-full border border-white/15 px-4 py-2 text-label text-zinc-200 hover:bg-white/5"
+              @click="detail = true"
+            >
+              Edit
+            </button>
+          </div>
+        </div>
+      </div>
+      <p class="m-0 text-label leading-relaxed text-zinc-500">
+        Manage the active model server, its API key and model roles. Kit tools are configured under
+        Tools &amp; connections.
+      </p>
+    </template>
+    <template v-else>
+      <header
+        class="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 pb-5"
+      >
         <button
           type="button"
-          class="grid size-8 cursor-pointer place-items-center rounded-full border-0 bg-transparent text-zinc-300 transition hover:bg-white/8 hover:text-white"
-          aria-label="Check the backend again"
-          @click="agent.refreshBackend()"
+          class="flex cursor-pointer items-center gap-2 text-label text-zinc-400 hover:text-white"
+          @click="detail = false"
         >
-          <AppIcon name="refresh" />
+          <AppIcon name="back" size="sm" /> Connections
         </button>
-      </HubRow>
-      <HubInput v-model="draft.baseUrl" label="Base URL" />
-      <HubInput
-        v-model="apiKey"
-        type="password"
-        label="API key"
-        :placeholder="agent.hasApiKey.value ? 'Stored. Type to replace' : 'Not set'"
-        @commit="$emit('commit-key')"
-      >
-        <template #before>
+        <span class="text-caption text-zinc-500">Changes save automatically</span>
+      </header>
+      <HubGroup title="Connection">
+        <HubRow label="Backend">
+          <div class="max-w-96 min-w-0">
+            <BackendBadge :status="checking ? null : visibleStatus" />
+          </div>
           <button
-            v-if="agent.hasApiKey.value"
             type="button"
-            class="flex cursor-pointer items-center gap-1 border-0 bg-transparent text-label text-zinc-500 transition hover:text-[#d71921]"
-            @click="agent.saveApiKey('')"
+            class="grid size-8 cursor-pointer place-items-center rounded-full border-0 bg-transparent text-zinc-300 transition hover:bg-white/8 hover:text-white"
+            aria-label="Check the backend again"
+            :disabled="checking"
+            @click="refresh"
           >
-            <AppIcon name="trash" size="sm" />
-            Remove
+            <AppIcon name="refresh" />
           </button>
+        </HubRow>
+        <HubInput
+          v-model="draft.baseUrl"
+          label="Base URL"
+          hint="Enter the server root without /v1; Studio adds the API path."
+        />
+        <HubInput
+          v-model="apiKey"
+          type="password"
+          label="API key"
+          hint="The key is stored separately when you leave this field."
+          :placeholder="agent.hasApiKey.value ? 'Stored. Type to replace' : 'Not set'"
+          @commit="$emit('commit-key')"
+        >
+          <template #before>
+            <button
+              v-if="agent.hasApiKey.value"
+              type="button"
+              class="flex cursor-pointer items-center gap-1 border-0 bg-transparent text-label text-zinc-500 transition hover:text-[#d71921]"
+              @click="agent.saveApiKey('')"
+            >
+              <AppIcon name="trash" size="sm" />
+              Remove
+            </button>
+          </template>
+        </HubInput>
+      </HubGroup>
+
+      <section
+        class="flex flex-col gap-3 border-t border-white/8 pt-6"
+        aria-label="Discovered models"
+      >
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 class="m-0 text-body text-zinc-200">Discovered models</h2>
+            <p class="mt-1 mb-0 text-caption text-zinc-500">
+              {{
+                listAvailable
+                  ? `${discovered.length} ${discovered.length === 1 ? 'model' : 'models'} reported by the server`
+                  : 'Model list unavailable. Check the connection.'
+              }}
+            </p>
+          </div>
+          <button
+            type="button"
+            :disabled="checking"
+            class="cursor-pointer text-label text-zinc-400 hover:text-white disabled:opacity-40"
+            @click="refresh"
+          >
+            {{ checking ? 'Checking…' : 'Reload models' }}
+          </button>
+        </div>
+        <template v-if="listAvailable && discovered.length">
+          <input
+            v-model="modelSearch"
+            type="search"
+            aria-label="Search discovered models"
+            placeholder="Search models"
+            class="h-10 w-full rounded-xl bg-white/5 px-3 text-label text-zinc-100 outline-none placeholder:text-zinc-500 focus-visible:ring-1 focus-visible:ring-white/30"
+          />
+          <ul class="m-0 max-h-56 list-none overflow-y-auto rounded-xl border border-white/8 p-0">
+            <li
+              v-for="model in filteredModels"
+              :key="model.id"
+              class="break-all border-b border-white/8 px-4 py-3 text-label text-zinc-300 last:border-0"
+            >
+              {{ model.id }}
+            </li>
+          </ul>
+          <p v-if="!filteredModels.length" role="status" class="m-0 text-caption text-zinc-500">
+            No matching models.
+          </p>
         </template>
-      </HubInput>
-    </HubGroup>
+        <p v-else-if="listAvailable" class="m-0 text-caption text-zinc-500">
+          The server reported no models.
+        </p>
+      </section>
 
-    <HubGroup title="Models">
-      <p class="m-0 mb-2 text-label text-zinc-400">
-        Choose a model for each job. Visual Analysis requires an explicit Analysis model with image
-        input and tool calling. Other optional roles can use the agent model when empty. Open Model
-        capabilities to check what each model supports.
-      </p>
-      <datalist id="discovered-models-list">
-        <option v-for="m in agent.backend.value?.models ?? []" :key="m.id" :value="m.id" />
-      </datalist>
+      <HubGroup title="Models">
+        <p class="m-0 mb-2 text-label text-zinc-400">
+          Choose a model for each job. Visual Analysis requires an explicit Analysis model with
+          image input and tool calling. Other optional roles can use the agent model when empty.
+          Open Model capabilities to check what each model supports.
+        </p>
+        <datalist id="discovered-models-list">
+          <option v-for="m in discovered" :key="m.id" :value="m.id" />
+        </datalist>
 
-      <ModelRoleRow
-        v-model="draft.models.agent"
-        role-label="Agent"
-        role-key="agent"
-        :agent-model="draft.models.agent"
-        :models="agent.backend.value?.models ?? []"
-        placeholder="e.g. gemma-4-12b-it"
-      />
-      <ModelRoleRow
-        v-model="draft.models.verifier"
-        role-label="Verifier"
-        role-key="verifier"
-        :agent-model="draft.models.agent"
-        :models="agent.backend.value?.models ?? []"
-      />
-      <ModelRoleRow
-        v-model="draft.models.analysis"
-        role-label="Visual Analysis"
-        role-key="analysis"
-        :agent-model="draft.models.agent"
-        :models="agent.backend.value?.models ?? []"
-      />
-      <ModelRoleRow
-        v-model="draft.models.voice"
-        role-label="Voice"
-        role-key="voice"
-        :agent-model="draft.models.agent"
-        :models="agent.backend.value?.models ?? []"
-      />
-      <ModelRoleRow
-        v-model="draft.models.decision"
-        role-label="Decision"
-        role-key="decision"
-        :agent-model="draft.models.agent"
-        :models="agent.backend.value?.models ?? []"
-      />
-      <ModelRoleRow
-        v-model="draft.models.advisor"
-        role-label="Advisor"
-        role-key="advisor"
-        :agent-model="draft.models.agent"
-        :models="agent.backend.value?.models ?? []"
-      />
+        <ModelRoleRow
+          v-model="draft.models.agent"
+          role-label="Agent"
+          role-key="agent"
+          :agent-model="draft.models.agent"
+          :models="discovered"
+          placeholder="e.g. gemma-4-12b-it"
+        />
+        <ModelRoleRow
+          v-model="draft.models.verifier"
+          role-label="Verifier"
+          role-key="verifier"
+          :agent-model="draft.models.agent"
+          :models="discovered"
+        />
+        <ModelRoleRow
+          v-model="draft.models.analysis"
+          role-label="Visual Analysis"
+          role-key="analysis"
+          :agent-model="draft.models.agent"
+          :models="discovered"
+        />
+        <ModelRoleRow
+          v-model="draft.models.voice"
+          role-label="Voice"
+          role-key="voice"
+          :agent-model="draft.models.agent"
+          :models="discovered"
+        />
+        <ModelRoleRow
+          v-model="draft.models.decision"
+          role-label="Decision"
+          role-key="decision"
+          :agent-model="draft.models.agent"
+          :models="discovered"
+        />
+        <ModelRoleRow
+          v-model="draft.models.advisor"
+          role-label="Advisor"
+          role-key="advisor"
+          :agent-model="draft.models.agent"
+          :models="discovered"
+        />
 
-      <HubToggle
-        v-model="draft.fastChecks"
-        label="Fast checks"
-        hint="A server that loads one model at a time swaps models for every fast check, which can add 10 seconds or more. Leave this off there."
-      />
-      <HubInput v-if="draft.fastChecks" v-model="draft.decisionUrl" label="Decision URL" />
-      <HubToggle v-model="draft.showThinking" label="Show thinking" />
-    </HubGroup>
+        <HubToggle
+          v-model="draft.fastChecks"
+          label="Fast checks"
+          hint="A server that loads one model at a time swaps models for every fast check, which can add 10 seconds or more. Leave this off there."
+        />
+        <HubInput v-if="draft.fastChecks" v-model="draft.decisionUrl" label="Decision URL" />
+      </HubGroup>
+      <slot />
+    </template>
   </div>
 </template>

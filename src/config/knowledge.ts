@@ -216,7 +216,7 @@ export const knowledgeConcepts: KnowledgeConcept[] = [
     example:
       'Agree on a feasible fitness plan, then receive an approved 7 AM jogging reminder and a progress question.',
     today:
-      'Compare ranked routes using an approved goal and its personality, then explicitly save a preferred route. Create and schedule tasks separately; daily, weekly and monthly schedules keep the recorded timezone, and short months use their last day. Reminders require your action. Visual Analysis reminders open fresh capture selection; you confirm completion. Automatic pathway-to-task generation and proactive coaching remain future work.',
+      'Compare ranked routes using an approved goal and its personality, then save a preferred route. Draft up to seven first-week tasks using that route and existing linked work. Edit each task, mode and suggested schedule, then approve creation individually. Drafts need protected storage consent and verified-local inference. First occurrences stay within the draft week; approved recurrence can continue afterward. Reminders require your action. Visual Analysis still needs fresh capture selection and your completion report. Automatic execution and proactive coaching remain future work.',
   },
 ]
 export const knowledgeLinks = [
@@ -243,5 +243,5 @@ export const knowledgeLinks = [
   ['safety', 'tasks', 'gates execution'],
   ['safety', 'personalities', 'checks conflicting edits'],
   ['goals', 'pathways', 'compares proposed routes'],
-  ['pathways', 'tasks', 'planned: proposes work'],
+  ['pathways', 'tasks', 'proposes first-week work for approval'],
 ] as const

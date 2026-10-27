@@ -58,6 +58,8 @@ pub struct Entry {
     requested_kind: Option<String>,
     #[serde(default)]
     pathways: Option<crate::intake_pathways::PathwaySet>,
+    #[serde(default)]
+    task_proposals: Option<crate::task_proposals::Draft>,
     error: Option<String>,
     created: String,
     task_id: Option<String>,
@@ -158,9 +160,9 @@ fn decode_entry(store: &LifeStore, body: &str) -> Result<Entry, String> {
         entry.status = "interrupted".into();
         entry.error=Some("Execution dispatch was interrupted. Inspect task history before submitting another attempt.".into());
     }
-    if entry.status == "pathway_planning" {
+    if matches!(entry.status.as_str(), "pathway_planning" | "task_planning") {
         entry.status = "goal_ready".into();
-        entry.error=Some("Pathway comparison was interrupted. Your previously approved choice is preserved; compare again when ready.".into());
+        entry.error=Some("Planning was interrupted. Earlier approved choices and drafts are preserved; retry when ready.".into());
     }
     Ok(entry)
 }
@@ -636,6 +638,7 @@ fn submit_intent(
         outcome_metric: None,
         requested_kind,
         pathways: None,
+        task_proposals: None,
         error: None,
         created: crate::trace::now_utc(),
         task_id: None,
@@ -688,7 +691,7 @@ pub fn stop() {
     for entry in ENTRIES.locked().values() {
         if matches!(
             entry.status.as_str(),
-            "classifying" | "clarifying" | "dispatching" | "pathway_planning"
+            "classifying" | "clarifying" | "dispatching" | "pathway_planning" | "task_planning"
         ) {
             entry.token.cancel();
         }
@@ -698,7 +701,7 @@ pub fn busy() -> bool {
     ENTRIES.locked().values().any(|e| {
         matches!(
             e.status.as_str(),
-            "classifying" | "clarifying" | "dispatching" | "pathway_planning"
+            "classifying" | "clarifying" | "dispatching" | "pathway_planning" | "task_planning"
         )
     })
 }
@@ -757,6 +760,7 @@ mod tests {
             outcome_metric: None,
             requested_kind: None,
             pathways: None,
+            task_proposals: None,
             error: None,
             created: crate::trace::now_utc(),
             task_id: None,
@@ -783,6 +787,7 @@ mod tests {
                 selected: None,
                 approved: None,
             });
+            e.task_proposals = Some(crate::task_proposals::tests::sample());
             assert!(store_entry(&store, &e).is_err());
             store.set_consent(*class, true, "test").unwrap();
             store_entry(&store, &e).unwrap();
@@ -805,6 +810,10 @@ mod tests {
             assert_eq!(restored.text, e.text);
             assert!(restored.voice_wav.is_empty());
             assert_eq!(
+                restored.task_proposals.as_ref().unwrap().assessment,
+                "PROPOSAL_ASSESSMENT_CANARY"
+            );
+            assert_eq!(
                 restored.pathways.as_ref().unwrap().assessment,
                 "PATHWAY_CANARY"
             );
@@ -823,6 +832,17 @@ mod tests {
             let recovered = decode_entry(&store, &saved.body).unwrap();
             assert_eq!(recovered.status, "goal_ready");
             assert_eq!(recovered.pathways.unwrap().assessment, "PATHWAY_CANARY");
+            e.revision = 4;
+            e.status = "task_planning".into();
+            store_entry(&store, &e).unwrap();
+            let saved = store.get_record("intake-test-4").unwrap().unwrap();
+            let recovered = decode_entry(&store, &saved.body).unwrap();
+            assert_eq!(recovered.status, "goal_ready");
+            assert!(
+                recovered.task_proposals.unwrap().tasks[0]
+                    .created_task_id
+                    .is_none()
+            );
             drop(store);
             let _ = std::fs::remove_file(&path);
         }
@@ -1008,6 +1028,117 @@ pub async fn decision_select_pathway(
 }
 
 #[tauri::command]
+pub async fn decision_propose_tasks(
+    app: AppHandle,
+    id: String,
+    revision: u64,
+) -> Result<(), String> {
+    let _serial = SERIAL.lock().await;
+    let mut e = ready_goal(&app, &id, revision)?;
+    let goal = e.approved_goal.clone().ok_or("Approve the goal first")?;
+    let pathways = e
+        .pathways
+        .as_ref()
+        .ok_or("Choose a preferred pathway first")?;
+    if pathways.goal != goal {
+        return Err("Compare pathways for the current approved goal first".into());
+    }
+    let pathway = pathways
+        .approved
+        .clone()
+        .ok_or("Choose a preferred pathway first")?;
+    let zone = crate::task_calendar::current_zone()?;
+    let start = crate::task_calendar::local_now(&zone)?;
+    let existing = crate::workspace_tasks::proposal_context(&app, &e.id)?;
+    let draft_id = uid()?;
+    e.token = CancelToken::default();
+    e.status = "task_planning".into();
+    e.error = None;
+    commit(&app, &mut e)?;
+    let result = tokio::time::timeout(std::time::Duration::from_secs(90), infer(&app, &e,
+        include_str!("../prompts/intake/tasks.md"),
+        &json!({"approvedGoal":goal,"preferredPathway":pathway,"currentLocalTime":start,"timezone":zone,"existingLinkedTasks":existing}),
+        &crate::task_proposals::schema())).await.map_err(|_| "Task proposal generation timed out".to_string())
+        .and_then(|r| r).and_then(|value| crate::task_proposals::parse(value, draft_id, goal, pathway, start, zone));
+    e.status = "goal_ready".into();
+    if !consent(&app, e.class) {
+        e.error = Some("Storage consent was removed. No new task proposals were saved.".into());
+        ENTRIES.locked().insert(e.id.clone(), e);
+        let _ = app.emit("decisions_changed", ());
+        return Err("Storage consent was removed".into());
+    }
+    if e.token.is_cancelled() {
+        e.error = Some("Task planning stopped. Your earlier draft is preserved.".into());
+        commit(&app, &mut e)?;
+        return Err("Task planning stopped".into());
+    }
+    match result {
+        Ok(draft) => {
+            e.task_proposals = Some(draft);
+            commit(&app, &mut e)
+        }
+        Err(error) => {
+            e.error = Some(error.clone());
+            commit(&app, &mut e)?;
+            Err(error)
+        }
+    }
+}
+#[tauri::command]
+pub async fn decision_review_task(
+    app: AppHandle,
+    id: String,
+    revision: u64,
+    proposal_id: String,
+    approval: Option<crate::task_proposals::Approval>,
+) -> Result<(), String> {
+    let _serial = SERIAL.lock().await;
+    let mut e = ready_goal(&app, &id, revision)?;
+    let goal = e.approved_goal.as_ref().ok_or("Approve the goal first")?;
+    let pathway = e
+        .pathways
+        .as_ref()
+        .and_then(|p| p.approved.as_ref())
+        .ok_or("Choose a preferred pathway first")?;
+    let draft = e
+        .task_proposals
+        .as_mut()
+        .ok_or("Generate task proposals first")?;
+    draft.check_context(goal, pathway)?;
+    let index = draft
+        .tasks
+        .iter()
+        .position(|t| t.id == proposal_id)
+        .ok_or("Choose a task in this draft")?;
+    if draft.tasks[index].created_task_id.is_some() || draft.tasks[index].dismissed {
+        return Err("This proposal was already reviewed".into());
+    }
+    if let Some(approval) = approval {
+        approval.validate()?;
+        draft.check_schedule(approval.schedule.as_ref())?;
+        let task_id = draft.task_id(&proposal_id)?;
+        let created =
+            crate::workspace_tasks::create_proposed(&app, task_id, &e.id, e.class, approval)?;
+        let proposal = &mut draft.tasks[index];
+        proposal.created_task_id = Some(created.id);
+        proposal.title = created.title;
+        proposal.instructions = created.instructions.unwrap_or_default();
+        proposal.execution_mode = created.execution_mode;
+        proposal.schedule = created
+            .schedule
+            .map(|s| crate::workspace_tasks::ScheduleInput {
+                local: s.local,
+                zone: s.zone,
+                repeat: s.repeat,
+                anchor_day: Some(s.anchor_day),
+            });
+    } else {
+        draft.tasks[index].dismissed = true;
+    }
+    e.error = None;
+    commit(&app, &mut e)
+}
+#[tauri::command]
 pub async fn decision_answer(
     app: AppHandle,
     id: String,
@@ -1030,7 +1161,7 @@ pub async fn decision_answer(
     e.token = CancelToken::default();
     e.error = None;
     if choice == "settings" {
-        return crate::hub::open(&app, Some("general")).map_err(|err| err.to_string());
+        return crate::hub::open(&app, Some("data")).map_err(|err| err.to_string());
     }
     if choice == "cancel" {
         if let Some(approved) = &e.approved_goal {
@@ -1092,6 +1223,7 @@ pub async fn decision_answer(
             if choice == "approve" {
                 if e.approved_goal != e.goal {
                     e.pathways = None;
+                    e.task_proposals = None;
                     if e.approved_goal
                         .as_ref()
                         .map(|g| (&g["outcome"], &g["success"]))

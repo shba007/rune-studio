@@ -119,7 +119,7 @@ pub struct TaskView {
     pub completed_steps: u64,
     pub total_steps: u64,
 }
-#[derive(Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScheduleInput {
     pub local: String,
@@ -173,7 +173,7 @@ fn load(app: &AppHandle) -> Result<Vec<WorkspaceTask>, String> {
 }
 fn save(app: &AppHandle, task: &mut WorkspaceTask) -> Result<(), String> {
     if !intake::consent(app, task.class) {
-        return Err("Enable protected storage consent for this task's privacy category in Settings → Goals & context.".into());
+        return Err("Enable protected storage consent for this task's privacy category in Settings → Data & privacy.".into());
     }
     task.revision += 1;
     let store = intake::store(app)?;
@@ -394,6 +394,53 @@ pub fn workspace_task_create(
     }
     save(&app, &mut task)?;
     Ok(task.id)
+}
+pub(crate) fn proposal_context(
+    app: &AppHandle,
+    goal_id: &str,
+) -> Result<serde_json::Value, String> {
+    Ok(serde_json::Value::Array(load(app)?.into_iter().filter(|t| t.parent_goal_id.as_deref() == Some(goal_id)).map(|t| serde_json::json!({"title":t.title,"instructions":t.instructions,"mode":t.execution_mode,"schedule":t.schedule,"latestState":t.occurrences.last().map(|o| &o.state)})).collect()))
+}
+pub(crate) fn create_proposed(
+    app: &AppHandle,
+    id: String,
+    goal_id: &str,
+    class: DataClass,
+    approval: crate::task_proposals::Approval,
+) -> Result<WorkspaceTask, String> {
+    let _guard = MUTATION.locked();
+    if let Some(existing) = load(app)?.into_iter().find(|t| t.id == id) {
+        if existing.parent_goal_id.as_deref() != Some(goal_id) || existing.class != class {
+            return Err(
+                "Conflict: this proposal's task belongs to a different goal or privacy category"
+                    .into(),
+            );
+        }
+        return Ok(existing);
+    }
+    approval.validate()?;
+    let class = parent(app, Some(goal_id), class)?;
+    let schedule = approval.schedule.map(make_schedule).transpose()?;
+    let mut task = WorkspaceTask {
+        id,
+        revision: 0,
+        title: approval.title.trim().into(),
+        instructions: Some(approval.instructions.trim().into()),
+        execution_mode: approval.execution_mode,
+        parent_goal_id: Some(goal_id.into()),
+        class,
+        created_ms: now(),
+        schedule,
+        paused: false,
+        occurrences: vec![],
+        error: None,
+        legacy_task_id: None,
+    };
+    if task.schedule.is_none() {
+        task.occurrences.push(occurrence(None)?);
+    }
+    save(app, &mut task)?;
+    Ok(task)
 }
 fn progress(app: &AppHandle, task: &WorkspaceTask) -> (u64, u64) {
     let Some(run) = task.occurrences.last().and_then(|o| o.run_id.as_ref()) else {

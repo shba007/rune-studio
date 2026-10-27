@@ -70,7 +70,61 @@ pub async fn installed_versions() -> serde_json::Value {
     .await
     .ok()
     .flatten();
-    serde_json::json!({"studio":crate::VERSION,"cli":cli})
+    serde_json::json!({"studio":crate::VERSION,"cli":cli,"platform":std::env::consts::OS,"arch":std::env::consts::ARCH})
+}
+
+fn project_link(target: &str) -> Result<&'static str, String> {
+    match target {
+        "docs" => Ok("https://github.com/shba007/rune-studio#readme"),
+        "releases" => Ok("https://github.com/shba007/rune-studio/releases"),
+        "feedback" => Ok("https://github.com/shba007/rune-studio/issues/new/choose"),
+        "license" => Ok("https://github.com/shba007/rune-studio/blob/main/LICENSE"),
+        _ => Err("Choose a supported Rune Studio help link".into()),
+    }
+}
+#[tauri::command]
+pub fn open_project_link(target: String) -> Result<(), String> {
+    let url = project_link(&target)?;
+    #[cfg(windows)]
+    let mut command = {
+        use std::os::windows::process::CommandExt;
+        let mut c = std::process::Command::new("rundll32.exe");
+        c.arg("url.dll,FileProtocolHandler")
+            .arg(url)
+            .creation_flags(0x08000000);
+        c
+    };
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut c = std::process::Command::new("open");
+        c.arg(url);
+        c
+    };
+    #[cfg(all(not(windows), not(target_os = "macos")))]
+    let mut command = {
+        let mut c = std::process::Command::new("xdg-open");
+        c.arg(url);
+        c
+    };
+    command.spawn().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod project_link_tests {
+    #[test]
+    fn help_links_are_fixed_project_destinations_only() {
+        for target in ["docs", "releases", "feedback", "license"] {
+            assert!(
+                super::project_link(target)
+                    .unwrap()
+                    .starts_with("https://github.com/shba007/rune-studio")
+            );
+        }
+        for target in ["https://example.com", "file:///secret", "../other", ""] {
+            assert!(super::project_link(target).is_err());
+        }
+    }
 }
 
 #[tauri::command]
@@ -113,7 +167,6 @@ pub fn save_settings(
             || crate::analysis::state::in_flight(analysis.status),
     )?;
     settings::save(&app, &settings)?;
-    crate::hub::changed(&app);
 
     let next = Hotkeys::from_settings(&settings);
     if settings.external_agent && !was_on {
@@ -124,6 +177,7 @@ pub fn save_settings(
     let mode_changed = was_on != settings.external_agent;
     let visual_changed = state.settings.locked().visual_analysis != settings.visual_analysis;
     *state.settings.locked() = settings;
+    crate::hub::changed(&app);
     if mode_changed {
         state.screen_requests.locked().cancel();
     }
@@ -195,6 +249,8 @@ pub async fn open_settings_window(app: AppHandle, section: Option<String>) -> Ap
 #[derive(Clone, serde::Serialize)]
 pub struct BackendProbe {
     revision: u64,
+    #[serde(rename = "baseUrl")]
+    base_url: String,
     status: BackendStatus,
 }
 
@@ -205,6 +261,7 @@ pub async fn check_backend(app: AppHandle, state: State<'_, AppState>) -> AppRes
     let settings = state.settings.locked().clone();
     let probe = BackendProbe {
         revision,
+        base_url: settings.base_url.clone(),
         status: backend::check(&state.http, &settings, settings::api_key().as_deref()).await,
     };
     let _ = app.emit("backend_status", &probe);

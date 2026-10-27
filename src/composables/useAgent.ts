@@ -82,10 +82,13 @@ export function useAgent() {
   const state = ref<AgentState>('idle')
   const backend = ref<BackendStatus | null>(null)
   let backendRevision = 0
+  let backendBaseUrl: string | undefined
   let backendChecks = 0
   function applyBackend(probe: BackendProbe) {
+    if (probe.baseUrl && settings.value && probe.baseUrl !== settings.value.baseUrl) return
     if (probe && Number.isFinite(probe.revision) && probe.revision >= backendRevision) {
       backendRevision = probe.revision
+      backendBaseUrl = probe.baseUrl
       backend.value = probe.status
     }
   }
@@ -236,7 +239,16 @@ export function useAgent() {
   }, 15000)
 
   async function refreshSettings() {
-    settings.value = (await call<Settings>('get_settings')) ?? null
+    const next = (await call<Settings>('get_settings')) ?? null
+    if (
+      next &&
+      ((settings.value && next.baseUrl !== settings.value.baseUrl) ||
+        (backendBaseUrl && next.baseUrl !== backendBaseUrl))
+    ) {
+      backend.value = null
+      backendBaseUrl = undefined
+    }
+    settings.value = next
     hasApiKey.value = (await call<boolean>('has_api_key')) ?? false
     bridge.value = (await call<BridgeInfo>('bridge_info')) ?? null
   }
@@ -474,8 +486,7 @@ export function useAgent() {
         screenRequest.value = event.payload
       }),
       await listen('settings_changed', () => {
-        void refreshSettings()
-        void refreshBackend()
+        void refreshSettings().then(() => refreshBackend())
       }),
     )
     await refreshSettings()

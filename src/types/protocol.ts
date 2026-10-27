@@ -90,6 +90,7 @@ export interface BackendStatus {
 
 export interface BackendProbe {
   revision: number
+  baseUrl?: string
   status: BackendStatus
 }
 

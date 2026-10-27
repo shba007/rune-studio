@@ -280,11 +280,11 @@ function keyboardPan(event: KeyboardEvent) {
         <h2 class="m-0 text-body text-zinc-100">The Life Harness direction</h2>
         <p class="mb-0 text-label leading-relaxed text-zinc-400">
           The intended loop is clarify → compare pathways → agree on work → act → review evidence →
-          adapt. Goal clarification and pathway comparison are available; automatic links from a
-          selected route to execution are future work. Pathways may span a week, a month, or a year.
-          Explicit task reminders, parent links and user-reported outcome tracking are available.
-          Proactive coaching, broad context collection and automatic outcome measurement remain
-          future cycles.
+          adapt. Goal clarification, pathway comparison and first-week task proposals are available.
+          Review task details and schedules before approving creation; creation never starts
+          execution. Pathways may span a week, a month, or a year. Explicit task reminders, parent
+          links and user-reported outcome tracking are available. Proactive coaching, broad context
+          collection and automatic outcome measurement remain future cycles.
         </p>
       </div>
     </section>

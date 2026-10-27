@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import type { DecisionAnswer, IntakeEntry } from '@/types/decisions'
+import type { DecisionAnswer, IntakeEntry, TaskApproval } from '@/types/decisions'
 import { problemText } from './useFlight'
 export type DecisionModel = ReturnType<typeof useDecisions>
 
@@ -15,7 +15,9 @@ export function useDecisions() {
   const off: (() => void)[] = []
   const busy = computed(() =>
     entries.value.some((e) =>
-      ['classifying', 'clarifying', 'dispatching', 'pathway_planning'].includes(e.status),
+      ['classifying', 'clarifying', 'dispatching', 'pathway_planning', 'task_planning'].includes(
+        e.status,
+      ),
     ),
   )
   const questions = computed(() => entries.value.filter((e) => e.question))
@@ -83,6 +85,29 @@ export function useDecisions() {
       await refresh()
     }
   }
+  async function taskProposalAction(
+    entry: IntakeEntry,
+    proposalId?: string,
+    approval?: TaskApproval | null,
+  ) {
+    if (pending.value) return
+    pending.value = true
+    error.value = ''
+    let failure = ''
+    try {
+      await invoke(proposalId ? 'decision_review_task' : 'decision_propose_tasks', {
+        id: entry.id,
+        revision: entry.revision,
+        ...(proposalId ? { proposalId, approval: approval ?? null } : {}),
+      })
+    } catch (err) {
+      failure = problemText(err)
+    } finally {
+      pending.value = false
+      await refresh()
+      if (failure) error.value = failure
+    }
+  }
   return {
     entries,
     questions,
@@ -94,6 +119,9 @@ export function useDecisions() {
     answer,
     comparePathways: (entry: IntakeEntry) => pathwayAction(entry),
     selectPathway: (entry: IntakeEntry, id: string) => pathwayAction(entry, id),
+    proposeTasks: (entry: IntakeEntry) => taskProposalAction(entry),
+    reviewTask: (entry: IntakeEntry, id: string, approval: TaskApproval | null) =>
+      taskProposalAction(entry, id, approval),
     refine: async (entry: IntakeEntry) => {
       if (pending.value) return
       pending.value = true

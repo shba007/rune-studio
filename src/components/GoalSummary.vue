@@ -8,11 +8,13 @@ const reviewing = computed(() => !!props.entry.question && !!props.entry.approve
 const status = computed(() =>
   props.entry.status === 'pathway_planning'
     ? 'Comparing routes'
-    : reviewing.value
-      ? 'Review changes'
-      : props.entry.approvedGoal
-        ? 'Approved goal'
-        : 'Defining your goal',
+    : props.entry.status === 'task_planning'
+      ? 'Drafting first-week tasks'
+      : reviewing.value
+        ? 'Review changes'
+        : props.entry.approvedGoal
+          ? 'Approved goal'
+          : 'Defining your goal',
 )
 </script>
 <template>

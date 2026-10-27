@@ -12,7 +12,14 @@ import SettingsReview from './SettingsReview.vue'
 import RecordingControls from './RecordingControls.vue'
 import SettingsGoalContext from './SettingsGoalContext.vue'
 
-defineProps<{ agent: Agent; draft: Settings }>()
+withDefaults(
+  defineProps<{
+    agent: Agent
+    draft: Settings
+    view?: 'all' | 'general' | 'models' | 'capture' | 'developer'
+  }>(),
+  { view: 'all' },
+)
 
 const DEBUG_STATES: AgentState[] = [
   'idle',
@@ -34,8 +41,8 @@ async function revealDeveloper() {
 
 <template>
   <div class="flex flex-col gap-8">
-    <SettingsGoalContext :draft="draft" />
-    <HubGroup title="Model input">
+    <SettingsGoalContext v-if="view === 'all'" :draft="draft" />
+    <HubGroup v-if="view === 'all' || view === 'models'" title="Model input">
       <HubRow
         label="Model input resolution"
         hint="Limits images sent to models for faster inference. Independent of saved screenshot and recording quality."
@@ -53,11 +60,8 @@ async function revealDeveloper() {
         </select>
       </HubRow>
     </HubGroup>
-    <HubGroup title="Reflection">
-      <p class="m-0 text-label text-zinc-500">Self reflection is unavailable in this release.</p>
-    </HubGroup>
 
-    <HubGroup title="Recording">
+    <HubGroup v-if="view === 'all' || view === 'capture'" title="Recording">
       <SettingsReview :draft="draft" />
       <HubToggle
         v-model="draft.demoMode"
@@ -66,7 +70,7 @@ async function revealDeveloper() {
       />
     </HubGroup>
 
-    <HubGroup title="Capture quality">
+    <HubGroup v-if="view === 'all' || view === 'capture'" title="Capture quality">
       <HubRow
         label="Screenshot and recording resolution"
         hint="Quality of new saved screenshots and recordings. Limits the longest edge without enlarging captures. Native preserves captured dimensions. Model input resolution is independent; video remains silent at 2 fps."
@@ -86,11 +90,20 @@ async function revealDeveloper() {
       <RecordingControls />
     </HubGroup>
 
-    <HubGroup title="Safety">
-      <HubToggle v-model="draft.askEveryAction" label="Ask before every action" />
+    <HubGroup v-if="view === 'all' || view === 'general'" title="Safety &amp; behavior">
+      <HubToggle
+        v-model="draft.askEveryAction"
+        label="Ask before every action"
+        hint="Request approval for each action, in addition to existing safety checks."
+      /><HubToggle
+        v-if="view === 'general'"
+        v-model="draft.showThinking"
+        label="Show thinking"
+        hint="Show model thinking in the orb bubble when available."
+      />
     </HubGroup>
 
-    <HubGroup title="Developer">
+    <HubGroup v-if="view === 'all' || view === 'developer'" title="Developer tools">
       <HubToggle
         v-model="draft.developerMode"
         label="Developer mode"
@@ -99,7 +112,7 @@ async function revealDeveloper() {
     </HubGroup>
 
     <details
-      v-if="draft.developerMode"
+      v-if="(view === 'all' || view === 'developer') && draft.developerMode"
       ref="developer"
       class="rounded-2xl bg-white/5 px-5 py-3"
       @toggle="revealDeveloper"

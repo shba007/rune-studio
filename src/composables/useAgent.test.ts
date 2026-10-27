@@ -94,6 +94,58 @@ it('shares connectivity between Settings and composer, rejects stale results, an
   main.unmount()
   settings.unmount()
 })
+it('clears the old endpoint and ignores its late status after settings change', async () => {
+  let currentUrl = 'http://127.0.0.1:8080'
+  const status = (revision: number, baseUrl: string, reachable: boolean): BackendProbe => ({
+    revision,
+    baseUrl,
+    status: {
+      reachable,
+      authOk: true,
+      missingModels: [],
+      modelCapabilities: [],
+      latencyMs: 1,
+      error: reachable ? null : 'offline',
+    },
+  })
+  let finishNew!: (value: BackendProbe) => void
+  harness.invoke.mockImplementation(async (command) => {
+    if (command === 'get_settings')
+      return { externalAgent: false, model: 'vision', baseUrl: currentUrl }
+    if (command === 'check_backend') {
+      if (currentUrl.endsWith('9090'))
+        return await new Promise<BackendProbe>((resolve) => {
+          finishNew = resolve
+        })
+      return status(1, currentUrl, true)
+    }
+    return null
+  })
+  let agent!: Agent
+  const wrapper = mount(
+    defineComponent({
+      setup() {
+        agent = useAgent()
+        return () => null
+      },
+    }),
+  )
+  await flushPromises()
+  expect(agent.health.value.tone).toBe('ok')
+  currentUrl = 'http://127.0.0.1:9090'
+  harness.handlers.get('settings_changed')?.forEach((handler) => handler({ payload: null }))
+  await flushPromises()
+  expect(agent.settings.value?.baseUrl).toBe(currentUrl)
+  expect(agent.health.value.tone).toBe('checking')
+  harness.handlers
+    .get('backend_status')
+    ?.forEach((handler) => handler({ payload: status(2, 'http://127.0.0.1:8080', true) }))
+  expect(agent.health.value.tone).toBe('checking')
+  finishNew(status(3, currentUrl, true))
+  await flushPromises()
+  expect(agent.health.value.tone).toBe('ok')
+  wrapper.unmount()
+})
 it('serializes window resizing and skips superseded and duplicate measurements', async () => {
   let finish: (() => void) | undefined
   const heights: number[] = []

@@ -5,7 +5,17 @@ pub const WINDOW: &str = "settings";
 pub const SECTION_EVENT: &str = "settings_section";
 pub const CHANGED_EVENT: &str = "settings_changed";
 
-const SECTIONS: [&str; 5] = ["general", "agents", "tools", "shortcuts", "about"];
+const SECTIONS: [&str; 9] = [
+    "general",
+    "models",
+    "agents",
+    "tools",
+    "capture",
+    "data",
+    "shortcuts",
+    "developer",
+    "about",
+];
 
 fn clean(section: Option<&str>) -> &'static str {
     SECTIONS
@@ -51,6 +61,9 @@ mod tests {
     #[test]
     fn an_unknown_section_opens_general() {
         assert_eq!(clean(Some("about")), "about");
+        for section in ["models", "capture", "data", "developer"] {
+            assert_eq!(clean(Some(section)), section);
+        }
         assert_eq!(clean(Some("artifacts")), "general");
         assert_eq!(clean(Some("nonsense")), "general");
         assert_eq!(clean(None), "general");

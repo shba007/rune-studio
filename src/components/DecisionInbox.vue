@@ -5,6 +5,7 @@ import DecisionCard from './DecisionCard.vue'
 import GoalPathways from './GoalPathways.vue'
 import GoalSummary from './GoalSummary.vue'
 import GoalWorkPanel from './GoalWorkPanel.vue'
+import GoalTaskDraft from './GoalTaskDraft.vue'
 import type { WorkspaceTasksModel } from '@/composables/useWorkspaceTasks'
 const emit = defineEmits<{
   goalTasks: [id: string]
@@ -112,12 +113,14 @@ const visible = computed(() =>
       >
         {{
           entry.status === 'goal_ready'
-            ? 'Goal approved. Compare pathways when ready; scheduling is not available yet.'
+            ? 'Goal approved. Compare pathways or review linked tasks.'
             : entry.status === 'pathway_planning'
               ? 'Comparing pathways using the approved goal…'
-              : entry.status === 'interrupted'
-                ? 'Review task history before creating another execution attempt.'
-                : 'Understanding your request…'
+              : entry.status === 'task_planning'
+                ? 'Drafting your first week using the preferred pathway…'
+                : entry.status === 'interrupted'
+                  ? 'Review task history before creating another execution attempt.'
+                  : 'Understanding your request…'
         }}
       </p>
       <div v-if="entry.status === 'goal_ready'" class="flex flex-wrap items-center gap-3">
@@ -145,6 +148,14 @@ const visible = computed(() =>
         :entry="entry"
         :busy="decisions.pending.value"
         @select="(id) => decisions.selectPathway(entry, id)"
+      />
+      <GoalTaskDraft
+        v-if="!compact && entry.pathways?.approved"
+        :entry="entry"
+        :busy="decisions.pending.value"
+        @generate="decisions.proposeTasks(entry)"
+        @review="(id, approval) => decisions.reviewTask(entry, id, approval)"
+        @open="(id) => emit('task', id)"
       />
     </article>
   </div>

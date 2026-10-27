@@ -14,29 +14,100 @@ import SettingsGeneral from './SettingsGeneral.vue'
 import SettingsShortcuts from './SettingsShortcuts.vue'
 import TitleBar from './TitleBar.vue'
 import SettingsTools from './SettingsTools.vue'
+import SettingsConnectionModels from './SettingsConnectionModels.vue'
+import SettingsVisualAnalysis from './SettingsVisualAnalysis.vue'
+import SettingsGoalContext from './SettingsGoalContext.vue'
 
-type Section = 'general' | 'shortcuts' | 'agents' | 'about' | 'tools'
+type Section =
+  | 'general'
+  | 'shortcuts'
+  | 'agents'
+  | 'models'
+  | 'capture'
+  | 'data'
+  | 'developer'
+  | 'about'
+  | 'tools'
 
 const agent = useAgent()
 
 const SECTIONS: { id: Section; label: string; subtitle: string; icon: IconName }[] = [
-  { id: 'general', label: 'General', subtitle: 'Recording, safety and preferences.', icon: 'tune' },
+  {
+    id: 'general',
+    label: 'General',
+    subtitle: 'Safety, behavior and everyday preferences.',
+    icon: 'tune',
+  },
+  {
+    id: 'models',
+    label: 'Connections',
+    subtitle: 'Manage the model server and its roles.',
+    icon: 'plug',
+  },
   {
     id: 'agents',
     label: 'Agents',
-    subtitle: 'Connection, models and execution mode.',
+    subtitle: 'Choose how Rune executes work.',
+    icon: 'personality',
+  },
+  {
+    id: 'tools',
+    label: 'Tools & connections',
+    subtitle: 'Connect to Kit and choose available read-only tools.',
     icon: 'plug',
   },
-  { id: 'tools', label: 'Tools', subtitle: 'Selected read-only Kit tools.', icon: 'plug' },
+  {
+    id: 'capture',
+    label: 'Capture & recording',
+    subtitle: 'Saved image quality, recording and Visual Analysis highlights.',
+    icon: 'video',
+  },
+  {
+    id: 'data',
+    label: 'Data & privacy',
+    subtitle: 'Goal classification, protected storage and category consent.',
+    icon: 'shield',
+  },
   {
     id: 'shortcuts',
     label: 'Shortcuts',
     subtitle: 'Keys that work from anywhere.',
     icon: 'shortcut',
   },
-  { id: 'about', label: 'About', subtitle: 'Installed versions and updates.', icon: 'logo' },
+  {
+    id: 'developer',
+    label: 'Developer',
+    subtitle: 'Diagnostics, input tests and animation previews.',
+    icon: 'app',
+  },
+  {
+    id: 'about',
+    label: 'About',
+    subtitle: 'Versions, updates, support and license.',
+    icon: 'logo',
+  },
 ]
-const visible = SECTIONS
+const search = ref('')
+const keywords: Partial<Record<Section, string>> = {
+  models:
+    'connection backend infer base url api key agent verifier analysis voice microphone transcription decision advisor resolution fast checks',
+  capture:
+    'screen screenshot image video resolution native highlights entities regions depth landmarks visibility',
+  data: 'goal context health mind finance classification consent storage life privacy',
+  developer: 'logs debug capture input animation diagnostics',
+  general: 'thinking safety approval permission',
+  about: 'version update help docs feedback license',
+}
+const visible = computed(() =>
+  SECTIONS.filter((item) => {
+    const text = `${item.label} ${item.subtitle} ${keywords[item.id] ?? ''}`.toLowerCase()
+    return search.value
+      .trim()
+      .toLowerCase()
+      .split(/\s+/)
+      .every((word) => text.includes(word))
+  }),
+)
 
 const asked = new URLSearchParams(location.search).get('section')
 if (['artifacts', 'tasks', 'goals'].includes(asked ?? ''))
@@ -119,70 +190,115 @@ onBeforeUnmount(() => {
     <TitleBar title="Settings" controls="close" />
     <div class="flex min-h-0 flex-1">
       <nav
-        class="flex w-60 shrink-0 flex-col gap-1 border-r border-white/8 bg-[#0c0c0c] p-3"
+        class="flex w-64 shrink-0 flex-col gap-1 border-r border-white/8 bg-[#101010] p-4"
         aria-label="Settings sections"
       >
+        <h2 class="mx-3 mt-1 mb-4 text-body font-medium text-zinc-100">Settings</h2>
+        <label class="relative mb-4 block">
+          <AppIcon name="search" class="pointer-events-none absolute top-3 left-3 text-zinc-500" />
+          <input
+            v-model="search"
+            type="search"
+            aria-label="Search settings"
+            placeholder="Search settings"
+            class="h-10 w-full rounded-full bg-white/6 pr-3 pl-10 text-label text-zinc-100 outline-none placeholder:text-zinc-500 focus-visible:ring-1 focus-visible:ring-white/30"
+          />
+        </label>
+        <div class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
+          <button
+            v-for="item in visible"
+            :key="item.id"
+            type="button"
+            class="flex h-10 w-full cursor-pointer items-center gap-3 rounded-xl border-0 px-3 text-left text-body transition"
+            :class="
+              section === item.id
+                ? 'bg-white/10 text-zinc-50'
+                : 'bg-transparent text-zinc-400 hover:bg-white/5 hover:text-zinc-100'
+            "
+            :aria-current="section === item.id ? 'page' : undefined"
+            :data-testid="`nav-${item.id}`"
+            @click="section = item.id"
+          >
+            <AppIcon :name="item.icon" />
+            {{ item.label }}
+          </button>
+          <p v-if="!visible.length" role="status" class="px-3 text-label text-zinc-500">
+            No matching sections.
+          </p>
+        </div>
         <button
-          v-for="item in visible"
-          :key="item.id"
           type="button"
-          class="flex h-10 w-full cursor-pointer items-center gap-3 rounded-xl border-0 px-3 text-left text-body transition"
-          :class="
-            section === item.id
-              ? 'bg-white/10 text-zinc-50'
-              : 'bg-transparent text-zinc-400 hover:bg-white/5 hover:text-zinc-100'
-          "
-          :aria-current="section === item.id ? 'page' : undefined"
-          :data-testid="`nav-${item.id}`"
-          @click="section = item.id"
-        >
-          <AppIcon :name="item.icon" />
-          {{ item.label }}
-        </button>
-        <button
-          type="button"
-          class="mt-3 flex h-10 w-full cursor-pointer items-center gap-3 rounded-xl px-3 text-left text-body text-zinc-400 hover:bg-white/5 hover:text-zinc-100"
+          class="mt-4 flex h-10 w-full shrink-0 cursor-pointer items-center gap-3 rounded-xl border-t border-white/8 px-3 text-left text-body text-zinc-400 hover:bg-white/5 hover:text-zinc-100"
           @click="agent.openWorkspace()"
         >
           <AppIcon name="history" />Knowledge
         </button>
       </nav>
 
-      <section class="flex min-w-0 flex-1 flex-col overflow-y-auto px-10 py-8">
-        <header class="mb-8 flex flex-col gap-1">
-          <h1 class="m-0 text-title">{{ current.label }}</h1>
-          <p class="m-0 text-label text-zinc-500">{{ current.subtitle }}</p>
-        </header>
+      <section class="flex min-w-0 flex-1 flex-col overflow-y-auto px-8 py-8 lg:px-12">
+        <div class="mx-auto w-full max-w-4xl">
+          <header class="mb-8 flex flex-col gap-1">
+            <h1 class="m-0 text-title">{{ current.label }}</h1>
+            <p class="m-0 text-label text-zinc-500">{{ current.subtitle }}</p>
+          </header>
 
-        <p
-          v-if="agent.notice.value"
-          class="mt-0 mb-6 text-label"
-          :class="agent.noticeKind.value === 'info' ? 'text-zinc-300' : 'text-[#ff6b72]'"
-          role="status"
-        >
-          {{ agent.notice.value }}
-        </p>
+          <p
+            v-if="agent.notice.value"
+            class="mt-0 mb-6 text-label"
+            :class="agent.noticeKind.value === 'info' ? 'text-zinc-300' : 'text-[#ff6b72]'"
+            role="status"
+          >
+            {{ agent.notice.value }}
+          </p>
 
-        <template v-if="draft">
-          <SettingsGeneral v-if="section === 'general'" :agent="agent" :draft="draft" />
-          <SettingsTools
-            v-else-if="section === 'tools'"
-            :tool-calls="
-              agent.backend.value?.models?.find(
-                (model) => model.id === agent.settings.value?.models.agent,
-              )?.toolCalls
-            "
-          />
-          <SettingsShortcuts v-else-if="section === 'shortcuts'" :draft="draft" />
-          <SettingsAgents
-            v-else-if="section === 'agents'"
-            :agent="agent"
-            :draft="draft"
-            v-model:api-key="apiKey"
-            @commit-key="commitKey"
-          />
-        </template>
-        <SettingsAbout v-if="section === 'about'" :agent="agent" />
+          <template v-if="draft">
+            <SettingsGeneral
+              v-if="section === 'general'"
+              :agent="agent"
+              :draft="draft"
+              view="general"
+            />
+            <div v-else-if="section === 'models'" class="flex flex-col gap-10">
+              <SettingsConnectionModels
+                :agent="agent"
+                :draft="draft"
+                v-model:api-key="apiKey"
+                @commit-key="commitKey"
+              >
+                <SettingsGeneral :agent="agent" :draft="draft" view="models" />
+              </SettingsConnectionModels>
+            </div>
+            <div v-else-if="section === 'capture'" class="flex flex-col gap-10">
+              <SettingsGeneral :agent="agent" :draft="draft" view="capture" />
+              <SettingsVisualAnalysis :draft="draft" />
+            </div>
+            <SettingsGoalContext v-else-if="section === 'data'" :draft="draft" />
+            <SettingsGeneral
+              v-else-if="section === 'developer'"
+              :agent="agent"
+              :draft="draft"
+              view="developer"
+            />
+            <SettingsTools
+              v-else-if="section === 'tools'"
+              :tool-calls="
+                agent.backend.value?.models?.find(
+                  (model) => model.id === agent.settings.value?.models.agent,
+                )?.toolCalls
+              "
+            />
+            <SettingsShortcuts v-else-if="section === 'shortcuts'" :draft="draft" />
+            <SettingsAgents
+              v-else-if="section === 'agents'"
+              :agent="agent"
+              :draft="draft"
+              execution-only
+              v-model:api-key="apiKey"
+              @commit-key="commitKey"
+            />
+          </template>
+          <SettingsAbout v-if="section === 'about'" :agent="agent" />
+        </div>
       </section>
     </div>
   </main>

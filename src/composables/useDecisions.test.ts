@@ -115,3 +115,51 @@ it('ignores stale refreshes and sends only one answer with the saved revision', 
   wrapper.unmount()
   expect(harness.off).toHaveBeenCalledTimes(2)
 })
+it('versions task proposal approval separately and preserves conflicts after refresh', async () => {
+  harness.invoke.mockReset()
+  const entry = {
+    id: 'goal',
+    revision: 12,
+    status: 'goal_ready',
+    kind: 'goal',
+    question: null,
+  } as IntakeEntry
+  harness.invoke.mockImplementation(async (command) => {
+    if (command === 'decisions_state') return [entry]
+    if (command === 'decision_review_task') throw new Error('Conflict: the pathway changed')
+    return null
+  })
+  let decisions!: ReturnType<typeof useDecisions>
+  const wrapper = mount(
+    defineComponent({
+      setup() {
+        decisions = useDecisions()
+        return () => null
+      },
+    }),
+  )
+  await flushPromises()
+  await decisions.proposeTasks(entry)
+  expect(harness.invoke).toHaveBeenCalledWith('decision_propose_tasks', {
+    id: 'goal',
+    revision: 12,
+  })
+  const approval = {
+    title: 'Walk',
+    instructions: 'Walk for the agreed duration',
+    executionMode: 'manual' as const,
+    schedule: null,
+  }
+  await decisions.reviewTask(entry, 'task-1', approval)
+  expect(harness.invoke).toHaveBeenCalledWith('decision_review_task', {
+    id: 'goal',
+    revision: 12,
+    proposalId: 'task-1',
+    approval,
+  })
+  expect(decisions.error.value).toContain('Conflict')
+  expect(harness.invoke.mock.calls.some(([command]) => command === 'workspace_task_action')).toBe(
+    false,
+  )
+  wrapper.unmount()
+})

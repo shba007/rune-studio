@@ -137,11 +137,12 @@ describe('AnalysisCard states', () => {
       id: 'insight-test',
       screenshot: 'data:image/jpeg;base64,aGVsbG8=',
       model: 'explicit-vision',
-      createdUtc: 'capture-time',
+      createdUtc: '2026-10-26T07:30:00Z',
     }
     await nextTick()
     expect(wrapper.get('img').attributes('src')).toBe('data:image/jpeg;base64,aGVsbG8=')
-    expect(wrapper.text()).toContain('capture-time')
+    expect(wrapper.get('time').attributes('datetime')).toBe('2026-10-26T07:30:00Z')
+    expect(wrapper.get('time').attributes('title')).toContain('2026')
     expect(wrapper.text()).toContain('not verified facts')
     wrapper.unmount()
   })

@@ -34,6 +34,7 @@ mod safety;
 mod settings;
 mod sync;
 mod task_calendar;
+mod task_proposals;
 mod tasks;
 mod trace;
 mod video;
@@ -223,6 +224,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             cursor::set_cursor_images,
             commands::installed_versions,
+            commands::open_project_link,
             tasks::tasks_state,
             personalities::personalities_state,
             personalities::personality_save,
@@ -272,6 +274,8 @@ pub fn run() {
             crate::intake::decision_refine,
             crate::intake::decision_pathways,
             crate::intake::decision_select_pathway,
+            crate::intake::decision_propose_tasks,
+            crate::intake::decision_review_task,
             crate::intake::workspace_new_goal,
             crate::intake::goal_measurement,
             workspace_tasks::workspace_tasks_state,
