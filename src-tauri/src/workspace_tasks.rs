@@ -607,13 +607,13 @@ pub async fn workspace_task_action(
 ) -> Result<(), String> {
     // A click on Run is required even after the due time; existing task safety gates still apply.
     if action == "run" {
-        let settings = app.state::<AppState>().settings.locked().clone();
+        let state = app.state::<AppState>();
+        let (settings, key) = crate::settings::snapshot_with_api_key(&state.settings);
         if settings.external_agent {
             return Err(
                 "Use API mode to run Studio tasks; external-agent sessions remain separate".into(),
             );
         }
-        let key = crate::settings::api_key();
         crate::model::protected::discover(
             &app.state::<AppState>().http,
             &settings.base_url,

@@ -153,11 +153,21 @@ pub fn get_settings(app: AppHandle, state: State<'_, AppState>) -> Settings {
 pub fn save_settings(
     app: AppHandle,
     state: State<'_, AppState>,
-    settings: Settings,
+    mut settings: Settings,
 ) -> AppResult<()> {
     Hotkeys::validate(&settings).map_err(AppError::Invalid)?;
     let analysis = state.analysis.locked();
-    let was_on = state.settings.locked().external_agent;
+    let mut current = state.settings.locked();
+    settings::ensure_current(&app, &current)?;
+    if settings.connections_revision != current.connections_revision
+        || settings.active_connection_id != current.active_connection_id
+        || settings.connections != current.connections
+    {
+        return Err(AppError::Invalid(
+            "Connections changed in another window. Reload settings before saving.".into(),
+        ));
+    }
+    let was_on = current.external_agent;
     validate_mode_change(
         was_on,
         settings.external_agent,
@@ -166,17 +176,37 @@ pub fn save_settings(
             || state.mic.locked().is_some()
             || crate::analysis::state::in_flight(analysis.status),
     )?;
+    let endpoint_changed = settings.base_url != current.base_url;
+    if endpoint_changed {
+        crate::connections::ensure_idle(&app, &state, analysis.status)?;
+        let active = settings
+            .connections
+            .iter_mut()
+            .find(|c| c.id == settings.active_connection_id)
+            .ok_or_else(|| AppError::Invalid("Active connection is unavailable".into()))?;
+        settings::validate_connection(&active.name, &settings.base_url)?;
+        settings.base_url = settings.base_url.trim().into();
+        active.base_url = settings.base_url.clone();
+        settings.connections_revision = settings
+            .connections_revision
+            .checked_add(1)
+            .ok_or_else(|| AppError::Invalid("Connection revision limit reached".into()))?;
+    }
     settings::save(&app, &settings)?;
 
     let next = Hotkeys::from_settings(&settings);
     if settings.external_agent && !was_on {
         state.lease.locked().rearm();
     }
-    let demo_changed = state.settings.locked().demo_mode != settings.demo_mode;
-    let hide_previews = state.settings.locked().developer_mode && !settings.developer_mode;
+    let demo_changed = current.demo_mode != settings.demo_mode;
+    let hide_previews = current.developer_mode && !settings.developer_mode;
     let mode_changed = was_on != settings.external_agent;
-    let visual_changed = state.settings.locked().visual_analysis != settings.visual_analysis;
-    *state.settings.locked() = settings;
+    let visual_changed = current.visual_analysis != settings.visual_analysis;
+    *current = settings;
+    if endpoint_changed {
+        state.capabilities.invalidate();
+    }
+    drop(current);
     crate::hub::changed(&app);
     if mode_changed {
         state.screen_requests.locked().cancel();
@@ -223,14 +253,29 @@ mod execution_tests {
 }
 
 #[tauri::command]
-pub fn has_api_key() -> bool {
-    settings::api_key().is_some()
+pub fn has_api_key(state: State<'_, AppState>) -> bool {
+    settings::api_key_for(&state.settings.locked()).is_some()
 }
 
 #[tauri::command]
-pub fn set_api_key(app: AppHandle, key: String) -> AppResult<()> {
-    settings::set_api_key(key.trim())?;
-    crate::hub::changed(&app);
+pub fn set_api_key(app: AppHandle, state: State<'_, AppState>, key: String) -> AppResult<()> {
+    let snapshot = state.settings.locked().clone();
+    let active = snapshot
+        .connections
+        .iter()
+        .find(|c| c.id == snapshot.active_connection_id)
+        .ok_or_else(|| AppError::Invalid("Active connection is unavailable".into()))?;
+    let clear_key = key.trim().is_empty();
+    crate::connections::connections_save(
+        app,
+        state,
+        snapshot.connections_revision,
+        Some(active.id.clone()),
+        active.name.clone(),
+        active.base_url.clone(),
+        if clear_key { None } else { Some(key) },
+        clear_key,
+    )?;
     Ok(())
 }
 
@@ -251,6 +296,10 @@ pub struct BackendProbe {
     revision: u64,
     #[serde(rename = "baseUrl")]
     base_url: String,
+    #[serde(rename = "connectionId")]
+    connection_id: String,
+    #[serde(rename = "connectionRevision")]
+    connection_revision: u64,
     status: BackendStatus,
 }
 
@@ -258,11 +307,13 @@ pub struct BackendProbe {
 pub async fn check_backend(app: AppHandle, state: State<'_, AppState>) -> AppResult<BackendProbe> {
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     let revision = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let settings = state.settings.locked().clone();
+    let (settings, api_key) = settings::snapshot_with_api_key(&state.settings);
     let probe = BackendProbe {
         revision,
         base_url: settings.base_url.clone(),
-        status: backend::check(&state.http, &settings, settings::api_key().as_deref()).await,
+        connection_id: settings.active_connection_id.clone(),
+        connection_revision: settings.connections_revision,
+        status: backend::check(&state.http, &settings, api_key.as_deref()).await,
     };
     let _ = app.emit("backend_status", &probe);
     Ok(probe)
@@ -490,14 +541,15 @@ pub async fn toggle_listening(app: AppHandle, state: State<'_, AppState>) -> App
         ));
     }
 
-    let (settings, http) = (state.settings.locked().clone(), state.http.clone());
+    let (settings, api_key) = settings::snapshot_with_api_key(&state.settings);
+    let http = state.http.clone();
     let voice_model = settings.model_for_role(crate::model::role::ModelRole::Voice);
     let profile = crate::model::profile::resolve_profile(voice_model, None, None);
     if let Some(reason) = crate::voice::seam::voice_disabled_reason(voice_model, &profile) {
         return Err(AppError::Invalid(reason));
     }
     tauri::async_runtime::spawn(async move {
-        let status = backend::check(&http, &settings, settings::api_key().as_deref()).await;
+        let status = backend::check(&http, &settings, api_key.as_deref()).await;
         if backend::lacks_audio(&status.model_capabilities) {
             log::warn!("the configured model does not list Audio: voice will not be understood");
         }

@@ -359,7 +359,12 @@ async fn execute(app: &AppHandle, suite_path: &Path, out: &Path) -> i32 {
             );
         }
     };
-    let status = backend::check(&state.http, &effective, settings::api_key().as_deref()).await;
+    let status = backend::check(
+        &state.http,
+        &effective,
+        settings::api_key_for(&effective).as_deref(),
+    )
+    .await;
     if let Err(why) = preflight(
         &running,
         status.reachable,

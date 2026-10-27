@@ -379,7 +379,6 @@ impl CapabilityCache {
         }
     }
 
-    #[cfg(test)]
     pub fn invalidate(&self) {
         if let Ok(mut guard) = self.entries.lock() {
             *guard = None;

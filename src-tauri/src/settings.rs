@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
+use crate::sync::LockExt;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
@@ -8,6 +9,25 @@ use crate::{error::AppResult, hotkeys, model::role::ModelRole};
 
 pub(crate) const KEYRING_SERVICE: &str = "dev.shirsendu-bairagi.rune-studio";
 const KEYRING_USER: &str = "rune-infer-api-key";
+pub const LEGACY_CONNECTION: &str = "legacy";
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Connection {
+    pub id: String,
+    pub name: String,
+    pub base_url: String,
+    #[serde(default)]
+    pub credential_ref: Option<String>,
+}
+fn legacy_connection(base_url: &str) -> Connection {
+    Connection {
+        id: LEGACY_CONNECTION.into(),
+        name: "Model connection".into(),
+        base_url: base_url.into(),
+        credential_ref: Some(LEGACY_CONNECTION.into()),
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -100,6 +120,9 @@ impl ModelRoles {
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
     pub base_url: String,
+    pub connections: Vec<Connection>,
+    pub active_connection_id: String,
+    pub connections_revision: u64,
     pub model: String,
     pub models: ModelRoles,
     pub max_steps: u32,
@@ -135,6 +158,9 @@ pub struct Settings {
 #[serde(rename_all = "camelCase", default)]
 struct SettingsDeHelper {
     pub base_url: String,
+    pub connections: Option<Vec<Connection>>,
+    pub active_connection_id: Option<String>,
+    pub connections_revision: u64,
     pub model: Option<String>,
     pub models: Option<ModelRoles>,
     pub max_steps: u32,
@@ -171,6 +197,9 @@ impl Default for SettingsDeHelper {
         let def = Settings::default();
         Self {
             base_url: def.base_url,
+            connections: None,
+            active_connection_id: None,
+            connections_revision: 0,
             model: None,
             models: None,
             max_steps: def.max_steps,
@@ -225,8 +254,61 @@ impl<'de> Deserialize<'de> for Settings {
         }
         let synced_model = models.agent.clone();
         let synced_decision = models.decision.clone();
+        let mut connections = helper
+            .connections
+            .unwrap_or_else(|| vec![legacy_connection(&helper.base_url)]);
+        let active_connection_id = helper
+            .active_connection_id
+            .unwrap_or_else(|| LEGACY_CONNECTION.into());
+        for connection in &mut connections {
+            if connection.id == LEGACY_CONNECTION && connection.credential_ref.is_none() {
+                connection.credential_ref = Some(LEGACY_CONNECTION.into());
+            }
+        }
+        if connections.is_empty()
+            || connections.len() > 100
+            || connections.iter().any(|c| {
+                !valid_connection_id(&c.id)
+                    || c.name.trim().is_empty()
+                    || c.name.len() > 160
+                    || c.base_url.len() > 2048
+                    || c.credential_ref.as_ref().is_some_and(|key| {
+                        !valid_connection_id(key)
+                            || (c.id != LEGACY_CONNECTION
+                                && (key == LEGACY_CONNECTION || key == "legacy-env"))
+                    })
+            })
+            || connections
+                .iter()
+                .filter(|c| c.id == active_connection_id)
+                .count()
+                != 1
+            || connections
+                .iter()
+                .enumerate()
+                .any(|(i, c)| connections[..i].iter().any(|p| p.id == c.id))
+            || connections.iter().enumerate().any(|(i, c)| {
+                c.credential_ref.as_ref().is_some_and(|key| {
+                    connections[..i]
+                        .iter()
+                        .any(|p| p.credential_ref.as_ref() == Some(key))
+                })
+            })
+        {
+            return Err(serde::de::Error::custom("Invalid saved model connections"));
+        }
+        // Legacy tools may still update baseUrl directly. Keep the active record in sync.
+        if let Some(active) = connections
+            .iter_mut()
+            .find(|c| c.id == active_connection_id)
+        {
+            active.base_url = helper.base_url.clone();
+        }
         Ok(Settings {
             base_url: helper.base_url,
+            connections,
+            active_connection_id,
+            connections_revision: helper.connections_revision,
             model: synced_model,
             models,
             max_steps: helper.max_steps,
@@ -271,6 +353,41 @@ impl Settings {
     pub fn model_for_role(&self, role: ModelRole) -> &str {
         self.models.model_for_role(role)
     }
+}
+
+pub fn valid_connection_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 80
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+pub fn validate_connection(name: &str, base_url: &str) -> AppResult<()> {
+    if name.trim().is_empty() || name.chars().count() > 80 || base_url.len() > 2048 {
+        return Err(crate::error::AppError::Invalid(
+            "Enter a connection name (up to 80 characters) and a valid server URL".into(),
+        ));
+    }
+    let url = reqwest::Url::parse(base_url.trim()).map_err(|_| {
+        crate::error::AppError::Invalid("Enter a valid http or https server URL".into())
+    })?;
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(crate::error::AppError::Invalid(
+            "Use an http or https URL without embedded credentials, query or fragment".into(),
+        ));
+    }
+    if url.path().trim_end_matches('/').ends_with("/v1") {
+        return Err(crate::error::AppError::Invalid(
+            "Enter the server root without /v1; Studio adds the API path".into(),
+        ));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -342,6 +459,9 @@ impl Default for Settings {
         let models = ModelRoles::default();
         Self {
             base_url: "http://127.0.0.1:8080".into(),
+            connections: vec![legacy_connection("http://127.0.0.1:8080")],
+            active_connection_id: LEGACY_CONNECTION.into(),
+            connections_revision: 0,
             model: models.agent.clone(),
             models,
             max_steps: 30,
@@ -441,12 +561,89 @@ pub fn load(app: &AppHandle) -> Settings {
         .unwrap_or_default()
 }
 
-pub fn save(app: &AppHandle, settings: &Settings) -> AppResult<()> {
-    let path = settings_path(app)?;
+fn atomic_save(path: &std::path::Path, settings: &Settings) -> AppResult<()> {
+    use std::io::Write;
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
     }
-    fs::write(path, serde_json::to_string_pretty(settings)?)?;
+    if path.exists() {
+        let existing = fs::read(path)?;
+        serde_json::from_slice::<Settings>(&existing).map_err(|_| {
+            crate::error::AppError::Invalid(
+                "Existing settings cannot be read safely; they were not replaced".into(),
+            )
+        })?;
+    }
+    let mut nonce = [0u8; 12];
+    getrandom::fill(&mut nonce).map_err(|e| {
+        crate::error::AppError::Invalid(format!("Cannot create a temporary settings file: {e}"))
+    })?;
+    let suffix = nonce.iter().map(|b| format!("{b:02x}")).collect::<String>();
+    let temporary = path.with_file_name(format!(".settings-{suffix}.tmp"));
+    let mut created = false;
+    let result = (|| -> AppResult<()> {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)?;
+        created = true;
+        file.write_all(serde_json::to_string_pretty(settings)?.as_bytes())?;
+        file.sync_all()?;
+        drop(file);
+        replace_file(&temporary, path)?;
+        Ok(())
+    })();
+    if result.is_err() && created {
+        let _ = fs::remove_file(&temporary);
+    }
+    result?;
+    Ok(())
+}
+#[cfg(windows)]
+fn replace_file(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::{
+        Win32::Storage::FileSystem::{
+            MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
+        },
+        core::PCWSTR,
+    };
+    let source: Vec<u16> = from.as_os_str().encode_wide().chain(Some(0)).collect();
+    let target: Vec<u16> = to.as_os_str().encode_wide().chain(Some(0)).collect();
+    unsafe {
+        MoveFileExW(
+            PCWSTR(source.as_ptr()),
+            PCWSTR(target.as_ptr()),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    }
+    .map_err(std::io::Error::other)
+}
+#[cfg(not(windows))]
+fn replace_file(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+    fs::rename(from, to)
+}
+pub fn save(app: &AppHandle, settings: &Settings) -> AppResult<()> {
+    atomic_save(&settings_path(app)?, settings)
+}
+pub(crate) fn ensure_current(app: &AppHandle, current: &Settings) -> AppResult<()> {
+    let path = settings_path(app)?;
+    if !path.exists() {
+        return Ok(());
+    }
+    let disk: Settings = serde_json::from_slice(&fs::read(path)?).map_err(|_| {
+        crate::error::AppError::Invalid(
+            "Existing settings cannot be read safely; they were not replaced".into(),
+        )
+    })?;
+    if disk.connections_revision != current.connections_revision
+        || disk.active_connection_id != current.active_connection_id
+        || disk.connections != current.connections
+    {
+        return Err(crate::error::AppError::Invalid(
+            "Saved connections changed outside this window. Reload before saving.".into(),
+        ));
+    }
     Ok(())
 }
 
@@ -454,16 +651,59 @@ fn key_entry() -> keyring::Result<crate::credentials::Entry> {
     crate::credentials::Entry::new(KEYRING_SERVICE, KEYRING_USER)
 }
 
-pub fn api_key() -> Option<String> {
-    key_entry()
-        .and_then(|entry| entry.get_password())
-        .ok()
-        .or_else(|| std::env::var("RUNE_API_KEY").ok())
+fn connection_key_entry(id: &str) -> keyring::Result<crate::credentials::Entry> {
+    if id == LEGACY_CONNECTION {
+        return key_entry();
+    }
+    crate::credentials::Entry::new(KEYRING_SERVICE, &format!("rune-model-connection-{id}"))
+}
+pub fn api_key_for(settings: &Settings) -> Option<String> {
+    settings
+        .connections
+        .iter()
+        .find(|c| c.id == settings.active_connection_id)
+        .and_then(api_key_for_connection)
+}
+pub fn snapshot_with_api_key(settings: &std::sync::Mutex<Settings>) -> (Settings, Option<String>) {
+    let current = settings.locked();
+    let key = api_key_for(&current);
+    (current.clone(), key)
+}
+pub fn api_key_for_connection(connection: &Connection) -> Option<String> {
+    let stored = connection.credential_ref.as_deref().and_then(|slot| {
+        if slot == "legacy-env" {
+            None
+        } else {
+            connection_key_entry(slot)
+                .and_then(|entry| entry.get_password())
+                .ok()
+        }
+    });
+    stored
+        .or_else(|| {
+            if connection.id == LEGACY_CONNECTION {
+                std::env::var("RUNE_API_KEY").ok()
+            } else {
+                None
+            }
+        })
         .filter(|key| !key.is_empty())
 }
-
-pub fn set_api_key(key: &str) -> AppResult<()> {
-    let entry = key_entry()?;
+pub fn stored_api_key_for_slot(id: &str) -> AppResult<Option<String>> {
+    let entry = connection_key_entry(id)?;
+    match entry.get_password() {
+        Ok(key) => Ok(Some(key)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(err) => Err(err.into()),
+    }
+}
+pub fn set_api_key_for_slot(id: &str, key: &str) -> AppResult<()> {
+    if !valid_connection_id(id) {
+        return Err(crate::error::AppError::Invalid(
+            "Invalid connection ID".into(),
+        ));
+    }
+    let entry = connection_key_entry(id)?;
     if key.is_empty() {
         match entry.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
@@ -476,6 +716,67 @@ pub fn set_api_key(key: &str) -> AppResult<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn legacy_migration_preserves_model_roles_and_isolates_credentials() {
+        use super::*;
+        let mut current: Settings = serde_json::from_str(r#"{"baseUrl":"http://127.0.0.1:7777","model":"legacy-model","decisionUrl":"http://127.0.0.1:8888"}"#).unwrap();
+        assert_eq!(current.active_connection_id, LEGACY_CONNECTION);
+        assert_eq!(current.connections[0].base_url, "http://127.0.0.1:7777");
+        assert_eq!(current.models.agent, "legacy-model");
+        assert_eq!(current.decision_url, "http://127.0.0.1:8888");
+        set_api_key_for_slot(LEGACY_CONNECTION, "legacy-secret").unwrap();
+        assert_eq!(api_key_for(&current).as_deref(), Some("legacy-secret"));
+        set_api_key_for_slot("conn-secret-test", "other-secret").unwrap();
+        current.connections.push(Connection {
+            id: "conn-two".into(),
+            name: "Second".into(),
+            base_url: "http://127.0.0.1:7777".into(),
+            credential_ref: Some("conn-secret-test".into()),
+        });
+        current.active_connection_id = "conn-two".into();
+        assert_eq!(api_key_for(&current).as_deref(), Some("other-secret"));
+        let saved = serde_json::to_string(&current).unwrap();
+        assert!(!saved.contains("legacy-secret") && !saved.contains("other-secret"));
+        let restored: Settings = serde_json::from_str(&saved).unwrap();
+        assert_eq!(api_key_for(&restored).as_deref(), Some("other-secret"));
+        set_api_key_for_slot("conn-secret-test", "").unwrap();
+        set_api_key_for_slot(LEGACY_CONNECTION, "").unwrap();
+    }
+    #[test]
+    fn invalid_settings_are_never_overwritten_and_staged_credentials_leave_old_key_intact() {
+        use super::*;
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("settings.json");
+        fs::write(&path, b"{broken").unwrap();
+        set_api_key_for_slot(LEGACY_CONNECTION, "original-secret").unwrap();
+        set_api_key_for_slot("conn-staged-test", "new-secret").unwrap();
+        assert!(atomic_save(&path, &Settings::default()).is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"{broken");
+        assert_eq!(
+            stored_api_key_for_slot(LEGACY_CONNECTION)
+                .unwrap()
+                .as_deref(),
+            Some("original-secret")
+        );
+        set_api_key_for_slot("conn-staged-test", "").unwrap();
+        set_api_key_for_slot(LEGACY_CONNECTION, "").unwrap();
+    }
+    #[test]
+    fn connection_validation_rejects_credentials_and_invalid_registry() {
+        use super::*;
+        assert!(validate_connection("Local", "http://127.0.0.1:8080").is_ok());
+        for value in [
+            "http://user:secret@example.com",
+            "http://127.0.0.1:8080/v1",
+            "file:///tmp/a",
+            "https://example.com/?key=secret",
+        ] {
+            assert!(validate_connection("Local", value).is_err());
+        }
+        let mut value = serde_json::to_value(Settings::default()).unwrap();
+        value["connections"][0]["credentialRef"] = serde_json::json!("bad/slot");
+        assert!(serde_json::from_value::<Settings>(value).is_err());
+    }
     #[test]
     fn classification_preference_defaults_and_round_trips() {
         use super::{InputClassification, Settings};

@@ -721,6 +721,15 @@ pub fn tasks_state() -> Snapshot {
         requests: b.requests.iter().map(|r| r.request.clone()).collect(),
     }
 }
+
+// Connection changes may already hold the analysis/settings locks. Never wait
+// for the board here: a task starting under the board lock needs those locks.
+pub(crate) fn connection_change_blocked() -> bool {
+    let Ok(board) = BOARD.try_lock() else {
+        return true;
+    };
+    board.requests.iter().any(|r| !r.request.phase.terminal())
+}
 #[tauri::command]
 pub fn submit_independent_task(app: AppHandle, text: String) -> Result<u64, String> {
     crate::intake::submit(&app, &text, false)
@@ -1069,8 +1078,7 @@ async fn make_plan(
     cancel: &CancelToken,
 ) -> Result<plan::Plan, String> {
     let state = app.state::<AppState>();
-    let settings = state.settings.locked().clone();
-    let key = crate::settings::api_key();
+    let (settings, key) = crate::settings::snapshot_with_api_key(&state.settings);
     let model = settings.model_for_role(crate::model::role::ModelRole::Agent);
     let profile =
         crate::workspace_tasks::execution_profile(app, &settings.base_url, key.as_deref(), model)
@@ -1165,8 +1173,7 @@ async fn background(
     run_id: &str,
 ) -> Result<String, String> {
     let state = app.state::<AppState>();
-    let settings = state.settings.locked().clone();
-    let key = crate::settings::api_key();
+    let (settings, key) = crate::settings::snapshot_with_api_key(&state.settings);
     let config = crate::kit::client::load(app);
     let mut history = String::new();
     let mut discovered = Vec::new();

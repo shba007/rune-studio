@@ -318,11 +318,12 @@ async fn until_the_user_needs_the_screen(app: &AppHandle, token: &CancelToken) {
 }
 
 fn spawn_background_check(app: &AppHandle, run_id: String, evidence: Option<Evidence>) {
-    let token = app.state::<AppState>().begin_verification();
+    let state = app.state::<AppState>();
+    let token = state.begin_verification();
+    let (settings, api_key) = settings::snapshot_with_api_key(&state.settings);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let state = app.state::<AppState>();
-        let (settings, api_key) = (state.settings.locked().clone(), settings::api_key());
         let call_log = state.trace.call_log(&run_id, "verify");
         let verify_model = settings.model_for_role(crate::model::role::ModelRole::Verifier);
         if settings.skip_swap_for_optional_roles {
@@ -623,8 +624,7 @@ async fn run(
 ) -> Outcome {
     let state = app.state::<AppState>();
     let trace = state.trace.clone();
-    let settings = state.settings.locked().clone();
-    let api_key = settings::api_key();
+    let (settings, api_key) = settings::snapshot_with_api_key(&state.settings);
     let recording_scope = {
         let (board_id, scope_id) = {
             let owner = handoff.locked();

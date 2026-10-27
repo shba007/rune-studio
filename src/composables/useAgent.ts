@@ -83,12 +83,23 @@ export function useAgent() {
   const backend = ref<BackendStatus | null>(null)
   let backendRevision = 0
   let backendBaseUrl: string | undefined
+  let backendConnectionId: string | undefined
+  let backendConnectionRevision: number | undefined
   let backendChecks = 0
   function applyBackend(probe: BackendProbe) {
-    if (probe.baseUrl && settings.value && probe.baseUrl !== settings.value.baseUrl) return
+    if (
+      settings.value &&
+      ((probe.baseUrl && probe.baseUrl !== settings.value.baseUrl) ||
+        (probe.connectionId && probe.connectionId !== settings.value.activeConnectionId) ||
+        (probe.connectionRevision !== undefined &&
+          probe.connectionRevision !== settings.value.connectionsRevision))
+    )
+      return
     if (probe && Number.isFinite(probe.revision) && probe.revision >= backendRevision) {
       backendRevision = probe.revision
       backendBaseUrl = probe.baseUrl
+      backendConnectionId = probe.connectionId
+      backendConnectionRevision = probe.connectionRevision
       backend.value = probe.status
     }
   }
@@ -243,10 +254,15 @@ export function useAgent() {
     if (
       next &&
       ((settings.value && next.baseUrl !== settings.value.baseUrl) ||
-        (backendBaseUrl && next.baseUrl !== backendBaseUrl))
+        (backendBaseUrl && next.baseUrl !== backendBaseUrl) ||
+        (backendConnectionId && next.activeConnectionId !== backendConnectionId) ||
+        (backendConnectionRevision !== undefined &&
+          next.connectionsRevision !== backendConnectionRevision))
     ) {
       backend.value = null
       backendBaseUrl = undefined
+      backendConnectionId = undefined
+      backendConnectionRevision = undefined
     }
     settings.value = next
     hasApiKey.value = (await call<boolean>('has_api_key')) ?? false
@@ -254,9 +270,16 @@ export function useAgent() {
   }
 
   async function saveSettings(next: Settings) {
-    await call('save_settings', { settings: next })
+    try {
+      await invoke('save_settings', { settings: next })
+    } catch (err) {
+      showNotice(String(err))
+      await refreshSettings()
+      return false
+    }
     await refreshSettings()
     await refreshBackend()
+    return true
   }
 
   async function saveApiKey(key: string) {

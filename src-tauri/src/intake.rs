@@ -267,8 +267,7 @@ async fn infer(
     schema: &Value,
 ) -> Result<Value, String> {
     let state = app.state::<AppState>();
-    let settings = state.settings.locked().clone();
-    let key = crate::settings::api_key();
+    let (settings, key) = crate::settings::snapshot_with_api_key(&state.settings);
     let model = settings.model_for_role(crate::model::role::ModelRole::Agent);
     let profile = crate::agent::unless_stopped(
         &e.token,

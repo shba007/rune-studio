@@ -1,14 +1,42 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { reactive, ref } from 'vue'
-import { expect, it, vi } from 'vite-plus/test'
+import { beforeEach, expect, it, vi } from 'vite-plus/test'
 import type { Agent } from '@/composables/useAgent'
 import type { BackendStatus, ModelCapabilities, Settings } from '@/types/protocol'
 import ModelRoleRow from './ModelRoleRow.vue'
 import SettingsConnectionModels from './SettingsConnectionModels.vue'
 
-function setup() {
+const harness = vi.hoisted(() => ({
+  invoke: vi.fn<(name: string, args?: Record<string, unknown>) => Promise<unknown>>(),
+}))
+vi.mock('@tauri-apps/api/core', () => ({ invoke: harness.invoke }))
+vi.mock('@tauri-apps/api/event', () => ({ listen: async () => () => {} }))
+const initial = () => ({
+  revision: 0,
+  activeId: 'legacy',
+  connections: [
+    {
+      id: 'legacy',
+      name: 'Model connection',
+      baseUrl: 'http://127.0.0.1:8080',
+      active: true,
+      hasApiKey: true,
+    },
+  ],
+})
+beforeEach(() => {
+  harness.invoke
+    .mockReset()
+    .mockImplementation(async (command) =>
+      command === 'connections_state' || command === 'connections_save' ? initial() : null,
+    )
+})
+async function setup() {
   const draft = reactive({
     baseUrl: 'http://127.0.0.1:8080',
+    activeConnectionId: 'legacy',
+    connectionsRevision: 0,
+    connections: [{ id: 'legacy', name: 'Model connection', baseUrl: 'http://127.0.0.1:8080' }],
     model: 'qwen',
     decisionModel: 'fast',
     fastChecks: true,
@@ -36,76 +64,114 @@ function setup() {
     ] as ModelCapabilities[],
   })
   const refreshBackend = vi.fn<() => Promise<void>>().mockResolvedValue()
-  const saveApiKey = vi.fn<(key: string) => Promise<void>>().mockResolvedValue()
   const agent = {
     settings,
     backend,
     refreshBackend,
-    saveApiKey,
     hasApiKey: ref(true),
+    isRunning: ref(false),
   } as unknown as Agent
   const wrapper = mount(SettingsConnectionModels, {
-    props: { agent, draft, apiKey: '' },
+    props: { agent, draft },
     slots: { default: '<div>Model input resolution</div>' },
   })
-  return { wrapper, draft, settings, backend, refreshBackend, saveApiKey }
+  await flushPromises()
+  return { wrapper, draft, settings, backend, refreshBackend }
 }
-it('shows the existing connection and opens its details without changing settings', async () => {
-  const { wrapper, draft, refreshBackend } = setup()
+it('shows the migrated connection and its actual discovered models', async () => {
+  const { wrapper, draft, refreshBackend } = await setup()
   expect(wrapper.text()).toContain('http://127.0.0.1:8080')
   expect(wrapper.text()).toContain('2 models')
   expect(wrapper.text()).toContain('qwen · gemma')
-  expect(wrapper.find('input[aria-label="Base URL"]').exists()).toBe(false)
   expect(refreshBackend).not.toHaveBeenCalled()
-  await wrapper.get('[aria-label="Edit model connection"]').trigger('click')
-  expect(wrapper.text()).toContain('Changes save automatically')
+  await wrapper.get('[aria-label="Open Model connection"]').trigger('click')
+  expect(wrapper.text()).toContain('Model roles save automatically')
   expect(wrapper.text()).toContain('Model input resolution')
-  expect((wrapper.get('input[aria-label="Base URL"]').element as HTMLInputElement).value).toBe(
-    draft.baseUrl,
-  )
   expect(draft.decisionUrl).toBe('http://127.0.0.1:8081')
   expect(wrapper.findAllComponents(ModelRoleRow)).toHaveLength(6)
   await wrapper.get('input[aria-label="Search discovered models"]').setValue('gem')
-  const list = wrapper.get('[aria-label="Discovered models"] ul')
-  expect(list.text()).toContain('gemma')
-  expect(list.text()).not.toContain('qwen')
+  expect(wrapper.get('[aria-label="Discovered models"] ul').text()).toContain('gemma')
+  expect(wrapper.get('[aria-label="Discovered models"] ul').text()).not.toContain('qwen')
   await wrapper
     .findAll('button')
-    .find((button) => button.text() === 'Reload models')!
+    .find((b) => b.text() === 'Reload models')!
     .trigger('click')
   expect(refreshBackend).toHaveBeenCalledOnce()
   wrapper.unmount()
 })
-it('preserves endpoint, roles, decision URL and API key behavior when edited', async () => {
-  const { wrapper, draft, saveApiKey } = setup()
-  await wrapper.get('[aria-label="Edit model connection"]').trigger('click')
-  await wrapper.get('input[aria-label="Base URL"]').setValue('http://127.0.0.1:9090')
-  expect(draft.baseUrl).toBe('http://127.0.0.1:9090')
-  expect(wrapper.text()).toContain('Model list unavailable')
-  const row = wrapper
-    .findAllComponents(ModelRoleRow)
-    .find((item) => item.props('roleKey') === 'agent')!
-  row.vm.$emit('update:modelValue', 'gemma')
+it('stages edits until Save and preserves shared model roles and Decision URL', async () => {
+  const { wrapper, draft } = await setup()
+  await wrapper
+    .findAll('button')
+    .find((b) => b.text() === 'Edit')!
+    .trigger('click')
+  await wrapper.get('input[type="url"]').setValue('http://127.0.0.1:9090')
+  await wrapper.get('input[type="password"]').setValue('fake-test-key')
+  expect(draft.baseUrl).toBe('http://127.0.0.1:8080')
+  expect(harness.invoke.mock.calls.some(([name]) => name === 'connections_save')).toBe(false)
+  await wrapper.get('form').trigger('submit')
   await flushPromises()
-  expect(draft.models.agent).toBe('gemma')
-  expect(draft.model).toBe('gemma')
+  expect(harness.invoke).toHaveBeenCalledWith('connections_save', {
+    revision: 0,
+    id: 'legacy',
+    name: 'Model connection',
+    baseUrl: 'http://127.0.0.1:9090',
+    key: 'fake-test-key',
+    clearKey: false,
+  })
+  expect(draft.models.agent).toBe('qwen')
   expect(draft.decisionUrl).toBe('http://127.0.0.1:8081')
-  await wrapper.get('input[aria-label="API key"]').setValue('replacement')
-  expect(wrapper.emitted('update:apiKey')?.at(-1)).toEqual(['replacement'])
-  expect(wrapper.emitted('commit-key')).toBeTruthy()
-  expect(saveApiKey).not.toHaveBeenCalled()
   wrapper.unmount()
 })
 it('distinguishes unavailable discovery from an empty model list', async () => {
-  const { wrapper, backend } = setup()
+  const { wrapper, backend } = await setup()
   backend.value = { ...backend.value!, reachable: false, error: 'offline', models: [] }
   await flushPromises()
-  expect(wrapper.text()).toContain('Model list unavailable')
+  expect(wrapper.text()).toContain('active model list unavailable')
   expect(wrapper.text()).not.toContain('0 models')
   backend.value = { ...backend.value!, reachable: true, error: null, models: [] }
   await flushPromises()
   expect(wrapper.text()).toContain('0 models')
-  await wrapper.get('[aria-label="Edit model connection"]').trigger('click')
+  await wrapper.get('[aria-label="Open Model connection"]').trigger('click')
   expect(wrapper.text()).toContain('The server reported no models')
+  wrapper.unmount()
+})
+it('requires explicit removal confirmation and requests activation for another saved connection', async () => {
+  const two = {
+    revision: 3,
+    activeId: 'legacy',
+    connections: [
+      ...initial().connections,
+      {
+        id: 'conn-two',
+        name: 'Second',
+        baseUrl: 'http://127.0.0.1:9090',
+        active: false,
+        hasApiKey: false,
+      },
+    ],
+  }
+  harness.invoke.mockImplementation(async (command) =>
+    command === 'connections_state' ? two : two,
+  )
+  const { wrapper } = await setup()
+  await wrapper
+    .findAll('button')
+    .find((b) => b.text() === 'Make active')!
+    .trigger('click')
+  await flushPromises()
+  expect(harness.invoke).toHaveBeenCalledWith('connections_activate', {
+    revision: 3,
+    id: 'conn-two',
+  })
+  await wrapper.get('[aria-label="Remove Model connection"]').trigger('click')
+  expect(harness.invoke.mock.calls.some(([name]) => name === 'connections_delete')).toBe(false)
+  expect(wrapper.text()).toContain('Another saved connection will become active')
+  await wrapper
+    .findAll('button')
+    .find((b) => b.text() === 'Confirm remove')!
+    .trigger('click')
+  await flushPromises()
+  expect(harness.invoke).toHaveBeenCalledWith('connections_delete', { revision: 3, id: 'legacy' })
   wrapper.unmount()
 })

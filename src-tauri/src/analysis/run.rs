@@ -241,7 +241,7 @@ pub(crate) async fn analyze_image_with_settings(
     settings: &settings::Settings,
 ) -> Result<ModelAnalysis, AnalysisError> {
     let state = app.state::<AppState>();
-    let api_key = settings::api_key();
+    let api_key = settings::api_key_for(settings);
     let call_log = state.trace.call_log(run_id, "analysis");
     let analysis_model = settings.model_for_role(crate::model::role::ModelRole::Analysis);
     let profile = crate::workspace_tasks::execution_profile(
@@ -731,7 +731,7 @@ mod model_tests {
         };
         settings.models.analysis = model.clone();
         let http = reqwest::Client::new();
-        let key = crate::settings::api_key();
+        let key = crate::settings::api_key_for(&settings);
         let status = crate::backend::check(&http, &settings, key.as_deref()).await;
         crate::workflow::vision_model(&settings, &status.models)
             .expect("available explicit vision/tool model");

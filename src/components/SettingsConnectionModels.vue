@@ -9,14 +9,30 @@ import HubRow from './HubRow.vue'
 import HubToggle from './HubToggle.vue'
 import ModelRoleRow from './ModelRoleRow.vue'
 import AppIcon from './AppIcon.vue'
+import ConnectionEditor from './ConnectionEditor.vue'
+import {
+  useConnections,
+  type ConnectionEdit,
+  type ConnectionView,
+} from '@/composables/useConnections'
 const props = defineProps<{ agent: Agent; draft: Settings }>()
-const apiKey = defineModel<string>('apiKey', { default: '' })
-defineEmits<{ 'commit-key': [] }>()
 const detail = ref(false)
+const connections = useConnections()
+const editing = ref<ConnectionView | null | undefined>(undefined)
+const removing = ref<string | null>(null)
+const activeConnection = computed(() =>
+  connections.catalog.value?.connections.find((connection) => connection.active),
+)
 const checking = ref(false)
 const modelSearch = ref('')
 const visibleStatus = computed(() =>
-  props.draft.baseUrl === props.agent.settings.value?.baseUrl ? props.agent.backend.value : null,
+  props.draft.baseUrl === props.agent.settings.value?.baseUrl &&
+  (!connections.catalog.value ||
+    props.agent.settings.value?.activeConnectionId === connections.catalog.value.activeId) &&
+  (!connections.catalog.value ||
+    props.agent.settings.value?.connectionsRevision === connections.catalog.value.revision)
+    ? props.agent.backend.value
+    : null,
 )
 const discovered = computed(() => visibleStatus.value?.models ?? [])
 const filteredModels = computed(() => {
@@ -36,6 +52,22 @@ async function refresh() {
     checking.value = false
   }
 }
+async function saveConnection(edit: ConnectionEdit) {
+  if (await connections.save(edit)) editing.value = undefined
+}
+async function removeConnection(id: string) {
+  if (await connections.remove(id)) removing.value = null
+}
+function openConnection(connection: ConnectionView) {
+  if (connection.active) detail.value = true
+  else editing.value = connection
+}
+watch(
+  () => connections.catalog.value?.activeId,
+  (next, previous) => {
+    if (previous && next !== previous) detail.value = false
+  },
+)
 watch(
   () => props.draft.models.agent,
   (value) => {
@@ -51,7 +83,15 @@ watch(
 </script>
 <template>
   <div class="flex flex-col gap-8">
-    <template v-if="!detail">
+    <ConnectionEditor
+      v-if="editing !== undefined"
+      :key="editing?.id ?? 'new'"
+      :connection="editing"
+      :busy="connections.pending.value"
+      @cancel="editing = undefined"
+      @save="saveConnection"
+    />
+    <template v-else-if="!detail">
       <div
         class="overflow-hidden rounded-2xl border border-white/10 bg-[#101010]"
         aria-label="Model connections"
@@ -59,14 +99,25 @@ watch(
         <div
           class="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 px-5 py-4"
         >
-          <span class="text-label text-zinc-400">Configured connection</span>
+          <button
+            type="button"
+            :disabled="connections.pending.value || !connections.catalog.value"
+            class="cursor-pointer rounded-full border border-white/15 px-4 py-2 text-label text-zinc-200 disabled:opacity-40"
+            @click="editing = null"
+          >
+            + Add connection
+          </button>
           <span class="text-caption text-zinc-500">{{
-            listAvailable
-              ? `${discovered.length} ${discovered.length === 1 ? 'model' : 'models'}`
-              : 'Model list unavailable'
+            connections.catalog.value
+              ? `${connections.catalog.value.connections.length} ${connections.catalog.value.connections.length === 1 ? 'connection' : 'connections'} · ${listAvailable ? `${discovered.length} ${discovered.length === 1 ? 'model' : 'models'} on active` : 'active model list unavailable'}`
+              : 'Loading connections…'
           }}</span>
         </div>
-        <div class="flex flex-wrap items-center gap-4 px-5 py-5">
+        <div
+          v-for="connection in connections.catalog.value?.connections ?? []"
+          :key="connection.id"
+          class="flex flex-wrap items-center gap-4 border-b border-white/8 px-5 py-5 last:border-0"
+        >
           <span
             class="grid size-12 shrink-0 place-items-center rounded-xl border border-white/10 bg-black"
             ><AppIcon name="logo" class="text-zinc-200"
@@ -74,13 +125,20 @@ watch(
           <button
             type="button"
             class="min-w-0 flex-1 cursor-pointer text-left"
-            aria-label="Edit model connection"
-            @click="detail = true"
+            :aria-label="`Open ${connection.name}`"
+            @click="openConnection(connection)"
           >
-            <span class="block text-body font-medium text-zinc-100">Model connection</span>
-            <span class="mt-1 block break-all text-label text-zinc-400">{{ draft.baseUrl }}</span>
+            <span class="block text-body font-medium text-zinc-100"
+              >{{ connection.name }}
+              <span v-if="connection.active" class="ml-2 text-caption text-zinc-400"
+                >Active</span
+              ></span
+            >
+            <span class="mt-1 block break-all text-label text-zinc-400">{{
+              connection.baseUrl
+            }}</span>
             <span
-              v-if="listAvailable && discovered.length"
+              v-if="connection.active && listAvailable && discovered.length"
               class="mt-2 block truncate text-caption text-zinc-500"
               >{{
                 discovered
@@ -91,29 +149,80 @@ watch(
             >
           </button>
           <div class="flex flex-wrap items-center gap-3">
-            <span v-if="checking" role="status" class="text-label text-zinc-400">Checking…</span>
-            <BackendBadge v-else :status="visibleStatus" />
+            <span
+              v-if="(connection.active && checking) || connections.testing.value === connection.id"
+              role="status"
+              class="text-label text-zinc-400"
+              >Checking…</span
+            >
+            <BackendBadge v-else-if="connection.active" :status="visibleStatus" />
+            <BackendBadge
+              v-else-if="connections.statuses.value[connection.id]"
+              :status="connections.statuses.value[connection.id]!"
+            />
+            <span v-else class="text-caption text-zinc-500">Not checked</span>
             <button
               type="button"
-              :disabled="checking"
+              :disabled="checking || !!connections.testing.value"
               class="grid size-9 cursor-pointer place-items-center rounded-full text-zinc-400 hover:bg-white/8 hover:text-white disabled:opacity-40"
-              aria-label="Check the backend again"
-              @click="refresh"
+              :aria-label="`Check ${connection.name}`"
+              @click="connection.active ? refresh() : connections.check(connection.id)"
             >
               <AppIcon name="refresh" />
             </button>
             <button
               type="button"
               class="cursor-pointer rounded-full border border-white/15 px-4 py-2 text-label text-zinc-200 hover:bg-white/5"
-              @click="detail = true"
+              @click="editing = connection"
             >
               Edit
+            </button>
+            <button
+              v-if="!connection.active"
+              type="button"
+              :disabled="connections.pending.value || agent.isRunning?.value"
+              class="cursor-pointer rounded-full bg-zinc-100 px-4 py-2 text-label text-zinc-950 disabled:opacity-40"
+              @click="connections.activate(connection.id)"
+            >
+              Make active
+            </button>
+            <button
+              type="button"
+              :disabled="
+                connections.pending.value ||
+                (connections.catalog.value?.connections.length ?? 0) <= 1
+              "
+              :aria-label="`Remove ${connection.name}`"
+              class="cursor-pointer px-2 py-2 text-label text-zinc-500 hover:text-white disabled:opacity-30"
+              @click="removing = connection.id"
+            >
+              Remove
+            </button>
+          </div>
+          <div
+            v-if="removing === connection.id"
+            class="flex w-full flex-wrap items-center gap-3 border-t border-white/8 pt-4 text-label text-zinc-400"
+          >
+            <span class="flex-1"
+              >Remove {{ connection.name }} and its stored key?
+              {{ connection.active ? 'Another saved connection will become active.' : '' }}</span
+            >
+            <button
+              type="button"
+              :disabled="connections.pending.value"
+              class="cursor-pointer text-[#ff6b72] disabled:opacity-40"
+              @click="removeConnection(connection.id)"
+            >
+              Confirm remove
+            </button>
+            <button type="button" class="cursor-pointer text-zinc-300" @click="removing = null">
+              Cancel
             </button>
           </div>
         </div>
       </div>
       <p class="m-0 text-label leading-relaxed text-zinc-500">
-        Manage the active model server, its API key and model roles. Kit tools are configured under
+        One connection is active at a time. Model roles are shared. Kit tools are configured under
         Tools &amp; connections.
       </p>
     </template>
@@ -128,7 +237,7 @@ watch(
         >
           <AppIcon name="back" size="sm" /> Connections
         </button>
-        <span class="text-caption text-zinc-500">Changes save automatically</span>
+        <span class="text-caption text-zinc-500">Model roles save automatically</span>
       </header>
       <HubGroup title="Connection">
         <HubRow label="Backend">
@@ -145,31 +254,22 @@ watch(
             <AppIcon name="refresh" />
           </button>
         </HubRow>
-        <HubInput
-          v-model="draft.baseUrl"
-          label="Base URL"
-          hint="Enter the server root without /v1; Studio adds the API path."
-        />
-        <HubInput
-          v-model="apiKey"
-          type="password"
-          label="API key"
-          hint="The key is stored separately when you leave this field."
-          :placeholder="agent.hasApiKey.value ? 'Stored. Type to replace' : 'Not set'"
-          @commit="$emit('commit-key')"
+        <HubRow label="Base URL"
+          ><span class="break-all text-label text-zinc-300">{{ draft.baseUrl }}</span></HubRow
         >
-          <template #before>
-            <button
-              v-if="agent.hasApiKey.value"
-              type="button"
-              class="flex cursor-pointer items-center gap-1 border-0 bg-transparent text-label text-zinc-500 transition hover:text-[#d71921]"
-              @click="agent.saveApiKey('')"
-            >
-              <AppIcon name="trash" size="sm" />
-              Remove
-            </button>
-          </template>
-        </HubInput>
+        <HubRow label="API key" hint="Stored separately for this connection.">
+          <span class="text-label text-zinc-400">{{
+            activeConnection?.hasApiKey ? 'Configured' : 'Not set'
+          }}</span>
+          <button
+            v-if="activeConnection"
+            type="button"
+            class="cursor-pointer rounded-full border border-white/15 px-4 py-2 text-label text-zinc-200"
+            @click="editing = activeConnection"
+          >
+            Edit connection
+          </button>
+        </HubRow>
       </HubGroup>
 
       <section
@@ -285,5 +385,8 @@ watch(
       </HubGroup>
       <slot />
     </template>
+    <p v-if="connections.error.value" role="alert" class="m-0 text-label text-[#ff6b72]">
+      {{ connections.error.value }}
+    </p>
   </div>
 </template>

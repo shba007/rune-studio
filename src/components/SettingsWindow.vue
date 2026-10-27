@@ -133,12 +133,12 @@ onMounted(async () => {
 onBeforeUnmount(() => unlisten?.())
 
 const draft = ref<Settings | null>(null)
-const apiKey = ref('')
 const saved = ref(true)
 function copySettings(value: Settings): Settings {
   return {
     ...value,
     models: { ...value.models },
+    connections: value.connections?.map((connection) => ({ ...connection })),
     lifeConsents: value.lifeConsents ? { ...value.lifeConsents } : undefined,
     retentionDays: value.retentionDays ? { ...value.retentionDays } : undefined,
   }
@@ -154,7 +154,7 @@ watch(
 
 const save = useDebounceFn(async () => {
   if (!draft.value) return
-  await agent.saveSettings(draft.value)
+  if ((await agent.saveSettings(draft.value)) === false) return
   saved.value = true
   if (agent.settings.value) draft.value = copySettings(agent.settings.value)
 }, 600)
@@ -169,13 +169,6 @@ watch(
   },
   { deep: true },
 )
-
-async function commitKey() {
-  const key = apiKey.value.trim()
-  if (!key) return
-  await agent.saveApiKey(key)
-  apiKey.value = ''
-}
 
 onBeforeUnmount(() => {
   if (!saved.value) void save()
@@ -226,13 +219,6 @@ onBeforeUnmount(() => {
             No matching sections.
           </p>
         </div>
-        <button
-          type="button"
-          class="mt-4 flex h-10 w-full shrink-0 cursor-pointer items-center gap-3 rounded-xl border-t border-white/8 px-3 text-left text-body text-zinc-400 hover:bg-white/5 hover:text-zinc-100"
-          @click="agent.openWorkspace()"
-        >
-          <AppIcon name="history" />Knowledge
-        </button>
       </nav>
 
       <section class="flex min-w-0 flex-1 flex-col overflow-y-auto px-8 py-8 lg:px-12">
@@ -259,12 +245,7 @@ onBeforeUnmount(() => {
               view="general"
             />
             <div v-else-if="section === 'models'" class="flex flex-col gap-10">
-              <SettingsConnectionModels
-                :agent="agent"
-                :draft="draft"
-                v-model:api-key="apiKey"
-                @commit-key="commitKey"
-              >
+              <SettingsConnectionModels :agent="agent" :draft="draft">
                 <SettingsGeneral :agent="agent" :draft="draft" view="models" />
               </SettingsConnectionModels>
             </div>
@@ -293,8 +274,6 @@ onBeforeUnmount(() => {
               :agent="agent"
               :draft="draft"
               execution-only
-              v-model:api-key="apiKey"
-              @commit-key="commitKey"
             />
           </template>
           <SettingsAbout v-if="section === 'about'" :agent="agent" />

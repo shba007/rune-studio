@@ -6,6 +6,7 @@ mod archive;
 mod backend;
 mod bridge;
 mod commands;
+mod connections;
 mod credentials;
 mod cursor;
 mod debug;
@@ -242,6 +243,11 @@ pub fn run() {
             commands::has_api_key,
             commands::set_api_key,
             commands::check_backend,
+            connections::connections_state,
+            connections::connections_save,
+            connections::connections_activate,
+            connections::connections_delete,
+            connections::connections_test,
             commands::set_mode,
             commands::fit_height,
             commands::pill_rect,

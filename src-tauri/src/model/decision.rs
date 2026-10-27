@@ -203,7 +203,7 @@ pub async fn ask(
         return None;
     }
     let state = app.state::<AppState>();
-    let (enabled, url, model, skip_swap, allowance_secs) = {
+    let (enabled, url, model, skip_swap, allowance_secs, api_key) = {
         let settings = state.settings.locked();
         (
             settings.fast_checks,
@@ -213,6 +213,7 @@ pub async fn ask(
                 .to_string(),
             settings.skip_swap_for_optional_roles,
             settings.first_call_idle_allowance_secs,
+            settings::api_key_for(&settings),
         )
     };
     if !enabled || url.starts_with("/v1") || model.trim().is_empty() || cooling_down() {
@@ -245,7 +246,7 @@ pub async fn ask(
         .timeout(timeout)
         .json(&request_body(&model, text, images, questions));
     request = with_optional_swap_policy(request, skip_swap);
-    if let Some(key) = settings::api_key() {
+    if let Some(key) = api_key {
         request = request.bearer_auth(key);
     }
 

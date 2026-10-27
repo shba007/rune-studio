@@ -65,16 +65,16 @@ pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
     if state.settings.locked().external_agent {
         return;
     }
-    let (base_url, voice_model) = {
+    let (base_url, voice_model, api_key) = {
         let settings = state.settings.locked();
         (
             settings.base_url.clone(),
             settings
                 .model_for_role(crate::model::role::ModelRole::Voice)
                 .to_string(),
+            settings::api_key_for(&settings),
         )
     };
-    let api_key = settings::api_key();
     let wav = direct::wav(&utterance);
     let profile = match crate::model::protected::discover(
         &state.http,

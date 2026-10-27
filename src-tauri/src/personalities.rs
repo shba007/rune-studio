@@ -227,8 +227,7 @@ pub async fn personality_propose(app: AppHandle, category: String) -> Result<Per
         return Err("Enter a category up to 80 bytes".into());
     }
     let state = app.state::<crate::events::AppState>();
-    let settings = state.settings.locked().clone();
-    let key = crate::settings::api_key();
+    let (settings, key) = crate::settings::snapshot_with_api_key(&state.settings);
     let model = settings.model_for_role(crate::model::role::ModelRole::Agent);
     let profile =
         crate::model::protected::discover(&state.http, &settings.base_url, key.as_deref(), model)

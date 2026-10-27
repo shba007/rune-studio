@@ -16,6 +16,9 @@ function makeDraft(overrides: Partial<Settings> = {}): Settings {
     idleMinutes: 10,
     archiveKeepDays: 0,
     baseUrl: 'http://127.0.0.1:8080',
+    connections: [{ id: 'legacy', name: 'Model connection', baseUrl: 'http://127.0.0.1:8080' }],
+    activeConnectionId: 'legacy',
+    connectionsRevision: 0,
     model: 'gemma-4-12b-it',
     models: {
       agent: 'gemma-4-12b-it',

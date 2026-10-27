@@ -100,13 +100,8 @@ impl Workflow for ScreenInsight {
         Box::pin(async move {
             let input: ScreenInput = serde_json::from_value(input).map_err(|e| e.to_string())?;
             let state = app.state::<AppState>();
-            let settings = state.settings.locked().clone();
-            let status = crate::backend::check(
-                &state.http,
-                &settings,
-                crate::settings::api_key().as_deref(),
-            )
-            .await;
+            let (settings, key) = crate::settings::snapshot_with_api_key(&state.settings);
+            let status = crate::backend::check(&state.http, &settings, key.as_deref()).await;
             if !status.reachable || !status.auth_ok {
                 return Err(status
                     .error

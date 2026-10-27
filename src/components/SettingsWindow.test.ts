@@ -38,20 +38,16 @@ describe('release settings availability', () => {
       'Shortcuts',
       'Developer',
       'About',
-      'Knowledge',
     ])
     expect(wrapper.find('[data-testid="saved"]').exists()).toBe(false)
     wrapper.unmount()
   })
-  it('searches applicable sections by settings keywords and retains Knowledge access', async () => {
+  it('searches applicable sections by settings keywords', async () => {
     const wrapper = shallowMount(SettingsWindow)
     await wrapper.get('input[aria-label="Search settings"]').setValue('unmatched-setting')
     expect(wrapper.text()).toContain('No matching sections')
     await wrapper.get('input[aria-label="Search settings"]').setValue('voice')
-    expect(wrapper.findAll('nav button').map((button) => button.text())).toEqual([
-      'Connections',
-      'Knowledge',
-    ])
+    expect(wrapper.findAll('nav button').map((button) => button.text())).toEqual(['Connections'])
     await wrapper.get('[data-testid="nav-models"]').trigger('click')
     expect(wrapper.get('h1').text()).toBe('Connections')
     await wrapper.get('input[aria-label="Search settings"]').setValue('')
@@ -64,8 +60,9 @@ describe('release settings availability', () => {
     const agent = vi.mocked(useAgent).mock.results.at(-1)!.value
     expect(agent.openWorkspace).toHaveBeenCalledWith('tasks')
     expect(wrapper.find('[data-testid="nav-artifacts"]').exists()).toBe(false)
-    await wrapper.findAll('nav button').at(-1)!.trigger('click')
-    expect(agent.openWorkspace).toHaveBeenCalledTimes(2)
+    expect(wrapper.findAll('nav button').some((button) => button.text() === 'Knowledge')).toBe(
+      false,
+    )
     wrapper.unmount()
   })
   it('saves nested Analysis model edits without mutating the saved settings', async () => {

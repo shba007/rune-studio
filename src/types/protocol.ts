@@ -46,6 +46,9 @@ export type AnalysisGroup = 'entities' | 'regions' | 'structure' | 'depth'
 export type VisualAnalysisVisibility = Record<AnalysisGroup, boolean>
 
 export interface Settings {
+  connections: { id: string; name: string; baseUrl: string; credentialRef?: string | null }[]
+  activeConnectionId: string
+  connectionsRevision: number
   visualAnalysis?: VisualAnalysisVisibility
   verifyMode: 'off' | 'background' | 'blocking'
   demoMode: boolean
@@ -91,6 +94,8 @@ export interface BackendStatus {
 export interface BackendProbe {
   revision: number
   baseUrl?: string
+  connectionId?: string
+  connectionRevision?: number
   status: BackendStatus
 }
 
