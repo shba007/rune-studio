@@ -167,6 +167,36 @@ pub fn save_settings(
             "Connections changed in another window. Reload settings before saving.".into(),
         ));
     }
+    if let Some(selected) = current
+        .active_connection()
+        .and_then(|c| c.selected_models.as_ref())
+    {
+        let before = [
+            &current.models.agent,
+            &current.models.verifier,
+            &current.models.analysis,
+            &current.models.voice,
+            &current.models.decision,
+            &current.models.advisor,
+        ];
+        let after = [
+            &settings.models.agent,
+            &settings.models.verifier,
+            &settings.models.analysis,
+            &settings.models.voice,
+            &settings.models.decision,
+            &settings.models.advisor,
+        ];
+        if before
+            .iter()
+            .zip(after)
+            .any(|(old, new)| *old != new && !new.trim().is_empty() && !selected.contains(new))
+        {
+            return Err(AppError::Invalid(
+                "Choose a model selected for the active connection.".into(),
+            ));
+        }
+    }
     let was_on = current.external_agent;
     validate_mode_change(
         was_on,

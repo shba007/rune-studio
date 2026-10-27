@@ -233,6 +233,7 @@ pub async fn personality_propose(app: AppHandle, category: String) -> Result<Per
         crate::model::protected::discover(&state.http, &settings.base_url, key.as_deref(), model)
             .await?;
     let client = crate::model::client::ChatClient {
+        output_limit: settings.output_limit(),
         http: &state.http,
         base_url: &settings.base_url,
         api_key: key.as_deref(),

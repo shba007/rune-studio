@@ -19,6 +19,12 @@ pub struct Connection {
     pub base_url: String,
     #[serde(default)]
     pub credential_ref: Option<String>,
+    #[serde(default)]
+    pub selected_models: Option<Vec<String>>,
+    #[serde(default)]
+    pub additional_models: Vec<String>,
+    #[serde(default)]
+    pub output_limit: Option<u32>,
 }
 fn legacy_connection(base_url: &str) -> Connection {
     Connection {
@@ -26,6 +32,9 @@ fn legacy_connection(base_url: &str) -> Connection {
         name: "Model connection".into(),
         base_url: base_url.into(),
         credential_ref: Some(LEGACY_CONNECTION.into()),
+        selected_models: None,
+        additional_models: Vec::new(),
+        output_limit: None,
     }
 }
 
@@ -272,6 +281,11 @@ impl<'de> Deserialize<'de> for Settings {
                     || c.name.trim().is_empty()
                     || c.name.len() > 160
                     || c.base_url.len() > 2048
+                    || c.output_limit.is_some_and(|n| n == 0 || n > 1_000_000)
+                    || c.additional_models.len() > 1000
+                    || c.selected_models
+                        .as_ref()
+                        .is_some_and(|ids| ids.len() > 1000)
                     || c.credential_ref.as_ref().is_some_and(|key| {
                         !valid_connection_id(key)
                             || (c.id != LEGACY_CONNECTION
@@ -350,6 +364,16 @@ impl<'de> Deserialize<'de> for Settings {
 }
 
 impl Settings {
+    pub fn active_connection(&self) -> Option<&Connection> {
+        self.connections
+            .iter()
+            .find(|c| c.id == self.active_connection_id)
+    }
+
+    pub fn output_limit(&self) -> Option<u32> {
+        self.active_connection().and_then(|c| c.output_limit)
+    }
+
     pub fn model_for_role(&self, role: ModelRole) -> &str {
         self.models.model_for_role(role)
     }
@@ -732,6 +756,9 @@ mod tests {
             name: "Second".into(),
             base_url: "http://127.0.0.1:7777".into(),
             credential_ref: Some("conn-secret-test".into()),
+            selected_models: None,
+            additional_models: Vec::new(),
+            output_limit: None,
         });
         current.active_connection_id = "conn-two".into();
         assert_eq!(api_key_for(&current).as_deref(), Some("other-secret"));

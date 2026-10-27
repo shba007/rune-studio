@@ -65,7 +65,7 @@ pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
     if state.settings.locked().external_agent {
         return;
     }
-    let (base_url, voice_model, api_key) = {
+    let (base_url, voice_model, api_key, output_limit) = {
         let settings = state.settings.locked();
         (
             settings.base_url.clone(),
@@ -73,6 +73,7 @@ pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
                 .model_for_role(crate::model::role::ModelRole::Voice)
                 .to_string(),
             settings::api_key_for(&settings),
+            settings.output_limit(),
         )
     };
     let wav = direct::wav(&utterance);
@@ -98,6 +99,7 @@ pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
     }
 
     let client = ChatClient {
+        output_limit,
         http: &state.http,
         base_url: &base_url,
         api_key: api_key.as_deref(),

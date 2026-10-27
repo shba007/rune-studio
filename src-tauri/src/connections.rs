@@ -17,6 +17,9 @@ pub struct ConnectionView {
     base_url: String,
     active: bool,
     has_api_key: bool,
+    selected_models: Option<Vec<String>>,
+    additional_models: Vec<String>,
+    output_limit: Option<u32>,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -38,6 +41,9 @@ fn catalog(settings: &Settings) -> Catalog {
                 base_url: c.base_url.clone(),
                 active: c.id == settings.active_connection_id,
                 has_api_key: settings::api_key_for_connection(c).is_some(),
+                selected_models: c.selected_models.clone(),
+                additional_models: c.additional_models.clone(),
+                output_limit: c.output_limit,
             })
             .collect(),
     }
@@ -113,6 +119,60 @@ pub fn connections_state(state: State<'_, AppState>) -> Catalog {
 }
 
 #[tauri::command]
+pub fn connections_models_save(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    revision: u64,
+    id: String,
+    selected_models: Vec<String>,
+    additional_models: Vec<String>,
+    output_limit: Option<u32>,
+) -> AppResult<Catalog> {
+    let valid_ids = |ids: &[String]| {
+        ids.len() <= 1000
+            && ids
+                .iter()
+                .all(|id| !id.trim().is_empty() && id.len() <= 256 && id.trim() == id)
+    };
+    if output_limit == Some(0)
+        || output_limit.is_some_and(|n| n > 1_000_000)
+        || !valid_ids(&additional_models)
+        || !valid_ids(&selected_models)
+    {
+        return Err(AppError::Invalid(
+            "Invalid model IDs or output limit".into(),
+        ));
+    }
+    let analysis = state.analysis.locked();
+    let mut current = state.settings.locked();
+    check_revision(&current, revision)?;
+    settings::ensure_current(&app, &current)?;
+    if current.active_connection_id == id {
+        ensure_idle(&app, &state, analysis.status)?;
+    }
+    let mut next = current.clone();
+    let connection = next
+        .connections
+        .iter_mut()
+        .find(|c| c.id == id)
+        .ok_or_else(|| AppError::Invalid("Connection no longer exists".into()))?;
+    connection.selected_models = Some(selected_models);
+    connection.additional_models = additional_models;
+    connection.output_limit = output_limit;
+    next.connections_revision = next
+        .connections_revision
+        .checked_add(1)
+        .ok_or_else(|| AppError::Invalid("Connection revision limit reached".into()))?;
+    settings::save(&app, &next)?;
+    *current = next;
+    let view = catalog(&current);
+    drop(current);
+    drop(analysis);
+    crate::hub::changed(&app);
+    Ok(view)
+}
+
+#[tauri::command]
 #[allow(clippy::too_many_arguments)] // Tauri exposes these as individual command fields.
 pub fn connections_save(
     app: AppHandle,
@@ -171,6 +231,9 @@ pub fn connections_save(
             name: name.trim().into(),
             base_url: base_url.trim().into(),
             credential_ref: None,
+            selected_models: None,
+            additional_models: Vec::new(),
+            output_limit: None,
         });
     } else {
         let item = next
@@ -357,6 +420,9 @@ mod tests {
             name: "Second".into(),
             base_url: "http://127.0.0.1:9000".into(),
             credential_ref: None,
+            selected_models: None,
+            additional_models: Vec::new(),
+            output_limit: None,
         });
         select_active(&mut s, "conn-two").unwrap();
         assert_eq!(s.base_url, "http://127.0.0.1:9000");

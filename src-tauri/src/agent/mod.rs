@@ -371,6 +371,7 @@ fn spawn_background_check(app: &AppHandle, run_id: String, evidence: Option<Evid
             }
         };
         let client = ChatClient {
+            output_limit: settings.output_limit(),
             http: &state.http,
             base_url: &settings.base_url,
             api_key: api_key.as_deref(),
@@ -686,6 +687,7 @@ async fn run(
         events::set_agent_state(&app_for_loading, AgentState::LoadingModel);
     };
     let client = ChatClient {
+        output_limit: settings.output_limit(),
         http: &state.http,
         base_url: &settings.base_url,
         api_key: api_key.as_deref(),
@@ -712,6 +714,7 @@ async fn run(
         crate::model::profile::resolve_profile(verifier_model, None, None)
     };
     let verifier_client = ChatClient {
+        output_limit: settings.output_limit(),
         http: &state.http,
         base_url: &settings.base_url,
         api_key: api_key.as_deref(),
@@ -1788,6 +1791,7 @@ mod live {
         let http = reqwest::Client::new();
         let key = std::env::var("RUNE_API_KEY").unwrap_or_else(|_| "sk-rune-local-test-key".into());
         let client = ChatClient {
+            output_limit: None,
             http: &http,
             base_url: "http://127.0.0.1:8080",
             api_key: Some(&key),

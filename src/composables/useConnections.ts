@@ -10,6 +10,9 @@ export interface ConnectionView {
   baseUrl: string
   active: boolean
   hasApiKey: boolean
+  selectedModels?: string[] | null
+  additionalModels?: string[]
+  outputLimit?: number | null
 }
 export interface ConnectionCatalog {
   revision: number
@@ -113,6 +116,12 @@ export function useConnections() {
     check,
     save: (edit: ConnectionEdit) =>
       change('connections_save', { ...edit, key: edit.key.trim() || null }),
+    saveModels: (
+      id: string,
+      selectedModels: string[],
+      additionalModels: string[],
+      outputLimit: number | null,
+    ) => change('connections_models_save', { id, selectedModels, additionalModels, outputLimit }),
     activate: (id: string) => change('connections_activate', { id }),
     remove: (id: string) => change('connections_delete', { id }),
   }

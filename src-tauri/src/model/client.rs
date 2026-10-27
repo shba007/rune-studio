@@ -46,6 +46,7 @@ pub struct Reply {
 }
 
 pub struct ChatClient<'a> {
+    pub output_limit: Option<u32>,
     pub http: &'a reqwest::Client,
     pub base_url: &'a str,
     pub api_key: Option<&'a str>,
@@ -191,6 +192,13 @@ pub(crate) fn chat_body(model: &str, profile: &ModelProfile, request: &Request<'
         body["stream"] = json!(true);
     }
     body
+}
+
+fn cap_output(body: &mut Value, limit: Option<u32>) {
+    if let Some(limit) = limit {
+        let requested = body["max_tokens"].as_u64().unwrap_or(u64::from(limit));
+        body["max_tokens"] = json!(requested.min(u64::from(limit)));
+    }
 }
 
 struct Exchange {
@@ -378,10 +386,11 @@ impl ChatClient<'_> {
             }
         }
 
-        let body = match schema {
+        let mut body = match schema {
             Some(schema) => json_body(self.model, profile, request, schema),
             None => chat_body(self.model, profile, request),
         };
+        cap_output(&mut body, self.output_limit);
         let started = std::time::Instant::now();
         let mut guard = Guard {
             sink: self.sink,
@@ -967,6 +976,17 @@ impl Stream {
 mod tests {
     use super::*;
 
+    #[test]
+    fn connection_output_cap_never_raises_an_existing_limit() {
+        let mut body = json!({"max_tokens": 1500});
+        cap_output(&mut body, Some(800));
+        assert_eq!(body["max_tokens"], 800);
+        cap_output(&mut body, Some(4000));
+        assert_eq!(body["max_tokens"], 800);
+        cap_output(&mut body, None);
+        assert_eq!(body["max_tokens"], 800);
+    }
+
     #[tokio::test]
     async fn structured_json_stream_preserves_thinking_and_model_identity() {
         let events = [
@@ -985,6 +1005,7 @@ mod tests {
         let http = reqwest::Client::builder().no_proxy().build().unwrap();
         let sink = crate::model::attempts::Collect::default();
         let client = ChatClient {
+            output_limit: None,
             http: &http,
             base_url: &url,
             api_key: None,
@@ -1041,6 +1062,7 @@ mod tests {
         let http = reqwest::Client::builder().no_proxy().build().unwrap();
         let sink = crate::model::attempts::Collect::default();
         let client = ChatClient {
+            output_limit: None,
             http: &http,
             base_url: &url,
             api_key: None,
@@ -1347,6 +1369,7 @@ mod tests {
         ]);
         let http = reqwest::Client::builder().no_proxy().build().unwrap();
         let client = ChatClient {
+            output_limit: None,
             http: &http,
             base_url: &url,
             api_key: None,
@@ -1376,6 +1399,7 @@ mod tests {
         let http = reqwest::Client::builder().no_proxy().build().unwrap();
         let sink = Collect::default();
         let client = ChatClient {
+            output_limit: None,
             http: &http,
             base_url: &url,
             api_key: Some("sk-secret"),
@@ -1425,6 +1449,7 @@ mod tests {
         let http = reqwest::Client::builder().no_proxy().build().unwrap();
         let sink = Collect::default();
         let client = ChatClient {
+            output_limit: None,
             http: &http,
             base_url: &url,
             api_key: None,
@@ -1454,6 +1479,7 @@ mod tests {
         let silent = format!("http://{}", listener.local_addr().unwrap());
         let sink = Collect::default();
         let client = ChatClient {
+            output_limit: None,
             http: &http,
             base_url: &silent,
             api_key: None,
@@ -1483,6 +1509,7 @@ mod tests {
         let (url, served) = serve(vec![("400 Bad Request", "no".into())]);
         let http = reqwest::Client::builder().no_proxy().build().unwrap();
         let client = ChatClient {
+            output_limit: None,
             http: &http,
             base_url: &url,
             api_key: None,
@@ -1534,6 +1561,7 @@ mod tests {
         });
         let http = reqwest::Client::builder().no_proxy().build().unwrap();
         let client = ChatClient {
+            output_limit: None,
             http: &http,
             base_url: &url,
             api_key: None,
@@ -1793,6 +1821,7 @@ mod tests {
             loaded_flag.store(true, Ordering::SeqCst);
         };
         let client = ChatClient {
+            output_limit: None,
             http: &http,
             base_url: &url,
             api_key: None,
@@ -1842,6 +1871,7 @@ mod tests {
         ]);
         let http = reqwest::Client::builder().no_proxy().build().unwrap();
         let client = ChatClient {
+            output_limit: None,
             http: &http,
             base_url: &url,
             api_key: None,
@@ -1903,6 +1933,7 @@ mod tests {
             let http = reqwest::Client::builder().no_proxy().build().unwrap();
             let sink = Collect::default();
             let client = ChatClient {
+                output_limit: None,
                 http: &http,
                 base_url: &url,
                 api_key: None,
@@ -1952,6 +1983,7 @@ mod tests {
         let http = reqwest::Client::builder().no_proxy().build().unwrap();
         let sink = crate::model::attempts::Collect::default();
         let client = ChatClient {
+            output_limit: None,
             http: &http,
             base_url: &url,
             api_key: None,
@@ -1994,6 +2026,7 @@ mod tests {
         let mut profile = ModelProfile::conservative("test");
         profile.locality = crate::model::capabilities::Locality::Cloud;
         let client = ChatClient {
+            output_limit: None,
             http: &http,
             base_url: &url,
             api_key: None,
@@ -2031,6 +2064,7 @@ mod tests {
             let http = reqwest::Client::new();
             let sink = crate::model::attempts::Collect::default();
             let client = ChatClient {
+                output_limit: None,
                 http: &http,
                 base_url: &url,
                 api_key: None,
@@ -2064,6 +2098,7 @@ mod tests {
         )]);
         let http = reqwest::Client::new();
         let client = ChatClient {
+            output_limit: None,
             http: &http,
             base_url: &url,
             api_key: None,

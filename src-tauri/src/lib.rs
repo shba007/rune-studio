@@ -244,6 +244,7 @@ pub fn run() {
             commands::set_api_key,
             commands::check_backend,
             connections::connections_state,
+            connections::connections_models_save,
             connections::connections_save,
             connections::connections_activate,
             connections::connections_delete,

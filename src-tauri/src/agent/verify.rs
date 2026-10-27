@@ -468,6 +468,7 @@ mod tests {
 
     fn client<'a>(http: &'a reqwest::Client, url: &'a str) -> ChatClient<'a> {
         ChatClient {
+            output_limit: None,
             http,
             base_url: url,
             api_key: None,

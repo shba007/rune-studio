@@ -9,6 +9,7 @@ const props = defineProps<{
   agentModel: string
   models: ModelCapabilities[]
   placeholder?: string
+  selectedModels?: string[] | null
 }>()
 
 const modelValue = defineModel<string>({ required: true })
@@ -82,7 +83,27 @@ function statusLabel(status: string) {
           :model="effectiveModelId"
           class="pointer-events-none absolute top-3 left-3 text-zinc-300"
         />
+        <select
+          v-if="selectedModels"
+          :id="inputId"
+          v-model="modelValue"
+          :aria-describedby="`${inputId}-status`"
+          class="h-10 w-full min-w-0 rounded-xl border-0 bg-white/6 px-3 text-body text-zinc-100"
+        >
+          <option value="">
+            {{ roleKey === 'agent' || roleKey === 'analysis' ? 'Choose a model' : 'Same as agent' }}
+          </option>
+          <option
+            v-if="modelValue && !selectedModels.includes(modelValue)"
+            :value="modelValue"
+            disabled
+          >
+            {{ modelValue }} · not selected
+          </option>
+          <option v-for="id in selectedModels" :key="id" :value="id">{{ id }}</option>
+        </select>
         <input
+          v-else
           :id="inputId"
           v-model="modelValue"
           type="text"

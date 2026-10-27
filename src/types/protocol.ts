@@ -46,7 +46,15 @@ export type AnalysisGroup = 'entities' | 'regions' | 'structure' | 'depth'
 export type VisualAnalysisVisibility = Record<AnalysisGroup, boolean>
 
 export interface Settings {
-  connections: { id: string; name: string; baseUrl: string; credentialRef?: string | null }[]
+  connections: {
+    id: string
+    name: string
+    baseUrl: string
+    credentialRef?: string | null
+    selectedModels?: string[] | null
+    additionalModels?: string[]
+    outputLimit?: number | null
+  }[]
   activeConnectionId: string
   connectionsRevision: number
   visualAnalysis?: VisualAnalysisVisibility

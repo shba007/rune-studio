@@ -1092,6 +1092,7 @@ async fn make_plan(
         .ok_or("Request was dismissed before planning")?;
     let call_log = state.trace.call_log(&history_id, "task-plan");
     let client = crate::model::client::ChatClient {
+        output_limit: settings.output_limit(),
         http: &state.http,
         base_url: &settings.base_url,
         api_key: key.as_deref(),
@@ -1200,6 +1201,7 @@ async fn background(
             .await?;
     let call_log = state.trace.call_log(run_id, "background");
     let client = crate::model::client::ChatClient {
+        output_limit: settings.output_limit(),
         http: &state.http,
         base_url: &settings.base_url,
         api_key: key.as_deref(),

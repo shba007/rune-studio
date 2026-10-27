@@ -25,6 +25,10 @@ const activeConnection = computed(() =>
 )
 const checking = ref(false)
 const modelSearch = ref('')
+const selectedDraft = ref<string[]>([])
+const additionalDraft = ref('')
+const limitDraft = ref('')
+const modelError = ref('')
 const visibleStatus = computed(() =>
   props.draft.baseUrl === props.agent.settings.value?.baseUrl &&
   (!connections.catalog.value ||
@@ -35,6 +39,69 @@ const visibleStatus = computed(() =>
     : null,
 )
 const discovered = computed(() => visibleStatus.value?.models ?? [])
+const additionalIds = computed(() => [
+  ...new Set(
+    additionalDraft.value
+      .split(/[\n,]/)
+      .map((id) => id.trim())
+      .filter(Boolean),
+  ),
+])
+const modelIds = computed(() => [
+  ...new Set([
+    ...discovered.value.map((m) => m.id),
+    ...additionalIds.value,
+    ...selectedDraft.value,
+  ]),
+])
+const filteredModelIds = computed(() =>
+  modelIds.value.filter((id) => id.toLowerCase().includes(modelSearch.value.trim().toLowerCase())),
+)
+const roleModelIds = computed(() => [
+  ...new Set([
+    ...discovered.value.map((m) => m.id),
+    ...(activeConnection.value?.additionalModels ?? []),
+  ]),
+])
+watch(
+  activeConnection,
+  (connection) => {
+    if (!connection) return
+    selectedDraft.value =
+      connection.selectedModels != null
+        ? [...connection.selectedModels]
+        : [
+            ...new Set([
+              ...discovered.value.map((model) => model.id),
+              ...Object.values(props.draft.models).filter(Boolean),
+            ]),
+          ]
+    additionalDraft.value = (connection.additionalModels ?? []).join('\n')
+    limitDraft.value = connection.outputLimit?.toString() ?? ''
+  },
+  { immediate: true },
+)
+function toggleModel(id: string, checked: boolean) {
+  selectedDraft.value = checked
+    ? [...new Set([...selectedDraft.value, id])]
+    : selectedDraft.value.filter((item) => item !== id)
+}
+async function saveModelSettings() {
+  const value = String(limitDraft.value).trim()
+  const limit = value ? Number(value) : null
+  if (limit !== null && (!Number.isInteger(limit) || limit < 1 || limit > 1000000)) {
+    modelError.value = 'Enter an output limit between 1 and 1,000,000 tokens, or leave it blank.'
+    return
+  }
+  if (!activeConnection.value) return
+  modelError.value = ''
+  await connections.saveModels(
+    activeConnection.value.id,
+    selectedDraft.value,
+    additionalIds.value,
+    limit,
+  )
+}
 const filteredModels = computed(() => {
   const query = modelSearch.value.trim().toLowerCase()
   return discovered.value.filter((model) => model.id.toLowerCase().includes(query))
@@ -322,6 +389,84 @@ watch(
         </p>
       </section>
 
+      <section
+        class="flex flex-col gap-4 border-t border-white/8 pt-6"
+        aria-label="Model selection and limits"
+      >
+        <h2 class="m-0 text-body text-zinc-200">Model selection and limits</h2>
+        <p class="m-0 text-label text-zinc-300">
+          Select the models available for role assignments.
+        </p>
+        <p class="m-0 text-caption text-zinc-500">
+          Existing role assignments remain unchanged when you switch connections. Select their
+          models here to assign them again.
+        </p>
+        <label class="flex flex-col gap-2 text-label text-zinc-300"
+          >Additional model IDs
+          <span class="text-caption text-zinc-500"
+            >One per line or comma separated. Capabilities remain unknown until reported by the
+            server.</span
+          >
+          <textarea
+            v-model="additionalDraft"
+            rows="3"
+            class="rounded-xl bg-white/6 p-3 text-zinc-100"
+          />
+        </label>
+        <input
+          v-model="modelSearch"
+          type="search"
+          aria-label="Search selectable models"
+          placeholder="Search selectable models"
+          class="h-10 w-full rounded-xl bg-white/5 px-3 text-label text-zinc-100"
+        />
+        <div class="max-h-56 overflow-y-auto rounded-xl border border-white/8">
+          <div class="flex gap-4 px-4 py-3 text-label text-zinc-400">
+            <button type="button" @click="selectedDraft = [...modelIds]">Select all</button>
+            <button type="button" @click="selectedDraft = []">Clear</button>
+          </div>
+          <label
+            v-for="id in filteredModelIds"
+            :key="id"
+            class="flex items-center gap-3 border-b border-white/8 px-4 py-3 text-label text-zinc-300 last:border-0"
+          >
+            <input
+              type="checkbox"
+              :checked="selectedDraft.includes(id)"
+              @change="toggleModel(id, ($event.target as HTMLInputElement).checked)"
+            />{{ id }}
+          </label>
+          <p v-if="!modelIds.length" class="px-4 text-caption text-zinc-500">
+            No discovered or additional models.
+          </p>
+        </div>
+        <label class="flex flex-col gap-2 text-label text-zinc-300"
+          >Maximum output tokens
+          <input
+            v-model="limitDraft"
+            type="number"
+            min="1"
+            max="1000000"
+            placeholder="No connection cap"
+            class="rounded-xl bg-white/6 p-3 text-zinc-100"
+          />
+        </label>
+        <p class="m-0 text-caption text-zinc-500">
+          Caps model output, not context length. Requests with lower limits keep their existing
+          limit. Fast checks use a separate API and are not capped. Providers may reject unsupported
+          values.
+        </p>
+        <p v-if="modelError" role="alert" class="m-0 text-label text-[#ff6b72]">{{ modelError }}</p>
+        <button
+          type="button"
+          :disabled="connections.pending.value"
+          class="w-fit cursor-pointer rounded-full bg-zinc-100 px-5 py-2 text-label text-zinc-950 disabled:opacity-40"
+          @click="saveModelSettings"
+        >
+          Save model settings
+        </button>
+      </section>
+
       <HubGroup title="Models">
         <p class="m-0 mb-2 text-label text-zinc-400">
           Choose a model for each job. Visual Analysis requires an explicit Analysis model with
@@ -329,7 +474,7 @@ watch(
           Open Model capabilities to check what each model supports.
         </p>
         <datalist id="discovered-models-list">
-          <option v-for="m in discovered" :key="m.id" :value="m.id" />
+          <option v-for="id in roleModelIds" :key="id" :value="id" />
         </datalist>
 
         <ModelRoleRow
@@ -338,6 +483,7 @@ watch(
           role-key="agent"
           :agent-model="draft.models.agent"
           :models="discovered"
+          :selected-models="activeConnection?.selectedModels"
           placeholder="e.g. gemma-4-12b-it"
         />
         <ModelRoleRow
@@ -346,6 +492,7 @@ watch(
           role-key="verifier"
           :agent-model="draft.models.agent"
           :models="discovered"
+          :selected-models="activeConnection?.selectedModels"
         />
         <ModelRoleRow
           v-model="draft.models.analysis"
@@ -353,6 +500,7 @@ watch(
           role-key="analysis"
           :agent-model="draft.models.agent"
           :models="discovered"
+          :selected-models="activeConnection?.selectedModels"
         />
         <ModelRoleRow
           v-model="draft.models.voice"
@@ -360,6 +508,7 @@ watch(
           role-key="voice"
           :agent-model="draft.models.agent"
           :models="discovered"
+          :selected-models="activeConnection?.selectedModels"
         />
         <ModelRoleRow
           v-model="draft.models.decision"
@@ -367,6 +516,7 @@ watch(
           role-key="decision"
           :agent-model="draft.models.agent"
           :models="discovered"
+          :selected-models="activeConnection?.selectedModels"
         />
         <ModelRoleRow
           v-model="draft.models.advisor"
@@ -374,6 +524,7 @@ watch(
           role-key="advisor"
           :agent-model="draft.models.agent"
           :models="discovered"
+          :selected-models="activeConnection?.selectedModels"
         />
 
         <HubToggle
