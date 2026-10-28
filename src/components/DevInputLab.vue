@@ -7,8 +7,7 @@ import type { CaptureReport, ClickReport } from '@/types/protocol'
 const props = defineProps<{ agent: Agent }>()
 const agent = props.agent
 
-const FIELD =
-  'min-w-0 rounded-lg bg-white/8 px-2 py-1 text-label text-zinc-100 outline-none focus:ring-1 focus:ring-white/30'
+const FIELD = 'min-w-0 rounded-lg bg-white/8 px-2 py-1 text-label text-zinc-100'
 const BUTTON =
   'cursor-pointer rounded-full bg-white/8 px-3 py-1 text-label text-zinc-200 transition hover:bg-white/15'
 

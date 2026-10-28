@@ -231,7 +231,7 @@ function onOrb() {
     @keydown="agent.noteActivity()"
   >
     <div
-      class="h-16 shrink-0 self-end overflow-hidden transition-[width] duration-300 ease-out"
+      class="h-16 shrink-0 self-end overflow-hidden transition-[width] duration-300 ease-out motion-reduce:transition-none"
       :style="{ width: isAmbient ? '0px' : `${DOCK_WIDTH + DOCK_GAP}px` }"
     >
       <div class="flex h-full justify-start" :style="{ width: `${DOCK_WIDTH}px` }">
@@ -328,7 +328,7 @@ function onOrb() {
     </div>
 
     <div
-      class="h-full overflow-hidden transition-[width] duration-300 ease-out"
+      class="h-full overflow-hidden transition-[width] duration-300 ease-out motion-reduce:transition-none"
       :style="{ width: isAmbient ? '0px' : `${PAGE_WIDTH + PAGE_GAP}px` }"
     >
       <div class="ml-2 flex h-full flex-col justify-end" :style="{ width: `${PAGE_WIDTH}px` }">

@@ -120,7 +120,7 @@ function statusLabel(status: string) {
           spellcheck="false"
           autocomplete="off"
           :class="effectiveModelId ? 'pl-9' : ''"
-          class="h-10 w-full min-w-0 rounded-xl border-0 bg-white/6 px-3 text-body text-zinc-100 outline-none placeholder:text-zinc-400 focus-visible:ring-2 focus-visible:ring-white/40"
+          class="h-10 w-full min-w-0 rounded-xl border-0 bg-white/6 px-3 text-body text-zinc-100 placeholder:text-zinc-400"
         />
       </div>
     </div>

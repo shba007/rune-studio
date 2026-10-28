@@ -32,7 +32,7 @@ onMounted(() => no.value?.focus())
   >
     <header class="flex h-6 items-center gap-2">
       <span
-        class="size-2 shrink-0 animate-pulse rounded-full"
+        class="size-2 shrink-0 motion-safe:animate-pulse rounded-full"
         :class="asking ? 'bg-primary' : 'bg-attention'"
       />
       <span

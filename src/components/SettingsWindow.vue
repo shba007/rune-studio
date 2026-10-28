@@ -203,7 +203,7 @@ onBeforeUnmount(() => {
             type="search"
             aria-label="Search sections"
             placeholder="Search sections"
-            class="h-10 w-full rounded-full bg-white/6 pr-3 pl-10 text-rune-body text-zinc-100 outline-none placeholder:text-zinc-500 focus-visible:ring-1 focus-visible:ring-white/30"
+            class="h-10 w-full rounded-full bg-white/6 pr-3 pl-10 text-rune-body text-zinc-100 placeholder:text-zinc-500"
           />
         </label>
         <div class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">

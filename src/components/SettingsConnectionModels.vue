@@ -290,7 +290,7 @@ watch(
       </div>
       <p class="m-0 text-rune-body leading-relaxed text-zinc-500">
         One connection is active at a time. Model roles are shared. Kit tools are configured under
-        Tools &amp; connections.
+        Kit &amp; tools.
       </p>
     </template>
     <template v-else>
@@ -369,7 +369,7 @@ watch(
             type="search"
             aria-label="Search discovered models"
             placeholder="Search models"
-            class="h-10 w-full rounded-xl bg-white/5 px-rune-2 text-rune-body text-zinc-100 outline-none placeholder:text-zinc-500 focus-visible:ring-1 focus-visible:ring-white/30"
+            class="h-10 w-full rounded-xl bg-white/5 px-rune-2 text-rune-body text-zinc-100 placeholder:text-zinc-500"
           />
           <ul class="m-0 max-h-56 list-none overflow-y-auto rounded-xl border border-white/8 p-0">
             <li

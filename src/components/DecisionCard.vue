@@ -98,7 +98,7 @@ function typeAnswer(event: Event) {
           :value="text"
           rows="2"
           maxlength="4000"
-          class="w-full resize-y rounded-xl bg-white/5 p-2 text-zinc-100 placeholder:text-zinc-400 outline-none focus:ring-1 focus:ring-white/30"
+          class="w-full resize-y rounded-xl bg-white/5 p-2 text-zinc-100 placeholder:text-zinc-400"
           placeholder="Tell Rune otherwise"
           @input="typeAnswer"
         />

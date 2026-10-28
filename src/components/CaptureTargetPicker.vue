@@ -34,7 +34,7 @@ function choose(value: string) {
       type="button"
       aria-label="Choose capture target"
       :aria-expanded="expanded"
-      class="flex min-h-11 w-full items-center gap-2 rounded-xl px-2 text-left text-rune-caption text-zinc-200 outline-none hover:bg-white/5 focus-visible:ring-2 focus-visible:ring-white/50"
+      class="flex min-h-11 w-full items-center gap-2 rounded-xl px-2 text-left text-rune-caption text-zinc-200 hover:bg-white/5"
       @click="expanded = !expanded"
     >
       <AppIcon :name="label?.startsWith('Screen') ? 'monitor' : 'app'" />
@@ -45,7 +45,7 @@ function choose(value: string) {
       type="button"
       aria-label="Refresh capture targets"
       :disabled="refreshing"
-      class="min-h-9 cursor-pointer rounded-lg px-2 text-rune-caption text-zinc-300 hover:bg-white/8 focus-visible:ring-2 focus-visible:ring-white/50 disabled:cursor-wait disabled:opacity-50"
+      class="min-h-9 cursor-pointer rounded-lg px-2 text-rune-caption text-zinc-300 hover:bg-white/8 disabled:cursor-wait disabled:opacity-50"
       @click="refresh"
     >
       {{ refreshing ? 'Refreshing…' : 'Refresh targets' }}
@@ -55,7 +55,7 @@ function choose(value: string) {
         v-model="search"
         aria-label="Filter capture targets"
         placeholder="Find a screen or window"
-        class="h-9 w-full rounded-lg bg-black/20 px-2 text-rune-caption text-zinc-100 outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+        class="h-9 w-full rounded-lg bg-black/20 px-2 text-rune-caption text-zinc-100"
       />
       <div class="max-h-44 overflow-x-hidden overflow-y-auto" aria-label="Capture targets">
         <template v-for="kind in ['screen', 'window']" :key="kind">
@@ -70,7 +70,7 @@ function choose(value: string) {
             :key="JSON.stringify(option.target)"
             type="button"
             :aria-pressed="selected === JSON.stringify(option.target)"
-            class="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-rune-caption text-zinc-300 outline-none hover:bg-white/8 focus-visible:ring-2 focus-visible:ring-white/50"
+            class="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-rune-caption text-zinc-300 hover:bg-white/8"
             @click="choose(JSON.stringify(option.target))"
           >
             <span

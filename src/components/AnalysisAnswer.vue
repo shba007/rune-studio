@@ -41,7 +41,7 @@ const long = computed(() => props.text.length > LONG || props.text.split('\n').l
       <button
         v-if="long"
         type="button"
-        class="mt-2 cursor-pointer text-rune-caption text-zinc-400 uppercase outline-none hover:text-white focus-visible:ring-2 focus-visible:ring-white/60"
+        class="mt-2 cursor-pointer text-rune-caption text-zinc-400 uppercase hover:text-white"
         :aria-expanded="expanded"
         @click="expanded = !expanded"
       >

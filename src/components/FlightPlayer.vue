@@ -431,7 +431,9 @@ const verdictLine = computed(() => {
               v-if="flight.live.value"
               class="flex items-center gap-1 text-zinc-100"
               data-testid="live"
-              ><span class="size-1.5 animate-pulse rounded-full bg-[#d71921]" />Live</span
+              ><span
+                class="size-1.5 motion-safe:animate-pulse rounded-full bg-[#d71921]"
+              />Live</span
             >
             <span v-else class="flex items-center gap-1" :class="outcomeClass" data-testid="outcome"
               ><span class="size-1.5 rounded-full" :class="outcomeDot" />{{

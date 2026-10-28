@@ -35,7 +35,7 @@ const badge = computed(() => {
   >
     <button
       type="button"
-      class="flex h-10 w-full cursor-pointer items-center gap-2 rounded-rune-control px-rune-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+      class="flex h-10 w-full cursor-pointer items-center gap-2 rounded-rune-control px-rune-1 text-left"
       :aria-expanded="open"
       :aria-label="`Finding ${finding.n}: ${finding.label}${positioned ? '' : ', no position on the screen'}`"
       @click="emit('toggle', finding.n)"
