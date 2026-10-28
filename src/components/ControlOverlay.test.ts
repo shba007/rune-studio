@@ -42,14 +42,18 @@ it('shows thinking and speech beside the orb with an expanded scaled task window
   harness.invoke.mockImplementation(async (command) => {
     if (command === 'pill_rect') return rect
     if (command === 'analysis_state') return EMPTY_SNAPSHOT
-    if (command === 'get_settings') return { stopHotkey: 'Escape' }
+    if (command === 'get_settings')
+      return { stopHotkey: 'Escape', models: { agent: 'qwen3.8-27b-Q4_K_M' } }
     return null
   })
   const wrapper = mount(ControlOverlay)
   await flushPromises()
-  harness.handlers.get('thinking')!({ payload: { text: 'Checking the current step', done: false } })
+  harness.handlers.get('thinking')!({
+    payload: { text: 'Checking the current step', done: false, model: 'qwen3.8-27b-Q4_K_M' },
+  })
   await flushPromises()
   expect(wrapper.text()).toContain('Checking the current step')
+  expect(wrapper.text()).toContain('qwen3.8-27b-Q4_K_M · requested')
   const bubble = wrapper.get('.w-\\[280px\\]')
   expect((bubble.element as HTMLElement).style.right).toBe(
     `${window.innerWidth - 596 + window.screenX}px`,
@@ -75,6 +79,7 @@ it('shows thinking and speech beside the orb with an expanded scaled task window
   harness.handlers.get('task_answer')!({ payload: answer })
   await flushPromises()
   expect(wrapper.text()).toContain(answer.trim())
+  expect(wrapper.text()).toContain('qwen3.8-27b-Q4_K_M · configured')
   harness.handlers.get('state_changed')!({ payload: { state: 'idle' } })
   await flushPromises()
   expect(wrapper.text()).toContain(answer.trim())

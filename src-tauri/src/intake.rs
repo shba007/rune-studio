@@ -276,6 +276,7 @@ async fn infer(
     .await
     .ok_or("Request interrupted")??;
     let client = crate::model::client::ChatClient {
+        app: Some(app),
         output_limit: settings.output_limit(),
         http: &state.http,
         base_url: &settings.base_url,

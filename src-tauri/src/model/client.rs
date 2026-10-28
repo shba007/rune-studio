@@ -46,6 +46,7 @@ pub struct Reply {
 }
 
 pub struct ChatClient<'a> {
+    pub app: Option<&'a tauri::AppHandle>,
     pub output_limit: Option<u32>,
     pub http: &'a reqwest::Client,
     pub base_url: &'a str,
@@ -413,7 +414,17 @@ impl ChatClient<'_> {
                 swap_ms: None,
             }),
         };
-        let exchange = self.exchange(request, &body, on_thinking).await;
+        let activity = self
+            .app
+            .map(|app| crate::model::activity::Guard::start(app, self.model));
+        let exchange = self
+            .exchange(request, &body, on_thinking, activity.as_ref())
+            .await;
+        if let Some(model) = &exchange.served_model
+            && let Some(activity) = &activity
+        {
+            activity.reported(model);
+        }
         let report = guard.finish().map(|mut report| {
             report.duration_ms = started.elapsed().as_millis() as u64;
             report.status = exchange.status;
@@ -465,6 +476,7 @@ impl ChatClient<'_> {
         request: &Request<'_>,
         body: &Value,
         on_thinking: &mut (dyn FnMut(&str) + Send),
+        activity: Option<&crate::model::activity::Guard>,
     ) -> Exchange {
         let sensitive_http;
         let transport = if request.data_class.is_some_and(|dc| dc.is_sensitive()) {
@@ -519,6 +531,11 @@ impl ChatClient<'_> {
             }
         };
         let headers = response.headers().clone();
+        if let Some(model) = headers.get("x-model-served").and_then(|v| v.to_str().ok())
+            && let Some(activity) = activity
+        {
+            activity.reported(model);
+        }
         if request.data_class.is_some_and(|dc| dc.is_sensitive())
             && crate::life::policy::response_is_cloud(&headers)
         {
@@ -1005,6 +1022,7 @@ mod tests {
         let http = reqwest::Client::builder().no_proxy().build().unwrap();
         let sink = crate::model::attempts::Collect::default();
         let client = ChatClient {
+            app: None,
             output_limit: None,
             http: &http,
             base_url: &url,
@@ -1062,6 +1080,7 @@ mod tests {
         let http = reqwest::Client::builder().no_proxy().build().unwrap();
         let sink = crate::model::attempts::Collect::default();
         let client = ChatClient {
+            app: None,
             output_limit: None,
             http: &http,
             base_url: &url,
@@ -1369,6 +1388,7 @@ mod tests {
         ]);
         let http = reqwest::Client::builder().no_proxy().build().unwrap();
         let client = ChatClient {
+            app: None,
             output_limit: None,
             http: &http,
             base_url: &url,
@@ -1399,6 +1419,7 @@ mod tests {
         let http = reqwest::Client::builder().no_proxy().build().unwrap();
         let sink = Collect::default();
         let client = ChatClient {
+            app: None,
             output_limit: None,
             http: &http,
             base_url: &url,
@@ -1449,6 +1470,7 @@ mod tests {
         let http = reqwest::Client::builder().no_proxy().build().unwrap();
         let sink = Collect::default();
         let client = ChatClient {
+            app: None,
             output_limit: None,
             http: &http,
             base_url: &url,
@@ -1479,6 +1501,7 @@ mod tests {
         let silent = format!("http://{}", listener.local_addr().unwrap());
         let sink = Collect::default();
         let client = ChatClient {
+            app: None,
             output_limit: None,
             http: &http,
             base_url: &silent,
@@ -1509,6 +1532,7 @@ mod tests {
         let (url, served) = serve(vec![("400 Bad Request", "no".into())]);
         let http = reqwest::Client::builder().no_proxy().build().unwrap();
         let client = ChatClient {
+            app: None,
             output_limit: None,
             http: &http,
             base_url: &url,
@@ -1561,6 +1585,7 @@ mod tests {
         });
         let http = reqwest::Client::builder().no_proxy().build().unwrap();
         let client = ChatClient {
+            app: None,
             output_limit: None,
             http: &http,
             base_url: &url,
@@ -1821,6 +1846,7 @@ mod tests {
             loaded_flag.store(true, Ordering::SeqCst);
         };
         let client = ChatClient {
+            app: None,
             output_limit: None,
             http: &http,
             base_url: &url,
@@ -1871,6 +1897,7 @@ mod tests {
         ]);
         let http = reqwest::Client::builder().no_proxy().build().unwrap();
         let client = ChatClient {
+            app: None,
             output_limit: None,
             http: &http,
             base_url: &url,
@@ -1933,6 +1960,7 @@ mod tests {
             let http = reqwest::Client::builder().no_proxy().build().unwrap();
             let sink = Collect::default();
             let client = ChatClient {
+                app: None,
                 output_limit: None,
                 http: &http,
                 base_url: &url,
@@ -1983,6 +2011,7 @@ mod tests {
         let http = reqwest::Client::builder().no_proxy().build().unwrap();
         let sink = crate::model::attempts::Collect::default();
         let client = ChatClient {
+            app: None,
             output_limit: None,
             http: &http,
             base_url: &url,
@@ -2026,6 +2055,7 @@ mod tests {
         let mut profile = ModelProfile::conservative("test");
         profile.locality = crate::model::capabilities::Locality::Cloud;
         let client = ChatClient {
+            app: None,
             output_limit: None,
             http: &http,
             base_url: &url,
@@ -2064,6 +2094,7 @@ mod tests {
             let http = reqwest::Client::new();
             let sink = crate::model::attempts::Collect::default();
             let client = ChatClient {
+                app: None,
                 output_limit: None,
                 http: &http,
                 base_url: &url,
@@ -2098,6 +2129,7 @@ mod tests {
         )]);
         let http = reqwest::Client::new();
         let client = ChatClient {
+            app: None,
             output_limit: None,
             http: &http,
             base_url: &url,

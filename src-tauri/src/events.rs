@@ -165,14 +165,16 @@ pub const THINKING: &str = "thinking";
 pub struct Thinking {
     pub text: String,
     pub done: bool,
+    pub model: String,
 }
 
-pub fn emit_thinking(app: &AppHandle, text: &str, done: bool) {
+pub fn emit_thinking(app: &AppHandle, text: &str, done: bool, model: &str) {
     let _ = app.emit(
         THINKING,
         Thinking {
             text: text.to_string(),
             done,
+            model: model.to_owned(),
         },
     );
 }

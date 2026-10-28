@@ -245,6 +245,7 @@ pub fn run() {
             commands::check_backend,
             connections::connections_state,
             connections::connections_models_save,
+            model::activity::model_activity,
             connections::connections_save,
             connections::connections_activate,
             connections::connections_delete,

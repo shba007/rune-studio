@@ -184,6 +184,7 @@ export interface PlanUpdatedPayload {
 export interface ThinkingPayload {
   text: string
   done: boolean
+  model?: string
 }
 
 export interface PillRect {

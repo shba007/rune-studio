@@ -250,6 +250,7 @@ pub async fn ask(
         request = request.bearer_auth(key);
     }
 
+    let _activity = crate::model::activity::Guard::start(app, &model);
     let outcome = send_optional_decision(request).await;
 
     match outcome {

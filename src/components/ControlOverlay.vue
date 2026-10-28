@@ -23,6 +23,7 @@ import type {
 
 import { useAnalysis } from '@/composables/useAnalysis'
 import { useExternalAgent } from '@/composables/useExternalAgent'
+import { useModelActivity } from '@/composables/useModelActivity'
 import { friendly } from '@/config/errors'
 
 import AgentMark from './AgentMark.vue'
@@ -420,6 +421,9 @@ function showObserve({ region, continuous }: ObserveStartedPayload) {
 const BUBBLE_CHARS = 120
 const bubbleThinking = ref('')
 const bubbleSays = ref('')
+const bubbleModel = ref('')
+const configuredSettings = ref<Settings | null>(null)
+const modelActivity = useModelActivity()
 const pill = ref<PillRect | null>(null)
 let refreshingPill = false
 let geometryRevision = 0
@@ -446,10 +450,10 @@ const bubble = computed(() => {
   if (bubbleThinking.value) {
     const text = bubbleThinking.value.replace(/\s+/g, ' ').trim()
     const shown = text.length > BUBBLE_CHARS ? `…${text.slice(-BUBBLE_CHARS)}` : text
-    return { label: 'Thinking', live: true, text: shown }
+    return { label: bubbleModel.value || 'Rune', live: true, text: shown }
   }
   if (bubbleSays.value) {
-    return { label: 'Says', live: false, text: bubbleSays.value.trim() }
+    return { label: bubbleModel.value || 'Rune', live: false, text: bubbleSays.value.trim() }
   }
   return null
 })
@@ -473,17 +477,30 @@ const bubbleStyle = computed(() => {
   }
 })
 
-function onThinking({ text, done }: ThinkingPayload) {
+function onThinking({ text, done, model }: ThinkingPayload) {
   bubbleThinking.value = done ? '' : text
+  if (model) bubbleModel.value = `${model} · requested`
   void refreshPill()
 }
 
-function onSays(text: string) {
+function onSays(text: string, model?: string) {
   bubbleThinking.value = ''
+  bubbleModel.value =
+    model || (configuredSettings.value?.externalAgent ? agentName.value : null) || 'Rune'
   bubbleSays.value = /^(?:error[:\s]+)?(?:the )?model server answered \d{3}/i.test(text)
     ? friendly(text)
     : text
   void refreshPill()
+}
+
+function configuredModelLabel() {
+  const settings = configuredSettings.value
+  const model = settings?.externalAgent ? undefined : settings?.models?.agent
+  return modelActivity.models.value.length > 1
+    ? 'Multiple models'
+    : model
+      ? `${model} · configured`
+      : undefined
 }
 
 const unlisten: UnlistenFn[] = []
@@ -512,9 +529,15 @@ onMounted(async () => {
     }),
   )
   try {
-    stopHotkey.value = (await invoke<Settings>('get_settings')).stopHotkey
+    configuredSettings.value = await invoke<Settings>('get_settings')
+    stopHotkey.value = configuredSettings.value.stopHotkey
   } catch {}
   unlisten.push(
+    await listen('settings_changed', async () => {
+      try {
+        configuredSettings.value = await invoke<Settings>('get_settings')
+      } catch {}
+    }),
     await listen<{ state: AgentState }>('state_changed', (event) => {
       const next = event.payload.state
       setActive(
@@ -537,7 +560,7 @@ onMounted(async () => {
     }),
     await listen<StepStartedPayload>('step_started', (event) => {
       showStep(event.payload)
-      onSays(event.payload.text)
+      onSays(event.payload.text, configuredModelLabel())
     }),
     await listen<ThinkingPayload>('thinking', (event) => onThinking(event.payload)),
     await listen<{ text: string }>('confirm_request', (event) => {
@@ -549,10 +572,16 @@ onMounted(async () => {
         typing: null,
       }
     }),
-    await listen<{ summary: string }>('task_done', (event) => onSays(event.payload.summary)),
+    await listen<{ summary: string; success?: boolean }>('task_done', (event) =>
+      onSays(
+        event.payload.summary,
+        event.payload.success === false ? undefined : configuredModelLabel(),
+      ),
+    ),
     await listen<string | null>('task_answer', ({ payload }) => {
-      if (payload) onSays(payload)
-      else {
+      if (payload) {
+        onSays(payload, configuredModelLabel())
+      } else {
         bubbleSays.value = ''
         bubbleThinking.value = ''
       }
@@ -572,7 +601,7 @@ onMounted(async () => {
   )
   try {
     overlayInfo.value = await invoke<OverlayInfo>('overlay_info')
-    if (overlayInfo.value.answer) onSays(overlayInfo.value.answer)
+    if (overlayInfo.value.answer) onSays(overlayInfo.value.answer, configuredModelLabel())
     owner.value = overlayInfo.value.mode
     if (overlayInfo.value.recording) standaloneRecording.value = overlayInfo.value.recording
     const pending = overlayInfo.value.captureFeedback
@@ -709,7 +738,9 @@ onBeforeUnmount(() => {
         :style="bubbleStyle"
       >
         <div class="flex items-center gap-2">
-          <span class="text-caption text-white/50 uppercase">{{ bubble.label }}</span>
+          <span class="min-w-0 break-all text-caption text-white/50 uppercase">{{
+            bubble.label
+          }}</span>
           <span v-if="bubble.live" class="flex gap-1" aria-hidden="true">
             <span
               v-for="n in 3"

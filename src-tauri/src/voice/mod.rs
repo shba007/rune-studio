@@ -99,6 +99,7 @@ pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
     }
 
     let client = ChatClient {
+        app: Some(app),
         output_limit,
         http: &state.http,
         base_url: &base_url,

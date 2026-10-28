@@ -253,6 +253,7 @@ pub(crate) async fn analyze_image_with_settings(
     .await
     .map_err(AnalysisError::Failed)?;
     let client = ChatClient {
+        app: Some(app),
         output_limit: settings.output_limit(),
         http: &state.http,
         base_url: &settings.base_url,
@@ -624,6 +625,7 @@ mod model_tests {
     ) -> Result<ModelAnalysis, AnalysisError> {
         let http = reqwest::Client::builder().no_proxy().build().unwrap();
         let client = ChatClient {
+            app: None,
             output_limit: None,
             http: &http,
             base_url: url,
@@ -754,6 +756,7 @@ mod model_tests {
         );
         let profile = crate::model::profile::resolve_profile(&model, None, None);
         let client = ChatClient {
+            app: None,
             output_limit: None,
             http: &http,
             base_url: &settings.base_url,

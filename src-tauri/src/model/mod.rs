@@ -1,3 +1,4 @@
+pub mod activity;
 pub mod attempts;
 pub mod capabilities;
 pub mod client;

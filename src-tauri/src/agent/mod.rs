@@ -371,6 +371,7 @@ fn spawn_background_check(app: &AppHandle, run_id: String, evidence: Option<Evid
             }
         };
         let client = ChatClient {
+            app: Some(&app),
             output_limit: settings.output_limit(),
             http: &state.http,
             base_url: &settings.base_url,
@@ -557,15 +558,16 @@ pub(crate) async fn unless_stopped<T>(
     }
 }
 
-fn thinking_sender(app: &AppHandle) -> impl FnMut(&str) + Send {
+fn thinking_sender(app: &AppHandle, model: &str) -> impl FnMut(&str) + Send {
     let app = app.clone();
+    let model = model.to_owned();
     let mut last = Instant::now()
         .checked_sub(THINKING_EVERY)
         .unwrap_or_else(Instant::now);
     move |text: &str| {
         if last.elapsed() >= THINKING_EVERY {
             last = Instant::now();
-            events::emit_thinking(&app, text, false);
+            events::emit_thinking(&app, text, false, &model);
         }
     }
 }
@@ -590,7 +592,7 @@ async fn make_plan(
             .then_some(crate::life::DataClass::Finance),
         background: false,
     };
-    let mut send_thinking = thinking_sender(app);
+    let mut send_thinking = thinking_sender(app, client.model);
     let started = Instant::now();
     let Some(result) = unless_stopped(
         cancel,
@@ -604,7 +606,7 @@ async fn make_plan(
     let goals = match result {
         Ok(reply) => {
             if think {
-                events::emit_thinking(app, &reply.thinking, true);
+                events::emit_thinking(app, &reply.thinking, true, client.model);
             }
             protocol::parse_plan(&reply.call.arguments).unwrap_or_else(|_| fallback())
         }
@@ -687,6 +689,7 @@ async fn run(
         events::set_agent_state(&app_for_loading, AgentState::LoadingModel);
     };
     let client = ChatClient {
+        app: Some(app),
         output_limit: settings.output_limit(),
         http: &state.http,
         base_url: &settings.base_url,
@@ -714,6 +717,7 @@ async fn run(
         crate::model::profile::resolve_profile(verifier_model, None, None)
     };
     let verifier_client = ChatClient {
+        app: Some(app),
         output_limit: settings.output_limit(),
         http: &state.http,
         base_url: &settings.base_url,
@@ -1020,7 +1024,7 @@ async fn run(
                 .then_some(crate::life::DataClass::Finance),
             background: false,
         };
-        let mut send_thinking = thinking_sender(app);
+        let mut send_thinking = thinking_sender(app, client.model);
         let started = Instant::now();
         call_log.set("decide", Some(step));
         row.rec.prompt_text = Some(text.clone());
@@ -1080,7 +1084,7 @@ async fn run(
             reply.completion_tokens
         );
         if think {
-            events::emit_thinking(app, &reply.thinking, true);
+            events::emit_thinking(app, &reply.thinking, true, client.model);
         }
 
         let Decision {
@@ -1791,6 +1795,7 @@ mod live {
         let http = reqwest::Client::new();
         let key = std::env::var("RUNE_API_KEY").unwrap_or_else(|_| "sk-rune-local-test-key".into());
         let client = ChatClient {
+            app: None,
             output_limit: None,
             http: &http,
             base_url: "http://127.0.0.1:8080",

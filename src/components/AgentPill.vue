@@ -28,8 +28,17 @@ import DecisionInbox from './DecisionInbox.vue'
 import PersonalitySymbol from './PersonalitySymbol.vue'
 import { usePersonality } from '@/composables/usePersonality'
 import TaskReminder from './TaskReminder.vue'
+import ModelIcon from './ModelIcon.vue'
+import { useModelActivity } from '@/composables/useModelActivity'
 
 const agent = useAgent()
+const modelActivity = useModelActivity()
+const activeModels = modelActivity.models
+const modelTooltip = computed(() =>
+  modelActivity.active.value
+    .map((item) => `${item.model} (${item.reported ? 'reported by server' : 'requested'})`)
+    .join(', '),
+)
 const personality = usePersonality()
 const taskBoard = useTaskBoard()
 const decisions = useDecisions()
@@ -245,7 +254,13 @@ function onOrb() {
                 ? 'Open'
                 : 'Close'
         "
-        :title="updating ? 'Updating Rune Studio' : agent.health.value.title"
+        :title="
+          updating
+            ? 'Updating Rune Studio'
+            : activeModels.length && !agent.settings.value?.externalAgent
+              ? `Active models: ${modelTooltip}`
+              : agent.health.value.title
+        "
         @click="onOrb"
       >
         <GlyphOrb
@@ -256,6 +271,21 @@ function onOrb() {
           :logo="agentLogo"
           :letter="agentLetter"
         />
+        <span
+          v-if="!agent.settings.value?.externalAgent && activeModels.length"
+          role="img"
+          class="pointer-events-none absolute inset-0 grid place-items-center"
+          :aria-label="
+            activeModels.length > 1 ? 'Multiple models active' : `Active model: ${activeModels[0]}`
+          "
+        >
+          <span class="grid size-6 place-items-center rounded-full bg-[#f1f1ef] text-[#111]">
+            <span v-if="activeModels.length > 1" class="text-[11px] font-bold">{{
+              activeModels.length
+            }}</span>
+            <ModelIcon v-else :model="activeModels[0]!" />
+          </span>
+        </span>
         <HealthDots :tone="agent.health.value.tone" />
       </button>
     </div>

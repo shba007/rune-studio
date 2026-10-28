@@ -44,9 +44,23 @@ const lastDetail = computed(() => {
 const message = computed(() => {
   const thinking = agent.thinking.value
   if (thinking && thinking.text && !thinking.done)
-    return { label: 'Thinking', text: thinking.text, live: true }
+    return {
+      label: thinking.model ? `${thinking.model} · requested` : 'Rune',
+      text: thinking.text,
+      live: true,
+    }
   const response = agent.response.value
-  return response ? { label: 'Says', text: response, live: false } : null
+  return response
+    ? {
+        label: agent.settings.value?.externalAgent
+          ? 'External agent'
+          : agent.settings.value?.models?.agent
+            ? `${agent.settings.value.models.agent} · configured`
+            : 'Rune',
+        text: response,
+        live: false,
+      }
+    : null
 })
 
 function statusOf(index: number): 'done' | 'current' | 'pending' {
@@ -137,7 +151,7 @@ function statusOf(index: number): 'done' | 'current' | 'pending' {
     </div>
 
     <div v-if="message" class="flex flex-col gap-1">
-      <span class="text-caption text-zinc-500 uppercase">{{ message.label }}</span>
+      <span class="break-all text-caption text-zinc-500 uppercase">{{ message.label }}</span>
       <p
         class="overflow-y-auto text-label whitespace-pre-wrap text-zinc-300"
         :class="agent.isRunning.value ? 'max-h-[72px]' : 'max-h-44'"
