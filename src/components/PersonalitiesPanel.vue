@@ -269,7 +269,7 @@ defineExpose({ create })
         </details>
       </div>
     </div>
-    <p v-if="error" role="alert" class="m-0 text-label text-[#ff6b72]">
+    <p v-if="error" role="alert" class="m-0 text-label text-error">
       {{ error }} Your draft is preserved.
     </p>
     <p v-if="saved" role="status" class="m-0 text-label text-zinc-300">

@@ -71,19 +71,19 @@ function statusOf(index: number): 'done' | 'current' | 'pending' {
 
 <template>
   <section
-    class="flex w-full flex-col gap-2 rounded-[28px] border border-white/8 bg-[#141414] p-4 text-zinc-100"
+    class="flex w-full flex-col gap-2 rounded-rune-panel border border-rune-outline bg-rune-surface p-rune-2 font-rune-reading text-zinc-100"
   >
     <header class="flex h-6 items-center gap-2 whitespace-nowrap">
-      <span class="text-caption text-zinc-500 uppercase">Task</span>
-      <span v-if="goals.length" class="text-caption text-zinc-300 uppercase tabular-nums">
+      <span class="text-rune-caption text-zinc-500 uppercase">Task</span>
+      <span v-if="goals.length" class="text-rune-caption text-zinc-300 uppercase tabular-nums">
         {{ done }}/{{ goals.length }}
       </span>
-      <span v-if="agent.steps.value.length" class="text-caption text-zinc-500 uppercase">
+      <span v-if="agent.steps.value.length" class="text-rune-caption text-zinc-500 uppercase">
         · {{ agent.steps.value.length }} {{ agent.steps.value.length === 1 ? 'step' : 'steps' }}
       </span>
       <span
         v-if="eta"
-        class="ml-auto text-caption text-(--accent) uppercase tabular-nums"
+        class="ml-auto text-rune-caption text-(--accent) uppercase tabular-nums"
         data-testid="eta"
         >{{ eta }}</span
       >
@@ -98,8 +98,8 @@ function statusOf(index: number): 'done' | 'current' | 'pending' {
       </button>
     </header>
 
-    <p v-if="!goals.length" class="flex h-6 items-center gap-2 text-label text-zinc-400">
-      <span class="planning size-2 rounded-full bg-[#f1f1ef]" />
+    <p v-if="!goals.length" class="flex h-6 items-center gap-2 text-rune-caption text-zinc-400">
+      <span class="planning size-2 rounded-full bg-primary" />
       Planning
     </p>
 
@@ -111,16 +111,16 @@ function statusOf(index: number): 'done' | 'current' | 'pending' {
         :aria-current="statusOf(index) === 'current' ? 'step' : undefined"
       >
         <span class="grid size-4 shrink-0 place-items-center">
-          <AppIcon v-if="statusOf(index) === 'done'" name="ok" class="text-[#f1f1ef]" />
+          <AppIcon v-if="statusOf(index) === 'done'" name="ok" class="text-primary" />
           <span
             v-else-if="statusOf(index) === 'current'"
-            class="planning size-3 rounded-full bg-[#f1f1ef] ring-2 ring-[#f1f1ef]/30"
-            :class="{ 'bg-[#d71921]! ring-[#d71921]/30!': agent.state.value === 'failed' }"
+            class="planning size-3 rounded-full bg-primary ring-2 ring-primary/30"
+            :class="{ 'bg-attention! ring-attention/30!': agent.state.value === 'failed' }"
           />
           <span v-else class="size-3 rounded-full border border-white/25" />
         </span>
         <span
-          class="min-w-0 flex-1 truncate text-label"
+          class="min-w-0 flex-1 truncate text-rune-caption"
           :class="
             statusOf(index) === 'current'
               ? 'text-zinc-100'
@@ -134,7 +134,7 @@ function statusOf(index: number): 'done' | 'current' | 'pending' {
         </span>
         <span
           v-if="statusOf(index) === 'current' && goalElapsed"
-          class="shrink-0 text-caption text-zinc-400 tabular-nums"
+          class="shrink-0 text-rune-caption text-zinc-400 tabular-nums"
           data-testid="goal-elapsed"
           >{{ goalElapsed }}</span
         >
@@ -143,10 +143,10 @@ function statusOf(index: number): 'done' | 'current' | 'pending' {
 
     <div
       v-if="last && agent.isRunning.value"
-      class="flex h-8 items-center gap-2 rounded-full bg-white/5 px-3 text-label text-zinc-200"
+      class="flex h-8 items-center gap-2 rounded-full bg-white/5 px-3 text-rune-caption text-zinc-200"
     >
       <AppIcon :name="KIND_ICON[kindOf(last.tool)]" size="sm" class="shrink-0" />
-      <span class="text-caption whitespace-nowrap uppercase">{{ lastLabel }}</span>
+      <span class="text-rune-caption whitespace-nowrap uppercase">{{ lastLabel }}</span>
       <span v-if="lastDetail" class="min-w-0 truncate text-zinc-400">{{ lastDetail }}</span>
     </div>
 
@@ -157,11 +157,11 @@ function statusOf(index: number): 'done' | 'current' | 'pending' {
             ? 'Configured model; serving model not confirmed'
             : undefined
         "
-        class="break-all text-caption text-zinc-500 uppercase"
+        class="break-all text-rune-caption text-zinc-500 uppercase"
         >{{ message.label }}</span
       >
       <p
-        class="overflow-y-auto text-label whitespace-pre-wrap text-zinc-300"
+        class="overflow-y-auto text-rune-caption whitespace-pre-wrap text-zinc-300"
         :class="agent.isRunning.value ? 'max-h-[72px]' : 'max-h-44'"
       >
         {{ message.text }}

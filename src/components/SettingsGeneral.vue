@@ -50,7 +50,7 @@ async function revealDeveloper() {
         <select
           v-model="draft.modelImageResolution"
           aria-label="Model input resolution"
-          class="rounded-lg bg-zinc-900 px-3 py-2 text-body text-zinc-100"
+          class="rounded-lg bg-zinc-900 px-rune-2 py-2 text-rune-body text-zinc-100"
         >
           <option value="720">720 px · Faster</option>
           <option value="1280">1280 px · Balanced</option>
@@ -78,7 +78,7 @@ async function revealDeveloper() {
         <select
           v-model="draft.recordingResolution"
           aria-label="Screenshot and recording resolution"
-          class="rounded-lg bg-zinc-900 px-3 py-2 text-body text-zinc-100"
+          class="rounded-lg bg-zinc-900 px-rune-2 py-2 text-rune-body text-zinc-100"
         >
           <option value="720">720 px</option>
           <option value="1280">1280 px</option>
@@ -114,18 +114,18 @@ async function revealDeveloper() {
     <details
       v-if="(view === 'all' || view === 'developer') && draft.developerMode"
       ref="developer"
-      class="rounded-2xl bg-white/5 px-5 py-3"
+      class="rounded-2xl bg-white/5 px-rune-2 py-rune-2"
       @toggle="revealDeveloper"
     >
-      <summary class="cursor-pointer text-caption text-zinc-500 uppercase">
+      <summary class="cursor-pointer text-rune-caption text-zinc-500 uppercase">
         Capture, input and animation
       </summary>
-      <div class="flex flex-wrap gap-2 pt-3">
+      <div class="flex flex-wrap gap-2 pt-rune-2">
         <button
           v-for="s in DEBUG_STATES"
           :key="s"
           type="button"
-          class="h-8 cursor-pointer rounded-full border-0 bg-white/8 px-3 text-label text-zinc-300 transition hover:bg-white/15"
+          class="h-8 cursor-pointer rounded-full border-0 bg-white/8 px-rune-2 text-rune-body text-zinc-300 transition hover:bg-white/15"
           @click="agent.debugSetState(s)"
         >
           {{ s }}

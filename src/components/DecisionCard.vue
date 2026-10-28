@@ -104,7 +104,7 @@ function typeAnswer(event: Event) {
         />
       </label>
     </fieldset>
-    <p v-if="error" role="alert" class="m-0 text-label text-[#ff6b72]">{{ error }}</p>
+    <p v-if="error" role="alert" class="m-0 text-label text-error">{{ error }}</p>
     <div class="flex flex-wrap gap-2">
       <button
         v-if="deferable"

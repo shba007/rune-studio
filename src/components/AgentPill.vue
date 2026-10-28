@@ -31,6 +31,8 @@ import TaskReminder from './TaskReminder.vue'
 import ModelIcon from './ModelIcon.vue'
 import { useModelActivity } from '@/composables/useModelActivity'
 import { requestProgress, visibleGoal } from '@/config/taskProgress'
+import { pillCards, type PillCard } from '@/config/pillCards'
+import { orbHint } from '@/config/orbHint'
 
 const agent = useAgent()
 const modelActivity = useModelActivity()
@@ -155,6 +157,25 @@ watch(
 
 const isAmbient = computed(() => agent.mode.value === 'ambient')
 
+const plan = computed(() =>
+  pillCards({
+    question: !!agent.question.value,
+    analysis: agent.mode.value === 'analysis',
+    decision: !!decisions.current.value,
+    decisionInKnowledge: decisionInKnowledge.value,
+    taskPanel:
+      agent.mode.value === 'task' &&
+      (!taskBoard.requests.value.length || !!agent.settings.value?.externalAgent),
+    board: taskBoard.requests.value.length > 0,
+    working: agent.isRunning.value || boardWorking.value,
+    reflection: !!agent.reflectionPrompt.value,
+    review: !!agent.reviewOffer.value && agent.reviewStage.value === 'review',
+    feedback: !!agent.reviewOffer.value && agent.reviewStage.value !== 'review',
+    update: !!promptVisible.value && !!updater.latest.value,
+  }),
+)
+const shows = (card: PillCard) => plan.value.cards.includes(card)
+
 if (import.meta.env.DEV) Object.assign(window, { __demoAgent: agent })
 
 const content = useTemplateRef<HTMLElement>('content')
@@ -174,9 +195,28 @@ onKeyStroke('Escape', () => {
   void agent.dismiss()
 })
 
+const hint = computed(() =>
+  orbHint({
+    updating: updating.value,
+    working: agent.isRunning.value || boardWorking.value,
+    ambient: isAmbient.value,
+  }),
+)
+const orbTitle = computed(() =>
+  updating.value
+    ? 'Updating Rune Studio'
+    : activeModels.value.length && !agent.settings.value?.externalAgent
+      ? `Active models: ${modelTooltip.value}`
+      : agent.health.value.title,
+)
+const showPersonality = computed(
+  () =>
+    !agent.settings.value?.externalAgent && ['ok', 'checking'].includes(agent.health.value.tone),
+)
+
 function onOrb() {
-  if (updating.value) return
-  if (agent.isRunning.value || boardWorking.value) void agent.stop()
+  if (hint.value.action === 'busy') return
+  if (hint.value.action === 'stop') void agent.stop()
   else void agent.toggleOpen()
 }
 </script>
@@ -184,7 +224,7 @@ function onOrb() {
 <template>
   <div
     class="flex h-full w-full items-end justify-end"
-    :style="{ '--accent': darkAccent ?? '#2d71c3' }"
+    :style="{ '--accent': darkAccent ?? 'var(--color-voice)' }"
     @pointerdown="agent.noteActivity()"
     @keydown="agent.noteActivity()"
   >
@@ -199,10 +239,15 @@ function onOrb() {
     <div
       data-tauri-drag-region
       :title="`Personality: ${personality.name}`"
-      class="relative isolate flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-full border-0 bg-[#141414] outline-none [clip-path:circle(50%)]"
+      class="relative isolate flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-full border-0 bg-rune-surface outline-none [clip-path:circle(50%)]"
     >
       <span
-        v-if="!agent.settings.value?.externalAgent"
+        v-if="hint.action === 'stop'"
+        class="pointer-events-none absolute inset-0 z-30 rounded-full border border-attention"
+        aria-hidden="true"
+      />
+      <span
+        v-if="showPersonality"
         class="pointer-events-none absolute bottom-1 left-1/2 z-20 grid size-4 -translate-x-1/2 place-items-center rounded-full bg-black/85 text-[10px] leading-none text-zinc-100"
         :aria-label="`Active personality: ${personality.name}`"
         ><PersonalitySymbol :mark="personality.mark" class="size-3"
@@ -252,23 +297,10 @@ function onOrb() {
       />
       <button
         type="button"
-        class="relative size-14 cursor-pointer border-0 rounded-full bg-[#f1f1ef] outline-none focus-visible:ring-2 focus-visible:ring-white/60"
-        :aria-label="
-          updating
-            ? 'Updating'
-            : agent.isRunning.value || boardWorking
-              ? 'Stop'
-              : isAmbient
-                ? 'Open'
-                : 'Close'
-        "
-        :title="
-          updating
-            ? 'Updating Rune Studio'
-            : activeModels.length && !agent.settings.value?.externalAgent
-              ? `Active models: ${modelTooltip}`
-              : agent.health.value.title
-        "
+        class="relative size-14 cursor-pointer border-0 rounded-full bg-primary outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+        :aria-label="hint.label"
+        :aria-description="orbTitle"
+        :title="orbTitle"
         @click="onOrb"
       >
         <GlyphOrb
@@ -287,7 +319,7 @@ function onOrb() {
             activeModels.length > 1 ? 'Multiple models active' : `Active model: ${activeModels[0]}`
           "
         >
-          <span class="grid size-7 place-items-center rounded-full bg-[#f1f1ef] text-[#111]">
+          <span class="grid size-7 place-items-center rounded-full bg-primary text-[#111]">
             <span v-if="activeModels.length > 1" class="text-[11px] font-bold">{{
               activeModels.length
             }}</span>
@@ -307,29 +339,13 @@ function onOrb() {
           <Transition name="page" mode="out-in">
             <div key="main" class="flex flex-col gap-2">
               <Transition name="page">
-                <TaskPanel
-                  v-if="
-                    agent.mode.value === 'task' &&
-                    (!taskBoard.requests.value.length || agent.settings.value?.externalAgent)
-                  "
-                  :agent="agent"
-                />
+                <TaskPanel v-if="shows('taskPanel')" :agent="agent" />
               </Transition>
-              <TaskBoard
-                v-if="!decisions.current.value || agent.question.value"
-                :board="taskBoard"
-              />
-              <TaskReminder
-                v-if="!agent.question.value && !decisions.current.value"
-                :agent="agent"
-              />
-              <DecisionInbox
-                v-if="!agent.question.value && !decisionInKnowledge"
-                compact
-                :model="decisions"
-              />
+              <TaskBoard v-if="shows('board')" :board="taskBoard" />
+              <TaskReminder v-if="shows('reminder')" :agent="agent" />
+              <DecisionInbox v-if="shows('decision')" compact :model="decisions" />
               <button
-                v-if="decisionInKnowledge"
+                v-if="shows('decisionLink')"
                 class="rounded-2xl border border-white/10 p-3 text-label text-zinc-200"
                 @click="
                   agent.openWorkspace(decisions.current.value?.kind === 'goal' ? 'goals' : 'tasks')
@@ -338,19 +354,19 @@ function onOrb() {
                 Continue your request in Knowledge
               </button>
               <AnalysisCard
-                v-if="agent.mode.value === 'analysis'"
+                v-if="shows('analysis')"
                 ref="analysisCard"
                 :analysis="analysis"
                 @close="agent.mode.value === 'analysis' && agent.setMode('open')"
               />
               <section
-                v-if="promptVisible && updater.latest.value"
-                class="flex w-full flex-col gap-2 rounded-[28px] border border-white/15 bg-[#141414] p-4 text-zinc-100"
+                v-if="shows('update') && updater.latest.value"
+                class="flex w-full flex-col gap-2 rounded-[28px] border border-white/15 bg-rune-surface p-4 text-zinc-100"
                 role="alertdialog"
                 aria-label="Update available"
               >
                 <header class="flex h-6 items-center gap-2">
-                  <span class="size-2 shrink-0 rounded-full bg-[#f1f1ef]" />
+                  <span class="size-2 shrink-0 rounded-full bg-primary" />
                   <span class="text-caption text-zinc-300 uppercase">Update available</span>
                 </header>
                 <p class="text-body">
@@ -367,39 +383,25 @@ function onOrb() {
                   </button>
                   <button
                     type="button"
-                    class="h-8 flex-1 cursor-pointer rounded-full bg-[#f1f1ef] text-label text-[#111] transition hover:bg-white"
+                    class="h-8 flex-1 cursor-pointer rounded-full bg-primary text-label text-[#111] transition hover:bg-white"
                     @click="updater.install(agent.isRunning.value)"
                   >
                     Update
                   </button>
                 </div>
               </section>
-              <ReflectionCard
-                v-if="agent.reflectionPrompt.value && !agent.question.value"
-                :agent="agent"
-              />
-              <FeedbackCard
-                v-if="
-                  agent.reviewOffer.value &&
-                  agent.reviewStage.value !== 'review' &&
-                  !agent.question.value &&
-                  !agent.reflectionPrompt.value &&
-                  !agent.isRunning.value
-                "
-                :agent="agent"
-              />
-              <ReviewCard
-                v-if="
-                  agent.reviewOffer.value &&
-                  agent.reviewStage.value === 'review' &&
-                  !agent.question.value &&
-                  !agent.reflectionPrompt.value &&
-                  !agent.isRunning.value
-                "
-                :agent="agent"
-              />
+              <ReflectionCard v-if="shows('reflection')" :agent="agent" />
+              <FeedbackCard v-if="shows('feedback')" :agent="agent" />
+              <ReviewCard v-if="shows('review')" :agent="agent" />
+              <p
+                v-if="plan.more"
+                role="status"
+                class="m-0 px-rune-2 text-rune-caption text-zinc-500 uppercase"
+              >
+                {{ plan.more }} more waiting
+              </p>
               <ConfirmCard
-                v-if="agent.question.value"
+                v-if="shows('confirm') && agent.question.value"
                 :key="agent.question.value.id"
                 :agent="agent"
               />

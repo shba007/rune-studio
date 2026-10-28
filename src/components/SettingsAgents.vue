@@ -30,13 +30,13 @@ const { copy, copied } = useClipboard({ copiedDuring: 1600 })
           v-model="draft.externalAgent"
           :disabled="agent.isRunning.value"
           aria-label="Execution mode"
-          class="rounded-lg bg-zinc-800 px-3 py-2 text-label"
+          class="rounded-lg bg-zinc-800 px-rune-2 py-2 text-rune-body"
         >
           <option :value="false">API — Studio model</option>
           <option :value="true">External agent — host model</option>
         </select>
       </HubRow>
-      <p class="m-0 text-label text-zinc-500">
+      <p class="m-0 text-rune-body text-zinc-500">
         {{
           draft.externalAgent
             ? 'Start tasks and visual analysis in your external agent host. Studio provides capture and input tools without calling its API model.'
@@ -50,7 +50,7 @@ const { copy, copied } = useClipboard({ copiedDuring: 1600 })
       >
         <button
           type="button"
-          class="flex h-9 cursor-pointer items-center gap-2 rounded-full border border-white/25 bg-transparent px-4 text-label text-zinc-200 uppercase transition hover:bg-white/10"
+          class="flex h-9 cursor-pointer items-center gap-2 rounded-full border border-white/25 bg-transparent px-4 text-rune-body text-zinc-200 uppercase transition hover:bg-white/10"
           @click="copy(agent.bridge.value.command)"
         >
           <AppIcon name="copy" size="sm" />

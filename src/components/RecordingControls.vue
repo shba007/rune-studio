@@ -133,7 +133,7 @@ const button =
     <p
       v-if="notice || (status.error && status.phase === 'failed')"
       role="alert"
-      class="text-label text-[#ff6b72]"
+      class="text-label text-error"
     >
       {{ notice || status.error }}
     </p>

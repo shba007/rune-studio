@@ -56,7 +56,7 @@ onMounted(async () => {
 })
 </script>
 <template>
-  <div class="flex flex-col gap-5 text-body">
+  <div class="flex flex-col gap-rune-3 text-rune-body">
     <p v-if="toolCalls === 'no'" role="alert">
       The selected agent model does not support tool calling. Choose a tool-capable model in
       Connections settings.
@@ -74,7 +74,7 @@ onMounted(async () => {
       >Kit HTTP endpoint
       <input
         v-model="config.endpoint"
-        class="rounded-lg bg-zinc-900 p-3"
+        class="rounded-lg bg-zinc-900 p-rune-2"
         placeholder="http://127.0.0.1:47601/mcp"
         @change="save"
       />
@@ -88,7 +88,7 @@ onMounted(async () => {
       Configure filesystem confinement on the Kit server using an explicit allowed_dir. Studio
       cannot change that root. File contents are sent to the selected model.
     </p>
-    <button class="rounded-lg bg-white/10 p-3" :disabled="busy" @click="refresh">
+    <button class="rounded-lg bg-white/10 p-rune-2" :disabled="busy" @click="refresh">
       {{ busy ? 'Discovering…' : 'Refresh / discover' }}
     </button>
     <p role="status">{{ status }}</p>

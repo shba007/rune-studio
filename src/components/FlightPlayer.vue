@@ -350,7 +350,7 @@ const duration = computed(() =>
       : durationText(header.value.durationSecs),
 )
 const outcomeClass = computed(() =>
-  header.value?.outcome === 'failed' ? 'text-[#ff6b72]' : 'text-zinc-100',
+  header.value?.outcome === 'failed' ? 'text-error' : 'text-zinc-100',
 )
 const outcomeDot = computed(() =>
   header.value?.outcome === 'failed'

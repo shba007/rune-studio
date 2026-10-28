@@ -123,7 +123,7 @@ const TONE = {
             : 'Delete task and its saved files'
         "
         :disabled="run.active || deleting || deleteDisabled"
-        class="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full border-0 bg-transparent text-zinc-400 transition hover:bg-white/8 hover:text-[#ff6b72] disabled:cursor-default disabled:opacity-40"
+        class="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full border-0 bg-transparent text-zinc-400 transition hover:bg-white/8 hover:text-error disabled:cursor-default disabled:opacity-40"
         @click="$emit('remove')"
       >
         <AppIcon name="trash" size="sm" />

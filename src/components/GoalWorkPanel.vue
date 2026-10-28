@@ -65,7 +65,7 @@ async function save() {
 <template>
   <section
     aria-label="Goal progress and tasks"
-    class="flex flex-col gap-5 border-t border-white/10 pt-5"
+    class="flex flex-col gap-rune-3 border-t border-white/10 pt-rune-3"
   >
     <div class="grid gap-6 sm:grid-cols-2">
       <WorkProgress
@@ -82,7 +82,7 @@ async function save() {
         "
       />
     </div>
-    <div class="flex flex-wrap gap-3 text-label">
+    <div class="flex flex-wrap gap-rune-2 text-rune-body">
       <button
         class="cursor-pointer text-zinc-200 hover:text-white"
         @click="emit('tasks', entry.id)"
@@ -101,14 +101,14 @@ async function save() {
         {{ entry.outcomeMetric ? 'Record outcome progress' : 'Set outcome measure' }}
       </button>
     </div>
-    <ul v-if="children.length" class="m-0 flex list-none flex-col gap-2 p-0 text-label">
+    <ul v-if="children.length" class="m-0 flex list-none flex-col gap-2 p-0 text-rune-body">
       <li v-for="task in children.slice(0, 3)" :key="task.id">
         <button
-          class="flex w-full cursor-pointer items-center justify-between gap-3 text-left text-zinc-400 hover:text-white"
+          class="flex w-full cursor-pointer items-center justify-between gap-rune-2 text-left text-zinc-400 hover:text-white"
           @click="emit('task', task.id)"
         >
           <span>{{ task.title }}</span
-          ><span class="shrink-0 text-caption"
+          ><span class="shrink-0 text-rune-caption"
             >{{ task.occurrences.at(-1)?.state ?? 'scheduled' }} →</span
           >
         </button>
@@ -116,11 +116,11 @@ async function save() {
     </ul>
     <form
       v-if="editing"
-      class="grid gap-3 rounded-xl bg-white/[0.025] p-4 sm:grid-cols-3"
+      class="grid gap-rune-2 rounded-xl bg-white/[0.025] p-4 sm:grid-cols-3"
       aria-label="Record goal outcome"
       @submit.prevent="save"
     >
-      <label class="flex flex-col gap-2 text-label text-zinc-400"
+      <label class="flex flex-col gap-2 text-rune-body text-zinc-400"
         >Starting value<input
           v-model="baseline"
           type="number"
@@ -128,7 +128,7 @@ async function save() {
           required
           :disabled="!!entry.outcomeMetric || pending"
           class="min-w-0 rounded-lg bg-white/5 p-2 text-zinc-100" /></label
-      ><label class="flex flex-col gap-2 text-label text-zinc-400"
+      ><label class="flex flex-col gap-2 text-rune-body text-zinc-400"
         >Current value<input
           v-model="current"
           type="number"
@@ -136,7 +136,7 @@ async function save() {
           required
           :disabled="pending"
           class="min-w-0 rounded-lg bg-white/5 p-2 text-zinc-100" /></label
-      ><label class="flex flex-col gap-2 text-label text-zinc-400"
+      ><label class="flex flex-col gap-2 text-rune-body text-zinc-400"
         >Target value<input
           v-model="target"
           type="number"
@@ -144,7 +144,7 @@ async function save() {
           required
           :disabled="!!entry.outcomeMetric || pending"
           class="min-w-0 rounded-lg bg-white/5 p-2 text-zinc-100" /></label
-      ><label class="flex flex-col gap-2 text-label text-zinc-400"
+      ><label class="flex flex-col gap-2 text-rune-body text-zinc-400"
         >Unit<input
           v-model="unit"
           required
@@ -152,24 +152,24 @@ async function save() {
           :disabled="!!entry.outcomeMetric || pending"
           placeholder="For example, km or currency"
           class="rounded-lg bg-white/5 p-2 text-zinc-100" /></label
-      ><label class="flex flex-col gap-2 text-label text-zinc-400 sm:col-span-2"
+      ><label class="flex flex-col gap-2 text-rune-body text-zinc-400 sm:col-span-2"
         >Progress note<input
           v-model="note"
           maxlength="2000"
           :disabled="pending"
           class="rounded-lg bg-white/5 p-2 text-zinc-100"
       /></label>
-      <p class="m-0 text-caption text-zinc-500 sm:col-span-3">
+      <p class="m-0 text-rune-caption text-zinc-500 sm:col-span-3">
         This is your reported outcome, not automatically verified evidence. Progress is measured
         from the starting value toward the target; lower targets are supported.
       </p>
       <button
         :disabled="pending"
-        class="min-h-9 cursor-pointer rounded-full bg-zinc-100 px-4 py-2 text-label text-zinc-950"
+        class="min-h-9 cursor-pointer rounded-full bg-zinc-100 px-4 py-2 text-rune-body text-zinc-950"
       >
         Save measurement
       </button>
-      <p v-if="error" role="alert" class="m-0 text-label text-[#ff6b72] sm:col-span-3">
+      <p v-if="error" role="alert" class="m-0 text-rune-body text-error sm:col-span-3">
         {{ error }}
       </p>
     </form>

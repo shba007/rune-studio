@@ -21,35 +21,35 @@ watch(asking, async (on) => {
 const CHIP = {
   succeeded: 'border-white/30 text-zinc-200',
   stopped: 'border-white/30 text-zinc-300',
-  failed: 'border-[#d71921]/60 text-[#ff6b72]',
+  failed: 'border-attention/60 text-error',
 } as const
 </script>
 
 <template>
   <section
     v-if="offer"
-    class="flex w-full flex-col gap-2 rounded-[28px] border border-white/15 bg-[#141414] p-4 text-zinc-100"
+    class="flex w-full flex-col gap-2 rounded-rune-panel border border-rune-outline bg-rune-surface p-rune-2 font-rune-reading text-zinc-100"
     role="alertdialog"
     aria-label="Was the task completed?"
   >
     <header class="flex h-6 items-center gap-2">
       <span
-        class="rounded-full border px-2 text-caption uppercase"
+        class="rounded-full border px-2 text-rune-caption uppercase"
         :class="CHIP[offer.outcome]"
         data-testid="outcome"
         >{{ offer.outcome }}</span
       >
-      <span class="min-w-0 flex-1 truncate text-caption text-zinc-500" :title="offer.task">{{
+      <span class="min-w-0 flex-1 truncate text-rune-caption text-zinc-500" :title="offer.task">{{
         offer.task
       }}</span>
     </header>
 
     <template v-if="!asking">
-      <p class="m-0 text-body" data-testid="question">Did this complete your task?</p>
+      <p class="m-0 text-rune-body" data-testid="question">Did this complete your task?</p>
       <div class="flex items-center gap-2">
         <button
           type="button"
-          class="h-8 flex-1 cursor-pointer rounded-full border border-white/25 bg-transparent text-label text-zinc-200 uppercase transition hover:bg-white/10"
+          class="h-8 flex-1 cursor-pointer rounded-full border border-white/25 bg-transparent text-rune-caption text-zinc-200 uppercase transition hover:bg-white/10"
           data-testid="no"
           @click="agent.answerComplete(false)"
         >
@@ -57,7 +57,7 @@ const CHIP = {
         </button>
         <button
           type="button"
-          class="h-8 flex-1 cursor-pointer rounded-full border-0 bg-[#f1f1ef] text-label text-[#111] uppercase transition hover:bg-white"
+          class="h-8 flex-1 cursor-pointer rounded-full border-0 bg-primary text-rune-caption text-[#111] uppercase transition hover:bg-white"
           data-testid="yes"
           @click="agent.answerComplete(true)"
         >
@@ -66,7 +66,7 @@ const CHIP = {
       </div>
       <button
         type="button"
-        class="h-6 cursor-pointer self-center border-0 bg-transparent text-caption text-zinc-500 uppercase transition hover:text-zinc-300"
+        class="h-6 cursor-pointer self-center border-0 bg-transparent text-rune-caption text-zinc-500 uppercase transition hover:text-zinc-300"
         data-testid="skip"
         @click="agent.answerComplete(null)"
       >
@@ -75,20 +75,20 @@ const CHIP = {
     </template>
 
     <template v-else>
-      <p class="m-0 text-body">What went wrong?</p>
+      <p class="m-0 text-rune-body">What went wrong?</p>
       <textarea
         ref="field"
         v-model="reason"
         rows="2"
         placeholder="A few words help"
-        class="min-h-14 w-full resize-none rounded-2xl border-0 bg-white/8 px-3 py-2 text-body text-zinc-100 outline-none placeholder:text-zinc-500 focus-visible:ring-2 focus-visible:ring-white/40"
+        class="min-h-14 w-full resize-none rounded-2xl border-0 bg-white/8 px-3 py-2 text-rune-body text-zinc-100 outline-none placeholder:text-zinc-500 focus-visible:ring-2 focus-visible:ring-white/40"
         data-testid="why"
         @keydown.enter.exact.prevent="agent.answerWhy(reason)"
       />
       <div class="flex items-center gap-2">
         <button
           type="button"
-          class="h-8 flex-1 cursor-pointer rounded-full border border-white/25 bg-transparent text-label text-zinc-200 uppercase transition hover:bg-white/10"
+          class="h-8 flex-1 cursor-pointer rounded-full border border-white/25 bg-transparent text-rune-caption text-zinc-200 uppercase transition hover:bg-white/10"
           data-testid="skip-why"
           @click="agent.answerWhy('')"
         >
@@ -96,7 +96,7 @@ const CHIP = {
         </button>
         <button
           type="button"
-          class="h-8 flex-1 cursor-pointer rounded-full border-0 bg-[#f1f1ef] text-label text-[#111] uppercase transition hover:bg-white"
+          class="h-8 flex-1 cursor-pointer rounded-full border-0 bg-primary text-rune-caption text-[#111] uppercase transition hover:bg-white"
           data-testid="send-why"
           @click="agent.answerWhy(reason)"
         >

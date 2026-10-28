@@ -21,7 +21,7 @@ const failed = computed(() => props.status === 'error')
       <span
         v-if="stage"
         class="text-caption whitespace-nowrap uppercase"
-        :class="failed ? 'text-[#ff6b72]' : 'text-[#f1f1ef]'"
+        :class="failed ? 'text-error' : 'text-[#f1f1ef]'"
         data-testid="stage"
         >{{ stage }}</span
       >

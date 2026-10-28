@@ -42,8 +42,8 @@ describe('ReviewCard', () => {
   it('marks a failure in red and nothing else', () => {
     const failed = mount(ReviewCard, { props: { agent: fake(offer({ outcome: 'failed' })).agent } })
     const ok = mount(ReviewCard, { props: { agent: fake(offer()).agent } })
-    expect(failed.find('[data-testid="outcome"]').classes().join(' ')).toContain('d71921')
-    expect(ok.html()).not.toContain('d71921')
+    expect(failed.find('[data-testid="outcome"]').classes().join(' ')).toContain('attention')
+    expect(ok.html()).not.toContain('attention')
   })
 
   it('Review opens the session and Dismiss puts the card away', async () => {

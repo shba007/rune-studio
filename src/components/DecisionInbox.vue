@@ -34,7 +34,7 @@ const visible = computed(() =>
 </script>
 <template>
   <div class="flex shrink-0 flex-col gap-3">
-    <p v-if="decisions.error.value" role="alert" class="m-0 text-label text-[#ff6b72]">
+    <p v-if="decisions.error.value" role="alert" class="m-0 text-label text-error">
       {{ decisions.error.value }}
     </p>
     <p v-if="!compact && !visible.length" class="text-label text-zinc-400">
@@ -65,7 +65,7 @@ const visible = computed(() =>
         <p v-if="entry.kind === 'goal' && entry.category" class="m-0 text-caption text-zinc-500">
           Category: {{ entry.category }}
         </p>
-        <p v-if="entry.error" role="alert" class="m-0 text-label text-[#ff6b72]">
+        <p v-if="entry.error" role="alert" class="m-0 text-label text-error">
           {{ entry.error }}
         </p>
         <div
@@ -93,7 +93,7 @@ const visible = computed(() =>
       <p
         v-if="!compact && entry.kind === 'goal' && entry.error"
         role="alert"
-        class="m-0 text-label text-[#ff6b72]"
+        class="m-0 text-label text-error"
       >
         {{ entry.error }}
       </p>

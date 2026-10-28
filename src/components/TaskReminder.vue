@@ -24,10 +24,10 @@ watch(
   <section
     v-if="task"
     aria-label="Scheduled task reminder"
-    class="flex flex-col gap-3 rounded-2xl border border-white/10 bg-[#141414] p-4 text-label text-zinc-200"
+    class="flex flex-col gap-rune-2 rounded-rune-panel border border-rune-outline bg-rune-surface p-rune-2 font-rune-reading text-rune-body text-zinc-200"
   >
     <header class="flex items-center justify-between">
-      <span class="text-caption text-zinc-500 uppercase">Time to check in</span
+      <span class="text-rune-caption text-zinc-500 uppercase">Time to check in</span
       ><button
         class="size-6 cursor-pointer text-zinc-500"
         aria-label="Decide later"
@@ -37,7 +37,7 @@ watch(
       </button>
     </header>
     <p class="m-0 leading-relaxed">{{ task.title }}</p>
-    <p class="m-0 text-caption text-zinc-500">
+    <p class="m-0 text-rune-caption text-zinc-500">
       Due <WhenText :iso="new Date(task.occurrences.at(-1)!.dueMs!).toISOString()" />. If Rune was
       away, confirm what actually happened.
     </p>
@@ -80,7 +80,7 @@ watch(
         Open tasks
       </button>
     </div>
-    <p v-if="workspace.error.value" role="alert" class="m-0 text-[#ff6b72]">
+    <p v-if="workspace.error.value" role="alert" class="m-0 text-error">
       {{ workspace.error.value }}
     </p>
   </section>

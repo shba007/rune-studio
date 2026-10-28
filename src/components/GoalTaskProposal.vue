@@ -45,12 +45,12 @@ const approval = (): TaskApproval => ({
 </script>
 <template>
   <article
-    class="border-b border-white/10 py-5 last:border-0"
+    class="border-b border-white/10 py-rune-3 last:border-0"
     :aria-label="`Proposed task: ${proposal.title}`"
   >
     <div
       v-if="proposal.createdTaskId || proposal.dismissed"
-      class="flex items-center justify-between gap-4 text-label"
+      class="flex items-center justify-between gap-4 text-rune-body"
     >
       <span :class="proposal.dismissed ? 'text-zinc-500 line-through' : 'text-zinc-300'">{{
         proposal.title
@@ -62,16 +62,16 @@ const approval = (): TaskApproval => ({
       >
         Task created →
       </button>
-      <span v-else class="text-caption text-zinc-500">Dismissed</span>
+      <span v-else class="text-rune-caption text-zinc-500">Dismissed</span>
     </div>
     <details v-else>
-      <summary class="flex cursor-pointer list-none items-start gap-3 text-label">
+      <summary class="flex cursor-pointer list-none items-start gap-rune-2 text-rune-body">
         <AppIcon
           :name="mode === 'manual' ? 'target' : mode === 'analysis' ? 'scan' : 'thinking'"
           class="mt-0.5 shrink-0 text-zinc-500"
         />
         <span class="min-w-0 flex-1"
-          ><span class="block text-body text-zinc-200">{{ proposal.title }}</span
+          ><span class="block text-rune-body text-zinc-200">{{ proposal.title }}</span
           ><span class="mt-1 block leading-relaxed text-zinc-500">{{
             proposal.rationale
           }}</span></span
@@ -79,7 +79,7 @@ const approval = (): TaskApproval => ({
         <span class="shrink-0 text-zinc-400">Review ↓</span>
       </summary>
       <form
-        class="mt-5 flex flex-col gap-4 pl-7 text-label"
+        class="mt-rune-3 flex flex-col gap-4 pl-rune-3 text-rune-body"
         @submit.prevent="$emit('review', approval())"
       >
         <fieldset
@@ -91,7 +91,7 @@ const approval = (): TaskApproval => ({
               v-model="title"
               required
               maxlength="200"
-              class="rounded-xl bg-white/5 p-3 text-zinc-100"
+              class="rounded-xl bg-white/5 p-rune-2 text-zinc-100"
           /></label>
           <label class="flex flex-col gap-2 text-zinc-400"
             >Instructions<textarea
@@ -99,13 +99,13 @@ const approval = (): TaskApproval => ({
               required
               maxlength="4000"
               rows="3"
-              class="resize-y rounded-xl bg-white/5 p-3 leading-relaxed text-zinc-100"
+              class="resize-y rounded-xl bg-white/5 p-rune-2 leading-relaxed text-zinc-100"
             />
           </label>
           <label class="flex flex-col gap-2 text-zinc-400"
             >Who will do it?<select
               v-model="mode"
-              class="rounded-xl bg-[#191919] p-3 text-zinc-100"
+              class="rounded-xl bg-[#191919] p-rune-2 text-zinc-100"
             >
               <option value="manual">I will do it · manual activity</option>
               <option value="agent">Rune · computer/tools</option>
@@ -124,10 +124,13 @@ const approval = (): TaskApproval => ({
                 required
                 :min="`${draft.startLocal.slice(0, 10)}T00:00`"
                 :max="maxLocal"
-                class="rounded-xl bg-[#191919] p-3 text-zinc-100 [color-scheme:dark]"
+                class="rounded-xl bg-[#191919] p-rune-2 text-zinc-100 [color-scheme:dark]"
             /></label>
             <label class="flex flex-col gap-2 text-zinc-400"
-              >Repeat<select v-model="repeat" class="rounded-xl bg-[#191919] p-3 text-zinc-100">
+              >Repeat<select
+                v-model="repeat"
+                class="rounded-xl bg-[#191919] p-rune-2 text-zinc-100"
+              >
                 <option value="once">One time</option>
                 <option value="daily">Daily</option>
                 <option value="weekly">Weekly</option>
@@ -141,9 +144,9 @@ const approval = (): TaskApproval => ({
                 min="1"
                 max="31"
                 required
-                class="rounded-xl bg-white/5 p-3 text-zinc-100"
+                class="rounded-xl bg-white/5 p-rune-2 text-zinc-100"
             /></label>
-            <p class="m-0 text-caption leading-relaxed text-zinc-500 sm:col-span-2">
+            <p class="m-0 text-rune-caption leading-relaxed text-zinc-500 sm:col-span-2">
               {{ draft.zone }} · Rune asks before each run.
               {{
                 repeat !== 'once'

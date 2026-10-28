@@ -3,8 +3,10 @@ defineProps<{ title?: string }>()
 </script>
 
 <template>
-  <section class="flex flex-col gap-3">
-    <h3 v-if="title" class="m-0 text-body font-medium text-zinc-400">{{ title }}</h3>
+  <section class="flex flex-col gap-rune-2">
+    <h3 v-if="title" class="m-0 font-sans text-rune-subtitle font-medium text-zinc-400">
+      {{ title }}
+    </h3>
     <div class="min-w-0">
       <slot />
     </div>

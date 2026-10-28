@@ -124,7 +124,7 @@ function previewRun(row: { task: WorkspaceTask | null; run: FlightRun | null }):
         Showing goal tasks · Clear filter ×
       </button>
     </header>
-    <p v-if="error || workspace.error.value" role="alert" class="m-0 text-label text-[#ff6b72]">
+    <p v-if="error || workspace.error.value" role="alert" class="m-0 text-label text-error">
       {{ error || workspace.error.value }}
     </p>
     <p v-if="notice" role="status" class="m-0 text-label text-zinc-400">{{ notice }}</p>
@@ -330,7 +330,7 @@ function previewRun(row: { task: WorkspaceTask | null; run: FlightRun | null }):
                   </button>
                 </div>
               </details>
-              <p v-if="row.task.error" role="alert" class="m-0 text-label text-[#ff6b72]">
+              <p v-if="row.task.error" role="alert" class="m-0 text-label text-error">
                 {{ row.task.error }}
               </p></template
             >

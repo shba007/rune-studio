@@ -25,29 +25,33 @@ onMounted(() => no.value?.focus())
 <template>
   <section
     v-if="question"
-    class="flex w-full flex-col gap-2 rounded-[28px] border bg-[#141414] p-4 text-zinc-100"
-    :class="asking ? 'border-white/15' : 'border-[#d71921]/50'"
+    class="flex w-full flex-col gap-2 rounded-rune-panel border bg-rune-surface p-rune-2 font-rune-reading text-zinc-100"
+    :class="asking ? 'border-white/15' : 'border-attention/50'"
     role="alertdialog"
     :aria-label="asking ? 'Rune asks' : 'Needs your OK'"
   >
     <header class="flex h-6 items-center gap-2">
       <span
         class="size-2 shrink-0 animate-pulse rounded-full"
-        :class="asking ? 'bg-[#f1f1ef]' : 'bg-[#d71921]'"
+        :class="asking ? 'bg-primary' : 'bg-attention'"
       />
-      <span class="text-caption uppercase" :class="asking ? 'text-zinc-300' : 'text-[#d71921]'">{{
-        asking ? 'Asks you' : 'Needs your OK'
-      }}</span>
-      <span class="ml-auto truncate text-caption text-zinc-500 uppercase">{{
+      <span
+        class="text-rune-caption uppercase"
+        :class="asking ? 'text-zinc-300' : 'text-attention'"
+        >{{ asking ? 'Asks you' : 'Needs your OK' }}</span
+      >
+      <span class="ml-auto truncate text-rune-caption text-zinc-500 uppercase">{{
         question.source
       }}</span>
     </header>
 
-    <p v-if="asking" class="text-body">{{ question.text }}</p>
-    <p v-else class="text-body"><span class="text-zinc-400">Wants to </span>{{ question.text }}</p>
+    <p v-if="asking" class="text-rune-body">{{ question.text }}</p>
+    <p v-else class="text-rune-body">
+      <span class="text-zinc-400">Wants to </span>{{ question.text }}
+    </p>
     <p
       v-if="question.reason"
-      class="line-clamp-2 text-label text-zinc-400"
+      class="line-clamp-2 text-rune-caption text-zinc-400"
       :title="question.reason"
     >
       “{{ question.reason }}”
@@ -57,9 +61,9 @@ onMounted(() => no.value?.focus())
       <li
         v-for="reason in question.reasons.slice(0, 3)"
         :key="reason"
-        class="flex items-start gap-2 text-label text-zinc-300"
+        class="flex items-start gap-2 text-rune-caption text-zinc-300"
       >
-        <span class="mt-[6px] size-1 shrink-0 rounded-full bg-[#d71921]" />
+        <span class="mt-[6px] size-1 shrink-0 rounded-full bg-attention" />
         {{ reason }}
       </li>
     </ul>
@@ -68,25 +72,25 @@ onMounted(() => no.value?.focus())
       <button
         ref="no"
         type="button"
-        class="h-8 flex-1 cursor-pointer rounded-full border border-white/25 text-label text-zinc-200 transition hover:bg-white/10"
+        class="h-8 flex-1 cursor-pointer rounded-full border border-white/25 text-rune-caption text-zinc-200 transition hover:bg-white/10"
         @click="agent.answer(false)"
       >
         {{ restarting ? 'Keep stopped' : 'No' }}
       </button>
       <button
         type="button"
-        class="h-8 flex-1 cursor-pointer rounded-full text-label transition"
+        class="h-8 flex-1 cursor-pointer rounded-full text-rune-caption transition"
         :class="
           asking
-            ? 'bg-[#f1f1ef] text-[#111] hover:bg-white'
-            : 'bg-[#d71921] text-white hover:bg-[#b9151c]'
+            ? 'bg-primary text-[#111] hover:bg-white'
+            : 'bg-attention text-white hover:bg-attention-hover'
         "
         @click="agent.answer(true)"
       >
         {{ restarting ? 'Restart task' : asking ? 'Yes' : 'Yes, allow' }}
       </button>
     </div>
-    <p class="text-center text-caption text-zinc-500 uppercase">
+    <p class="text-center text-rune-caption text-zinc-500 uppercase">
       No answer in {{ clock }} counts as no
     </p>
   </section>

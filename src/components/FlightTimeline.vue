@@ -159,7 +159,7 @@ const playheadLeft = computed(() => props.timeMs * pxPerMs.value - scrollLeft.va
         class="absolute top-0 bottom-0 border-l border-white/10"
         :class="[
           segment.index === current ? 'bg-white/[0.07]' : '',
-          failedStep(segment.step) ? 'text-[#ff6b72]' : 'text-zinc-200',
+          failedStep(segment.step) ? 'text-error' : 'text-zinc-200',
         ]"
         :style="{
           left: `${segment.start * pxPerMs - scrollLeft}px`,
@@ -202,7 +202,7 @@ const playheadLeft = computed(() => props.timeMs * pxPerMs.value - scrollLeft.va
         v-for="mark in shownMarkers"
         :key="mark.id"
         class="absolute top-1 -translate-x-1/2 rounded-full px-1.5 text-caption"
-        :class="mark.error ? 'bg-[#d71921]/25 text-[#ff6b72]' : 'bg-white/10 text-zinc-300'"
+        :class="mark.error ? 'bg-[#d71921]/25 text-error' : 'bg-white/10 text-zinc-300'"
         :style="{ left: `${mark.ms * pxPerMs - scrollLeft}px` }"
         data-testid="marker"
         >{{ mark.word }}</span

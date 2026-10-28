@@ -132,7 +132,7 @@ onBeforeUnmount(() => {
 
 <template>
   <main
-    class="flex h-screen flex-col overflow-hidden bg-black text-zinc-100"
+    class="flex h-screen flex-col overflow-hidden bg-black font-rune-reading text-zinc-100"
     data-testid="workspace"
   >
     <TitleBar title="Knowledge" />
@@ -147,14 +147,14 @@ onBeforeUnmount(() => {
     />
     <div v-show="!previewTask" class="flex min-h-0 flex-1">
       <nav
-        class="flex w-48 shrink-0 flex-col gap-1 border-r border-white/8 bg-[#0c0c0c] p-3"
+        class="flex w-48 shrink-0 flex-col gap-rune-detail border-r border-white/8 bg-[#0c0c0c] p-rune-2"
         aria-label="Workspace sections"
       >
         <button
           v-for="item in sections"
           :key="item.id"
           type="button"
-          class="flex h-10 cursor-pointer items-center gap-3 rounded-xl px-3 text-left text-body transition"
+          class="flex min-h-10 cursor-pointer items-center gap-rune-1 rounded-rune-control px-rune-1 text-left text-rune-body transition focus-visible:outline-2 focus-visible:outline-white/60"
           :class="
             section === item.id
               ? 'bg-white/10 text-zinc-50'
@@ -178,12 +178,12 @@ onBeforeUnmount(() => {
       </nav>
       <section class="min-w-0 flex-1 overflow-y-auto px-8 py-6">
         <header class="mb-6">
-          <div class="flex items-center justify-between gap-4">
-            <h1 class="m-0 text-title">{{ current.label }}</h1>
+          <div class="flex flex-wrap items-center justify-between gap-rune-2">
+            <h1 class="m-0 font-sans text-rune-title">{{ current.label }}</h1>
             <button
               v-if="section === 'goals' || section === 'tasks'"
               type="button"
-              class="cursor-pointer rounded-full bg-zinc-100 px-4 py-2 text-label text-zinc-950"
+              class="cursor-pointer rounded-full bg-zinc-100 px-rune-2 py-rune-1 text-rune-body text-zinc-950"
               @click="creation = { kind: section === 'goals' ? 'goal' : 'task' }"
             >
               + New {{ section === 'goals' ? 'goal' : 'task' }}
@@ -191,13 +191,13 @@ onBeforeUnmount(() => {
             <button
               v-if="section === 'personalities'"
               type="button"
-              class="cursor-pointer rounded-full bg-zinc-100 px-4 py-2 text-label text-zinc-950"
+              class="cursor-pointer rounded-full bg-zinc-100 px-rune-2 py-rune-1 text-rune-body text-zinc-950"
               @click="personalities?.create()"
             >
               + New personality
             </button>
           </div>
-          <p class="mt-1 text-label text-zinc-500">{{ current.subtitle }}</p>
+          <p class="mt-rune-detail text-rune-body text-zinc-500">{{ current.subtitle }}</p>
         </header>
         <NewWorkForm
           v-if="creation"
@@ -211,7 +211,7 @@ onBeforeUnmount(() => {
           @close="creation = null"
           @saved="created"
         />
-        <p v-if="agent.notice.value" role="alert" class="text-label text-zinc-400">
+        <p v-if="agent.notice.value" role="alert" class="text-rune-body text-zinc-400">
           {{ agent.notice.value }}
         </p>
         <TaskHistory
@@ -231,7 +231,7 @@ onBeforeUnmount(() => {
         <div v-if="section === 'goals'" class="text-zinc-400">
           <button
             v-if="focusGoalId"
-            class="mb-5 cursor-pointer text-label text-zinc-400"
+            class="mb-rune-3 cursor-pointer text-rune-body text-zinc-400"
             @click="focusGoalId = null"
           >
             ← All goals
@@ -247,7 +247,7 @@ onBeforeUnmount(() => {
           />
           <button
             type="button"
-            class="mt-8 block cursor-pointer text-label text-zinc-500 hover:text-zinc-200"
+            class="mt-8 block cursor-pointer text-rune-body text-zinc-500 hover:text-zinc-200"
             @click="section = 'tasks'"
           >
             View tasks

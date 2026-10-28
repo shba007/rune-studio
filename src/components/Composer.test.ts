@@ -59,7 +59,7 @@ it('submits requests without user scheduling controls while another task runs', 
   await flushPromises()
   expect(wrapper.get('textarea').element.value).toBe('Keep this until a target is chosen')
   await wrapper.setProps({ analysisBusy: true })
-  expect(wrapper.get('[aria-label="Cancel analysis"]').classes()).toContain('bg-[#d71921]')
+  expect(wrapper.get('[aria-label="Cancel analysis"]').classes()).toContain('bg-attention')
   expect(wrapper.get('textarea').attributes('disabled')).toBeDefined()
   await wrapper.get('[aria-label="Cancel analysis"]').trigger('click')
   expect(cancelAnalysis).toHaveBeenCalledOnce()

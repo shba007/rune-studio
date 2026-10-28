@@ -101,7 +101,9 @@ function triggerExport(classKey: string) {
 
 <template>
   <div class="flex flex-col gap-6" data-testid="settings-life">
-    <div class="rounded-2xl border border-white/8 bg-[#141414] p-5 text-label text-zinc-300">
+    <div
+      class="rounded-2xl border border-white/8 bg-[#141414] p-rune-2 text-rune-body text-zinc-300"
+    >
       <div class="mb-2 flex items-center gap-2 font-mono text-zinc-100 uppercase">
         <AppIcon name="shield" size="sm" class="text-zinc-200" />
         <span>Privacy & Foundations Notice [OWNER TO REVIEW]</span>
@@ -127,8 +129,10 @@ function triggerExport(classKey: string) {
       />
     </HubGroup>
     <template v-if="draft.lifeEnabled">
-      <h2 class="mt-4 mb-0 text-title font-normal text-zinc-100">Domain Consents & Retention</h2>
-      <p class="mt-0 text-label text-zinc-500">
+      <h2 class="mt-4 mb-0 text-rune-title font-normal text-zinc-100">
+        Domain Consents & Retention
+      </h2>
+      <p class="mt-0 text-rune-body text-zinc-500">
         Each domain requires explicit consent. Disabling consent stops future collection without
         deleting past records.
       </p>
@@ -137,23 +141,23 @@ function triggerExport(classKey: string) {
         <div
           v-for="item in CLASSES"
           :key="item.key"
-          class="flex flex-col gap-3 border-b border-white/8 py-4 last:border-b-0"
+          class="flex flex-col gap-rune-2 border-b border-white/8 py-4 last:border-b-0"
           :data-testid="`class-row-${item.key}`"
         >
           <div class="flex items-center justify-between gap-4">
             <div class="flex min-w-0 flex-1 flex-col gap-1">
               <div class="flex items-center gap-2">
-                <span class="text-body font-medium text-zinc-100">{{ item.label }}</span>
+                <span class="text-rune-body font-medium text-zinc-100">{{ item.label }}</span>
                 <span
                   v-if="item.sensitive"
-                  class="rounded-full bg-white/5 px-2 py-0.5 text-caption font-mono text-zinc-200 uppercase"
+                  class="rounded-full bg-white/5 px-2 py-0.5 text-rune-caption font-mono text-zinc-200 uppercase"
                 >
                   Local-only & Encrypted
                 </span>
               </div>
-              <span class="text-label text-zinc-400">{{ item.desc }}</span>
+              <span class="text-rune-body text-zinc-400">{{ item.desc }}</span>
             </div>
-            <label class="flex cursor-pointer items-center gap-2 text-label text-zinc-300">
+            <label class="flex cursor-pointer items-center gap-2 text-rune-body text-zinc-300">
               <input
                 v-if="draft.lifeConsents"
                 v-model="draft.lifeConsents[item.key]"
@@ -164,8 +168,8 @@ function triggerExport(classKey: string) {
               <span>Consent</span>
             </label>
           </div>
-          <div class="mt-1 flex flex-wrap items-center justify-between gap-4 pt-2 text-label">
-            <div class="flex items-center gap-3 text-zinc-400">
+          <div class="mt-1 flex flex-wrap items-center justify-between gap-4 pt-2 text-rune-body">
+            <div class="flex items-center gap-rune-2 text-zinc-400">
               <span>Retention (days, 0 = forever):</span>
               <input
                 v-if="draft.retentionDays"
@@ -181,7 +185,7 @@ function triggerExport(classKey: string) {
             <div class="flex items-center gap-2">
               <button
                 type="button"
-                class="flex h-8 cursor-pointer items-center gap-1.5 rounded-full border border-white/15 bg-transparent px-3 text-caption text-zinc-300 uppercase transition hover:bg-white/10"
+                class="flex h-8 cursor-pointer items-center gap-1.5 rounded-full border border-white/15 bg-transparent px-rune-2 text-rune-caption text-zinc-300 uppercase transition hover:bg-white/10"
                 :data-testid="`export-${item.key}`"
                 @click="triggerExport(item.key)"
               >
@@ -190,7 +194,7 @@ function triggerExport(classKey: string) {
               </button>
               <button
                 type="button"
-                class="flex h-8 cursor-pointer items-center gap-1.5 rounded-full border border-[#ff6b72]/30 bg-transparent px-3 text-caption text-[#ff6b72] uppercase transition hover:bg-[#ff6b72]/15"
+                class="flex h-8 cursor-pointer items-center gap-1.5 rounded-full border border-error/30 bg-transparent px-rune-2 text-rune-caption text-error uppercase transition hover:bg-error/15"
                 :data-testid="`delete-${item.key}`"
                 @click="promptDelete(item.key)"
               >
@@ -203,43 +207,43 @@ function triggerExport(classKey: string) {
       </HubGroup>
       <div
         v-if="exportMessage"
-        class="rounded-xl border border-white/10 bg-white/5 p-3 text-label text-zinc-200"
+        class="rounded-xl border border-white/10 bg-white/5 p-rune-2 text-rune-body text-zinc-200"
       >
         {{ exportMessage }}
       </div>
       <div
         v-if="deleteMessage"
-        class="rounded-xl border border-[#ff6b72]/20 bg-[#ff6b72]/10 p-3 text-label text-[#ff6b72]"
+        class="rounded-xl border border-error/20 bg-error/10 p-rune-2 text-rune-body text-error"
       >
         {{ deleteMessage }}
       </div>
       <div
         v-if="deleteConfirmClass"
-        class="rounded-2xl border border-[#ff6b72]/40 bg-[#1a0f10] p-5 text-label text-zinc-200"
+        class="rounded-2xl border border-error/40 bg-[#1a0f10] p-rune-2 text-rune-body text-zinc-200"
         data-testid="delete-confirm-box"
       >
-        <div class="mb-2 flex items-center gap-2 font-mono text-[#ff6b72] uppercase">
+        <div class="mb-2 flex items-center gap-2 font-mono text-error uppercase">
           <AppIcon name="trash" size="sm" />
           <span>Confirm Permanent Deletion: {{ deleteConfirmClass }}</span>
         </div>
-        <p class="mt-0 mb-3 text-zinc-300">
+        <p class="mt-0 mb-rune-2 text-zinc-300">
           This will permanently delete all stored evidence, records, and related audit rows for
           domain
           <strong class="text-zinc-100 font-mono">{{ deleteConfirmClass }}</strong> and vacuum the
           SQLite database so no traces remain on disk. This action cannot be undone.
         </p>
-        <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div class="flex flex-col gap-rune-2 sm:flex-row sm:items-center">
           <input
             v-model="deleteConfirmInput"
             type="text"
             :placeholder="`Type '${deleteConfirmClass}' to confirm`"
-            class="flex-1 rounded-xl border border-white/20 bg-black px-3.5 py-2 text-zinc-100 placeholder:text-zinc-600 focus:border-[#ff6b72] focus:outline-none"
+            class="flex-1 rounded-xl border border-white/20 bg-black px-rune-2 py-2 text-zinc-100 placeholder:text-zinc-600 focus:border-error focus:outline-none"
             data-testid="delete-confirm-input"
           />
           <div class="flex items-center gap-2">
             <button
               type="button"
-              class="h-9 cursor-pointer rounded-full bg-[#ff6b72] px-4 font-medium text-black uppercase transition hover:bg-[#ff8086]"
+              class="h-9 cursor-pointer rounded-full bg-error px-4 font-medium text-black uppercase transition hover:bg-[#ff8086]"
               data-testid="delete-confirm-btn"
               @click="executeDelete"
             >

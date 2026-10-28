@@ -8,14 +8,14 @@ defineEmits<{ select: [id: string] }>()
   <section
     v-if="entry.pathways"
     aria-label="Goal pathways"
-    class="flex flex-col gap-5 border-t border-white/10 pt-6 text-label"
+    class="flex flex-col gap-rune-3 border-t border-white/10 pt-6 text-rune-body"
   >
-    <header class="flex flex-wrap items-end justify-between gap-3">
+    <header class="flex flex-wrap items-end justify-between gap-rune-2">
       <div>
-        <p class="m-0 mb-1 text-caption uppercase tracking-wider text-zinc-500">
+        <p class="m-0 mb-1 text-rune-caption uppercase tracking-wider text-zinc-500">
           Choose your approach
         </p>
-        <h3 class="m-0 text-[18px] font-medium text-zinc-100">
+        <h3 class="m-0 font-sans text-rune-subtitle font-medium text-zinc-100">
           {{
             entry.pathways.options.length
               ? `${entry.pathways.options.length} pathways to consider`
@@ -23,22 +23,22 @@ defineEmits<{ select: [id: string] }>()
           }}
         </h3>
       </div>
-      <span class="text-caption text-zinc-500">Ranked by fit · estimates, not guarantees</span>
+      <span class="text-rune-caption text-zinc-500">Ranked by fit · estimates, not guarantees</span>
     </header>
     <div
       v-if="entry.pathways.approved"
       role="status"
-      class="flex items-start gap-3 border-l-2 border-zinc-200 py-1 pl-4"
+      class="flex items-start gap-rune-2 border-l-2 border-zinc-200 py-1 pl-4"
     >
       <AppIcon name="ok" class="mt-1 shrink-0 text-zinc-200" />
       <div>
-        <p class="m-0 text-caption text-zinc-500">Your preferred route</p>
-        <p class="m-0 mt-1 text-body text-zinc-100">{{ entry.pathways.approved.title }}</p>
-        <p class="m-0 mt-1 text-caption text-zinc-500">Saved as a preference only.</p>
+        <p class="m-0 text-rune-caption text-zinc-500">Your preferred route</p>
+        <p class="m-0 mt-1 text-rune-body text-zinc-100">{{ entry.pathways.approved.title }}</p>
+        <p class="m-0 mt-1 text-rune-caption text-zinc-500">Saved as a preference only.</p>
       </div>
     </div>
     <details
-      class="text-label text-zinc-400"
+      class="text-rune-body text-zinc-400"
       :open="
         !entry.pathways.options.some((route) =>
           ['feasible', 'conditional'].includes(route.feasibility),
@@ -62,7 +62,7 @@ defineEmits<{ select: [id: string] }>()
       <article
         v-for="(route, index) in entry.pathways.options"
         :key="route.id"
-        class="flex min-w-0 flex-col rounded-2xl border p-5"
+        class="flex min-w-0 flex-col rounded-2xl border p-rune-3"
         :class="
           entry.pathways.selected === route.id
             ? 'border-zinc-400 bg-white/[0.045]'
@@ -75,17 +75,19 @@ defineEmits<{ select: [id: string] }>()
           }}</span
           ><span
             v-if="entry.pathways.selected === route.id"
-            class="inline-flex items-center gap-1 text-caption text-zinc-200"
+            class="inline-flex items-center gap-1 text-rune-caption text-zinc-200"
             ><AppIcon name="ok" size="sm" />Preferred</span
           ><span
             v-else-if="index === 0 && ['feasible', 'conditional'].includes(route.feasibility)"
-            class="rounded-full bg-white/8 px-2.5 py-1 text-caption text-zinc-200"
+            class="rounded-full bg-white/8 px-2.5 py-1 text-rune-caption text-zinc-200"
             >Recommended</span
           >
         </header>
-        <h4 class="m-0 text-body leading-relaxed font-medium text-zinc-100">{{ route.title }}</h4>
-        <p class="mt-2 mb-5 line-clamp-3 leading-relaxed text-zinc-400">{{ route.summary }}</p>
-        <dl class="m-0 flex flex-col gap-3 border-y border-white/8 py-4 text-caption">
+        <h4 class="m-0 text-rune-body leading-relaxed font-medium text-zinc-100">
+          {{ route.title }}
+        </h4>
+        <p class="mt-2 mb-rune-3 line-clamp-3 leading-relaxed text-zinc-400">{{ route.summary }}</p>
+        <dl class="m-0 flex flex-col gap-rune-2 border-y border-white/8 py-4 text-rune-caption">
           <div class="flex items-start gap-2.5">
             <AppIcon name="wait" size="sm" class="mt-0.5 shrink-0 text-zinc-500" />
             <div class="min-w-0">
@@ -105,7 +107,7 @@ defineEmits<{ select: [id: string] }>()
             </div>
           </div>
         </dl>
-        <div class="flex flex-col gap-3 py-4 text-caption leading-relaxed">
+        <div class="flex flex-col gap-rune-2 py-4 text-rune-caption leading-relaxed">
           <div v-if="route.pros.length" class="flex gap-2.5">
             <span class="text-zinc-300" aria-hidden="true">+</span>
             <p class="m-0 line-clamp-2 text-zinc-300">{{ route.pros[0] }}</p>
@@ -115,7 +117,7 @@ defineEmits<{ select: [id: string] }>()
             <p class="m-0 line-clamp-2 text-zinc-500">{{ route.cons[0] }}</p>
           </div>
         </div>
-        <details class="mb-5 text-caption text-zinc-400">
+        <details class="mb-rune-3 text-rune-caption text-zinc-400">
           <summary class="cursor-pointer py-1 hover:text-zinc-100">
             {{
               route.missingInformation.length
@@ -128,7 +130,7 @@ defineEmits<{ select: [id: string] }>()
             <span class="text-zinc-200">Why this ranking:</span> {{ route.rationale }}
           </p>
           <p><span class="text-zinc-500">Duration:</span> {{ route.duration }}</p>
-          <dl class="m-0 flex flex-col gap-3">
+          <dl class="m-0 flex flex-col gap-rune-2">
             <div
               v-for="field in ['pros', 'cons', 'resources', 'missingInformation'] as const"
               :key="field"
@@ -159,7 +161,7 @@ defineEmits<{ select: [id: string] }>()
             !['feasible', 'conditional'].includes(route.feasibility) ||
             entry.pathways.selected === route.id
           "
-          class="mt-auto min-h-10 w-full cursor-pointer rounded-full px-4 py-2 text-label disabled:cursor-default disabled:opacity-40"
+          class="mt-auto min-h-10 w-full cursor-pointer rounded-full px-4 py-2 text-rune-body disabled:cursor-default disabled:opacity-40"
           :class="
             index === 0 && entry.pathways.selected !== route.id
               ? 'bg-zinc-100 text-zinc-950'
@@ -177,7 +179,7 @@ defineEmits<{ select: [id: string] }>()
         </button>
       </article>
     </div>
-    <p class="m-0 flex items-start gap-2 text-caption leading-relaxed text-zinc-500">
+    <p class="m-0 flex items-start gap-2 text-rune-caption leading-relaxed text-zinc-500">
       <AppIcon name="shield" size="sm" class="mt-0.5 shrink-0" />Saving a preferred route does not
       create tasks, reminders, schedules, or authorize execution.
     </p>

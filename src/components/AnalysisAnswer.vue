@@ -10,7 +10,7 @@ const long = computed(() => props.text.length > LONG || props.text.split('\n').l
 
 <template>
   <section
-    class="rounded-[28px] border border-white/15 bg-[#141414] p-4 text-zinc-100"
+    class="rounded-rune-panel border border-rune-outline bg-rune-surface p-rune-2 font-rune-reading text-zinc-100"
     aria-label="Answer"
   >
     <div
@@ -30,18 +30,18 @@ const long = computed(() => props.text.length > LONG || props.text.split('\n').l
         />
       </div>
       <div class="min-w-0">
-        <p class="m-0 text-label text-zinc-200">Reading your capture</p>
-        <p class="mt-1 mb-0 text-caption text-zinc-500">Escape</p>
+        <p class="m-0 text-rune-caption text-zinc-200">Reading your capture</p>
+        <p class="mt-1 mb-0 text-rune-caption text-zinc-500">Escape</p>
       </div>
     </div>
     <template v-else>
-      <p class="m-0 text-body whitespace-pre-line" :class="expanded ? '' : 'line-clamp-4'">
+      <p class="m-0 text-rune-body whitespace-pre-line" :class="expanded ? '' : 'line-clamp-4'">
         {{ text || 'No answer was given.' }}
       </p>
       <button
         v-if="long"
         type="button"
-        class="mt-2 cursor-pointer text-caption text-zinc-400 uppercase outline-none hover:text-white focus-visible:ring-2 focus-visible:ring-white/60"
+        class="mt-2 cursor-pointer text-rune-caption text-zinc-400 uppercase outline-none hover:text-white focus-visible:ring-2 focus-visible:ring-white/60"
         :aria-expanded="expanded"
         @click="expanded = !expanded"
       >

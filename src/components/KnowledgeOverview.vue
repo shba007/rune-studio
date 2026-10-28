@@ -61,30 +61,30 @@ function keyboardPan(event: KeyboardEvent) {
 </script>
 <template>
   <div class="flex flex-col gap-6">
-    <section class="rounded-2xl border border-white/10 bg-[#101010] p-5">
-      <h2 class="m-0 text-body text-zinc-100">Goals anchor the Life Harness</h2>
-      <p class="mb-0 text-label leading-relaxed text-zinc-400">
+    <section class="rounded-2xl border border-white/10 bg-[#101010] p-rune-3">
+      <h2 class="m-0 font-sans text-rune-subtitle text-zinc-100">Goals anchor the Life Harness</h2>
+      <p class="mb-0 text-rune-body leading-relaxed text-zinc-400">
         Type or say a request. Rune identifies its scope, asks when clarification is needed, and
         keeps the resulting work reviewable. A goal describes where you want to be; a task produces
         a bounded result; a step belongs inside a task. Knowledge brings those conversations,
         results, and styles together. Goals anchor the longer-term loop and connect directly to
         approved personalities. You can still run standalone tasks and steps.
       </p>
-      <div class="mt-4 grid gap-3 text-label sm:grid-cols-3">
-        <div class="rounded-xl bg-white/5 p-3">
-          <span class="block text-caption text-zinc-500">01 · DEFINE</span>
+      <div class="mt-4 grid gap-rune-2 text-rune-body sm:grid-cols-3">
+        <div class="rounded-xl bg-white/5 p-rune-2">
+          <span class="block text-rune-caption text-zinc-500">01 · DEFINE</span>
           <p class="mb-0 text-zinc-200">“I want to be physically fit.”</p>
           <p class="mb-0 text-zinc-400">Clarify your starting point and approve a focused goal.</p>
         </div>
-        <div class="rounded-xl bg-white/5 p-3">
-          <span class="block text-caption text-zinc-500">02 · DO</span>
+        <div class="rounded-xl bg-white/5 p-rune-2">
+          <span class="block text-rune-caption text-zinc-500">02 · DO</span>
           <p class="mb-0 text-zinc-200">“Calculate 14 + 27.”</p>
           <p class="mb-0 text-zinc-400">
             Run a bounded task; its answer appears in the orb bubble.
           </p>
         </div>
-        <div class="rounded-xl bg-white/5 p-3">
-          <span class="block text-caption text-zinc-500">03 · REVIEW</span>
+        <div class="rounded-xl bg-white/5 p-rune-2">
+          <span class="block text-rune-caption text-zinc-500">03 · REVIEW</span>
           <p class="mb-0 text-zinc-200">“What happened?”</p>
           <p class="mb-0 text-zinc-400">Open Tasks for results, attempts, captures, and replay.</p>
         </div>
@@ -95,15 +95,15 @@ function keyboardPan(event: KeyboardEvent) {
       class="overflow-hidden rounded-2xl border border-white/10 bg-[#0b0b0b]"
     >
       <header
-        class="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 px-5 py-4"
+        class="flex flex-wrap items-center justify-between gap-rune-2 border-b border-white/8 px-rune-3 py-4"
       >
         <div>
-          <h2 class="m-0 text-body text-zinc-100">How everything connects</h2>
-          <p class="mb-0 text-caption text-zinc-500">
+          <h2 class="m-0 font-sans text-rune-subtitle text-zinc-100">How everything connects</h2>
+          <p class="mb-0 text-rune-caption text-zinc-500">
             Concept map · select a node to explore · drag the background to pan
           </p>
         </div>
-        <div class="flex items-center gap-1 text-label text-zinc-300">
+        <div class="flex items-center gap-1 text-rune-body text-zinc-300">
           <button
             aria-label="Zoom out"
             :disabled="zoom <= 0.7"
@@ -112,7 +112,7 @@ function keyboardPan(event: KeyboardEvent) {
           >
             −
           </button>
-          <span class="min-w-12 text-center text-caption tabular-nums"
+          <span class="min-w-12 text-center text-rune-caption tabular-nums"
             >{{ Math.round(zoom * 100) }}%</span
           >
           <button
@@ -124,7 +124,7 @@ function keyboardPan(event: KeyboardEvent) {
             +
           </button>
           <button
-            class="ml-2 cursor-pointer rounded-full border border-white/15 px-3 py-1 text-caption hover:bg-white/5"
+            class="ml-2 cursor-pointer rounded-full border border-white/15 px-rune-2 py-1 text-rune-caption hover:bg-white/5"
             @click="reset"
           >
             Reset view
@@ -208,38 +208,39 @@ function keyboardPan(event: KeyboardEvent) {
           </g>
         </g>
       </svg>
-      <p class="m-0 border-t border-white/8 px-5 py-3 text-caption text-zinc-500">
+      <p class="m-0 border-t border-white/8 px-rune-3 py-rune-2 text-rune-caption text-zinc-500">
         Solid connections describe current relationships. Dashed connections are planned. This is a
         product guide, not a graph of your private data.
       </p>
     </section>
-    <section aria-label="Concept explanation" class="rounded-2xl border border-white/10 p-5">
-      <label class="flex flex-col gap-2 text-label text-zinc-400"
+    <section aria-label="Concept explanation" class="rounded-2xl border border-white/10 p-rune-3">
+      <label class="flex flex-col gap-2 text-rune-body text-zinc-400"
         >Explore every concept<select
           v-model="selected"
-          class="max-w-sm rounded-xl bg-[#1b1b1b] px-3 py-2 text-zinc-100"
+          class="max-w-sm rounded-xl bg-[#1b1b1b] px-rune-2 py-2 text-zinc-100"
         >
           <option v-for="node in knowledgeConcepts" :key="node.id" :value="node.id">
             {{ node.title }} · {{ node.status }}
           </option>
         </select></label
       >
-      <div class="mt-5 flex flex-wrap items-center gap-3">
-        <h2 class="m-0 text-title text-zinc-100">{{ concept.title }}</h2>
-        <span class="rounded-full border border-white/15 px-3 py-1 text-caption text-zinc-400">{{
-          concept.status
-        }}</span>
+      <div class="mt-rune-3 flex flex-wrap items-center gap-rune-2">
+        <h2 class="m-0 font-sans text-rune-title text-zinc-100">{{ concept.title }}</h2>
+        <span
+          class="rounded-full border border-white/15 px-rune-2 py-1 text-rune-caption text-zinc-400"
+          >{{ concept.status }}</span
+        >
       </div>
-      <p class="text-body leading-relaxed text-zinc-300">{{ concept.meaning }}</p>
-      <p class="rounded-xl bg-white/5 p-4 text-label leading-relaxed text-zinc-300">
-        <span class="mb-1 block text-caption text-zinc-500 uppercase">Example</span
+      <p class="text-rune-body leading-relaxed text-zinc-300">{{ concept.meaning }}</p>
+      <p class="rounded-xl bg-white/5 p-4 text-rune-body leading-relaxed text-zinc-300">
+        <span class="mb-1 block text-rune-caption text-zinc-500 uppercase">Example</span
         >{{ concept.example }}
       </p>
-      <h3 class="text-label font-normal text-zinc-100">What works today, and what does not</h3>
-      <p class="text-label leading-relaxed text-zinc-400">{{ concept.today }}</p>
+      <h3 class="text-rune-body font-normal text-zinc-100">What works today, and what does not</h3>
+      <p class="text-rune-body leading-relaxed text-zinc-400">{{ concept.today }}</p>
       <button
         v-if="concept.section && concept.section !== 'overview'"
-        class="cursor-pointer rounded-full border border-white/20 px-4 py-2 text-label text-zinc-100 hover:bg-white/5"
+        class="cursor-pointer rounded-full border border-white/20 px-4 py-2 text-rune-body text-zinc-100 hover:bg-white/5"
         @click="emit('navigate', concept.section)"
       >
         Open
@@ -251,9 +252,9 @@ function keyboardPan(event: KeyboardEvent) {
               : 'Tasks'
         }}
       </button>
-      <div v-if="connections.length" class="mt-5 border-t border-white/10 pt-4">
-        <h3 class="m-0 text-label font-normal text-zinc-300">Connected concepts</h3>
-        <ul class="mb-0 flex list-none flex-col gap-2 p-0 text-label text-zinc-400">
+      <div v-if="connections.length" class="mt-rune-3 border-t border-white/10 pt-4">
+        <h3 class="m-0 text-rune-body font-normal text-zinc-300">Connected concepts</h3>
+        <ul class="mb-0 flex list-none flex-col gap-2 p-0 text-rune-body text-zinc-400">
           <li v-for="[from, to, relation] in connections" :key="`${from}-${to}`">
             <button
               class="cursor-pointer text-left hover:text-white"
@@ -267,18 +268,18 @@ function keyboardPan(event: KeyboardEvent) {
       </div>
     </section>
     <section class="grid gap-4 sm:grid-cols-2">
-      <div class="rounded-2xl border border-white/10 p-5">
-        <h2 class="m-0 text-body text-zinc-100">You stay in control</h2>
-        <p class="mb-0 text-label leading-relaxed text-zinc-400">
+      <div class="rounded-2xl border border-white/10 p-rune-3">
+        <h2 class="m-0 font-sans text-rune-subtitle text-zinc-100">You stay in control</h2>
+        <p class="mb-0 text-rune-body leading-relaxed text-zinc-400">
           You approve goal definitions and personality edits. Capture and recording have explicit
           controls. Tools keep their permissions. Private goal storage requires consent; other
           archives have their own controls. A personality changes communication style, not what Rune
           is allowed to do.
         </p>
       </div>
-      <div class="rounded-2xl border border-dashed border-white/15 p-5">
-        <h2 class="m-0 text-body text-zinc-100">The Life Harness direction</h2>
-        <p class="mb-0 text-label leading-relaxed text-zinc-400">
+      <div class="rounded-2xl border border-dashed border-white/15 p-rune-3">
+        <h2 class="m-0 font-sans text-rune-subtitle text-zinc-100">The Life Harness direction</h2>
+        <p class="mb-0 text-rune-body leading-relaxed text-zinc-400">
           The intended loop is clarify → compare pathways → agree on work → act → review evidence →
           adapt. Goal clarification, pathway comparison and first-week task proposals are available.
           Review task details and schedules before approving creation; creation never starts

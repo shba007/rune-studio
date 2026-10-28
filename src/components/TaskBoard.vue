@@ -180,7 +180,7 @@ function stepLabel(phase: TaskPhase) {
       <span class="activity-dots" aria-hidden="true">···</span
       >{{ request.phase === 'planning' ? 'Planning tasks and steps…' : 'Waiting to start…' }}
     </p>
-    <p v-if="request.error" role="alert" class="m-0 text-rune-body text-[#ff6b72]">
+    <p v-if="request.error" role="alert" class="m-0 text-rune-body text-error">
       {{ request.error }}
     </p>
     <div
@@ -343,12 +343,12 @@ function stepLabel(phase: TaskPhase) {
   flex-shrink: 0;
 }
 .lit-dot {
-  background: #f1f1ef;
-  border-color: #f1f1ef;
+  background: var(--color-primary);
+  border-color: var(--color-primary);
 }
 .attention-dot {
-  background: #d71921;
-  border-color: #d71921;
+  background: var(--color-attention);
+  border-color: var(--color-attention);
 }
 .step-path {
   display: flex;
@@ -378,10 +378,10 @@ function stepLabel(phase: TaskPhase) {
   flex-shrink: 0;
 }
 .current-step {
-  color: #f1f1ef;
+  color: var(--color-primary);
 }
 .current-step .step-dot {
-  background: #f1f1ef;
+  background: var(--color-primary);
 }
 .activity-dots {
   letter-spacing: 4px;

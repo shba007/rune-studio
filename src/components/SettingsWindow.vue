@@ -177,7 +177,7 @@ onBeforeUnmount(() => {
 
 <template>
   <main
-    class="flex h-screen flex-col overflow-hidden bg-black text-zinc-100"
+    class="flex h-screen flex-col overflow-hidden bg-black font-rune-reading text-zinc-100"
     data-testid="settings"
   >
     <TitleBar title="Settings" controls="close" />
@@ -186,15 +186,20 @@ onBeforeUnmount(() => {
         class="flex w-64 shrink-0 flex-col gap-1 border-r border-white/8 bg-[#101010] p-4"
         aria-label="Settings sections"
       >
-        <h2 class="mx-3 mt-1 mb-4 text-body font-medium text-zinc-100">Settings</h2>
+        <h2 class="mx-rune-2 mt-1 mb-4 font-sans text-rune-subtitle font-medium text-zinc-100">
+          Settings
+        </h2>
         <label class="relative mb-4 block">
-          <AppIcon name="search" class="pointer-events-none absolute top-3 left-3 text-zinc-500" />
+          <AppIcon
+            name="search"
+            class="pointer-events-none absolute top-rune-2 left-3 text-zinc-500"
+          />
           <input
             v-model="search"
             type="search"
             aria-label="Search settings"
             placeholder="Search settings"
-            class="h-10 w-full rounded-full bg-white/6 pr-3 pl-10 text-label text-zinc-100 outline-none placeholder:text-zinc-500 focus-visible:ring-1 focus-visible:ring-white/30"
+            class="h-10 w-full rounded-full bg-white/6 pr-3 pl-10 text-rune-body text-zinc-100 outline-none placeholder:text-zinc-500 focus-visible:ring-1 focus-visible:ring-white/30"
           />
         </label>
         <div class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
@@ -202,7 +207,7 @@ onBeforeUnmount(() => {
             v-for="item in visible"
             :key="item.id"
             type="button"
-            class="flex h-10 w-full cursor-pointer items-center gap-3 rounded-xl border-0 px-3 text-left text-body transition"
+            class="flex h-10 w-full cursor-pointer items-center gap-rune-2 rounded-xl border-0 px-rune-2 text-left text-rune-body transition"
             :class="
               section === item.id
                 ? 'bg-white/10 text-zinc-50'
@@ -215,7 +220,7 @@ onBeforeUnmount(() => {
             <AppIcon :name="item.icon" />
             {{ item.label }}
           </button>
-          <p v-if="!visible.length" role="status" class="px-3 text-label text-zinc-500">
+          <p v-if="!visible.length" role="status" class="px-rune-2 text-rune-body text-zinc-500">
             No matching sections.
           </p>
         </div>
@@ -224,14 +229,14 @@ onBeforeUnmount(() => {
       <section class="flex min-w-0 flex-1 flex-col overflow-y-auto px-8 py-8 lg:px-12">
         <div class="mx-auto w-full max-w-4xl">
           <header class="mb-8 flex flex-col gap-1">
-            <h1 class="m-0 text-title">{{ current.label }}</h1>
-            <p class="m-0 text-label text-zinc-500">{{ current.subtitle }}</p>
+            <h1 class="m-0 font-sans text-rune-title">{{ current.label }}</h1>
+            <p class="m-0 text-rune-body text-zinc-500">{{ current.subtitle }}</p>
           </header>
 
           <p
             v-if="agent.notice.value"
-            class="mt-0 mb-6 text-label"
-            :class="agent.noticeKind.value === 'info' ? 'text-zinc-300' : 'text-[#ff6b72]'"
+            class="mt-0 mb-6 text-rune-body"
+            :class="agent.noticeKind.value === 'info' ? 'text-zinc-300' : 'text-error'"
             role="status"
           >
             {{ agent.notice.value }}

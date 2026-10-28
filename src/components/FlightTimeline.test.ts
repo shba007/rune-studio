@@ -79,8 +79,8 @@ describe('FlightTimeline', () => {
     expect(wrapper.findAll('[data-testid="retry-tick"]')).toHaveLength(1)
     const marks = wrapper.findAll('[data-testid="marker"]')
     expect(marks.map((mark) => mark.text())).toEqual(['STEER', 'INVALID'])
-    expect(marks[0]!.classes().join(' ')).not.toContain('ff6b72')
-    expect(marks[1]!.classes().join(' ')).toContain('ff6b72')
+    expect(marks[0]!.classes().join(' ')).not.toContain('text-error')
+    expect(marks[1]!.classes().join(' ')).toContain('text-error')
   })
   it('ignores a segment without a corresponding step', async () => {
     const input = props(2)

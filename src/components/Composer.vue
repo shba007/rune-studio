@@ -182,7 +182,7 @@ async function submit() {
     <p
       v-if="agent.notice.value"
       class="m-0 px-rune-1 pt-rune-detail text-rune-caption"
-      :class="agent.noticeKind.value === 'info' ? 'text-zinc-200' : 'text-[#ff6b72]'"
+      :class="agent.noticeKind.value === 'info' ? 'text-zinc-200' : 'text-error'"
       role="status"
       aria-live="polite"
     >
@@ -206,11 +206,7 @@ async function submit() {
         Cancel screen request
       </button>
     </p>
-    <p
-      v-if="board?.notice.value"
-      role="alert"
-      class="m-0 px-rune-1 text-rune-caption text-[#ff6b72]"
-    >
+    <p v-if="board?.notice.value" role="alert" class="m-0 px-rune-1 text-rune-caption text-error">
       {{ board.notice.value }}
     </p>
     <p class="sr-only" role="status" aria-live="polite">{{ agent.statusText.value }}</p>
@@ -272,10 +268,10 @@ async function submit() {
         class="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full transition"
         :class="
           action.tone === 'red'
-            ? 'bg-[#d71921] text-white hover:bg-[#b9151c]'
+            ? 'bg-attention text-white hover:bg-attention-hover'
             : action.tone === 'blue'
-              ? 'bg-[#2d71c3] hover:bg-[#245fa8]'
-              : 'bg-[#f1f1ef] !text-[#111] hover:bg-white'
+              ? 'bg-voice hover:bg-voice-hover'
+              : 'bg-primary !text-[#111] hover:bg-white'
         "
         :disabled="
           commandPending ||

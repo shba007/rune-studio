@@ -26,10 +26,7 @@ const failed = (phase: string) => ['failed', 'blocked'].includes(phase)
         <p class="m-0 line-clamp-2 text-label text-zinc-100" :title="task.title">
           {{ task.title }}
         </p>
-        <p
-          class="m-0 text-caption"
-          :class="failed(task.phase) ? 'text-[#ff6b72]' : 'text-zinc-400'"
-        >
+        <p class="m-0 text-caption" :class="failed(task.phase) ? 'text-error' : 'text-zinc-400'">
           {{ task.kind === 'desktop' ? 'Desktop' : 'Reasoning' }} · {{ task.phase }}
         </p>
       </div>
@@ -81,11 +78,7 @@ const failed = (phase: string) => ['failed', 'blocked'].includes(phase)
           type="button"
           class="absolute inset-y-0 min-w-1 cursor-pointer overflow-hidden border-l border-white/10 text-zinc-200 hover:bg-white/[0.07]"
           :class="
-            failed(step.phase)
-              ? '!text-[#ff6b72]'
-              : step.phase === 'cancelled'
-                ? '!text-zinc-500'
-                : ''
+            failed(step.phase) ? '!text-error' : step.phase === 'cancelled' ? '!text-zinc-500' : ''
           "
           :style="{
             left: `${(step.start / timeline.total) * 100}%`,

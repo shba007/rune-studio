@@ -13,17 +13,18 @@ For the project managers of rune-infer and rune-kit (and anyone building a Rune 
 
 ## 2. What Rune Studio uses (the source of truth)
 
-| Element | Value in Studio |
-| --- | --- |
-| Surface (dark) | `#141414`; the control bar is black at 85% opacity |
-| Light | `#f1f1ef` |
-| Attention / failure / stop | `#d71921` |
-| Dots (on light) | `rgb(17,17,17)` with brightness 0 to 1; unlit dots at 13% |
-| Typeface | Oxanium (a squared, technical face); caption style is about 10 px, semi-bold, capitals, wide spacing |
-| Orb | A disc of an 11 by 11 dot grid. States: idle (a faint ring and a centre dot), listening (grows with the voice level), thinking (an arc of dots rotating), acting (a bright dot moving with a ripple), attention (a pulsing exclamation mark in red), done (a check drawn dot by dot), failed (a cross in red) |
-| Progress | A ring of dotted arcs, one per goal |
-| Motion | Slow and small; none under "reduce motion" |
-| Corners | Large radii (cards about 28 px) |
+| Element                    | Value in Studio                                                                                                                                                                                                                                                                                               |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Surface (dark)             | `#141414`; the control bar is black at 85% opacity                                                                                                                                                                                                                                                            |
+| Light                      | `#f1f1ef`                                                                                                                                                                                                                                                                                                     |
+| Attention / failure / stop | `#d71921`                                                                                                                                                                                                                                                                                                     |
+| Error text (exception)     | `#ff6b72`, a lighter red used only for small error text, where `#d71921` is about 3.5:1 on the surface; `--color-error`                                                                                                                                                                                       |
+| Dots (on light)            | `rgb(17,17,17)` with brightness 0 to 1; unlit dots at 13%                                                                                                                                                                                                                                                     |
+| Typeface                   | Oxanium (a squared, technical face); caption style is about 10 px, semi-bold, capitals, wide spacing                                                                                                                                                                                                          |
+| Orb                        | A disc of an 11 by 11 dot grid. States: idle (a faint ring and a centre dot), listening (grows with the voice level), thinking (an arc of dots rotating), acting (a bright dot moving with a ripple), attention (a pulsing exclamation mark in red), done (a check drawn dot by dot), failed (a cross in red) |
+| Progress                   | A ring of dotted arcs, one per goal                                                                                                                                                                                                                                                                           |
+| Motion                     | Slow and small; none under "reduce motion"                                                                                                                                                                                                                                                                    |
+| Corners                    | Large radii (cards about 28 px)                                                                                                                                                                                                                                                                               |
 
 If these values change, Studio will say so here. Do not copy hex values into your code in many places: keep them in one place so they can change.
 

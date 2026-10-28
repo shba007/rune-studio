@@ -257,13 +257,11 @@ const rawText = computed(() => {
           </div>
           <span
             class="ml-auto rounded-full border px-2 text-caption uppercase"
-            :class="
-              step.error ? 'border-[#d71921]/60 text-[#ff6b72]' : 'border-white/30 text-zinc-200'
-            "
+            :class="step.error ? 'border-[#d71921]/60 text-error' : 'border-white/30 text-zinc-200'"
             >{{ step.error ? 'Error' : (step.result ?? '—') }}</span
           >
         </div>
-        <p v-if="step.error" class="m-0 mt-3 text-label text-[#ff6b72]">{{ mask(step.error) }}</p>
+        <p v-if="step.error" class="m-0 mt-3 text-label text-error">{{ mask(step.error) }}</p>
 
         <div v-if="riskLevel(step.riskFinal ?? step.riskStated) >= 0" class="mt-4">
           <div class="mb-1 flex items-center justify-between text-caption uppercase">
@@ -456,9 +454,7 @@ const rawText = computed(() => {
               >
               <span
                 class="ml-auto uppercase"
-                :class="
-                  call.outcome === 'failed' || call.outcome === 'timeout' ? 'text-[#ff6b72]' : ''
-                "
+                :class="call.outcome === 'failed' || call.outcome === 'timeout' ? 'text-error' : ''"
                 >{{ call.outcome }}</span
               >
             </button>
@@ -491,7 +487,7 @@ const rawText = computed(() => {
               Swap: {{ timingText(pickedCall.swapMs ?? 0) }}
             </span>
           </div>
-          <p v-if="pickedCall.error" class="m-0 text-status text-[#ff6b72]">
+          <p v-if="pickedCall.error" class="m-0 text-status text-error">
             {{ mask(pickedCall.error) }}
           </p>
           <p v-if="bodiesState === 'loading'" class="m-0 text-zinc-500">Loading…</p>

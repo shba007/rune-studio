@@ -221,6 +221,6 @@ async function submit() {
         }}
       </button>
     </fieldset>
-    <p v-if="error" role="alert" class="m-0 text-[#ff6b72]">{{ error }}</p>
+    <p v-if="error" role="alert" class="m-0 text-error">{{ error }}</p>
   </form>
 </template>

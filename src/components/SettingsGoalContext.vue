@@ -16,7 +16,7 @@ props.draft.inputClassification ??= 'automatic'
       <select
         v-model="draft.inputClassification"
         aria-label="Input classification"
-        class="rounded-lg bg-zinc-900 px-3 py-2 text-body text-zinc-100"
+        class="rounded-lg bg-zinc-900 px-rune-2 py-2 text-rune-body text-zinc-100"
       >
         <option value="automatic">Automatic</option>
         <option value="always_confirm">Always confirm</option>

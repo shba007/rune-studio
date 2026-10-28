@@ -57,6 +57,14 @@
   --text-caption--letter-spacing: 0.1em;
 }
 
+@theme static {
+  --color-primary: #f1f1ef;
+  --color-error: #ff6b72;
+  --color-attention-hover: #b9151c;
+  --color-voice: #2d71c3;
+  --color-voice-hover: #245fa8;
+}
+
 @utility icon-sm {
   width: 0.75rem;
   height: 0.75rem;

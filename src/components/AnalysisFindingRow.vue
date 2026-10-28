@@ -29,22 +29,25 @@ const badge = computed(() => {
 </script>
 
 <template>
-  <li :id="`finding-${finding.n}`" class="rounded-[20px] border border-white/10 bg-[#141414]">
+  <li
+    :id="`finding-${finding.n}`"
+    class="rounded-rune-control border border-white/10 bg-rune-surface"
+  >
     <button
       type="button"
-      class="flex h-10 w-full cursor-pointer items-center gap-2 rounded-[20px] px-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+      class="flex h-10 w-full cursor-pointer items-center gap-2 rounded-rune-control px-rune-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-white/60"
       :aria-expanded="open"
       :aria-label="`Finding ${finding.n}: ${finding.label}${positioned ? '' : ', no position on the screen'}`"
       @click="emit('toggle', finding.n)"
     >
       <span
-        class="grid size-5 shrink-0 place-items-center rounded-full border text-caption"
+        class="grid size-5 shrink-0 place-items-center rounded-full border text-rune-caption"
         :class="badge"
         :title="positioned ? '' : 'No position on the screen'"
       >
         {{ finding.n }}
       </span>
-      <span class="min-w-0 flex-1 truncate text-status text-zinc-100">{{ finding.label }}</span>
+      <span class="min-w-0 flex-1 truncate text-rune-body text-zinc-100">{{ finding.label }}</span>
       <AppIcon :name="KIND_ICON[finding.kind]" size="sm" class="shrink-0 text-zinc-500" />
       <AppIcon
         name="chevron"
@@ -53,18 +56,22 @@ const badge = computed(() => {
         :class="open ? 'rotate-180' : ''"
       />
     </button>
-    <p v-if="finding.pose?.rejected" role="status" class="m-0 px-3 pb-2 text-label text-amber-300">
+    <p
+      v-if="finding.pose?.rejected"
+      role="status"
+      class="m-0 px-3 pb-2 text-rune-caption text-amber-300"
+    >
       Some pose data was invalid and omitted. Valid landmarks and connections are shown.
     </p>
     <div v-if="open" class="flex flex-col gap-1 px-3 pb-3">
-      <p v-if="finding.description" class="m-0 text-label text-zinc-200">
+      <p v-if="finding.description" class="m-0 text-rune-caption text-zinc-200">
         {{ finding.description }}
       </p>
-      <p class="m-0 text-label text-zinc-400">
-        <span class="text-caption uppercase">Evidence</span>
+      <p class="m-0 text-rune-caption text-zinc-400">
+        <span class="text-rune-caption uppercase">Evidence</span>
         {{ finding.evidence || 'none given' }}
       </p>
-      <p v-if="!positioned" class="m-0 text-caption text-zinc-500 uppercase">No position</p>
+      <p v-if="!positioned" class="m-0 text-rune-caption text-zinc-500 uppercase">No position</p>
     </div>
   </li>
 </template>

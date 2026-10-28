@@ -25,7 +25,7 @@ function setVisible(key: AnalysisGroup, event: Event) {
 </script>
 <template>
   <HubGroup title="Visual Analysis">
-    <p class="m-0 text-label text-zinc-400">
+    <p class="m-0 text-rune-body text-zinc-400">
       The model chooses observations relevant to your question. Uncheck a group to hide its screen
       highlights. Findings remain in the answer and saved task; these settings do not limit
       analysis.
@@ -33,7 +33,7 @@ function setVisible(key: AnalysisGroup, event: Event) {
     <label
       v-for="group in groups"
       :key="group.key"
-      class="flex cursor-pointer items-center gap-3 py-2"
+      class="flex cursor-pointer items-center gap-rune-2 py-2"
     >
       <input
         type="checkbox"
@@ -43,8 +43,8 @@ function setVisible(key: AnalysisGroup, event: Event) {
         @change="setVisible(group.key, $event)"
       />
       <span
-        ><span class="block text-body text-zinc-100">{{ group.label }}</span>
-        <span class="text-label text-zinc-500">{{ group.hint }}</span></span
+        ><span class="block text-rune-body text-zinc-100">{{ group.label }}</span>
+        <span class="text-rune-body text-zinc-500">{{ group.hint }}</span></span
       >
     </label>
   </HubGroup>
