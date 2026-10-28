@@ -129,8 +129,8 @@ function previewRun(row: { task: WorkspaceTask | null; run: FlightRun | null }):
     </p>
     <p v-if="notice" role="status" class="m-0 text-label text-zinc-400">{{ notice }}</p>
     <div class="ml-2 flex flex-col border-l border-white/10 pl-6">
-      <p v-if="!rows.length" class="text-label text-zinc-500">
-        No tasks here yet. Create a task or run a request to begin.
+      <p v-if="!rows.length" class="m-0 text-rune-body text-zinc-400">
+        No tasks yet. Use + New task, or run a request from the Rune pill.
       </p>
       <article
         v-for="row in rows"

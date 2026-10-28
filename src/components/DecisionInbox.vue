@@ -15,6 +15,7 @@ const emit = defineEmits<{
 const props = defineProps<{
   compact?: boolean
   goalsOnly?: boolean
+  quiet?: boolean
   model?: DecisionModel
   workspace?: WorkspaceTasksModel
   focusGoalId?: string | null
@@ -37,8 +38,8 @@ const visible = computed(() =>
     <p v-if="decisions.error.value" role="alert" class="m-0 text-label text-error">
       {{ decisions.error.value }}
     </p>
-    <p v-if="!compact && !visible.length" class="text-label text-zinc-400">
-      No goal conversations yet. Describe an outcome in the composer to begin.
+    <p v-if="!compact && !quiet && !visible.length" class="m-0 text-rune-body text-zinc-400">
+      No goals yet. Use + New goal, or type an outcome in the Rune pill.
     </p>
     <article
       v-for="entry in visible"
