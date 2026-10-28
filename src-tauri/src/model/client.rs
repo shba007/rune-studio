@@ -217,7 +217,7 @@ impl ChatClient<'_> {
         request: &Request<'_>,
         on_thinking: &mut (dyn FnMut(&str) + Send),
     ) -> Result<Reply, ModelError> {
-        self.call_retrying_with_schema(request, on_thinking, None)
+        self.call_retrying_with_schema(request, on_thinking, None, false)
             .await
     }
 
@@ -236,7 +236,7 @@ impl ChatClient<'_> {
         request: &Request<'_>,
         schema: &Value,
     ) -> Result<Reply, ModelError> {
-        self.call_retrying_with_schema(request, &mut |_| {}, Some(schema))
+        self.call_retrying_with_schema(request, &mut |_| {}, Some(schema), false)
             .await
     }
 
@@ -246,8 +246,27 @@ impl ChatClient<'_> {
         schema: &Value,
         on_thinking: &mut (dyn FnMut(&str) + Send),
     ) -> Result<Reply, ModelError> {
-        self.call_retrying_with_schema(request, on_thinking, Some(schema))
+        self.call_retrying_with_schema(request, on_thinking, Some(schema), false)
             .await
+    }
+
+    /// Only classification may use the negotiated local-execution cold-start contract.
+    pub async fn call_classification(
+        &self,
+        request: &Request<'_>,
+        schema: &Value,
+    ) -> Result<Value, ModelError> {
+        if !request.data_class.is_some_and(|class| class.is_sensitive()) || self.no_swap {
+            return Err(ModelError::Reply(
+                "Invalid protected classification request".into(),
+            ));
+        }
+        crate::model::protected::verify_local_execution(self.base_url, self.api_key)
+            .await
+            .map_err(ModelError::Reply)?;
+        self.call_retrying_with_schema(request, &mut |_| {}, Some(schema), true)
+            .await
+            .map(|reply| reply.call.arguments)
     }
 
     pub async fn call_json(
@@ -256,7 +275,7 @@ impl ChatClient<'_> {
         schema: &Value,
     ) -> Result<Value, ModelError> {
         let (result, report) = self
-            .attempt_with_schema(request, &mut |_| {}, 1, Duration::ZERO, Some(schema))
+            .attempt_with_schema(request, &mut |_| {}, 1, Duration::ZERO, Some(schema), false)
             .await;
         crate::model::swap::record_call_activity();
         if let (Some(sink), Some(report)) = (self.sink, report) {
@@ -270,6 +289,7 @@ impl ChatClient<'_> {
         request: &Request<'_>,
         on_thinking: &mut (dyn FnMut(&str) + Send),
         schema: Option<&Value>,
+        local_execution: bool,
     ) -> Result<Reply, ModelError> {
         let mut attempt = 1;
         let mut wait_before = Duration::ZERO;
@@ -277,7 +297,14 @@ impl ChatClient<'_> {
         let mut loading_attempts = 0;
         loop {
             let (result, mut report) = self
-                .attempt_with_schema(request, on_thinking, attempt, wait_before, schema)
+                .attempt_with_schema(
+                    request,
+                    on_thinking,
+                    attempt,
+                    wait_before,
+                    schema,
+                    local_execution,
+                )
                 .await;
             match result {
                 Err(ref error)
@@ -350,7 +377,7 @@ impl ChatClient<'_> {
         attempt: u32,
         wait_before: Duration,
     ) -> (Result<Reply, ModelError>, Option<Attempt>) {
-        self.attempt_with_schema(request, on_thinking, attempt, wait_before, None)
+        self.attempt_with_schema(request, on_thinking, attempt, wait_before, None, false)
             .await
     }
 
@@ -361,6 +388,7 @@ impl ChatClient<'_> {
         attempt: u32,
         wait_before: Duration,
         schema: Option<&Value>,
+        local_execution: bool,
     ) -> (Result<Reply, ModelError>, Option<Attempt>) {
         let default_profile;
         let profile = match self.profile {
@@ -418,7 +446,13 @@ impl ChatClient<'_> {
             .app
             .map(|app| crate::model::activity::Guard::start(app, self.model));
         let exchange = self
-            .exchange(request, &body, on_thinking, activity.as_ref())
+            .exchange(
+                request,
+                &body,
+                on_thinking,
+                activity.as_ref(),
+                local_execution,
+            )
             .await;
         if let Some(model) = &exchange.served_model
             && let Some(activity) = &activity
@@ -477,6 +511,7 @@ impl ChatClient<'_> {
         body: &Value,
         on_thinking: &mut (dyn FnMut(&str) + Send),
         activity: Option<&crate::model::activity::Guard>,
+        local_execution: bool,
     ) -> Exchange {
         let sensitive_http;
         let transport = if request.data_class.is_some_and(|dc| dc.is_sensitive()) {
@@ -511,7 +546,12 @@ impl ChatClient<'_> {
         if let Some(key) = self.api_key {
             http = http.bearer_auth(key);
         }
-        if self.no_swap || request.data_class.is_some_and(|class| class.is_sensitive()) {
+        if local_execution {
+            http = http.header("x-rune-local-only", "1");
+        }
+        if self.no_swap
+            || (!local_execution && request.data_class.is_some_and(|class| class.is_sensitive()))
+        {
             http = http.header("x-no-swap", "true");
         }
         if request.background {
@@ -531,6 +571,29 @@ impl ChatClient<'_> {
             }
         };
         let headers = response.headers().clone();
+        if local_execution
+            && response.status().is_success()
+            && (headers
+                .get("x-rune-local-only")
+                .and_then(|v| v.to_str().ok())
+                != Some("1")
+                || headers
+                    .get("x-model-locality")
+                    .and_then(|v| v.to_str().ok())
+                    != Some("local")
+                || headers.get("x-model-served").and_then(|v| v.to_str().ok()) != Some(self.model))
+        {
+            return Exchange {
+                result: Err(ModelError::Reply(
+                    "Model server did not confirm the local execution contract".into(),
+                )),
+                status: Some(response.status().as_u16()),
+                response: Value::Null,
+                locality: None,
+                served_model: None,
+                swap_ms: None,
+            };
+        }
         if let Some(model) = headers.get("x-model-served").and_then(|v| v.to_str().ok())
             && let Some(activity) = activity
         {
@@ -992,6 +1055,186 @@ impl Stream {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn classification_fails_closed_when_contract_is_not_advertised() {
+        let (url, served) = serve(vec![("200 OK", "{}".into())]);
+        let http = reqwest::Client::new();
+        let mut profile = crate::model::profile::ModelProfile::conservative("m");
+        profile.locality = crate::model::capabilities::Locality::Local;
+        let client = ChatClient {
+            app: None,
+            output_limit: None,
+            http: &http,
+            base_url: &url,
+            api_key: None,
+            model: "m",
+            profile: Some(&profile),
+            sink: None,
+            no_swap: false,
+            on_loading: None,
+        };
+        let request =
+            Request::simple("PRIVATE_SENTINEL").with_data_class(crate::life::DataClass::Finance);
+        let error = client
+            .call_classification(&request, &json!({"type":"object"}))
+            .await
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("does not advertise local execution contract")
+        );
+        assert_eq!(
+            served.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "only the capabilities GET is sent"
+        );
+    }
+
+    #[tokio::test]
+    async fn classification_does_not_send_cloud_model_prompt() {
+        let capability = json!({"local_execution":{"version":1,"request_header":"x-rune-local-only","request_value":"1","endpoints":[{"method":"POST","path":"/v1/chat/completions"}]}});
+        let (url, served) = serve(vec![("200 OK", capability.to_string())]);
+        let http = reqwest::Client::new();
+        let mut profile = crate::model::profile::ModelProfile::conservative("m");
+        profile.locality = crate::model::capabilities::Locality::Cloud;
+        let client = ChatClient {
+            app: None,
+            output_limit: None,
+            http: &http,
+            base_url: &url,
+            api_key: None,
+            model: "m",
+            profile: Some(&profile),
+            sink: None,
+            no_swap: false,
+            on_loading: None,
+        };
+        let request =
+            Request::simple("PRIVATE_SENTINEL").with_data_class(crate::life::DataClass::Finance);
+        let error = client
+            .call_classification(&request, &json!({"type":"object"}))
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("Local-only policy violation"));
+        assert_eq!(served.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn classification_discards_success_without_contract_confirmation() {
+        let capability = json!({"local_execution":{"version":1,"request_header":"x-rune-local-only","request_value":"1","endpoints":[{"method":"POST","path":"/v1/chat/completions"}]}});
+        let (url, _) = serve(vec![
+            ("200 OK", capability.to_string()),
+            (
+                "200 OK",
+                json!({"choices":[{"message":{"content":"{\"kind\":\"task\"}"}}]}).to_string(),
+            ),
+        ]);
+        let http = reqwest::Client::new();
+        let mut profile = crate::model::profile::ModelProfile::conservative("m");
+        profile.locality = crate::model::capabilities::Locality::Local;
+        let client = ChatClient {
+            app: None,
+            output_limit: None,
+            http: &http,
+            base_url: &url,
+            api_key: None,
+            model: "m",
+            profile: Some(&profile),
+            sink: None,
+            no_swap: false,
+            on_loading: None,
+        };
+        let request =
+            Request::simple("PRIVATE_SENTINEL").with_data_class(crate::life::DataClass::Finance);
+        let error = client
+            .call_classification(&request, &json!({"type":"object"}))
+            .await
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("did not confirm the local execution contract")
+        );
+    }
+
+    #[tokio::test]
+    async fn classification_sends_enforced_contract_without_no_swap() {
+        use std::{
+            io::{Read, Write},
+            net::TcpListener,
+        };
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let (tx, rx) = std::sync::mpsc::channel();
+        let server = std::thread::spawn(move || {
+            for index in 0..3 {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut bytes = Vec::new();
+                let mut buf = [0u8; 4096];
+                while !bytes.windows(4).any(|x| x == b"\r\n\r\n") {
+                    let n = stream.read(&mut buf).unwrap();
+                    assert!(n > 0);
+                    bytes.extend_from_slice(&buf[..n]);
+                }
+                let head = String::from_utf8_lossy(&bytes).to_lowercase();
+                tx.send(head).unwrap();
+                let body = if index == 0 {
+                    json!({"local_execution":{"version":1,"request_header":"x-rune-local-only","request_value":"1","endpoints":[{"method":"POST","path":"/v1/chat/completions"}]}}).to_string()
+                } else if index == 1 {
+                    "{}".into()
+                } else {
+                    json!({"choices":[{"message":{"content":"{\"kind\":\"task\"}"},"finish_reason":"stop"}]}).to_string()
+                };
+                let extra = if index == 2 {
+                    "x-rune-local-only: 1\r\nx-model-locality: local\r\nx-model-served: m\r\n"
+                } else {
+                    ""
+                };
+                let status = if index == 1 {
+                    "503 Service Unavailable"
+                } else {
+                    "200 OK"
+                };
+                write!(stream, "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n{extra}Connection: close\r\n\r\n{body}", body.len()).unwrap();
+            }
+        });
+        let http = reqwest::Client::new();
+        let mut profile = crate::model::profile::ModelProfile::conservative("m");
+        profile.locality = crate::model::capabilities::Locality::Local;
+        let client = ChatClient {
+            app: None,
+            output_limit: None,
+            http: &http,
+            base_url: &url,
+            api_key: None,
+            model: "m",
+            profile: Some(&profile),
+            sink: None,
+            no_swap: false,
+            on_loading: None,
+        };
+        let request =
+            Request::simple("PRIVATE_SENTINEL").with_data_class(crate::life::DataClass::Finance);
+        assert_eq!(
+            client
+                .call_classification(&request, &json!({"type":"object"}))
+                .await
+                .unwrap()["kind"],
+            "task"
+        );
+        server.join().unwrap();
+        let get = rx.recv().unwrap();
+        let post = rx.recv().unwrap();
+        let retry = rx.recv().unwrap();
+        assert!(get.starts_with("get /v1/capabilities "));
+        assert!(post.starts_with("post /v1/chat/completions "));
+        assert!(post.contains("x-rune-local-only: 1"));
+        assert!(!post.contains("x-no-swap:"));
+        assert!(retry.contains("x-rune-local-only: 1"));
+        assert!(!retry.contains("x-no-swap:"));
+    }
 
     #[test]
     fn connection_output_cap_never_raises_an_existing_limit() {

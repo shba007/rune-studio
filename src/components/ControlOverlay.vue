@@ -496,11 +496,7 @@ function onSays(text: string, model?: string) {
 function configuredModelLabel() {
   const settings = configuredSettings.value
   const model = settings?.externalAgent ? undefined : settings?.models?.agent
-  return modelActivity.models.value.length > 1
-    ? 'Multiple models'
-    : model
-      ? `${model} · configured`
-      : undefined
+  return modelActivity.models.value.length > 1 ? 'Multiple models' : model ? model : undefined
 }
 
 const unlisten: UnlistenFn[] = []
@@ -734,13 +730,19 @@ onBeforeUnmount(() => {
     <Transition name="bubble">
       <div
         v-if="bubble"
-        class="absolute w-[280px] rounded-2xl bg-black/85 px-4 py-2 text-white"
+        class="absolute w-[280px] rounded-rune-control bg-black/85 px-rune-2 py-rune-1 font-rune-reading text-white"
         :style="bubbleStyle"
       >
         <div class="flex items-center gap-2">
-          <span class="min-w-0 break-all text-caption text-white/50 uppercase">{{
-            bubble.label
-          }}</span>
+          <span
+            :title="
+              bubble.label === configuredSettings?.models?.agent
+                ? 'Configured model; serving model not confirmed'
+                : undefined
+            "
+            class="min-w-0 break-all font-sans text-rune-heading text-white/60 uppercase"
+            >{{ bubble.label }}</span
+          >
           <span v-if="bubble.live" class="flex gap-1" aria-hidden="true">
             <span
               v-for="n in 3"
@@ -751,7 +753,7 @@ onBeforeUnmount(() => {
           </span>
         </div>
         <p
-          class="m-0 text-label whitespace-pre-wrap text-white/90 [overflow-wrap:anywhere]"
+          class="m-0 text-rune-body whitespace-pre-wrap text-white/90 [overflow-wrap:anywhere]"
           :class="bubble.live ? 'line-clamp-3' : ''"
         >
           {{ bubble.text }}

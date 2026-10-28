@@ -3,6 +3,7 @@ import type { IndependentTask, PlannedRequest } from '@/composables/useTaskBoard
 import {
   currentStep,
   estimateRemaining,
+  requestProgress,
   taskElapsed,
   taskPosition,
   visibleGoal,
@@ -25,6 +26,13 @@ const task = (over: Partial<IndependentTask> = {}): IndependentTask => ({
   ],
   result: null,
   ...over,
+})
+it('counts completed steps across parallel tasks and keeps unfinished work partial', () => {
+  expect(requestProgress([])).toBeNull()
+  expect(requestProgress([task()])).toBe(0.5)
+  expect(requestProgress([task(), task({ id: 2, phase: 'queued', steps: [] })])).toBe(1 / 3)
+  expect(requestProgress([task({ phase: 'done' })])).toBe(1)
+  expect(requestProgress([task({ phase: 'failed' })])).toBe(0.5)
 })
 it('keeps queued and terminal task elapsed times stable and counts every planned step', () => {
   expect(taskElapsed(task({ startedAt: null, phase: 'queued', currentStep: 0 }), 9000)).toBe(0)

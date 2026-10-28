@@ -30,6 +30,7 @@ import { usePersonality } from '@/composables/usePersonality'
 import TaskReminder from './TaskReminder.vue'
 import ModelIcon from './ModelIcon.vue'
 import { useModelActivity } from '@/composables/useModelActivity'
+import { requestProgress, visibleGoal } from '@/config/taskProgress'
 
 const agent = useAgent()
 const modelActivity = useModelActivity()
@@ -115,6 +116,12 @@ const boardDone = computed(
         g.tasks.every((id) => taskBoard.tasks.value.find((t) => t.id === id)?.phase === 'done'),
     ).length ?? 0,
 )
+const boardProgress = computed(() => {
+  if (agent.settings.value?.externalAgent || reflecting.value) return null
+  const request = visibleGoal(taskBoard.requests.value)
+  if (!request) return null
+  return requestProgress(taskBoard.tasks.value.filter((task) => task.requestId === request.id))
+})
 const ringGoals = computed(() =>
   reflecting.value
     ? reflecting.value.total
@@ -236,6 +243,7 @@ function onOrb() {
       <ProgressRing
         v-else
         :goals="ringGoals"
+        :progress="boardProgress"
         :current="ringCurrent"
         :finished="ringFinished"
         :running="agent.isRunning.value || boardWorking || agent.state.value === 'reflecting'"
@@ -279,11 +287,11 @@ function onOrb() {
             activeModels.length > 1 ? 'Multiple models active' : `Active model: ${activeModels[0]}`
           "
         >
-          <span class="grid size-6 place-items-center rounded-full bg-[#f1f1ef] text-[#111]">
+          <span class="grid size-7 place-items-center rounded-full bg-[#f1f1ef] text-[#111]">
             <span v-if="activeModels.length > 1" class="text-[11px] font-bold">{{
               activeModels.length
             }}</span>
-            <ModelIcon v-else :model="activeModels[0]!" />
+            <ModelIcon v-else :model="activeModels[0]!" class="!size-5" />
           </span>
         </span>
         <HealthDots :tone="agent.health.value.tone" />

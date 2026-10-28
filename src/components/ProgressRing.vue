@@ -8,6 +8,7 @@ const props = defineProps<{
   running: boolean
   failed: boolean
   accent?: string | null
+  progress?: number | null
 }>()
 
 const SIZE = 64
@@ -45,7 +46,8 @@ const segments = computed(() => {
   })
 })
 
-const visible = computed(() => props.goals > 0 || props.running)
+const visible = computed(() => props.progress != null || props.goals > 0 || props.running)
+const completed = computed(() => Math.max(0, Math.min(1, props.progress ?? 0)) * 100)
 </script>
 
 <template>
@@ -56,7 +58,20 @@ const visible = computed(() => props.goals > 0 || props.running)
     :style="{ '--lit': accent ?? '#2d71c3' }"
     aria-hidden="true"
   >
-    <template v-if="goals > 0">
+    <template v-if="progress != null">
+      <circle :cx="CENTER" :cy="CENTER" :r="RADIUS" fill="none" class="dots pending" />
+      <circle
+        v-if="completed > 0"
+        :cx="CENTER"
+        :cy="CENTER"
+        :r="RADIUS"
+        fill="none"
+        class="dots done task-progress"
+        pathLength="100"
+        :stroke-dasharray="`${completed} 100`"
+      />
+    </template>
+    <template v-else-if="goals > 0">
       <path
         v-for="(segment, index) in segments"
         :key="index"
@@ -87,6 +102,11 @@ const visible = computed(() => props.goals > 0 || props.running)
 
 .done {
   stroke: var(--lit, #2d71c3);
+}
+.task-progress {
+  transform: rotate(-90deg);
+  transform-origin: center;
+  transition: stroke-dasharray 300ms ease;
 }
 
 .pending {

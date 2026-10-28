@@ -265,16 +265,35 @@ async fn infer(
     system: &str,
     user: &Value,
     schema: &Value,
+    classification: bool,
 ) -> Result<Value, String> {
     let state = app.state::<AppState>();
     let (settings, key) = crate::settings::snapshot_with_api_key(&state.settings);
     let model = settings.model_for_role(crate::model::role::ModelRole::Agent);
-    let profile = crate::agent::unless_stopped(
-        &e.token,
-        crate::model::protected::discover(&state.http, &settings.base_url, key.as_deref(), model),
-    )
-    .await
-    .ok_or("Request interrupted")??;
+    let profile = if classification {
+        crate::agent::unless_stopped(
+            &e.token,
+            crate::model::protected::discover_classification(
+                &settings.base_url,
+                key.as_deref(),
+                model,
+            ),
+        )
+        .await
+        .ok_or("Request interrupted")??
+    } else {
+        crate::agent::unless_stopped(
+            &e.token,
+            crate::model::protected::discover(
+                &state.http,
+                &settings.base_url,
+                key.as_deref(),
+                model,
+            ),
+        )
+        .await
+        .ok_or("Request interrupted")??
+    };
     let client = crate::model::client::ChatClient {
         app: Some(app),
         output_limit: settings.output_limit(),
@@ -297,10 +316,13 @@ async fn infer(
         background: false,
         ..Default::default()
     };
-    crate::agent::unless_stopped(&e.token, client.call_json_retrying(&request, schema))
-        .await
-        .ok_or("Request interrupted")?
-        .map_err(|err| err.to_string())
+    if classification {
+        crate::agent::unless_stopped(&e.token, client.call_classification(&request, schema)).await
+    } else {
+        crate::agent::unless_stopped(&e.token, client.call_json_retrying(&request, schema)).await
+    }
+    .ok_or("Request interrupted")?
+    .map_err(|err| err.to_string())
 }
 async fn classify(app: &AppHandle, e: &mut Entry) -> Result<(), String> {
     e.persistable = false;
@@ -311,6 +333,7 @@ async fn classify(app: &AppHandle, e: &mut Entry) -> Result<(), String> {
         include_str!("../prompts/intake/classify.md"),
         &json!({"input":e.text,"answers":e.answers}),
         &schema,
+        true,
     )
     .await?;
     if e.token.is_cancelled() {
@@ -469,6 +492,7 @@ async fn clarify(app: &AppHandle, e: &mut Entry) -> Result<(), String> {
         include_str!("../prompts/intake/clarify.md"),
         &json!({"input":e.text,"answers":e.answers,"draft":e.goal}),
         &schema,
+        false,
     )
     .await?;
     if e.token.is_cancelled() {
@@ -981,6 +1005,7 @@ pub async fn decision_pathways(app: AppHandle, id: String, revision: u64) -> Res
             include_str!("../prompts/intake/pathways.md"),
             &json!({"approvedGoal":approved,"category":e.category}),
             &crate::intake_pathways::schema(),
+            false,
         ),
     )
     .await
@@ -1059,7 +1084,7 @@ pub async fn decision_propose_tasks(
     let result = tokio::time::timeout(std::time::Duration::from_secs(90), infer(&app, &e,
         include_str!("../prompts/intake/tasks.md"),
         &json!({"approvedGoal":goal,"preferredPathway":pathway,"currentLocalTime":start,"timezone":zone,"existingLinkedTasks":existing}),
-        &crate::task_proposals::schema())).await.map_err(|_| "Task proposal generation timed out".to_string())
+        &crate::task_proposals::schema(), false)).await.map_err(|_| "Task proposal generation timed out".to_string())
         .and_then(|r| r).and_then(|value| crate::task_proposals::parse(value, draft_id, goal, pathway, start, zone));
     e.status = "goal_ready".into();
     if !consent(&app, e.class) {

@@ -175,17 +175,24 @@ async function submit() {
 </script>
 
 <template>
-  <div data-tauri-drag-region class="flex w-full flex-col gap-1 rounded-[28px] bg-[#141414] p-1.5">
+  <div
+    data-tauri-drag-region
+    class="flex w-full flex-col gap-rune-detail rounded-rune-panel bg-rune-surface p-rune-1 font-rune-reading"
+  >
     <p
       v-if="agent.notice.value"
-      class="m-0 px-3 pt-1 text-label"
+      class="m-0 px-rune-1 pt-rune-detail text-rune-caption"
       :class="agent.noticeKind.value === 'info' ? 'text-zinc-200' : 'text-[#ff6b72]'"
       role="status"
       aria-live="polite"
     >
       {{ agent.notice.value }}
     </p>
-    <p v-if="external" class="m-0 px-3 pt-1 text-label text-zinc-400" role="status">
+    <p
+      v-if="external"
+      class="m-0 px-rune-1 pt-rune-detail text-rune-caption text-zinc-400"
+      role="status"
+    >
       {{ screenRequestText(agent.screenRequest.value) }}
       <button
         v-if="
@@ -199,11 +206,15 @@ async function submit() {
         Cancel screen request
       </button>
     </p>
-    <p v-if="board?.notice.value" role="alert" class="m-0 px-3 text-label text-[#ff6b72]">
+    <p
+      v-if="board?.notice.value"
+      role="alert"
+      class="m-0 px-rune-1 text-rune-caption text-[#ff6b72]"
+    >
       {{ board.notice.value }}
     </p>
     <p class="sr-only" role="status" aria-live="polite">{{ agent.statusText.value }}</p>
-    <p v-if="commandNotice" role="alert" class="m-0 px-3 text-label text-zinc-400">
+    <p v-if="commandNotice" role="alert" class="m-0 px-rune-1 text-rune-caption text-zinc-400">
       {{ commandNotice }}
     </p>
     <div
@@ -211,7 +222,7 @@ async function submit() {
       :id="menuId"
       role="listbox"
       aria-label="Composer commands"
-      class="rounded-2xl border border-white/10 bg-[#1b1b1b] p-1 text-zinc-100"
+      class="rounded-rune-control border border-rune-outline bg-rune-raised p-rune-detail text-zinc-100"
     >
       <button
         v-for="(item, index) in suggestions"
@@ -221,24 +232,24 @@ async function submit() {
         :aria-selected="index === selectedCommand"
         type="button"
         :disabled="unavailable(item) || commandPending"
-        class="flex w-full cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-left text-label text-zinc-100 disabled:cursor-default disabled:opacity-40"
+        class="flex w-full cursor-pointer items-center gap-rune-1 rounded-xl px-rune-1 py-rune-1 text-left text-rune-body text-zinc-100 disabled:cursor-default disabled:opacity-40"
         :class="index === selectedCommand ? 'bg-white/10' : 'hover:bg-white/5'"
         @mousedown.prevent
         @click="runCommand(item)"
       >
         <AppIcon :name="item.icon" size="sm" /><span
           ><span class="block">{{ item.command }}</span
-          ><span class="text-caption text-zinc-400">{{
+          ><span class="text-rune-caption text-zinc-400">{{
             unavailable(item) ? 'Finish or stop the current task first' : item.description
           }}</span></span
         >
       </button>
-      <p v-if="!suggestions.length" class="m-0 px-3 py-2 text-label text-zinc-400">
+      <p v-if="!suggestions.length" class="m-0 px-rune-1 py-rune-1 text-rune-body text-zinc-400">
         No matching commands
       </p>
     </div>
     <div
-      class="flex w-full items-end gap-2 rounded-[22px] bg-white/5 p-2 text-zinc-100 focus-within:bg-white/8 transition-colors"
+      class="flex w-full items-end gap-rune-1 rounded-rune-control bg-white/5 p-rune-1 text-zinc-100 focus-within:bg-white/8 transition-colors"
     >
       <textarea
         ref="field"
@@ -252,7 +263,7 @@ async function submit() {
           showCommands && suggestions.length ? `${menuId}-${selectedCommand}` : undefined
         "
         :placeholder="placeholder"
-        class="text-zinc-100 placeholder:text-zinc-400 max-h-[152px] min-h-8 min-w-0 flex-1 resize-none bg-transparent px-1 py-1 text-body leading-6 outline-none [--scrollbar-thumb-hover:rgb(0_0_0/0.4)] [--scrollbar-thumb:rgb(0_0_0/0.22)] dark:[--scrollbar-thumb-hover:rgb(255_255_255/0.32)] dark:[--scrollbar-thumb:rgb(255_255_255/0.16)]"
+        class="text-zinc-100 placeholder:text-zinc-400 max-h-[152px] min-h-8 min-w-0 flex-1 resize-none bg-transparent px-rune-detail py-rune-detail text-rune-body leading-6 outline-none [--scrollbar-thumb-hover:rgb(0_0_0/0.4)] [--scrollbar-thumb:rgb(0_0_0/0.22)] dark:[--scrollbar-thumb-hover:rgb(255_255_255/0.32)] dark:[--scrollbar-thumb:rgb(255_255_255/0.16)]"
         @keydown="onKeydown"
       />
 

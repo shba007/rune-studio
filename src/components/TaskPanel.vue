@@ -55,7 +55,7 @@ const message = computed(() => {
         label: agent.settings.value?.externalAgent
           ? 'External agent'
           : agent.settings.value?.models?.agent
-            ? `${agent.settings.value.models.agent} · configured`
+            ? agent.settings.value.models.agent
             : 'Rune',
         text: response,
         live: false,
@@ -151,7 +151,15 @@ function statusOf(index: number): 'done' | 'current' | 'pending' {
     </div>
 
     <div v-if="message" class="flex flex-col gap-1">
-      <span class="break-all text-caption text-zinc-500 uppercase">{{ message.label }}</span>
+      <span
+        :title="
+          message.label === agent.settings.value?.models?.agent
+            ? 'Configured model; serving model not confirmed'
+            : undefined
+        "
+        class="break-all text-caption text-zinc-500 uppercase"
+        >{{ message.label }}</span
+      >
       <p
         class="overflow-y-auto text-label whitespace-pre-wrap text-zinc-300"
         :class="agent.isRunning.value ? 'max-h-[72px]' : 'max-h-44'"

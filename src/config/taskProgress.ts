@@ -7,6 +7,20 @@ export function visibleGoal(requests: PlannedRequest[]): PlannedRequest | undefi
     requests.at(-1)
   )
 }
+// Each task contributes its actual completed steps. A task with no plan yet
+// contributes one pending unit so it cannot make a request look complete.
+export function requestProgress(tasks: IndependentTask[]): number | null {
+  if (!tasks.length) return null
+  let total = 0
+  let done = 0
+  for (const task of tasks) {
+    const units = Math.max(1, task.steps.length)
+    total += units
+    done +=
+      task.phase === 'done' ? units : task.steps.filter((step) => step.phase === 'done').length
+  }
+  return done / total
+}
 export function currentStep(task: IndependentTask): number {
   if (task.currentStep !== undefined)
     return Math.min(task.steps.length, Math.max(0, task.currentStep))
