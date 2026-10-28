@@ -86,7 +86,7 @@ it('shows one cleaned goal once, counters on every task, and parallel carousel c
   const board = fixture()
   const wrapper = mount(TaskBoard, { props: { board } })
   await nextTick()
-  expect(wrapper.get('h2').text()).toBe('Tasks Board')
+  expect(wrapper.get('h2').text()).toBe('Tasks')
   expect(wrapper.get('[data-testid="goal-title"]').text()).toBe(
     'Summarize the supplied input and check its facts',
   )

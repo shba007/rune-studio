@@ -5,6 +5,7 @@ export type PillCard =
   | 'decisionLink'
   | 'taskPanel'
   | 'board'
+  | 'server'
   | 'reflection'
   | 'review'
   | 'feedback'
@@ -19,6 +20,7 @@ export interface PillCardState {
   taskPanel: boolean
   board: boolean
   working: boolean
+  server: boolean
   reflection: boolean
   review: boolean
   feedback: boolean
@@ -44,6 +46,7 @@ export function pillCards(state: PillCardState): PillCards {
   if (blocked) return { cards, more: 0 }
 
   const quiet: PillCard[] = []
+  if (state.server) quiet.push('server')
   if (state.reflection) quiet.push('reflection')
   if (state.review) quiet.push('review')
   else if (state.feedback) quiet.push('feedback')

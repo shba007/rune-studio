@@ -129,6 +129,7 @@ onKeyStroke('Escape', (event) => {
           v-if="snapshot.stale"
           class="rounded-full border border-white/25 px-rune-1 text-rune-caption text-zinc-300 uppercase"
           title="The screen has changed since this analysis"
+          aria-label="Changed: the screen has changed since this analysis"
           >Changed</span
         >
         <button

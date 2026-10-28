@@ -205,6 +205,9 @@ describe('AnalysisCard states', () => {
     const { analysis } = fake({ status: 'done', stale: true, answer: 'x', findings: [finding(1)] })
     const wrapper = mount(AnalysisCard, { props: { analysis } })
     expect(wrapper.text()).toContain('Changed')
+    expect(wrapper.get('[aria-label^="Changed:"]').attributes('aria-label')).toContain(
+      'screen has changed',
+    )
     expect(wrapper.findAllComponents(AnalysisFindingRow)).toHaveLength(1)
   })
 

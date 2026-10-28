@@ -52,7 +52,15 @@ it('keeps task history mounted while switching workspace sections', async () => 
   expect(harness.off).toHaveBeenCalledOnce()
 })
 
-it('opens Goals without a Settings button in Knowledge', async () => {
+it('keeps the goals empty message out of the Tasks section', async () => {
+  const wrapper = shallowMount(WorkspaceWindow)
+  await flushPromises()
+  expect(wrapper.get('h1').text()).toBe('Tasks')
+  expect(wrapper.getComponent(DecisionInbox).props('quiet')).toBe(true)
+  wrapper.unmount()
+})
+
+it('opens Goals without a Settings button in Workspace', async () => {
   window.history.replaceState({}, '', '/?view=workspace&section=goals')
   const wrapper = shallowMount(WorkspaceWindow)
   await flushPromises()
@@ -85,7 +93,7 @@ it('opens the Overview graph and follows its links without remounting task histo
   wrapper.unmount()
 })
 
-it('opens Preview inside Knowledge and returns to the same task history', async () => {
+it('opens Preview inside Workspace and returns to the same task history', async () => {
   const wrapper = shallowMount(WorkspaceWindow)
   await flushPromises()
   const history = wrapper.getComponent(TaskHistory)

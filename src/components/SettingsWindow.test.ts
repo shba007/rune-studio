@@ -30,9 +30,9 @@ describe('release settings availability', () => {
     const wrapper = shallowMount(SettingsWindow)
     expect(wrapper.findAll('nav button').map((button) => button.text())).toEqual([
       'General',
-      'Connections',
+      'Models',
       'Agents',
-      'Tools & connections',
+      'Kit & tools',
       'Capture & recording',
       'Data & privacy',
       'Shortcuts',
@@ -44,14 +44,37 @@ describe('release settings availability', () => {
   })
   it('searches applicable sections by settings keywords', async () => {
     const wrapper = shallowMount(SettingsWindow)
-    await wrapper.get('input[aria-label="Search settings"]').setValue('unmatched-setting')
+    await wrapper.get('input[aria-label="Search sections"]').setValue('unmatched-setting')
     expect(wrapper.text()).toContain('No matching sections')
-    await wrapper.get('input[aria-label="Search settings"]').setValue('voice')
-    expect(wrapper.findAll('nav button').map((button) => button.text())).toEqual(['Connections'])
+    await wrapper.get('input[aria-label="Search sections"]').setValue('voice')
+    expect(wrapper.findAll('nav button').map((button) => button.text())).toEqual(['Models'])
     await wrapper.get('[data-testid="nav-models"]').trigger('click')
-    expect(wrapper.get('h1').text()).toBe('Connections')
-    await wrapper.get('input[aria-label="Search settings"]').setValue('')
+    expect(wrapper.get('h1').text()).toBe('Models')
+    await wrapper.get('input[aria-label="Search sections"]').setValue('')
     expect(wrapper.find('[data-testid="nav-capture"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+  it('finds Shortcuts, Kit & tools and Agents by their obvious words', async () => {
+    const wrapper = shallowMount(SettingsWindow)
+    const search = wrapper.get('input[aria-label="Search sections"]')
+    const names = () => wrapper.findAll('nav button').map((button) => button.text())
+    await search.setValue('hotkey')
+    expect(names()).toEqual(['Shortcuts'])
+    await search.setValue('mcp')
+    expect(names()).toEqual(['Kit & tools'])
+    await search.setValue('host')
+    expect(names()).toEqual(['Agents'])
+    wrapper.unmount()
+  })
+  it('separates the system sections with one divider and gives Kit & tools its own icon', async () => {
+    const wrapper = shallowMount(SettingsWindow)
+    const nav = wrapper.get('nav')
+    const dividers = nav.findAll('[data-testid="nav-divider"]')
+    expect(dividers).toHaveLength(1)
+    const order = nav.findAll('button, [data-testid="nav-divider"]').map((node) => node.text())
+    expect(order.indexOf('')).toBe(order.indexOf('Developer') - 1)
+    await wrapper.get('input[aria-label="Search sections"]').setValue('developer')
+    expect(wrapper.find('[data-testid="nav-divider"]').exists()).toBe(false)
     wrapper.unmount()
   })
   it('opens task history in the workspace rather than a Settings section, including old links', async () => {
@@ -60,7 +83,7 @@ describe('release settings availability', () => {
     const agent = vi.mocked(useAgent).mock.results.at(-1)!.value
     expect(agent.openWorkspace).toHaveBeenCalledWith('tasks')
     expect(wrapper.find('[data-testid="nav-artifacts"]').exists()).toBe(false)
-    expect(wrapper.findAll('nav button').some((button) => button.text() === 'Knowledge')).toBe(
+    expect(wrapper.findAll('nav button').some((button) => button.text() === 'Workspace')).toBe(
       false,
     )
     wrapper.unmount()

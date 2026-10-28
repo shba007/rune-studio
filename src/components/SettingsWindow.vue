@@ -40,7 +40,7 @@ const SECTIONS: { id: Section; label: string; subtitle: string; icon: IconName }
   },
   {
     id: 'models',
-    label: 'Connections',
+    label: 'Models',
     subtitle: 'Manage the model server and its roles.',
     icon: 'plug',
   },
@@ -52,9 +52,9 @@ const SECTIONS: { id: Section; label: string; subtitle: string; icon: IconName }
   },
   {
     id: 'tools',
-    label: 'Tools & connections',
+    label: 'Kit & tools',
     subtitle: 'Connect to Kit and choose available read-only tools.',
-    icon: 'plug',
+    icon: 'link',
   },
   {
     id: 'capture',
@@ -96,8 +96,12 @@ const keywords: Partial<Record<Section, string>> = {
   data: 'goal context health mind finance classification consent storage life privacy',
   developer: 'logs debug capture input animation diagnostics',
   general: 'thinking safety approval permission',
+  agents: 'external host bridge execution desktop outside',
+  tools: 'kit mcp tools read-only endpoint plugins',
+  shortcuts: 'hotkey keyboard keys stop summon toggle',
   about: 'version update help docs feedback license',
 }
+const SYSTEM_SECTIONS: Section[] = ['developer', 'about']
 const visible = computed(() =>
   SECTIONS.filter((item) => {
     const text = `${item.label} ${item.subtitle} ${keywords[item.id] ?? ''}`.toLowerCase()
@@ -197,29 +201,38 @@ onBeforeUnmount(() => {
           <input
             v-model="search"
             type="search"
-            aria-label="Search settings"
-            placeholder="Search settings"
+            aria-label="Search sections"
+            placeholder="Search sections"
             class="h-10 w-full rounded-full bg-white/6 pr-3 pl-10 text-rune-body text-zinc-100 outline-none placeholder:text-zinc-500 focus-visible:ring-1 focus-visible:ring-white/30"
           />
         </label>
         <div class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
-          <button
-            v-for="item in visible"
-            :key="item.id"
-            type="button"
-            class="flex h-10 w-full cursor-pointer items-center gap-rune-2 rounded-xl border-0 px-rune-2 text-left text-rune-body transition"
-            :class="
-              section === item.id
-                ? 'bg-white/10 text-zinc-50'
-                : 'bg-transparent text-zinc-400 hover:bg-white/5 hover:text-zinc-100'
-            "
-            :aria-current="section === item.id ? 'page' : undefined"
-            :data-testid="`nav-${item.id}`"
-            @click="section = item.id"
-          >
-            <AppIcon :name="item.icon" />
-            {{ item.label }}
-          </button>
+          <template v-for="(item, index) in visible" :key="item.id">
+            <hr
+              v-if="
+                SYSTEM_SECTIONS.includes(item.id) &&
+                index > 0 &&
+                !SYSTEM_SECTIONS.includes(visible[index - 1]!.id)
+              "
+              class="my-2 border-0 border-t border-white/8"
+              data-testid="nav-divider"
+            />
+            <button
+              type="button"
+              class="flex h-10 w-full cursor-pointer items-center gap-rune-2 rounded-xl border-0 px-rune-2 text-left text-rune-body transition"
+              :class="
+                section === item.id
+                  ? 'bg-white/10 text-zinc-50'
+                  : 'bg-transparent text-zinc-400 hover:bg-white/5 hover:text-zinc-100'
+              "
+              :aria-current="section === item.id ? 'page' : undefined"
+              :data-testid="`nav-${item.id}`"
+              @click="section = item.id"
+            >
+              <AppIcon :name="item.icon" />
+              {{ item.label }}
+            </button>
+          </template>
           <p v-if="!visible.length" role="status" class="px-rune-2 text-rune-body text-zinc-500">
             No matching sections.
           </p>

@@ -42,21 +42,25 @@ const commandPending = ref(false)
 const commandNotice = ref('')
 const slash = computed(() => command.value.trimStart().startsWith('/'))
 const suggestions = computed(() => composerCommands(command.value))
-const showCommands = computed(
-  () => slash.value && !menuDismissed.value && !offline.value && !props.analysisBusy,
-)
+const showCommands = computed(() => slash.value && !menuDismissed.value && !props.analysisBusy)
 watch(command, () => {
   selectedCommand.value = 0
   menuDismissed.value = false
   commandNotice.value = ''
 })
-function unavailable(item: ComposerCommand) {
-  return item.id === 'analysis' && !external.value && agent.isRunning.value
+function unavailableReason(item: ComposerCommand) {
+  if (item.id !== 'analysis') return ''
+  if (offline.value) return 'Needs the model server'
+  if (!external.value && agent.isRunning.value) return 'Finish or stop the current task first'
+  return ''
 }
+const unavailable = (item: ComposerCommand) => unavailableReason(item) !== ''
 async function runCommand(item: ComposerCommand) {
-  if (commandPending.value || props.analysisBusy || offline.value) return
+  if (commandPending.value || props.analysisBusy) return
   if (unavailable(item)) {
-    commandNotice.value = 'Finish or stop the current task before starting Visual Analysis.'
+    commandNotice.value = offline.value
+      ? 'Visual Analysis needs the model server.'
+      : 'Finish or stop the current task before starting Visual Analysis.'
     return
   }
   commandPending.value = true
@@ -136,7 +140,7 @@ const placeholder = computed(() => {
   if (props.board && agent.isRunning.value) return 'Add a request'
   if (agent.isRunning.value) return 'Working…'
   if (isListening.value) return 'Listening…'
-  if (offline.value) return 'Model server offline'
+  if (offline.value) return 'Offline · type / for commands'
   return 'Type or say a request'
 })
 
@@ -146,7 +150,7 @@ watch(agent.focusTick, async () => {
 })
 
 async function submit() {
-  if (offline.value || commandPending.value) return
+  if (commandPending.value) return
   const text = command.value.trim()
   if (slash.value) {
     const item =
@@ -156,6 +160,7 @@ async function submit() {
     else commandNotice.value = 'Unknown command. Type / to see available commands.'
     return
   }
+  if (offline.value) return
   if (props.analysisSubmit) {
     if (!external.value && !props.analysisBusy && (await props.analysisSubmit(text)))
       command.value = ''
@@ -236,7 +241,7 @@ async function submit() {
         <AppIcon :name="item.icon" size="sm" /><span
           ><span class="block">{{ item.command }}</span
           ><span class="text-rune-caption text-zinc-400">{{
-            unavailable(item) ? 'Finish or stop the current task first' : item.description
+            unavailableReason(item) || item.description
           }}</span></span
         >
       </button>
@@ -251,7 +256,11 @@ async function submit() {
         ref="field"
         v-model="command"
         rows="1"
-        :disabled="offline || commandPending || (Boolean(analysisSubmit) && analysisBusy)"
+        :disabled="
+          (offline && Boolean(analysisSubmit)) ||
+          commandPending ||
+          (Boolean(analysisSubmit) && analysisBusy)
+        "
         aria-label="Request or slash command"
         :aria-expanded="showCommands"
         :aria-controls="showCommands ? menuId : undefined"
@@ -277,7 +286,7 @@ async function submit() {
           commandPending ||
           (external && !slash && action.icon !== 'stop') ||
           (!slash && !analysisSubmit && board?.pending.value) ||
-          (offline && action.icon !== 'stop')
+          (offline && !slash && action.icon !== 'stop')
         "
         :aria-label="action.label"
         :aria-pressed="action.icon === 'mic' ? isListening : undefined"

@@ -312,7 +312,7 @@ pub fn set_api_key(app: AppHandle, state: State<'_, AppState>, key: String) -> A
 #[tauri::command]
 pub async fn open_workspace(app: AppHandle, section: Option<String>) -> AppResult<()> {
     crate::workspace::open(&app, section.as_deref())
-        .map_err(|err| AppError::Invalid(format!("Could not open Knowledge: {err}")))
+        .map_err(|err| AppError::Invalid(format!("Could not open Workspace: {err}")))
 }
 
 #[tauri::command]

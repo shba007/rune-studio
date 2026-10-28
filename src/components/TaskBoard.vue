@@ -134,12 +134,12 @@ function stepLabel(phase: TaskPhase) {
 <template>
   <section
     v-if="request"
-    aria-label="Tasks Board"
+    aria-label="Tasks"
     class="flex flex-col gap-rune-2 rounded-rune-panel border border-rune-outline bg-rune-surface p-rune-2 font-rune-reading text-zinc-100"
     :data-request-id="request.id"
   >
     <header class="flex items-center justify-between gap-2">
-      <h2 class="m-0 font-sans text-rune-heading text-zinc-300 uppercase">Tasks Board</h2>
+      <h2 class="m-0 font-sans text-rune-heading text-zinc-300 uppercase">Tasks</h2>
       <span
         data-testid="goal-eta"
         class="text-rune-caption text-zinc-400 tabular-nums"
@@ -229,7 +229,7 @@ function stepLabel(phase: TaskPhase) {
           :aria-label="`${isExpanded(task) ? 'Collapse' : 'Expand'} task ${index + 1}`"
           :aria-expanded="isExpanded(task)"
           :aria-controls="`task-steps-${task.id}`"
-          class="w-full cursor-pointer text-left outline-none focus-visible:ring-1 focus-visible:ring-white/50"
+          class="w-full cursor-pointer text-left"
           @click="toggle(task)"
         >
           <span

@@ -13,7 +13,7 @@ export interface KnowledgeConcept {
 export const knowledgeConcepts: KnowledgeConcept[] = [
   {
     id: 'knowledge',
-    title: 'Knowledge',
+    title: 'Workspace',
     status: 'Available',
     x: 260,
     y: 165,
@@ -177,7 +177,7 @@ export const knowledgeConcepts: KnowledgeConcept[] = [
     meaning: 'The answer explains what happened; stored evidence helps you check it.',
     example: 'See “41” in the AI bubble, then open the task to inspect its attempts or recording.',
     today:
-      'Final task answers appear in the orb’s bubble. Tasks retain results and evidence. Preview is embedded in Knowledge, with task timelines and replay where evidence exists. Older history may lack original prompts or captures that cannot be reconstructed.',
+      'Final task answers appear in the orb’s bubble. Tasks retain results and evidence. Preview is embedded in Workspace, with task timelines and replay where evidence exists. Older history may lack original prompts or captures that cannot be reconstructed.',
     section: 'tasks',
   },
   {

@@ -36,7 +36,7 @@ fn open_view(app: &AppHandle, section: Option<&str>, run: Option<&str>) -> tauri
         None => format!("index.html?view=workspace&section={section}"),
     };
     let window = WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::App(url.into()))
-        .title("Knowledge")
+        .title("Workspace")
         .inner_size(crate::window::PANEL_WIDTH, crate::window::PANEL_HEIGHT)
         .min_inner_size(760.0, 520.0)
         .resizable(true)

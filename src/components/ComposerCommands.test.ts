@@ -90,7 +90,7 @@ it('preserves API desktop exclusion and external-agent Visual Analysis routing',
 })
 
 it('supports completion and Escape, keeps unknown commands local, and respects offline input', async () => {
-  const { wrapper, agent, analyzeScreen, openSettings, submit } = show()
+  const { wrapper, agent, analyzeScreen, openSettings, openWorkspace, submit } = show()
   const field = wrapper.get('textarea')
   await field.setValue('/set')
   await field.trigger('keydown', { key: 'Tab' })
@@ -107,8 +107,17 @@ it('supports completion and Escape, keeps unknown commands local, and respects o
   expect(submit).not.toHaveBeenCalled()
   agent.health.value.tone = 'down'
   await field.setValue('/visual analysis')
-  expect(field.attributes('disabled')).toBeDefined()
+  expect(field.attributes('disabled')).toBeUndefined()
   await field.trigger('keydown', { key: 'Enter' })
+  await flushPromises()
   expect(analyzeScreen).not.toHaveBeenCalled()
+  expect(wrapper.get('[role="alert"]').text()).toContain('needs the model server')
+  await field.setValue('/goals')
+  await field.trigger('keydown', { key: 'Enter' })
+  await flushPromises()
+  expect(openWorkspace).toHaveBeenCalledWith('goals')
+  await field.setValue('hello')
+  await field.trigger('keydown', { key: 'Enter' })
+  expect(submit).not.toHaveBeenCalled()
   wrapper.unmount()
 })

@@ -30,6 +30,13 @@ it('keeps hard-coded colours out of the pill-path components', () => {
   expect(found).toEqual([])
 })
 
+it('keeps one global focus ring in the base layer', () => {
+  const css = readFileSync(resolve(process.cwd(), 'src/style.css'), 'utf8')
+  expect(css).toMatch(/@layer base\s*{\s*:focus-visible\s*{[^}]*outline:[^;]*var\(--accent\)/)
+  for (const name of ['AgentPill', 'TaskBoard', 'FeedbackCard'])
+    expect(source(name)).not.toMatch(/focus-visible:ring/)
+})
+
 it('uses the error token instead of the raw error red anywhere', () => {
   const names = [
     ...PILL_PATH,

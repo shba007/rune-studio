@@ -81,7 +81,7 @@ const CHIP = {
         v-model="reason"
         rows="2"
         placeholder="A few words help"
-        class="min-h-14 w-full resize-none rounded-2xl border-0 bg-white/8 px-3 py-2 text-rune-body text-zinc-100 outline-none placeholder:text-zinc-500 focus-visible:ring-2 focus-visible:ring-white/40"
+        class="min-h-14 w-full resize-none rounded-2xl border-0 bg-white/8 px-3 py-2 text-rune-body text-zinc-100 placeholder:text-zinc-500"
         data-testid="why"
         @keydown.enter.exact.prevent="agent.answerWhy(reason)"
       />

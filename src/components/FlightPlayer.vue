@@ -371,7 +371,7 @@ const verdictLine = computed(() => {
     :class="embedded ? 'h-full flex-1' : 'h-screen'"
     data-testid="flight"
   >
-    <TitleBar v-if="!embedded" title="Knowledge" />
+    <TitleBar v-if="!embedded" title="Workspace" />
     <section v-if="!header" class="flex min-h-0 flex-1 flex-col gap-3 p-6">
       <button
         type="button"

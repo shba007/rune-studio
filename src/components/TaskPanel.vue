@@ -63,6 +63,12 @@ const message = computed(() => {
     : null
 })
 
+const modelCaveat = computed(() =>
+  message.value?.label === agent.settings.value?.models?.agent
+    ? 'Configured model; serving model not confirmed'
+    : undefined,
+)
+
 function statusOf(index: number): 'done' | 'current' | 'pending' {
   if (finished.value || index < current.value) return 'done'
   return index === current.value ? 'current' : 'pending'
@@ -152,11 +158,8 @@ function statusOf(index: number): 'done' | 'current' | 'pending' {
 
     <div v-if="message" class="flex flex-col gap-1">
       <span
-        :title="
-          message.label === agent.settings.value?.models?.agent
-            ? 'Configured model; serving model not confirmed'
-            : undefined
-        "
+        :title="modelCaveat"
+        :aria-description="modelCaveat"
         class="break-all text-rune-caption text-zinc-500 uppercase"
         >{{ message.label }}</span
       >

@@ -10,6 +10,7 @@ const idle: PillCardState = {
   taskPanel: false,
   board: false,
   working: false,
+  server: false,
   reflection: false,
   review: false,
   feedback: false,
@@ -60,6 +61,15 @@ it('keeps quiet cards away while work, analysis or a decision is active', () => 
   })
   expect(show({ decision: true, update: true }).cards).toEqual(['decision'])
   expect(show({ analysis: true, review: true }).cards).toEqual(['analysis'])
+})
+
+it('puts the server card ahead of the other quiet cards', () => {
+  expect(show({ server: true, reflection: true, update: true })).toEqual({
+    cards: ['server'],
+    more: 2,
+  })
+  expect(show({ server: true, working: true }).cards).toEqual([])
+  expect(show({ server: true, question: true }).cards).toEqual(['confirm'])
 })
 
 it('keeps a finished board beside a quiet card', () => {

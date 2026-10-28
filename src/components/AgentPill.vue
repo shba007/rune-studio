@@ -15,6 +15,7 @@ import { useExternalAgent } from '@/composables/useExternalAgent'
 import AnalysisCard from './AnalysisCard.vue'
 import GlyphOrb from './GlyphOrb.vue'
 import ReflectionCard from './ReflectionCard.vue'
+import ServerStatusCard from './ServerStatusCard.vue'
 import FeedbackCard from './FeedbackCard.vue'
 import ReviewCard from './ReviewCard.vue'
 import HealthDots from './HealthDots.vue'
@@ -168,6 +169,7 @@ const plan = computed(() =>
       (!taskBoard.requests.value.length || !!agent.settings.value?.externalAgent),
     board: taskBoard.requests.value.length > 0,
     working: agent.isRunning.value || boardWorking.value,
+    server: ['down', 'warn'].includes(agent.health.value.tone),
     reflection: !!agent.reflectionPrompt.value,
     review: !!agent.reviewOffer.value && agent.reviewStage.value === 'review',
     feedback: !!agent.reviewOffer.value && agent.reviewStage.value !== 'review',
@@ -242,11 +244,6 @@ function onOrb() {
       class="relative isolate flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-full border-0 bg-rune-surface outline-none [clip-path:circle(50%)]"
     >
       <span
-        v-if="hint.action === 'stop'"
-        class="pointer-events-none absolute inset-0 z-30 rounded-full border border-attention"
-        aria-hidden="true"
-      />
-      <span
         v-if="showPersonality"
         class="pointer-events-none absolute bottom-1 left-1/2 z-20 grid size-4 -translate-x-1/2 place-items-center rounded-full bg-black/85 text-[10px] leading-none text-zinc-100"
         :aria-label="`Active personality: ${personality.name}`"
@@ -297,7 +294,7 @@ function onOrb() {
       />
       <button
         type="button"
-        class="relative size-14 cursor-pointer border-0 rounded-full bg-primary outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+        class="relative size-14 cursor-pointer border-0 rounded-full bg-primary focus-visible:-outline-offset-3"
         :aria-label="hint.label"
         :aria-description="orbTitle"
         :title="orbTitle"
@@ -351,7 +348,7 @@ function onOrb() {
                   agent.openWorkspace(decisions.current.value?.kind === 'goal' ? 'goals' : 'tasks')
                 "
               >
-                Continue your request in Knowledge
+                Continue your request in Workspace
               </button>
               <AnalysisCard
                 v-if="shows('analysis')"
@@ -390,6 +387,7 @@ function onOrb() {
                   </button>
                 </div>
               </section>
+              <ServerStatusCard v-if="shows('server')" :agent="agent" />
               <ReflectionCard v-if="shows('reflection')" :agent="agent" />
               <FeedbackCard v-if="shows('feedback')" :agent="agent" />
               <ReviewCard v-if="shows('review')" :agent="agent" />

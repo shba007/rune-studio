@@ -66,7 +66,7 @@ function keyboardPan(event: KeyboardEvent) {
       <p class="mb-0 text-rune-body leading-relaxed text-zinc-400">
         Type or say a request. Rune identifies its scope, asks when clarification is needed, and
         keeps the resulting work reviewable. A goal describes where you want to be; a task produces
-        a bounded result; a step belongs inside a task. Knowledge brings those conversations,
+        a bounded result; a step belongs inside a task. Workspace brings those conversations,
         results, and styles together. Goals anchor the longer-term loop and connect directly to
         approved personalities. You can still run standalone tasks and steps.
       </p>

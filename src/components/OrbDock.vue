@@ -23,9 +23,9 @@ const tool =
     <button
       type="button"
       :class="[tool, 'bottom-0']"
-      aria-label="Goals"
-      title="Goals"
-      @click="agent.openWorkspace('goals')"
+      aria-label="Workspace"
+      title="Workspace"
+      @click="agent.openWorkspace('overview')"
     >
       <AppIcon name="thinking" />
     </button>

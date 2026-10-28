@@ -64,12 +64,12 @@ it('shares connectivity between Settings and composer, rejects stale results, an
   const main = mount(component)
   const settings = mount(component)
   await flushPromises()
-  expect(main.get('textarea').attributes('disabled')).toBeDefined()
+  expect(main.get('textarea').attributes('placeholder')).toContain('Offline')
   online = true
   await agents[1]!.refreshBackend()
   await flushPromises()
   expect(agents.every((agent) => agent.health.value.tone === 'ok')).toBe(true)
-  expect(main.get('textarea').attributes('disabled')).toBeUndefined()
+  expect(main.get('textarea').attributes('placeholder')).not.toContain('Offline')
   let finish!: (value: BackendProbe) => void
   const oldRevision = ++revision
   harness.invoke.mockImplementationOnce(
@@ -86,11 +86,11 @@ it('shares connectivity between Settings and composer, rejects stale results, an
   online = false
   await vi.advanceTimersByTimeAsync(15000)
   await flushPromises()
-  expect(main.get('textarea').attributes('disabled')).toBeDefined()
+  expect(main.get('textarea').attributes('placeholder')).toContain('Offline')
   online = true
   await vi.advanceTimersByTimeAsync(15000)
   await flushPromises()
-  expect(main.get('textarea').attributes('disabled')).toBeUndefined()
+  expect(main.get('textarea').attributes('placeholder')).not.toContain('Offline')
   main.unmount()
   settings.unmount()
 })

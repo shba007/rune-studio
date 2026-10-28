@@ -135,7 +135,7 @@ onBeforeUnmount(() => {
     class="flex h-screen flex-col overflow-hidden bg-black font-rune-reading text-zinc-100"
     data-testid="workspace"
   >
-    <TitleBar title="Knowledge" />
+    <TitleBar title="Workspace" />
     <FlightPlayer
       v-if="previewTask"
       :key="previewTask"
@@ -253,7 +253,7 @@ onBeforeUnmount(() => {
             View tasks
           </button>
         </div>
-        <DecisionInbox v-if="section === 'tasks'" :model="decisions" />
+        <DecisionInbox v-if="section === 'tasks'" quiet :model="decisions" />
         <PersonalitiesPanel v-if="section === 'personalities'" ref="personalities" />
         <KnowledgeOverview v-if="section === 'overview'" @navigate="navigate" />
       </section>
