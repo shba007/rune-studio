@@ -64,6 +64,46 @@ pub fn exe_of_command(command: &str) -> Option<String> {
     Some(command[..end].to_string())
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn shortcut_matches(file_name: &str, name: &str) -> bool {
+    let name = name.trim().to_lowercase();
+    let lower = file_name.to_lowercase();
+    let Some(stem) = lower.strip_suffix(".lnk") else {
+        return false;
+    };
+    !name.is_empty()
+        && (stem == name
+            || stem
+                .strip_prefix(name.as_str())
+                .is_some_and(|r| r.starts_with(' ')))
+}
+
+#[cfg(windows)]
+fn find_shortcut(name: &str) -> Option<std::path::PathBuf> {
+    fn search(dir: &std::path::Path, name: &str, depth: u8) -> Option<std::path::PathBuf> {
+        let mut folders = Vec::new();
+        for entry in std::fs::read_dir(dir).ok()?.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                folders.push(path);
+            } else if shortcut_matches(&entry.file_name().to_string_lossy(), name) {
+                return Some(path);
+            }
+        }
+        if depth == 0 {
+            return None;
+        }
+        folders
+            .into_iter()
+            .find_map(|f| search(&f, name, depth - 1))
+    }
+    let tail = r"Microsoft\Windows\Start Menu\Programs";
+    ["APPDATA", "ProgramData"].iter().find_map(|var| {
+        let root = std::path::PathBuf::from(std::env::var_os(var)?).join(tail);
+        search(&root, name, 2)
+    })
+}
+
 #[cfg(windows)]
 fn default_browser() -> Option<std::path::PathBuf> {
     use std::os::windows::process::CommandExt;
@@ -142,6 +182,21 @@ pub fn open(name: &str) -> Result<(), ExecError> {
             }
         }
     }
+    if let Some(shortcut) = find_shortcut(name) {
+        let result = unsafe {
+            ShellExecuteW(
+                None,
+                &HSTRING::from("open"),
+                &HSTRING::from(shortcut.as_os_str()),
+                PCWSTR::null(),
+                PCWSTR::null(),
+                SW_SHOWNORMAL,
+            )
+        };
+        if result.0 as isize > 32 {
+            return Ok(());
+        }
+    }
     Err(ExecError::Input(last))
 }
 
@@ -195,6 +250,16 @@ mod tests {
         assert_eq!(plan("Windows Settings"), shell("ms-settings:"));
         assert_eq!(plan("File Explorer"), shell("explorer"));
         assert_eq!(plan("task manager"), shell("taskmgr"));
+    }
+
+    #[test]
+    fn start_menu_shortcuts_match_by_name_ignoring_case() {
+        assert!(shortcut_matches("Obsidian.lnk", "obsidian"));
+        assert!(shortcut_matches("Obsidian.LNK", " Obsidian "));
+        assert!(shortcut_matches("Visual Studio Code.lnk", "visual studio"));
+        assert!(!shortcut_matches("Obsidian Uninstall.txt", "obsidian"));
+        assert!(!shortcut_matches("Obsidianish.lnk", "obsidian"));
+        assert!(!shortcut_matches("Obsidian.lnk", ""));
     }
 
     #[test]

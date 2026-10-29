@@ -31,7 +31,42 @@ impl Plan {
         let plan: Self =
             serde_json::from_value(value).map_err(|e| format!("Invalid task plan: {e}"))?;
         plan.validate()?;
-        Ok(plan)
+        Ok(plan.merge_desktop())
+    }
+    fn merge_desktop(mut self) -> Self {
+        for goal in &mut self.goals {
+            let desktop = goal
+                .tasks
+                .iter()
+                .filter(|t| t.kind == Kind::Desktop)
+                .count();
+            let steps: usize = goal
+                .tasks
+                .iter()
+                .filter(|t| t.kind == Kind::Desktop)
+                .map(|t| t.steps.len())
+                .sum();
+            if desktop < 2 || steps > 12 {
+                continue;
+            }
+            let mut merged: Option<usize> = None;
+            let mut tasks: Vec<Task> = Vec::with_capacity(goal.tasks.len());
+            for task in std::mem::take(&mut goal.tasks) {
+                match (task.kind == Kind::Desktop, merged) {
+                    (true, Some(at)) => {
+                        tasks[at].title = format!("{}; {}", tasks[at].title, task.title);
+                        tasks[at].steps.extend(task.steps);
+                    }
+                    (true, None) => {
+                        merged = Some(tasks.len());
+                        tasks.push(task);
+                    }
+                    (false, _) => tasks.push(task),
+                }
+            }
+            goal.tasks = tasks;
+        }
+        self
     }
     pub fn dependencies(&self) -> HashMap<String, Vec<String>> {
         let mut result = HashMap::new();
@@ -164,6 +199,32 @@ pub(super) mod tests {
             plan.goals[0].tasks[0].steps,
             ["Read text A", "Summarize text A"]
         );
+    }
+    #[test]
+    fn desktop_tasks_of_one_goal_become_one_sequential_task() {
+        let mut value = fixture();
+        value["goals"][0]["tasks"].as_array_mut().unwrap().push(
+            json!({"id":"d","title":"Save it","kind":"desktop","depends_on":[],"steps":["Press save"]}),
+        );
+        let plan = Plan::parse(value).unwrap();
+        let tasks = &plan.goals[0].tasks;
+        assert_eq!(tasks.len(), 3);
+        let desktop = tasks.iter().find(|t| t.kind == Kind::Desktop).unwrap();
+        assert_eq!(desktop.id, "c");
+        assert_eq!(desktop.steps, ["Open Notepad", "Press save"]);
+        assert_eq!(desktop.title, "Open Notepad; Save it");
+    }
+    #[test]
+    fn desktop_tasks_stay_apart_when_merging_would_exceed_the_step_limit() {
+        let mut value = fixture();
+        let many: Vec<String> = (0..8).map(|i| format!("step {i}")).collect();
+        value["goals"][0]["tasks"][2]["steps"] = json!(many);
+        value["goals"][0]["tasks"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"id":"d","title":"More","kind":"desktop","depends_on":[],"steps":many}));
+        let plan = Plan::parse(value).unwrap();
+        assert_eq!(plan.goals[0].tasks.len(), 4);
     }
     #[test]
     fn multiple_goals_or_dependent_tasks_are_rejected() {
