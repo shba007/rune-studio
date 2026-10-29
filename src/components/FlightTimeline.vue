@@ -137,7 +137,7 @@ const playheadLeft = computed(() => props.timeMs * pxPerMs.value - scrollLeft.va
   <section class="flex flex-col gap-1 px-4 pt-2" aria-label="Timeline">
     <div
       ref="track"
-      class="relative h-20 cursor-pointer touch-none overflow-hidden rounded-xl border border-white/10 bg-[#101010] select-none"
+      class="relative h-20 cursor-pointer touch-none overflow-hidden rounded-rune-tile bg-rune-sunken select-none"
       role="slider"
       tabindex="0"
       aria-label="Task timeline"
@@ -156,10 +156,10 @@ const playheadLeft = computed(() => props.timeMs * pxPerMs.value - scrollLeft.va
       <div
         v-for="segment in drawn"
         :key="segment.index"
-        class="absolute top-0 bottom-0 border-l border-white/10"
+        class="absolute top-0 bottom-0"
         :class="[
           segment.index === current ? 'bg-white/[0.07]' : '',
-          failedStep(segment.step) ? 'text-error' : 'text-zinc-200',
+          failedStep(segment.step) ? 'text-error' : 'text-rune-ink',
         ]"
         :style="{
           left: `${segment.start * pxPerMs - scrollLeft}px`,
@@ -174,12 +174,12 @@ const playheadLeft = computed(() => props.timeMs * pxPerMs.value - scrollLeft.va
           size="sm"
           class="absolute top-2 left-1.5 opacity-80"
         />
-        <span class="absolute top-2 right-1.5 text-caption tabular-nums" data-step-duration>{{
+        <span class="absolute top-2 right-1.5 text-rune-heading tabular-nums" data-step-duration>{{
           clock(segment.length)
         }}</span>
         <span
           v-if="retried.has(segment.index)"
-          class="absolute top-0 left-0 h-2 w-px bg-zinc-100"
+          class="absolute top-0 left-0 h-2 w-px bg-rune-ink"
           title="A model call was retried in this step"
           data-testid="retry-tick"
         />
@@ -201,14 +201,14 @@ const playheadLeft = computed(() => props.timeMs * pxPerMs.value - scrollLeft.va
       <span
         v-for="mark in shownMarkers"
         :key="mark.id"
-        class="absolute top-1 -translate-x-1/2 rounded-full px-1.5 text-caption"
-        :class="mark.error ? 'bg-[#d71921]/25 text-error' : 'bg-white/10 text-zinc-300'"
+        class="absolute top-1 -translate-x-1/2 rounded-full px-1.5 text-rune-heading"
+        :class="mark.error ? 'bg-attention/25 text-error' : 'bg-rune-raised text-rune-text-2'"
         :style="{ left: `${mark.ms * pxPerMs - scrollLeft}px` }"
         data-testid="marker"
         >{{ mark.word }}</span
       >
       <span
-        class="pointer-events-none absolute top-0 bottom-0 w-px bg-[#f1f1ef]"
+        class="pointer-events-none absolute top-0 bottom-0 w-px bg-rune-ink"
         :style="{ left: `${playheadLeft}px` }"
         data-testid="playhead"
       />

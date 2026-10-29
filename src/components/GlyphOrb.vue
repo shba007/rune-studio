@@ -250,7 +250,7 @@ onMounted(() => {
     ref="canvas"
     :width="SIZE"
     :height="SIZE"
-    class="block size-14 rounded-full border-0"
+    class="block size-14 rounded-full"
     aria-hidden="true"
   />
 </template>

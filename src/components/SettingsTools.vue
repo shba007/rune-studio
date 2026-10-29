@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import RuneButton from './RuneButton.vue'
 import { invoke } from '@tauri-apps/api/core'
 import { onMounted, ref } from 'vue'
 defineProps<{ toolCalls?: string }>()
@@ -74,29 +75,29 @@ onMounted(async () => {
       >Kit HTTP endpoint
       <input
         v-model="config.endpoint"
-        class="rounded-lg bg-zinc-900 p-rune-2"
+        class="rounded-rune-tile bg-rune-sunken p-rune-2"
         placeholder="http://127.0.0.1:47601/mcp"
         @change="save"
       />
     </label>
-    <p class="m-0 text-zinc-400">
+    <p class="m-0 text-rune-text-2">
       Read-only tools only. Start Kit HTTP 0.6.0+ separately with serve --headless. Studio connects
       to the endpoint and never launches or stops the shared server.
     </p>
     <p v-if="config.migration" role="alert">{{ config.migration }}</p>
-    <p class="m-0 text-zinc-400">
+    <p class="m-0 text-rune-text-2">
       Configure filesystem confinement on the Kit server using an explicit allowed_dir. Studio
       cannot change that root. File contents are sent to the selected model.
     </p>
-    <button class="rounded-lg bg-white/10 p-rune-2" :disabled="busy" @click="refresh">
+    <RuneButton :disabled="busy" @click="refresh">
       {{ busy ? 'Discovering…' : 'Refresh / discover' }}
-    </button>
+    </RuneButton>
     <p role="status">{{ status }}</p>
     <label v-for="tool in tools" :key="tool.name"
       ><input v-model="config.selected" type="checkbox" :value="tool.name" @change="save" />
-      {{ tool.name }}<span class="block text-zinc-500">{{ tool.description }}</span></label
+      {{ tool.name }}<span class="block text-rune-text-2">{{ tool.description }}</span></label
     >
-    <p v-if="config.selected.length" class="text-zinc-400">
+    <p v-if="config.selected.length" class="text-rune-text-2">
       Selected: {{ config.selected.join(', ') }}. Selection never grants tools permission to change
       these settings.
     </p>

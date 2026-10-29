@@ -9,7 +9,7 @@ defineProps<{ draft: Settings }>()
     <select
       v-model="draft.offerReview"
       aria-label="Offer task review"
-      class="rounded-lg bg-zinc-900 px-rune-2 py-2 text-rune-body text-zinc-100"
+      class="rounded-rune-tile bg-rune-sunken px-rune-2 py-2 text-rune-body text-rune-ink"
     >
       <option value="always">Always</option>
       <option value="failures">Failures</option>
@@ -23,7 +23,7 @@ defineProps<{ draft: Settings }>()
     <select
       v-model="draft.recordSessionVideo"
       aria-label="Task video"
-      class="rounded-lg bg-zinc-900 px-rune-2 py-2 text-rune-body text-zinc-100"
+      class="rounded-rune-tile bg-rune-sunken px-rune-2 py-2 text-rune-body text-rune-ink"
     >
       <option value="off">Off</option>
       <option value="motion">Motion</option>

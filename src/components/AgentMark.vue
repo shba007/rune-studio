@@ -13,7 +13,7 @@ defineProps<{
 <template>
   <span class="inline-grid size-4 shrink-0 place-items-center" aria-hidden="true">
     <img v-if="logo" :src="logo" alt="" class="size-4" :class="{ invert: mono }" />
-    <span v-else-if="letter && !glyph" class="text-caption leading-none font-bold">{{
+    <span v-else-if="letter && !glyph" class="text-rune-heading leading-none font-bold">{{
       letter
     }}</span>
     <svg v-else-if="glyph" viewBox="0 0 24 24" class="size-4" fill="currentColor">

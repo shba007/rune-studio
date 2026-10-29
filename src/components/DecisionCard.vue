@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import RuneButton from './RuneButton.vue'
 import { computed, ref, useId, watch } from 'vue'
 import type { DecisionAnswer, DecisionQuestion } from '@/types/decisions'
 
@@ -54,21 +55,21 @@ function typeAnswer(event: Event) {
 
 <template>
   <form
-    class="flex flex-col gap-3 rounded-3xl border border-white/10 bg-[#141414] p-4 text-zinc-100"
+    class="flex flex-col gap-3 rounded-rune-tile bg-rune-surface p-4 text-rune-ink"
     :aria-labelledby="`${group}-title`"
     @submit.prevent="valid && !busy && emit('answer', answer())"
   >
-    <h2 :id="`${group}-title`" class="m-0 text-body">{{ question.title }}</h2>
-    <p v-if="question.explanation" class="m-0 text-label text-zinc-400">
+    <h2 :id="`${group}-title`" class="m-0 text-rune-body">{{ question.title }}</h2>
+    <p v-if="question.explanation" class="m-0 text-rune-caption text-rune-text-2">
       {{ question.explanation }}
     </p>
-    <fieldset :disabled="busy" class="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
+    <fieldset :disabled="busy" class="m-0 flex min-w-0 flex-col gap-2 p-0">
       <legend class="sr-only">Choose an answer or write your own</legend>
       <label
         v-for="(option, index) in question.options"
         :key="option.id"
-        class="flex cursor-pointer items-start gap-2 rounded-2xl border border-white/10 p-3 text-label"
-        :class="optionId === option.id ? 'bg-white/10' : 'hover:bg-white/5'"
+        class="flex cursor-pointer items-start gap-2 rounded-rune-tile p-3 text-rune-caption bg-rune-raised"
+        :class="optionId === option.id ? 'bg-rune-raised' : 'hover:bg-white/5'"
       >
         <input
           type="radio"
@@ -83,53 +84,56 @@ function typeAnswer(event: Event) {
             >{{ option.label
             }}<span
               v-if="index === 0 && question.kind === 'clarification'"
-              class="ml-2 text-caption text-zinc-400"
+              class="ml-2 text-rune-heading text-rune-text-2"
               >Recommended</span
             ></span
-          ><span class="block text-caption text-zinc-400">{{ option.explanation }}</span></span
+          ><span class="block text-rune-heading text-rune-text-2">{{
+            option.explanation
+          }}</span></span
         >
       </label>
       <label
         v-if="allowsFreeform"
-        class="flex flex-col gap-2 rounded-2xl border border-white/10 p-3 text-label"
+        class="flex flex-col gap-2 rounded-rune-tile p-3 text-rune-caption bg-rune-raised"
       >
         <span>Your own answer</span>
         <textarea
           :value="text"
           rows="2"
           maxlength="4000"
-          class="w-full resize-y rounded-xl bg-white/5 p-2 text-zinc-100 placeholder:text-zinc-400"
+          class="w-full resize-y rounded-rune-tile bg-rune-surface p-2 text-rune-ink placeholder:text-rune-text-3"
           placeholder="Tell Rune otherwise"
           @input="typeAnswer"
         />
       </label>
     </fieldset>
-    <p v-if="error" role="alert" class="m-0 text-label text-error">{{ error }}</p>
+    <p v-if="error" role="alert" class="m-0 text-rune-caption text-error">{{ error }}</p>
     <div class="flex flex-wrap gap-2">
-      <button
+      <RuneButton
+        variant="ghost"
         v-if="deferable"
-        type="button"
         :disabled="busy"
-        class="min-h-9 shrink-0 cursor-pointer rounded-full px-3 text-label whitespace-nowrap text-zinc-400 disabled:opacity-40"
+        class="whitespace-nowrap"
         @click="emit('defer', question.id)"
       >
         Decide later
-      </button>
-      <button
-        type="button"
+      </RuneButton>
+      <RuneButton
+        variant="ghost"
         :disabled="busy"
-        class="min-h-9 shrink-0 cursor-pointer rounded-full px-3 text-label whitespace-nowrap text-zinc-400 disabled:opacity-40"
+        class="whitespace-nowrap"
         @click="emit('answer', { ...answer(), optionId: 'cancel' })"
       >
         {{ cancelLabel }}
-      </button>
-      <button
+      </RuneButton>
+      <RuneButton
+        variant="primary"
         type="submit"
         :disabled="!valid || busy"
-        class="ml-auto min-h-9 shrink-0 cursor-pointer rounded-full bg-zinc-100 px-4 text-label whitespace-nowrap text-zinc-950 disabled:opacity-40"
+        class="ml-auto whitespace-nowrap"
       >
         {{ busy ? 'Saving…' : 'Continue' }}
-      </button>
+      </RuneButton>
     </div>
   </form>
 </template>

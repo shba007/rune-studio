@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import RuneIconButton from './RuneIconButton.vue'
+import RuneButton from './RuneButton.vue'
 import { computed, ref, watch } from 'vue'
 import type { Agent } from '@/composables/useAgent'
 import { useWorkspaceTasks } from '@/composables/useWorkspaceTasks'
@@ -24,27 +26,28 @@ watch(
   <section
     v-if="task"
     aria-label="Scheduled task reminder"
-    class="flex flex-col gap-rune-2 rounded-rune-panel border border-rune-outline bg-rune-surface p-rune-2 font-rune-reading text-rune-body text-zinc-200"
+    class="flex flex-col gap-rune-2 rounded-rune-panel bg-rune-surface p-rune-2 font-rune-reading text-rune-body text-rune-ink"
   >
     <header class="flex items-center justify-between">
-      <span class="text-rune-caption text-zinc-500 uppercase">Time to check in</span
-      ><button
-        class="size-6 cursor-pointer text-zinc-500"
-        aria-label="Decide later"
+      <span class="text-rune-caption text-rune-text-2 uppercase">Time to check in</span
+      ><RuneIconButton
+        variant="ghost"
+        size="xs"
+        label="Decide later"
         @click="deferred.add(task.occurrences.at(-1)!.id)"
       >
         ×
-      </button>
+      </RuneIconButton>
     </header>
     <p class="m-0 leading-relaxed">{{ task.title }}</p>
-    <p class="m-0 text-rune-caption text-zinc-500">
+    <p class="m-0 text-rune-caption text-rune-text-2">
       Due <WhenText :iso="new Date(task.occurrences.at(-1)!.dueMs!).toISOString()" />. If Rune was
       away, confirm what actually happened.
     </p>
     <div class="flex flex-wrap gap-2">
-      <button
+      <RuneButton
+        variant="primary"
         :disabled="workspace.pending.value"
-        class="cursor-pointer rounded-full bg-zinc-100 px-3 py-2 text-zinc-950 disabled:opacity-40"
         v-if="task.occurrences.at(-1)?.state === 'pending' || task.executionMode === 'analysis'"
         @click="
           workspace.action(
@@ -63,22 +66,24 @@ watch(
             : task.executionMode === 'analysis'
               ? 'Choose capture'
               : 'Run now'
-        }}</button
-      ><button
+        }}</RuneButton
+      ><RuneButton
+        variant="ghost"
+        size="sm"
         :disabled="workspace.pending.value"
-        class="cursor-pointer px-2 py-2 text-zinc-400"
         @click="workspace.action(task, 'done')"
       >
-        Already done</button
-      ><button
+        Already done</RuneButton
+      ><RuneButton
+        variant="ghost"
+        size="sm"
         :disabled="workspace.pending.value"
-        class="cursor-pointer px-2 py-2 text-zinc-400"
         @click="workspace.action(task, 'skip')"
       >
-        Skip</button
-      ><button class="cursor-pointer px-2 py-2 text-zinc-400" @click="agent.openWorkspace('tasks')">
+        Skip</RuneButton
+      ><RuneButton variant="ghost" size="sm" @click="agent.openWorkspace('tasks')">
         Open tasks
-      </button>
+      </RuneButton>
     </div>
     <p v-if="workspace.error.value" role="alert" class="m-0 text-error">
       {{ workspace.error.value }}

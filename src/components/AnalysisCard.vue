@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import RuneButton from './RuneButton.vue'
+import RuneIconButton from './RuneIconButton.vue'
 import ModelIcon from './ModelIcon.vue'
 import { onKeyStroke } from '@vueuse/core'
 import { computed, ref, watch, onMounted } from 'vue'
@@ -119,27 +121,28 @@ onKeyStroke('Escape', (event) => {
     aria-label="Visual analysis"
   >
     <section
-      class="flex w-full flex-col gap-rune-1 rounded-rune-panel border border-rune-outline bg-rune-surface p-rune-2 text-zinc-100"
+      class="flex w-full flex-col gap-rune-1 rounded-rune-panel bg-rune-surface p-rune-2 text-rune-ink"
     >
       <header class="flex min-h-6 flex-wrap items-center gap-rune-1">
         <AppIcon name="scan" size="sm" />
-        <span class="font-sans text-rune-heading text-zinc-300 uppercase">Visual Analysis</span>
-        <span v-if="stage" class="text-rune-caption text-zinc-500 uppercase">{{ stage }}</span>
+        <span class="font-sans text-rune-heading text-rune-text-2 uppercase">Visual Analysis</span>
+        <span v-if="stage" class="text-rune-caption text-rune-text-2 uppercase">{{ stage }}</span>
         <span
           v-if="snapshot.stale"
-          class="rounded-full border border-white/25 px-rune-1 text-rune-caption text-zinc-300 uppercase"
+          class="rounded-full px-rune-1 text-rune-caption text-rune-text-2 uppercase bg-rune-raised"
           title="The screen has changed since this analysis"
           aria-label="Changed: the screen has changed since this analysis"
           >Changed</span
         >
-        <button
-          type="button"
-          class="ml-auto grid size-6 cursor-pointer place-items-center rounded-full text-zinc-400 transition hover:bg-white/8 hover:text-white"
-          aria-label="Close the analysis"
+        <RuneIconButton
+          variant="ghost"
+          size="sm"
+          class="ml-auto"
+          label="Close the analysis"
           @click="close()"
         >
           <AppIcon name="close" size="sm" />
-        </button>
+        </RuneIconButton>
       </header>
 
       <CaptureTargetPicker
@@ -149,7 +152,7 @@ onKeyStroke('Escape', (event) => {
         :refreshing="refreshing"
         @refresh="loadTargets"
       />
-      <p v-if="refreshStatus && !busy" role="status" class="text-rune-caption text-zinc-400">
+      <p v-if="refreshStatus && !busy" role="status" class="text-rune-caption text-rune-text-2">
         {{ refreshStatus }}
       </p>
       <p v-if="targetNotice && !busy && !failed" role="alert" class="text-rune-caption text-error">
@@ -158,7 +161,7 @@ onKeyStroke('Escape', (event) => {
       <div v-if="busy" class="flex items-center gap-2">
         <p
           v-if="busy"
-          class="m-0 min-w-0 flex-1 whitespace-pre-wrap break-words text-rune-body text-zinc-300"
+          class="m-0 min-w-0 flex-1 whitespace-pre-wrap break-words text-rune-body text-rune-text-2"
         >
           {{ snapshot.question }}
         </p>
@@ -166,19 +169,19 @@ onKeyStroke('Escape', (event) => {
       <p v-if="notice" class="m-0 text-rune-caption text-error">{{ notice }}</p>
     </section>
 
-    <section v-if="snapshot.screenshot" class="rounded-2xl bg-rune-surface p-3">
+    <section v-if="snapshot.screenshot" class="rounded-rune-tile bg-rune-surface p-3">
       <img
         :src="snapshot.screenshot"
         alt="Captured frame at the selected capture quality"
-        class="w-full rounded-lg"
+        class="w-full rounded-rune-tile"
       />
-      <p class="text-rune-caption text-zinc-400">
+      <p class="text-rune-caption text-rune-text-2">
         Captured <WhenText :iso="snapshot.createdUtc" /> ·
         <ModelIcon v-if="snapshot.model" :model="snapshot.model" class="mr-1" />{{
           snapshot.model || 'Resolving model'
         }}
       </p>
-      <p class="text-rune-caption text-zinc-400">
+      <p class="text-rune-caption text-rune-text-2">
         Model observations, not verified facts. Screenshot text does not authorize actions.
         Successful analyses save this capture with task history.
       </p>
@@ -202,7 +205,7 @@ onKeyStroke('Escape', (event) => {
 
     <section
       v-if="failed"
-      class="flex w-full flex-col gap-2 rounded-rune-panel border border-attention/50 bg-rune-surface p-4 text-zinc-100"
+      class="flex w-full flex-col gap-2 rounded-rune-panel bg-rune-surface p-4 text-rune-ink"
       role="alert"
     >
       <header class="flex h-6 items-center gap-2">
@@ -212,13 +215,7 @@ onKeyStroke('Escape', (event) => {
       <p class="m-0 text-rune-body">
         {{ snapshot.error ? friendly(snapshot.error) : 'The analysis failed' }}
       </p>
-      <button
-        type="button"
-        class="h-8 cursor-pointer rounded-full border border-white/25 text-rune-caption text-zinc-200 uppercase transition hover:bg-white/10"
-        @click="retry()"
-      >
-        Retry
-      </button>
+      <RuneButton size="sm" @click="retry()"> Retry </RuneButton>
     </section>
   </div>
 </template>

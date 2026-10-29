@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import RuneButton from './RuneButton.vue'
 import type { Agent } from '@/composables/useAgent'
 import { invoke } from '@tauri-apps/api/core'
 import { onMounted, ref } from 'vue'
@@ -50,16 +51,16 @@ function status() {
 }
 
 const button =
-  'flex h-9 cursor-pointer items-center gap-2 rounded-full bg-white/8 px-4 text-rune-body text-zinc-200 transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50'
+  'flex h-9 cursor-pointer items-center gap-2 rounded-full bg-rune-surface px-4 text-rune-body text-rune-ink transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50'
 </script>
 
 <template>
   <div class="flex flex-col gap-8">
-    <div class="flex items-center gap-4 border-b border-white/8 pb-6">
+    <div class="flex items-center gap-4 pb-6">
       <img :src="LOGO" alt="" class="size-12" />
       <div class="flex flex-col">
         <span class="text-rune-title">Rune Studio</span>
-        <span class="mt-1 text-rune-body text-zinc-500"
+        <span class="mt-1 text-rune-body text-rune-text-2"
           >Your goals, supported by local intelligence.</span
         >
       </div>
@@ -67,24 +68,23 @@ const button =
 
     <HubGroup title="Installed versions">
       <HubRow label="Rune Studio"
-        ><span class="text-rune-body text-zinc-400">{{
+        ><span class="text-rune-body text-rune-text-2">{{
           updater.version.value || 'Unavailable'
         }}</span></HubRow
       >
       <HubRow label="Studio CLI"
-        ><span class="text-rune-body text-zinc-400">{{ cliVersion }}</span></HubRow
+        ><span class="text-rune-body text-rune-text-2">{{ cliVersion }}</span></HubRow
       >
     </HubGroup>
 
     <HubGroup title="Updates">
       <HubRow label="Status" :hint="updater.error.value ?? undefined">
-        <span class="text-rune-body text-zinc-300">{{ status() }}</span>
+        <span class="text-rune-body text-rune-text-2">{{ status() }}</span>
       </HubRow>
       <HubRow label="Check for updates">
-        <button
+        <RuneButton
+          size="sm"
           v-if="updater.phase.value === 'available' && updater.latest.value"
-          type="button"
-          :class="button"
           :disabled="agent.isRunning.value"
           @click="updater.install(agent.isRunning.value)"
         >
@@ -94,61 +94,48 @@ const button =
               ? 'Finish the task first'
               : `Update to ${updater.latest.value.version}`
           }}
-        </button>
-        <button
+        </RuneButton>
+        <RuneButton
+          size="sm"
           v-else
-          type="button"
-          :class="button"
           :disabled="updater.phase.value === 'checking' || updater.updating.value"
           @click="updater.check()"
         >
           <AppIcon name="refresh" size="sm" />
           Check for updates
-        </button>
+        </RuneButton>
       </HubRow>
     </HubGroup>
     <HubGroup v-if="platform || arch" title="Environment">
       <HubRow v-if="platform" label="Platform"
-        ><span class="text-rune-body capitalize text-zinc-400">{{ platform }}</span></HubRow
+        ><span class="text-rune-body capitalize text-rune-text-2">{{ platform }}</span></HubRow
       >
       <HubRow v-if="arch" label="Architecture"
-        ><span class="text-rune-body text-zinc-400">{{ arch }}</span></HubRow
+        ><span class="text-rune-body text-rune-text-2">{{ arch }}</span></HubRow
       >
     </HubGroup>
     <HubGroup title="Help">
       <HubRow label="Documentation"
-        ><button
-          class="cursor-pointer text-rune-body text-zinc-400 hover:text-white"
-          @click="openLink('docs')"
-        >
+        ><RuneButton variant="ghost" size="sm" @click="openLink('docs')">
           Read the guide ↗
-        </button></HubRow
+        </RuneButton></HubRow
       >
       <HubRow label="Release notes"
-        ><button
-          class="cursor-pointer text-rune-body text-zinc-400 hover:text-white"
-          @click="openLink('releases')"
-        >
+        ><RuneButton variant="ghost" size="sm" @click="openLink('releases')">
           What changed ↗
-        </button></HubRow
+        </RuneButton></HubRow
       >
       <HubRow label="Feedback"
-        ><button
-          class="cursor-pointer text-rune-body text-zinc-400 hover:text-white"
-          @click="openLink('feedback')"
-        >
+        ><RuneButton variant="ghost" size="sm" @click="openLink('feedback')">
           Report an issue ↗
-        </button></HubRow
+        </RuneButton></HubRow
       >
     </HubGroup>
     <HubGroup title="License">
       <HubRow label="Rune Studio" hint="Open source under the MIT license."
-        ><button
-          class="cursor-pointer text-rune-body text-zinc-400 hover:text-white"
-          @click="openLink('license')"
-        >
+        ><RuneButton variant="ghost" size="sm" @click="openLink('license')">
           MIT ↗
-        </button></HubRow
+        </RuneButton></HubRow
       >
     </HubGroup>
     <p v-if="linkError" role="alert" class="m-0 text-rune-body text-error">{{ linkError }}</p>

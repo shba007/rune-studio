@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import RuneButton from './RuneButton.vue'
 import { useIntervalFn } from '@vueuse/core'
 import { computed, onMounted, ref, useTemplateRef, watch } from 'vue'
 
@@ -18,15 +19,15 @@ const clock = computed(
   () => `${Math.floor(left.value / 60)}:${String(left.value % 60).padStart(2, '0')}`,
 )
 
-const no = useTemplateRef<HTMLButtonElement>('no')
-onMounted(() => no.value?.focus())
+const no = useTemplateRef<InstanceType<typeof RuneButton>>('no')
+onMounted(() => no.value?.$el.focus())
 </script>
 
 <template>
   <section
     v-if="question"
-    class="flex w-full flex-col gap-2 rounded-rune-panel border bg-rune-surface p-rune-2 font-rune-reading text-zinc-100"
-    :class="asking ? 'border-white/15' : 'border-attention/50'"
+    class="flex w-full flex-col gap-2 rounded-rune-panel bg-rune-surface p-rune-2 font-rune-reading text-rune-ink"
+    :class="asking ? '' : ''"
     role="alertdialog"
     :aria-label="asking ? 'Rune asks' : 'Needs your OK'"
   >
@@ -37,21 +38,21 @@ onMounted(() => no.value?.focus())
       />
       <span
         class="text-rune-caption uppercase"
-        :class="asking ? 'text-zinc-300' : 'text-attention'"
+        :class="asking ? 'text-rune-text-2' : 'text-attention'"
         >{{ asking ? 'Asks you' : 'Needs your OK' }}</span
       >
-      <span class="ml-auto truncate text-rune-caption text-zinc-500 uppercase">{{
+      <span class="ml-auto truncate text-rune-caption text-rune-text-2 uppercase">{{
         question.source
       }}</span>
     </header>
 
     <p v-if="asking" class="text-rune-body">{{ question.text }}</p>
     <p v-else class="text-rune-body">
-      <span class="text-zinc-400">Wants to </span>{{ question.text }}
+      <span class="text-rune-text-2">Wants to </span>{{ question.text }}
     </p>
     <p
       v-if="question.reason"
-      class="line-clamp-2 text-rune-caption text-zinc-400"
+      class="line-clamp-2 text-rune-caption text-rune-text-2"
       :title="question.reason"
     >
       “{{ question.reason }}”
@@ -61,7 +62,7 @@ onMounted(() => no.value?.focus())
       <li
         v-for="reason in question.reasons.slice(0, 3)"
         :key="reason"
-        class="flex items-start gap-2 text-rune-caption text-zinc-300"
+        class="flex items-start gap-2 text-rune-caption text-rune-text-2"
       >
         <span class="mt-[6px] size-1 shrink-0 rounded-full bg-attention" />
         {{ reason }}
@@ -69,28 +70,19 @@ onMounted(() => no.value?.focus())
     </ul>
 
     <div class="mt-1 flex gap-2">
-      <button
-        ref="no"
-        type="button"
-        class="h-8 flex-1 cursor-pointer rounded-full border border-white/25 text-rune-caption text-zinc-200 transition hover:bg-white/10"
-        @click="agent.answer(false)"
-      >
+      <RuneButton size="sm" ref="no" class="flex-1" @click="agent.answer(false)">
         {{ restarting ? 'Keep stopped' : 'No' }}
-      </button>
-      <button
-        type="button"
-        class="h-8 flex-1 cursor-pointer rounded-full text-rune-caption transition"
-        :class="
-          asking
-            ? 'bg-primary text-[#111] hover:bg-white'
-            : 'bg-attention text-white hover:bg-attention-hover'
-        "
+      </RuneButton>
+      <RuneButton
+        size="sm"
+        class="flex-1"
+        :variant="asking ? 'primary' : 'danger'"
         @click="agent.answer(true)"
       >
         {{ restarting ? 'Restart task' : asking ? 'Yes' : 'Yes, allow' }}
-      </button>
+      </RuneButton>
     </div>
-    <p class="text-center text-rune-caption text-zinc-500 uppercase">
+    <p class="text-center text-rune-caption text-rune-text-2 uppercase">
       No answer in {{ clock }} counts as no
     </p>
   </section>

@@ -32,7 +32,7 @@ watch(
     type="button"
     :disabled="!run"
     :aria-label="run ? `Preview task: ${run.task}` : 'No task preview available'"
-    class="group relative aspect-video w-full overflow-hidden rounded-xl border border-white/8 bg-[#111] disabled:cursor-default sm:w-44 sm:shrink-0"
+    class="group relative aspect-video w-full overflow-hidden rounded-rune-tile bg-black disabled:cursor-default sm:w-44 sm:shrink-0"
     @click="$emit('open')"
   >
     <img
@@ -42,7 +42,7 @@ watch(
       class="size-full object-contain"
       @error="picture = null"
     />
-    <span v-else class="absolute inset-0 grid place-items-center text-zinc-600"
+    <span v-else class="absolute inset-0 grid place-items-center text-rune-text-3"
       ><AppIcon :name="run ? 'monitor' : 'target'"
     /></span>
     <span

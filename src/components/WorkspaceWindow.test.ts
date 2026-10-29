@@ -1,3 +1,4 @@
+import RuneNavItem from './RuneNavItem.vue'
 import { flushPromises, shallowMount } from '@vue/test-utils'
 import { ref } from 'vue'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
@@ -33,7 +34,7 @@ afterEach(() => {
 })
 
 it('keeps task history mounted while switching workspace sections', async () => {
-  const wrapper = shallowMount(WorkspaceWindow)
+  const wrapper = shallowMount(WorkspaceWindow, { global: { stubs: { RuneNavItem } } })
   await flushPromises()
   const history = wrapper.getComponent(TaskHistory)
   expect(history.props('active')).toBe(true)
@@ -53,7 +54,7 @@ it('keeps task history mounted while switching workspace sections', async () => 
 })
 
 it('keeps the goals empty message out of the Tasks section', async () => {
-  const wrapper = shallowMount(WorkspaceWindow)
+  const wrapper = shallowMount(WorkspaceWindow, { global: { stubs: { RuneNavItem } } })
   await flushPromises()
   expect(wrapper.get('h1').text()).toBe('Tasks')
   expect(wrapper.getComponent(DecisionInbox).props('quiet')).toBe(true)
@@ -62,7 +63,7 @@ it('keeps the goals empty message out of the Tasks section', async () => {
 
 it('opens Goals without a Settings button in Workspace', async () => {
   window.history.replaceState({}, '', '/?view=workspace&section=goals')
-  const wrapper = shallowMount(WorkspaceWindow)
+  const wrapper = shallowMount(WorkspaceWindow, { global: { stubs: { RuneNavItem } } })
   await flushPromises()
   expect(wrapper.get('h1').text()).toBe('Goals')
   expect(wrapper.getComponent(DecisionInbox).props('goalsOnly')).toBe(true)
@@ -78,7 +79,7 @@ it('opens Goals without a Settings button in Workspace', async () => {
 
 it('opens the Overview graph and follows its links without remounting task history', async () => {
   window.history.replaceState({}, '', '/?view=workspace&section=overview')
-  const wrapper = shallowMount(WorkspaceWindow)
+  const wrapper = shallowMount(WorkspaceWindow, { global: { stubs: { RuneNavItem } } })
   await flushPromises()
   const history = wrapper.getComponent(TaskHistory)
   expect(history.props('active')).toBe(false)
@@ -94,7 +95,7 @@ it('opens the Overview graph and follows its links without remounting task histo
 })
 
 it('opens Preview inside Workspace and returns to the same task history', async () => {
-  const wrapper = shallowMount(WorkspaceWindow)
+  const wrapper = shallowMount(WorkspaceWindow, { global: { stubs: { RuneNavItem } } })
   await flushPromises()
   const history = wrapper.getComponent(TaskHistory)
   const openTask = history.props('openTask') as (id: string) => void
@@ -116,7 +117,7 @@ it('opens Preview inside Workspace and returns to the same task history', async 
 
 it('preserves old Preview links as embedded task previews', async () => {
   window.history.replaceState({}, '', '/?view=flight&run=legacy-task')
-  const wrapper = shallowMount(WorkspaceWindow)
+  const wrapper = shallowMount(WorkspaceWindow, { global: { stubs: { RuneNavItem } } })
   await flushPromises()
   expect(wrapper.getComponent(FlightPlayer).props()).toMatchObject({
     embedded: true,

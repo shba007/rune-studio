@@ -27,7 +27,7 @@ const lit = computed(() => {
       :key="index"
       class="dot size-0.5 rounded-full"
       :class="[
-        tone === 'down' && index === 0 ? 'bg-[#d71921]' : 'bg-[#111]',
+        tone === 'down' && index === 0 ? 'bg-attention' : 'bg-black',
         { checking: tone === 'checking' },
       ]"
       :style="{ opacity: level, animationDelay: `${index * 200}ms` }"

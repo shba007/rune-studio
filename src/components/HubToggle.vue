@@ -13,13 +13,13 @@ const model = defineModel<boolean>({ required: true })
       role="switch"
       :aria-checked="model"
       :aria-label="label"
-      class="flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-0 p-1 transition-colors"
-      :class="model ? 'bg-[#f1f1ef]' : 'bg-white/15'"
+      class="flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full p-1 transition-colors"
+      :class="model ? 'bg-rune-ink' : 'bg-rune-raised'"
       @click="model = !model"
     >
       <span
         class="size-4 rounded-full transition-transform"
-        :class="model ? 'translate-x-5 bg-[#111]' : 'translate-x-0 bg-zinc-400'"
+        :class="model ? 'translate-x-5 bg-black' : 'translate-x-0 bg-rune-text-3'"
       />
     </button>
   </HubRow>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import RuneButton from './RuneButton.vue'
 import { computed, ref } from 'vue'
 
 const props = defineProps<{ text: string; waiting: boolean }>()
@@ -10,7 +11,7 @@ const long = computed(() => props.text.length > LONG || props.text.split('\n').l
 
 <template>
   <section
-    class="rounded-rune-panel border border-rune-outline bg-rune-surface p-rune-2 font-rune-reading text-zinc-100"
+    class="rounded-rune-panel bg-rune-surface p-rune-2 font-rune-reading text-rune-ink"
     aria-label="Answer"
   >
     <div
@@ -23,30 +24,31 @@ const long = computed(() => props.text.length > LONG || props.text.split('\n').l
         <span
           v-for="index in 49"
           :key="index"
-          class="skeleton-dot size-1 rounded-full bg-[#f1f1ef]"
+          class="skeleton-dot size-1 rounded-full bg-rune-ink"
           :style="{
             animationDelay: `${Math.hypot(((index - 1) % 7) - 3, Math.floor((index - 1) / 7) - 3) * 140}ms`,
           }"
         />
       </div>
       <div class="min-w-0">
-        <p class="m-0 text-rune-caption text-zinc-200">Reading your capture</p>
-        <p class="mt-1 mb-0 text-rune-caption text-zinc-500">Escape</p>
+        <p class="m-0 text-rune-caption text-rune-ink">Reading your capture</p>
+        <p class="mt-1 mb-0 text-rune-caption text-rune-text-2">Escape</p>
       </div>
     </div>
     <template v-else>
       <p class="m-0 text-rune-body whitespace-pre-line" :class="expanded ? '' : 'line-clamp-4'">
         {{ text || 'No answer was given.' }}
       </p>
-      <button
+      <RuneButton
+        variant="ghost"
+        size="sm"
         v-if="long"
-        type="button"
-        class="mt-2 cursor-pointer text-rune-caption text-zinc-400 uppercase hover:text-white"
+        class="mt-2"
         :aria-expanded="expanded"
         @click="expanded = !expanded"
       >
         {{ expanded ? 'Less' : 'More' }}
-      </button>
+      </RuneButton>
     </template>
   </section>
 </template>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import RuneNavItem from './RuneNavItem.vue'
 import { listen } from '@tauri-apps/api/event'
 import { useDebounceFn } from '@vueuse/core'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -87,31 +88,8 @@ const SECTIONS: { id: Section; label: string; subtitle: string; icon: IconName }
     icon: 'logo',
   },
 ]
-const search = ref('')
-const keywords: Partial<Record<Section, string>> = {
-  models:
-    'connection backend infer base url api key agent verifier analysis voice microphone transcription decision advisor resolution fast checks',
-  capture:
-    'screen screenshot image video resolution native highlights entities regions depth landmarks visibility',
-  data: 'goal context health mind finance classification consent storage life privacy',
-  developer: 'logs debug capture input animation diagnostics',
-  general: 'thinking safety approval permission',
-  agents: 'external host bridge execution desktop outside',
-  tools: 'kit mcp tools read-only endpoint plugins',
-  shortcuts: 'hotkey keyboard keys stop summon toggle',
-  about: 'version update help docs feedback license',
-}
 const SYSTEM_SECTIONS: Section[] = ['developer', 'about']
-const visible = computed(() =>
-  SECTIONS.filter((item) => {
-    const text = `${item.label} ${item.subtitle} ${keywords[item.id] ?? ''}`.toLowerCase()
-    return search.value
-      .trim()
-      .toLowerCase()
-      .split(/\s+/)
-      .every((word) => text.includes(word))
-  }),
-)
+const visible = SECTIONS
 
 const asked = new URLSearchParams(location.search).get('section')
 if (['artifacts', 'tasks', 'goals'].includes(asked ?? ''))
@@ -181,31 +159,18 @@ onBeforeUnmount(() => {
 
 <template>
   <main
-    class="flex h-screen flex-col overflow-hidden bg-black font-rune-reading text-zinc-100"
+    class="flex h-screen flex-col overflow-hidden bg-black font-rune-reading text-rune-ink"
     data-testid="settings"
   >
     <TitleBar title="Settings" controls="close" />
     <div class="flex min-h-0 flex-1">
       <nav
-        class="flex w-64 shrink-0 flex-col gap-1 border-r border-white/8 bg-[#101010] p-4"
+        class="flex w-64 shrink-0 flex-col gap-1 bg-rune-sunken p-4"
         aria-label="Settings sections"
       >
-        <h2 class="mx-rune-2 mt-1 mb-4 font-sans text-rune-subtitle font-medium text-zinc-100">
+        <h2 class="mx-rune-2 mt-1 mb-6 font-sans text-rune-subtitle font-medium text-rune-ink">
           Settings
         </h2>
-        <label class="relative mb-4 block">
-          <AppIcon
-            name="search"
-            class="pointer-events-none absolute top-rune-2 left-3 text-zinc-500"
-          />
-          <input
-            v-model="search"
-            type="search"
-            aria-label="Search sections"
-            placeholder="Search sections"
-            class="h-10 w-full rounded-full bg-white/6 pr-3 pl-10 text-rune-body text-zinc-100 placeholder:text-zinc-500"
-          />
-        </label>
         <div class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
           <template v-for="(item, index) in visible" :key="item.id">
             <hr
@@ -214,28 +179,18 @@ onBeforeUnmount(() => {
                 index > 0 &&
                 !SYSTEM_SECTIONS.includes(visible[index - 1]!.id)
               "
-              class="my-2 border-0 border-t border-white/8"
+              class="my-0 h-4 border-0"
               data-testid="nav-divider"
             />
-            <button
-              type="button"
-              class="flex h-10 w-full cursor-pointer items-center gap-rune-2 rounded-xl border-0 px-rune-2 text-left text-rune-body transition"
-              :class="
-                section === item.id
-                  ? 'bg-white/10 text-zinc-50'
-                  : 'bg-transparent text-zinc-400 hover:bg-white/5 hover:text-zinc-100'
-              "
-              :aria-current="section === item.id ? 'page' : undefined"
+            <RuneNavItem
+              :selected="section === item.id"
               :data-testid="`nav-${item.id}`"
               @click="section = item.id"
             >
               <AppIcon :name="item.icon" />
               {{ item.label }}
-            </button>
+            </RuneNavItem>
           </template>
-          <p v-if="!visible.length" role="status" class="px-rune-2 text-rune-body text-zinc-500">
-            No matching sections.
-          </p>
         </div>
       </nav>
 
@@ -243,13 +198,13 @@ onBeforeUnmount(() => {
         <div class="mx-auto w-full max-w-4xl">
           <header class="mb-8 flex flex-col gap-1">
             <h1 class="m-0 font-sans text-rune-title">{{ current.label }}</h1>
-            <p class="m-0 text-rune-body text-zinc-500">{{ current.subtitle }}</p>
+            <p class="m-0 text-rune-body text-rune-text-2">{{ current.subtitle }}</p>
           </header>
 
           <p
             v-if="agent.notice.value"
             class="mt-0 mb-6 text-rune-body"
-            :class="agent.noticeKind.value === 'info' ? 'text-zinc-300' : 'text-error'"
+            :class="agent.noticeKind.value === 'info' ? 'text-rune-text-2' : 'text-error'"
             role="status"
           >
             {{ agent.notice.value }}

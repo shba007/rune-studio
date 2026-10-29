@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import RuneNavItem from './RuneNavItem.vue'
+import RuneButton from './RuneButton.vue'
 import { listen } from '@tauri-apps/api/event'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useAgent } from '@/composables/useAgent'
@@ -132,7 +134,7 @@ onBeforeUnmount(() => {
 
 <template>
   <main
-    class="flex h-screen flex-col overflow-hidden bg-black font-rune-reading text-zinc-100"
+    class="flex h-screen flex-col overflow-hidden bg-black font-rune-reading text-rune-ink"
     data-testid="workspace"
   >
     <TitleBar title="Workspace" />
@@ -147,20 +149,13 @@ onBeforeUnmount(() => {
     />
     <div v-show="!previewTask" class="flex min-h-0 flex-1">
       <nav
-        class="flex w-48 shrink-0 flex-col gap-rune-detail border-r border-white/8 bg-[#0c0c0c] p-rune-2"
+        class="flex w-48 shrink-0 flex-col gap-rune-detail bg-rune-sunken p-rune-2"
         aria-label="Workspace sections"
       >
-        <button
+        <RuneNavItem
           v-for="item in sections"
           :key="item.id"
-          type="button"
-          class="flex min-h-10 cursor-pointer items-center gap-rune-1 rounded-rune-control px-rune-1 text-left text-rune-body transition focus-visible:outline-2 focus-visible:outline-white/60"
-          :class="
-            section === item.id
-              ? 'bg-white/10 text-zinc-50'
-              : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-100'
-          "
-          :aria-current="section === item.id ? 'page' : undefined"
+          :selected="section === item.id"
           @click="navigate(item.id)"
         >
           <AppIcon
@@ -174,30 +169,28 @@ onBeforeUnmount(() => {
                     : 'history'
             "
           />{{ item.label }}
-        </button>
+        </RuneNavItem>
       </nav>
       <section class="min-w-0 flex-1 overflow-y-auto px-8 py-6">
         <header class="mb-6">
           <div class="flex flex-wrap items-center justify-between gap-rune-2">
             <h1 class="m-0 font-sans text-rune-title">{{ current.label }}</h1>
-            <button
+            <RuneButton
+              variant="primary"
               v-if="section === 'goals' || section === 'tasks'"
-              type="button"
-              class="cursor-pointer rounded-full bg-zinc-100 px-rune-2 py-rune-1 text-rune-body text-zinc-950"
               @click="creation = { kind: section === 'goals' ? 'goal' : 'task' }"
             >
               + New {{ section === 'goals' ? 'goal' : 'task' }}
-            </button>
-            <button
+            </RuneButton>
+            <RuneButton
+              variant="primary"
               v-if="section === 'personalities'"
-              type="button"
-              class="cursor-pointer rounded-full bg-zinc-100 px-rune-2 py-rune-1 text-rune-body text-zinc-950"
               @click="personalities?.create()"
             >
               + New personality
-            </button>
+            </RuneButton>
           </div>
-          <p class="mt-rune-detail text-rune-body text-zinc-500">{{ current.subtitle }}</p>
+          <p class="mt-rune-detail text-rune-body text-rune-text-2">{{ current.subtitle }}</p>
         </header>
         <NewWorkForm
           v-if="creation"
@@ -211,7 +204,7 @@ onBeforeUnmount(() => {
           @close="creation = null"
           @saved="created"
         />
-        <p v-if="agent.notice.value" role="alert" class="text-rune-body text-zinc-400">
+        <p v-if="agent.notice.value" role="alert" class="text-rune-body text-rune-text-2">
           {{ agent.notice.value }}
         </p>
         <TaskHistory
@@ -228,14 +221,16 @@ onBeforeUnmount(() => {
           @organize="(run) => (creation = { kind: 'task', run })"
           @clear="parentFilter = null"
         />
-        <div v-if="section === 'goals'" class="text-zinc-400">
-          <button
+        <div v-if="section === 'goals'" class="text-rune-text-2">
+          <RuneButton
+            variant="ghost"
+            size="sm"
             v-if="focusGoalId"
-            class="mb-rune-3 cursor-pointer text-rune-body text-zinc-400"
+            class="mb-rune-3"
             @click="focusGoalId = null"
           >
             ← All goals
-          </button>
+          </RuneButton>
           <DecisionInbox
             goals-only
             :model="decisions"
@@ -245,13 +240,9 @@ onBeforeUnmount(() => {
             @task="openTask"
             @create-task="(id) => (creation = { kind: 'task', parent: id })"
           />
-          <button
-            type="button"
-            class="mt-8 block cursor-pointer text-rune-body text-zinc-500 hover:text-zinc-200"
-            @click="section = 'tasks'"
-          >
+          <RuneButton variant="ghost" size="sm" class="mt-8" @click="section = 'tasks'">
             View tasks
-          </button>
+          </RuneButton>
         </div>
         <DecisionInbox v-if="section === 'tasks'" quiet :model="decisions" />
         <PersonalitiesPanel v-if="section === 'personalities'" ref="personalities" />

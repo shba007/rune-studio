@@ -267,14 +267,14 @@ describe('the findings accordion', () => {
     expect(wrapper.text()).toContain('<img src=x onerror=alert(1)>')
   })
 
-  it('marks a finding without a box with a dashed badge and says so', () => {
+  it('marks a finding without a box with a muted badge and says so', () => {
     const { analysis } = fake({
       status: 'done',
       answer: 'x',
       findings: [finding(1, { box: null })],
     })
     const wrapper = mount(AnalysisCard, { props: { analysis } })
-    expect(wrapper.find('li span.border-dashed').exists()).toBe(true)
+    expect(wrapper.find('li span.text-rune-text-3').exists()).toBe(true)
     expect(wrapper.find('li button').attributes('aria-label')).toContain('no position')
   })
 

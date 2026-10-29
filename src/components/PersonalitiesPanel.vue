@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import RuneButton from './RuneButton.vue'
 import { invoke } from '@tauri-apps/api/core'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { Personality, PersonalityCatalog } from '@/types/personalities'
@@ -104,8 +105,8 @@ defineExpose({ create })
 </script>
 <template>
   <div class="flex flex-col gap-6">
-    <div class="flex items-center gap-3 border-b border-white/10 pb-5 text-label text-zinc-400">
-      <PersonalitySymbol mark="companion" class="size-8 shrink-0 text-zinc-200" />
+    <div class="flex items-center gap-3 pb-5 text-rune-caption text-rune-text-2">
+      <PersonalitySymbol mark="companion" class="size-8 shrink-0 text-rune-ink" />
       <p class="m-0 max-w-xl leading-relaxed">
         A different voice for each goal. Unassigned categories use Rune.
       </p>
@@ -117,21 +118,21 @@ defineExpose({ create })
             v-for="profile in catalog?.entries"
             :key="profile.id"
             :disabled="busy"
-            class="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-3 text-left text-label transition disabled:opacity-40"
+            class="flex cursor-pointer items-center gap-3 rounded-rune-tile px-3 py-3 text-left text-rune-caption transition disabled:opacity-40"
             :class="
               draft?.id === profile.id
-                ? 'bg-white/10 text-zinc-100'
-                : 'text-zinc-400 hover:bg-white/5'
+                ? 'bg-rune-raised text-rune-ink'
+                : 'text-rune-text-2 hover:bg-white/5'
             "
             :aria-pressed="draft?.id === profile.id"
             @click="edit(profile)"
           >
-            <span class="grid size-9 shrink-0 place-items-center rounded-xl bg-white/5"
+            <span class="grid size-9 shrink-0 place-items-center rounded-rune-tile bg-rune-surface"
               ><PersonalitySymbol :mark="profile.mark" class="size-5"
             /></span>
             <span class="min-w-0"
               ><span class="block truncate">{{ profile.name }}</span
-              ><span class="mt-1 block text-caption text-zinc-500">{{
+              ><span class="mt-1 block text-rune-heading text-rune-text-2">{{
                 profile.id === 'base'
                   ? 'Default companion'
                   : profile.categories.join(' · ') || 'No categories'
@@ -139,7 +140,7 @@ defineExpose({ create })
             >
           </button>
         </nav>
-        <details class="border-t border-white/10 pt-4 text-label text-zinc-400">
+        <details class="pt-4 text-rune-caption text-rune-text-2">
           <summary class="cursor-pointer">Draft with Rune</summary>
           <form
             class="mt-4 flex flex-col gap-3"
@@ -153,40 +154,36 @@ defineExpose({ create })
                 maxlength="80"
                 required
                 placeholder="Fitness, learning…"
-                class="min-w-0 rounded-lg bg-white/5 p-3 text-zinc-100"
+                class="min-w-0 rounded-rune-tile bg-rune-surface p-3 text-rune-ink"
             /></label>
-            <p class="m-0 text-caption leading-relaxed text-zinc-500">
+            <p class="m-0 text-rune-heading leading-relaxed text-rune-text-2">
               Only the category is sent to a verified local model. Review before saving.
             </p>
-            <button
-              type="submit"
-              :disabled="busy || !suggestionCategory.trim()"
-              class="cursor-pointer rounded-full border border-white/15 px-3 py-2 text-zinc-200 disabled:opacity-40"
-            >
+            <RuneButton type="submit" :disabled="busy || !suggestionCategory.trim()">
               {{ generating ? 'Drafting…' : 'Suggest personality' }}
-            </button>
+            </RuneButton>
           </form>
         </details>
       </aside>
       <div class="min-w-0">
-        <p v-if="suggestion" role="status" class="mb-5 text-label text-zinc-300">
+        <p v-if="suggestion" role="status" class="mb-5 text-rune-caption text-rune-text-2">
           Unsaved suggestion · review and approve below.
         </p>
         <form
           v-if="draft"
           aria-label="Edit personality"
-          class="flex flex-col gap-5 text-label"
+          class="flex flex-col gap-5 text-rune-caption"
           @submit.prevent="save"
         >
           <header class="flex items-center gap-3">
-            <span class="grid size-12 place-items-center rounded-2xl bg-white/5"
-              ><PersonalitySymbol :mark="draft.mark" class="size-6 text-zinc-100"
+            <span class="grid size-12 place-items-center rounded-rune-tile bg-rune-surface"
+              ><PersonalitySymbol :mark="draft.mark" class="size-6 text-rune-ink"
             /></span>
             <div>
-              <h2 class="m-0 text-body text-zinc-100">
+              <h2 class="m-0 text-rune-body text-rune-ink">
                 {{ expected ? draft.name : 'New personality' }}
               </h2>
-              <p class="mt-1 mb-0 text-caption text-zinc-500">
+              <p class="mt-1 mb-0 text-rune-heading text-rune-text-2">
                 {{
                   draft.id === 'base'
                     ? 'Fallback for every unassigned goal'
@@ -195,19 +192,19 @@ defineExpose({ create })
               </p>
             </div>
           </header>
-          <fieldset :disabled="busy" class="m-0 flex min-w-0 flex-col gap-5 border-0 p-0">
+          <fieldset :disabled="busy" class="m-0 flex min-w-0 flex-col gap-5 p-0">
             <div class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_180px]">
-              <label class="flex min-w-0 flex-col gap-2 text-zinc-400"
+              <label class="flex min-w-0 flex-col gap-2 text-rune-text-2"
                 >Name<input
                   v-model="draft.name"
                   required
                   maxlength="80"
-                  class="min-w-0 rounded-xl bg-white/5 p-3 text-zinc-100"
+                  class="min-w-0 rounded-rune-tile bg-rune-surface p-3 text-rune-ink"
               /></label>
-              <label class="flex min-w-0 flex-col gap-2 text-zinc-400"
+              <label class="flex min-w-0 flex-col gap-2 text-rune-text-2"
                 >Orb symbol<select
                   v-model="draft.mark"
-                  class="min-w-0 rounded-xl bg-[#1b1b1b] p-3 text-zinc-100"
+                  class="min-w-0 rounded-rune-tile bg-rune-raised p-3 text-rune-ink"
                 >
                   <option v-for="symbol in personalitySymbols" :key="symbol.id" :value="symbol.id">
                     {{ symbol.label }}
@@ -215,48 +212,41 @@ defineExpose({ create })
                 </select></label
               >
             </div>
-            <label v-if="!expected" class="flex flex-col gap-2 text-zinc-400"
+            <label v-if="!expected" class="flex flex-col gap-2 text-rune-text-2"
               >File ID<input
                 v-model="draft.id"
                 required
                 pattern="[a-z0-9-]+"
                 maxlength="64"
                 placeholder="fitness-coach"
-                class="rounded-xl bg-white/5 p-3 text-zinc-100"
+                class="rounded-rune-tile bg-rune-surface p-3 text-rune-ink"
             /></label>
-            <label v-if="draft.id !== 'base'" class="flex flex-col gap-2 text-zinc-400"
+            <label v-if="draft.id !== 'base'" class="flex flex-col gap-2 text-rune-text-2"
               >Goal categories<input
                 v-model="categories"
                 placeholder="fitness, running"
-                class="rounded-xl bg-white/5 p-3 text-zinc-100"
+                class="rounded-rune-tile bg-rune-surface p-3 text-rune-ink"
             /></label>
-            <label class="flex flex-col gap-2 text-zinc-400"
+            <label class="flex flex-col gap-2 text-rune-text-2"
               >Communication style<textarea
                 v-model="draft.prompt"
                 required
                 rows="8"
                 maxlength="8000"
-                class="resize-y rounded-xl bg-white/5 p-4 text-body leading-relaxed text-zinc-100"
+                class="resize-y rounded-rune-tile bg-rune-surface p-4 text-rune-body leading-relaxed text-rune-ink"
               />
             </label>
-            <div class="flex flex-wrap items-center gap-4 border-t border-white/10 pt-5">
-              <button
-                type="submit"
-                class="cursor-pointer rounded-full bg-zinc-100 px-5 py-2 text-zinc-950"
-              >
+            <div class="flex flex-wrap items-center gap-4 pt-5">
+              <RuneButton variant="primary" type="submit">
                 {{ pending ? 'Saving…' : 'Approve and save' }}
-              </button>
-              <button
-                type="button"
-                class="cursor-pointer text-zinc-400 hover:text-white"
-                @click="load"
-              >
+              </RuneButton>
+              <RuneButton variant="ghost" size="sm" @click="load">
                 Reload saved version
-              </button>
+              </RuneButton>
             </div>
           </fieldset>
         </form>
-        <details class="mt-6 text-caption leading-relaxed text-zinc-500">
+        <details class="mt-6 text-rune-heading leading-relaxed text-rune-text-2">
           <summary class="cursor-pointer">Storage &amp; boundaries</summary>
           <p>
             Styles change communication. Execution permissions, consent and output contracts remain
@@ -269,10 +259,10 @@ defineExpose({ create })
         </details>
       </div>
     </div>
-    <p v-if="error" role="alert" class="m-0 text-label text-error">
+    <p v-if="error" role="alert" class="m-0 text-rune-caption text-error">
       {{ error }} Your draft is preserved.
     </p>
-    <p v-if="saved" role="status" class="m-0 text-label text-zinc-300">
+    <p v-if="saved" role="status" class="m-0 text-rune-caption text-rune-text-2">
       Personality saved. New model turns use the approved style.
     </p>
   </div>

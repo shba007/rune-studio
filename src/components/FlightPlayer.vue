@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import RuneSegment from './RuneSegment.vue'
+import RuneIconButton from './RuneIconButton.vue'
+import RuneButton from './RuneButton.vue'
 import ModelIcon from './ModelIcon.vue'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
@@ -350,14 +353,14 @@ const duration = computed(() =>
       : durationText(header.value.durationSecs),
 )
 const outcomeClass = computed(() =>
-  header.value?.outcome === 'failed' ? 'text-error' : 'text-zinc-100',
+  header.value?.outcome === 'failed' ? 'text-error' : 'text-rune-ink',
 )
 const outcomeDot = computed(() =>
   header.value?.outcome === 'failed'
-    ? 'bg-[#d71921]'
+    ? 'bg-attention'
     : header.value?.outcome === 'succeeded'
-      ? 'bg-[#f1f1ef]'
-      : 'border border-zinc-400',
+      ? 'bg-rune-ink'
+      : 'bg-rune-raised',
 )
 const verdictLine = computed(() => {
   const verdict = header.value?.verdict
@@ -367,23 +370,19 @@ const verdictLine = computed(() => {
 
 <template>
   <main
-    class="flex min-h-0 flex-col overflow-hidden bg-black text-zinc-100"
+    class="flex min-h-0 flex-col overflow-hidden bg-black text-rune-ink"
     :class="embedded ? 'h-full flex-1' : 'h-screen'"
     data-testid="flight"
   >
     <TitleBar v-if="!embedded" title="Workspace" />
     <section v-if="!header" class="flex min-h-0 flex-1 flex-col gap-3 p-6">
-      <button
-        type="button"
-        class="self-start cursor-pointer text-label text-zinc-300 hover:text-white"
-        @click="back"
-      >
+      <RuneButton variant="ghost" size="sm" class="self-start" @click="back">
         Back to Tasks
-      </button>
-      <p v-if="flight.loading.value" class="m-0 text-zinc-400" data-testid="loading">Loading…</p>
+      </RuneButton>
+      <p v-if="flight.loading.value" class="m-0 text-rune-text-2" data-testid="loading">Loading…</p>
       <p
         v-else-if="flight.problem.value"
-        class="m-0 text-zinc-300"
+        class="m-0 text-rune-text-2"
         role="alert"
         data-testid="problem"
       >
@@ -392,47 +391,46 @@ const verdictLine = computed(() => {
     </section>
 
     <template v-else>
-      <header
-        class="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2 border-b border-white/10 px-5 py-3"
-      >
-        <button
-          type="button"
-          class="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full border-0 bg-transparent text-zinc-300 hover:bg-white/10"
-          aria-label="Back to Tasks"
+      <header class="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2 px-5 py-3">
+        <RuneIconButton
+          variant="ghost"
+          size="sm"
+          label="Back to Tasks"
           data-testid="back"
           @click="back"
         >
           <AppIcon name="back" />
-        </button>
+        </RuneIconButton>
         <div class="flex min-w-0 flex-1 flex-col">
           <select
             v-if="attempts.length > 1"
             v-model="selectedAttempt"
             aria-label="Execution attempt"
-            class="mb-2 self-start rounded-lg bg-white/10 px-2 py-1 text-label text-zinc-100"
+            class="mb-2 self-start rounded-rune-tile bg-rune-raised px-2 py-1 text-rune-caption text-rune-ink"
             @change="openRun(selectedAttempt)"
           >
             <option v-for="(id, index) in attempts" :key="id" :value="id">
               Attempt {{ index + 1 }}{{ index === attempts.length - 1 ? ' · Latest' : '' }}
             </option>
           </select>
-          <button
+          <RuneButton
             v-if="parentGoal"
-            class="max-w-xs cursor-pointer truncate text-left text-label text-zinc-400 hover:text-white"
+            variant="link"
+            class="max-w-xs truncate"
             @click="emit('goal', parentGoal.id)"
           >
             ← {{ parentGoal.title }}
-          </button>
-          <h1 class="m-0 truncate text-title" :title="header.task" data-testid="task">
+          </RuneButton>
+          <h1 class="m-0 truncate text-rune-title" :title="header.task" data-testid="task">
             {{ header.task }}
           </h1>
-          <p class="m-0 flex items-center gap-2 text-caption text-zinc-500 uppercase">
+          <p class="m-0 flex items-center gap-2 text-rune-heading text-rune-text-2 uppercase">
             <span
               v-if="flight.live.value"
-              class="flex items-center gap-1 text-zinc-100"
+              class="flex items-center gap-1 text-rune-ink"
               data-testid="live"
               ><span
-                class="size-1.5 motion-safe:animate-pulse rounded-full bg-[#d71921]"
+                class="size-1.5 motion-safe:animate-pulse rounded-full bg-attention"
               />Live</span
             >
             <span v-else class="flex items-center gap-1" :class="outcomeClass" data-testid="outcome"
@@ -449,26 +447,29 @@ const verdictLine = computed(() => {
             <span>· <WhenText :iso="header.startedUtc" /></span>
           </p>
         </div>
-        <dl class="m-0 flex flex-wrap gap-x-6 gap-y-1 text-caption uppercase" data-testid="meta">
+        <dl
+          class="m-0 flex flex-wrap gap-x-6 gap-y-1 text-rune-heading uppercase"
+          data-testid="meta"
+        >
           <div class="flex flex-col">
-            <dt class="text-zinc-500">Duration</dt>
-            <dd class="m-0 text-zinc-100 tabular-nums">{{ duration ?? '—' }}</dd>
+            <dt class="text-rune-text-2">Duration</dt>
+            <dd class="m-0 text-rune-ink tabular-nums">{{ duration ?? '—' }}</dd>
           </div>
           <div class="flex flex-col">
-            <dt class="text-zinc-500">Steps</dt>
-            <dd class="m-0 text-zinc-100 tabular-nums">{{ header.steps }}</dd>
+            <dt class="text-rune-text-2">Steps</dt>
+            <dd class="m-0 text-rune-ink tabular-nums">{{ header.steps }}</dd>
           </div>
           <div class="flex flex-col">
-            <dt class="text-zinc-500">Retries</dt>
-            <dd class="m-0 text-zinc-100 tabular-nums">{{ header.retries }}</dd>
+            <dt class="text-rune-text-2">Retries</dt>
+            <dd class="m-0 text-rune-ink tabular-nums">{{ header.retries }}</dd>
           </div>
           <div v-if="outside" class="flex flex-col">
-            <dt class="text-zinc-500">Agent</dt>
-            <dd class="m-0 text-zinc-100 tabular-nums">{{ header.source }}</dd>
+            <dt class="text-rune-text-2">Agent</dt>
+            <dd class="m-0 text-rune-ink tabular-nums">{{ header.source }}</dd>
           </div>
           <div v-if="!outside && header.model" class="flex flex-col">
-            <dt class="text-zinc-500">Model</dt>
-            <dd class="m-0 flex items-center gap-2 text-zinc-100 tabular-nums">
+            <dt class="text-rune-text-2">Model</dt>
+            <dd class="m-0 flex items-center gap-2 text-rune-ink tabular-nums">
               <ModelIcon :model="header.model" />{{ header.model }}
             </dd>
           </div>
@@ -483,7 +484,7 @@ const verdictLine = computed(() => {
       />
       <p
         v-else-if="steps.length === 0 && !grouped"
-        class="m-0 p-6 text-zinc-400"
+        class="m-0 p-6 text-rune-text-2"
         data-testid="no-steps"
       >
         This task ended before it took a single step, so there is nothing to replay.
@@ -514,57 +515,44 @@ const verdictLine = computed(() => {
             role="toolbar"
             aria-label="Playback"
           >
-            <button
-              type="button"
-              class="grid size-7 cursor-pointer place-items-center rounded-full border border-white/20 hover:bg-white/10"
-              aria-label="Previous step"
+            <RuneIconButton
+              size="sm"
+              label="Previous step"
               data-testid="prev"
               @click="previousStep"
             >
               <AppIcon name="prev" />
-            </button>
-            <button
-              type="button"
-              class="grid size-8 cursor-pointer place-items-center rounded-full bg-[#f1f1ef] text-[#111] hover:bg-white"
-              :aria-label="playing ? 'Pause' : 'Play'"
+            </RuneIconButton>
+            <RuneIconButton
+              variant="primary"
+              size="sm"
+              :label="playing ? 'Pause' : 'Play'"
               data-testid="play"
               @click="toggle"
             >
               <AppIcon :name="playing ? 'pause' : 'play'" />
-            </button>
-            <button
-              type="button"
-              class="grid size-7 cursor-pointer place-items-center rounded-full border border-white/20 hover:bg-white/10"
-              aria-label="Next step"
-              data-testid="next"
-              @click="nextStep"
-            >
+            </RuneIconButton>
+            <RuneIconButton size="sm" label="Next step" data-testid="next" @click="nextStep">
               <AppIcon name="next" />
-            </button>
-            <span class="text-label text-zinc-300 tabular-nums" data-testid="time"
+            </RuneIconButton>
+            <span class="text-rune-caption text-rune-text-2 tabular-nums" data-testid="time"
               >{{ clock(timeMs) }} / {{ clock(flight.total.value) }}</span
             >
             <span class="ml-2 flex gap-1" role="group" aria-label="Speed">
-              <button
+              <RuneSegment
                 v-for="speed in SPEEDS"
                 :key="speed"
-                type="button"
-                class="h-6 cursor-pointer rounded-full border px-2 text-label"
-                :class="
-                  rate === speed
-                    ? 'border-white/60 bg-white/10'
-                    : 'border-white/15 text-zinc-400 hover:text-zinc-200'
-                "
+                :selected="rate === speed"
                 :aria-pressed="rate === speed"
                 @click="setRate(speed)"
               >
                 {{ speed }}x
-              </button>
+              </RuneSegment>
             </span>
             <span class="ml-auto flex items-center gap-1">
-              <button
-                type="button"
-                class="inline-flex h-6 cursor-pointer items-center gap-2 rounded-full border border-white/20 bg-transparent px-3 text-label text-zinc-100 uppercase hover:bg-white/10"
+              <RuneButton
+                variant="ghost"
+                size="sm"
                 :aria-pressed="!showTyped"
                 title="Hide what was typed (passwords, messages) in the player"
                 data-testid="typed-toggle"
@@ -572,28 +560,26 @@ const verdictLine = computed(() => {
               >
                 <span
                   class="size-1.5 rounded-full"
-                  :class="showTyped ? 'border border-zinc-400' : 'bg-[#f1f1ef]'"
+                  :class="showTyped ? 'bg-rune-raised' : 'bg-rune-ink'"
                 />
                 Mask secrets
-              </button>
-              <button
+              </RuneButton>
+              <RuneIconButton
+                size="sm"
                 v-if="hasVideo"
-                type="button"
-                class="grid size-6 cursor-pointer place-items-center rounded-full border border-white/20 hover:bg-white/10"
-                aria-label="Full screen"
+                label="Full screen"
                 @click="stage?.fullscreen()"
               >
                 <AppIcon name="expand" size="sm" />
-              </button>
-              <button
-                type="button"
-                class="inline-flex h-6 cursor-pointer items-center gap-1 rounded-full border border-white/20 px-3 text-label uppercase hover:bg-white/10"
+              </RuneIconButton>
+              <RuneButton
+                size="sm"
                 :aria-pressed="drawerOpen"
                 data-testid="details"
                 @click="drawerOpen = !drawerOpen"
               >
                 <AppIcon name="drawer" size="sm" /> Details
-              </button>
+              </RuneButton>
             </span>
           </div>
 
@@ -616,7 +602,7 @@ const verdictLine = computed(() => {
             @seek="seek"
           />
 
-          <p v-if="notice" class="m-0 px-4 pb-2 text-status text-zinc-400" role="status">
+          <p v-if="notice" class="m-0 px-4 pb-2 text-rune-caption text-rune-text-2" role="status">
             {{ notice }}
           </p>
         </div>

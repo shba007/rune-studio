@@ -18,6 +18,7 @@ import IconArrowsOut from '~icons/ph/arrows-out-simple-bold'
 import IconEyeSlash from '~icons/ph/eye-slash-fill'
 import IconHistory from '~icons/ph/clock-counter-clockwise-fill'
 import IconX from '~icons/ph/x-bold'
+import IconPlus from '~icons/ph/plus-bold'
 import IconMinus from '~icons/ph/minus-bold'
 import IconArrowsIn from '~icons/ph/arrows-in-simple-bold'
 import IconCopy from '~icons/ph/copy-fill'
@@ -79,6 +80,7 @@ export const icons = {
   thinking: IconBrain,
   fast: IconLightning,
   tune: IconSlidersHorizontal,
+  add: IconPlus,
   video: IconVideo,
   play: IconPlay,
   pause: IconPause,

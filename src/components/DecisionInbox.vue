@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import RuneButton from './RuneButton.vue'
 import { computed } from 'vue'
 import { useDecisions, type DecisionModel } from '@/composables/useDecisions'
 import DecisionCard from './DecisionCard.vue'
@@ -35,21 +36,17 @@ const visible = computed(() =>
 </script>
 <template>
   <div class="flex shrink-0 flex-col gap-3">
-    <p v-if="decisions.error.value" role="alert" class="m-0 text-label text-error">
+    <p v-if="decisions.error.value" role="alert" class="m-0 text-rune-caption text-error">
       {{ decisions.error.value }}
     </p>
-    <p v-if="!compact && !quiet && !visible.length" class="m-0 text-rune-body text-zinc-400">
+    <p v-if="!compact && !quiet && !visible.length" class="m-0 text-rune-body text-rune-text-2">
       No goals yet. Use + New goal, or type an outcome in the Rune pill.
     </p>
     <article
       v-for="entry in visible"
       :key="entry.id"
       class="flex min-w-0 flex-col [overflow-wrap:anywhere]"
-      :class="
-        !compact && entry.kind === 'goal'
-          ? 'gap-6 border-b border-white/10 pb-10 mb-8 last:border-0 last:pb-0 last:mb-0'
-          : 'gap-2'
-      "
+      :class="!compact && entry.kind === 'goal' ? 'gap-6 pb-10 mb-8 last:pb-0 last:mb-0' : 'gap-2'"
     >
       <GoalSummary v-if="!compact && entry.kind === 'goal'" :entry="entry" />
       <GoalWorkPanel
@@ -62,39 +59,42 @@ const visible = computed(() =>
         @create="(id) => emit('createTask', id)"
       />
       <template v-if="compact || entry.kind !== 'goal'">
-        <p class="m-0 text-label text-zinc-300 whitespace-pre-wrap">{{ entry.text }}</p>
-        <p v-if="entry.kind === 'goal' && entry.category" class="m-0 text-caption text-zinc-500">
+        <p class="m-0 text-rune-caption text-rune-text-2 whitespace-pre-wrap">{{ entry.text }}</p>
+        <p
+          v-if="entry.kind === 'goal' && entry.category"
+          class="m-0 text-rune-heading text-rune-text-2"
+        >
           Category: {{ entry.category }}
         </p>
-        <p v-if="entry.error" role="alert" class="m-0 text-label text-error">
+        <p v-if="entry.error" role="alert" class="m-0 text-rune-caption text-error">
           {{ entry.error }}
         </p>
         <div
           v-if="entry.approvedGoal && entry.question"
-          class="rounded-2xl border border-white/10 p-4 text-label"
+          class="rounded-rune-tile p-4 text-rune-caption bg-rune-raised"
         >
-          <p class="mt-0 text-caption text-zinc-400 uppercase">Approved definition</p>
+          <p class="mt-0 text-rune-heading text-rune-text-2 uppercase">Approved definition</p>
           <dl class="m-0">
             <div v-for="(value, key) in entry.approvedGoal" :key="key" class="mb-2 last:mb-0">
-              <dt class="text-caption text-zinc-500 uppercase">{{ key }}</dt>
-              <dd class="m-0 text-zinc-200">{{ value }}</dd>
+              <dt class="text-rune-heading text-rune-text-2 uppercase">{{ key }}</dt>
+              <dd class="m-0 text-rune-ink">{{ value }}</dd>
             </div>
           </dl>
-          <p class="mb-0 text-caption text-zinc-400">
+          <p class="mb-0 text-rune-heading text-rune-text-2">
             Review proposed updates below before approving a replacement.
           </p>
         </div>
-        <dl v-if="entry.goal" class="m-0 rounded-2xl border border-white/10 p-4 text-label">
+        <dl v-if="entry.goal" class="m-0 rounded-rune-tile p-4 text-rune-caption bg-rune-raised">
           <div v-for="(value, key) in entry.goal" :key="key" class="mb-2 last:mb-0">
-            <dt class="text-caption text-zinc-500 uppercase">{{ key }}</dt>
-            <dd class="m-0 text-zinc-200 whitespace-pre-wrap">{{ value }}</dd>
+            <dt class="text-rune-heading text-rune-text-2 uppercase">{{ key }}</dt>
+            <dd class="m-0 text-rune-ink whitespace-pre-wrap">{{ value }}</dd>
           </div>
         </dl>
       </template>
       <p
         v-if="!compact && entry.kind === 'goal' && entry.error"
         role="alert"
-        class="m-0 text-label text-error"
+        class="m-0 text-rune-caption text-error"
       >
         {{ entry.error }}
       </p>
@@ -110,7 +110,7 @@ const visible = computed(() =>
       <p
         v-else-if="entry.status !== 'goal_ready'"
         role="status"
-        class="m-0 text-label text-zinc-400"
+        class="m-0 text-rune-caption text-rune-text-2"
       >
         {{
           entry.status === 'goal_ready'
@@ -125,24 +125,24 @@ const visible = computed(() =>
         }}
       </p>
       <div v-if="entry.status === 'goal_ready'" class="flex flex-wrap items-center gap-3">
-        <button
+        <RuneButton
+          variant="primary"
           v-if="entry.status === 'goal_ready' && !compact"
-          type="button"
           :disabled="decisions.pending.value"
-          class="inline-flex min-h-10 items-center gap-2 self-start cursor-pointer rounded-full bg-zinc-100 px-5 py-2 text-label text-zinc-950 disabled:opacity-40"
+          class="self-start"
           @click="decisions.comparePathways(entry)"
         >
           {{ entry.pathways ? 'Compare new alternatives' : 'Compare pathways' }}
-        </button>
-        <button
+        </RuneButton>
+        <RuneButton
+          variant="ghost"
           v-if="entry.status === 'goal_ready'"
-          type="button"
           :disabled="decisions.pending.value"
-          class="min-h-10 self-start cursor-pointer rounded-full px-4 py-2 text-label text-zinc-400 hover:bg-white/5 hover:text-zinc-100 disabled:opacity-40"
+          class="self-start"
           @click="decisions.refine(entry)"
         >
           Refine goal
-        </button>
+        </RuneButton>
       </div>
       <GoalPathways
         v-if="!compact && entry.pathways"

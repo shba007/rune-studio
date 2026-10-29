@@ -68,7 +68,7 @@ it('submits requests without user scheduling controls while another task runs', 
   expect(wrapper.get('[aria-label="Cancel analysis"]').attributes('disabled')).toBeUndefined()
   await wrapper.setProps({ analysisBusy: false })
   expect(wrapper.get('textarea').attributes('disabled')).toBeDefined()
-  expect(wrapper.get('textarea').classes()).toContain('placeholder:text-zinc-400')
+  expect(wrapper.get('textarea').classes()).toContain('placeholder:text-rune-text-3')
   expect(wrapper.get('[aria-label="Analyze"]').attributes('disabled')).toBeDefined()
   const submitted = analysisSubmit.mock.calls.length
   await wrapper.get('textarea').trigger('keydown', { key: 'Enter' })

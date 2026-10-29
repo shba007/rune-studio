@@ -14,24 +14,27 @@ const failed = (phase: string) => ['failed', 'blocked'].includes(phase)
 <template>
   <section
     aria-label="Task timelines"
-    class="mx-4 my-3 max-h-64 shrink-0 overflow-auto rounded-2xl border border-white/15"
+    class="mx-4 my-3 max-h-64 shrink-0 overflow-auto rounded-rune-tile bg-rune-raised"
   >
     <div
       v-for="task in timeline.rows"
       :key="task.id"
-      class="flex min-h-16 border-b border-white/10 last:border-b-0"
+      class="flex min-h-16"
       :data-task-row="task.id"
     >
-      <div class="w-44 shrink-0 border-r border-white/10 px-3 py-2">
-        <p class="m-0 line-clamp-2 text-label text-zinc-100" :title="task.title">
+      <div class="w-44 shrink-0 px-3 py-2">
+        <p class="m-0 line-clamp-2 text-rune-caption text-rune-ink" :title="task.title">
           {{ task.title }}
         </p>
-        <p class="m-0 text-caption" :class="failed(task.phase) ? 'text-error' : 'text-zinc-400'">
+        <p
+          class="m-0 text-rune-heading"
+          :class="failed(task.phase) ? 'text-error' : 'text-rune-text-2'"
+        >
           {{ task.kind === 'desktop' ? 'Desktop' : 'Reasoning' }} · {{ task.phase }}
         </p>
       </div>
       <div
-        class="relative min-h-20 min-w-24 flex-1 overflow-hidden bg-[#101010]"
+        class="relative min-h-20 min-w-24 flex-1 overflow-hidden bg-rune-sunken"
         role="slider"
         tabindex="0"
         :aria-label="`Seek ${task.title}`"
@@ -48,7 +51,7 @@ const failed = (phase: string) => ['failed', 'blocked'].includes(phase)
           :key="`${segment.title}-${segment.start}`"
           :data-preparation-phase="segment.title"
           type="button"
-          class="absolute inset-y-0 cursor-pointer overflow-hidden border-r border-dashed border-white/15 bg-white/[0.025] text-left text-zinc-500 hover:bg-white/5"
+          class="absolute inset-y-0 cursor-pointer overflow-hidden bg-white/[0.025] text-left text-rune-text-2 hover:bg-white/5"
           :style="{
             left: `${(segment.start / timeline.total) * 100}%`,
             width: `${((segment.end - segment.start) / timeline.total) * 100}%`,
@@ -57,14 +60,14 @@ const failed = (phase: string) => ['failed', 'blocked'].includes(phase)
           :title="`${segment.title} · ${clock(segment.end - segment.start)}`"
           @click.stop="emit('seek', segment.start)"
         >
-          <span class="absolute top-2 left-2 text-caption">{{ segment.title }}</span
+          <span class="absolute top-2 left-2 text-rune-heading">{{ segment.title }}</span
           ><span
             class="pointer-events-none absolute right-0 bottom-3 left-0 h-3 timeline-dots opacity-25"
           />
         </button>
         <div
-          class="absolute inset-y-0 border-l border-white/10"
-          :class="failed(task.phase) ? '!border-[#d71921]/50 !bg-[#d71921]/10' : ''"
+          class="absolute inset-y-0"
+          :class="failed(task.phase) ? '!bg-attention/10' : ''"
           :style="{
             left: `${(task.start / timeline.total) * 100}%`,
             width: `${((task.end - task.start) / timeline.total) * 100}%`,
@@ -76,9 +79,13 @@ const failed = (phase: string) => ['failed', 'blocked'].includes(phase)
           :key="index"
           data-task-step=""
           type="button"
-          class="absolute inset-y-0 min-w-1 cursor-pointer overflow-hidden border-l border-white/10 text-zinc-200 hover:bg-white/[0.07]"
+          class="absolute inset-y-0 min-w-1 cursor-pointer overflow-hidden text-rune-ink hover:bg-white/[0.07]"
           :class="
-            failed(step.phase) ? '!text-error' : step.phase === 'cancelled' ? '!text-zinc-500' : ''
+            failed(step.phase)
+              ? '!text-error'
+              : step.phase === 'cancelled'
+                ? '!text-rune-text-2'
+                : ''
           "
           :style="{
             left: `${(step.start / timeline.total) * 100}%`,
@@ -93,13 +100,15 @@ const failed = (phase: string) => ['failed', 'blocked'].includes(phase)
             size="sm"
             class="absolute top-2 left-1.5 opacity-80"
           />
-          <span class="absolute top-2 right-1.5 text-caption tabular-nums" data-step-duration>{{
-            clock(Math.max(0, step.end - step.start))
-          }}</span>
+          <span
+            class="absolute top-2 right-1.5 text-rune-heading tabular-nums"
+            data-step-duration
+            >{{ clock(Math.max(0, step.end - step.start)) }}</span
+          >
           <span class="pointer-events-none absolute right-0 bottom-3 left-0 h-3 timeline-dots" />
         </button>
         <span
-          class="pointer-events-none absolute inset-y-0 w-px bg-[#f1f1ef]"
+          class="pointer-events-none absolute inset-y-0 w-px bg-rune-ink"
           :style="{ left: `${(timeMs / timeline.total) * 100}%` }"
           data-task-playhead=""
         />

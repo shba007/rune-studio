@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import RuneIconButton from './RuneIconButton.vue'
 import { useIntersectionObserver } from '@vueuse/core'
 import { ref, useTemplateRef } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
@@ -42,23 +43,23 @@ const { stop } = useIntersectionObserver(card, async ([entry]) => {
 })
 
 const TONE = {
-  ok: 'bg-[#f1f1ef]',
-  bad: 'bg-[#d71921]',
-  stopped: 'border border-zinc-400',
-  open: 'border border-dashed border-zinc-400',
+  ok: 'bg-rune-ink',
+  bad: 'bg-attention',
+  stopped: 'bg-rune-raised',
+  open: 'bg-rune-raised',
 } as const
 </script>
 
 <template>
   <article
     ref="card"
-    class="group flex w-full shrink-0 flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#101010] text-left text-zinc-100 transition hover:border-white/30"
+    class="group flex w-full shrink-0 flex-col overflow-hidden rounded-rune-tile bg-rune-sunken text-left text-rune-ink transition"
     data-testid="artifact"
     :data-task-id="run.id"
   >
     <button
       type="button"
-      class="flex w-full cursor-pointer flex-col border-0 bg-transparent p-0 text-left text-inherit disabled:opacity-50"
+      class="flex w-full cursor-pointer flex-col bg-transparent p-0 text-left text-inherit disabled:opacity-50"
       :disabled="deleting"
       :aria-label="`Open task: ${run.task}`"
       @click="$emit('open')"
@@ -78,21 +79,21 @@ const TONE = {
           aria-hidden="true"
         />
         <span
-          class="absolute right-2 bottom-2 grid size-8 place-items-center rounded-full bg-black/60 text-zinc-100 opacity-0 backdrop-blur transition group-hover:opacity-100"
+          class="absolute right-2 bottom-2 grid size-8 place-items-center rounded-full bg-black/60 text-rune-ink opacity-0 backdrop-blur transition group-hover:opacity-100"
         >
           <AppIcon name="play" />
         </span>
         <span
-          class="absolute top-2 left-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-caption text-zinc-100 uppercase backdrop-blur"
+          class="absolute top-2 left-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-rune-heading text-rune-ink uppercase backdrop-blur"
         >
           <span class="size-1.5 rounded-full" :class="TONE[toneOf(run.outcome)]" />
           {{ run.outcome ?? 'open' }}
         </span>
       </span>
       <span class="flex flex-col gap-1 p-3">
-        <span class="line-clamp-2 text-body leading-snug">{{ run.task }}</span>
+        <span class="line-clamp-2 text-rune-body leading-snug">{{ run.task }}</span>
         <span
-          class="flex items-center gap-2 text-caption whitespace-nowrap text-zinc-500 uppercase"
+          class="flex items-center gap-2 text-rune-heading whitespace-nowrap text-rune-text-2 uppercase"
         >
           <span>{{ run.steps }} {{ run.steps === 1 ? 'step' : 'steps' }}</span>
           <span v-if="lengthText(run)">· {{ lengthText(run) }}</span>
@@ -100,34 +101,38 @@ const TONE = {
         </span>
       </span>
     </button>
-    <div class="flex items-center gap-1 border-t border-white/8 px-3 py-1">
-      <p class="m-0 min-w-0 flex-1 text-label text-zinc-400" role="status" aria-live="polite">
+    <div class="flex items-center gap-1 px-3 py-1">
+      <p
+        class="m-0 min-w-0 flex-1 text-rune-caption text-rune-text-2"
+        role="status"
+        aria-live="polite"
+      >
         {{ notice }}
       </p>
-      <button
-        type="button"
-        aria-label="Copy original prompt"
+      <RuneIconButton
+        variant="ghost"
+        size="sm"
+        label="Copy original prompt"
         title="Copy original prompt"
         :disabled="copying || deleting"
-        class="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full border-0 bg-transparent text-zinc-400 transition hover:bg-white/8 hover:text-zinc-100 disabled:cursor-default disabled:opacity-40"
         @click="copyPrompt"
       >
         <AppIcon name="copy" size="sm" />
-      </button>
-      <button
-        type="button"
-        aria-label="Delete task"
+      </RuneIconButton>
+      <RuneIconButton
+        variant="ghost"
+        size="sm"
+        label="Delete task"
         :title="
           run.active
             ? 'Finish or stop this task before deleting it'
             : 'Delete task and its saved files'
         "
         :disabled="run.active || deleting || deleteDisabled"
-        class="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full border-0 bg-transparent text-zinc-400 transition hover:bg-white/8 hover:text-error disabled:cursor-default disabled:opacity-40"
         @click="$emit('remove')"
       >
         <AppIcon name="trash" size="sm" />
-      </button>
+      </RuneIconButton>
     </div>
   </article>
 </template>

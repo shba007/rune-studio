@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import RuneButton from './RuneButton.vue'
 import { computed, ref } from 'vue'
 
 import type { Agent } from '@/composables/useAgent'
@@ -22,14 +23,17 @@ async function recheck() {
 
 <template>
   <section
-    class="flex w-full flex-col gap-2 rounded-rune-panel border bg-rune-surface p-rune-2 font-rune-reading text-zinc-100"
-    :class="down ? 'border-attention/50' : 'border-rune-outline'"
+    class="flex w-full flex-col gap-2 rounded-rune-panel bg-rune-surface p-rune-2 font-rune-reading text-rune-ink"
+    :class="down ? '' : ''"
     role="status"
     aria-label="Model server"
   >
     <header class="flex h-6 items-center gap-2">
       <span class="size-2 shrink-0 rounded-full" :class="down ? 'bg-attention' : 'bg-primary'" />
-      <span class="text-rune-caption uppercase" :class="down ? 'text-attention' : 'text-zinc-300'">
+      <span
+        class="text-rune-caption uppercase"
+        :class="down ? 'text-attention' : 'text-rune-text-2'"
+      >
         {{ down ? 'Model server not reachable' : 'Model server needs attention' }}
       </span>
     </header>
@@ -37,28 +41,19 @@ async function recheck() {
     <p v-else class="text-rune-body">{{ agent.health.value.title }}</p>
     <p
       v-if="address"
-      class="m-0 truncate text-rune-caption text-zinc-500"
+      class="m-0 truncate text-rune-caption text-rune-text-2"
       :title="address"
       data-testid="server-address"
     >
       {{ address }}
     </p>
     <div class="mt-1 flex gap-2">
-      <button
-        type="button"
-        class="h-8 flex-1 cursor-pointer rounded-full border border-white/25 text-rune-caption text-zinc-200 uppercase transition hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
-        :disabled="checking"
-        @click="recheck"
-      >
+      <RuneButton size="sm" class="flex-1" :disabled="checking" @click="recheck">
         Check again
-      </button>
-      <button
-        type="button"
-        class="h-8 flex-1 cursor-pointer rounded-full bg-primary text-rune-caption text-[#111] uppercase transition hover:bg-white"
-        @click="agent.openSettings('models')"
-      >
+      </RuneButton>
+      <RuneButton variant="primary" size="sm" class="flex-1" @click="agent.openSettings('models')">
         Models
-      </button>
+      </RuneButton>
     </div>
   </section>
 </template>

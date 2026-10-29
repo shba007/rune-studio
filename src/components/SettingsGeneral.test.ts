@@ -1,3 +1,4 @@
+import RuneButton from './RuneButton.vue'
 import { shallowMount } from '@vue/test-utils'
 import { reactive, ref } from 'vue'
 import { describe, expect, it, vi } from 'vite-plus/test'
@@ -40,7 +41,10 @@ describe('developer controls', () => {
     }) as Settings
     const debugSetState = vi.fn<(state: string) => void>()
     const agent = { backend: ref(null), debugSetState } as unknown as Agent
-    const wrapper = shallowMount(SettingsGeneral, { props: { agent, draft, apiKey: '' } })
+    const wrapper = shallowMount(SettingsGeneral, {
+      props: { agent, draft, apiKey: '' },
+      global: { stubs: { RuneButton } },
+    })
     expect(wrapper.find('details').exists()).toBe(false)
     expect(wrapper.findComponent(DevInputLab).exists()).toBe(false)
     draft.developerMode = true

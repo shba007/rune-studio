@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import RuneButton from './RuneButton.vue'
 import { computed, nextTick, ref, watch } from 'vue'
 
 import type { Agent } from '@/composables/useAgent'
@@ -19,59 +20,63 @@ watch(asking, async (on) => {
 })
 
 const CHIP = {
-  succeeded: 'border-white/30 text-zinc-200',
-  stopped: 'border-white/30 text-zinc-300',
-  failed: 'border-attention/60 text-error',
+  succeeded: 'text-rune-ink',
+  stopped: 'text-rune-text-2',
+  failed: 'text-error',
 } as const
 </script>
 
 <template>
   <section
     v-if="offer"
-    class="flex w-full flex-col gap-2 rounded-rune-panel border border-rune-outline bg-rune-surface p-rune-2 font-rune-reading text-zinc-100"
+    class="flex w-full flex-col gap-2 rounded-rune-panel bg-rune-surface p-rune-2 font-rune-reading text-rune-ink"
     role="alertdialog"
     aria-label="Was the task completed?"
   >
     <header class="flex h-6 items-center gap-2">
       <span
-        class="rounded-full border px-2 text-rune-caption uppercase"
+        class="rounded-full px-2 text-rune-caption uppercase"
         :class="CHIP[offer.outcome]"
         data-testid="outcome"
         >{{ offer.outcome }}</span
       >
-      <span class="min-w-0 flex-1 truncate text-rune-caption text-zinc-500" :title="offer.task">{{
-        offer.task
-      }}</span>
+      <span
+        class="min-w-0 flex-1 truncate text-rune-caption text-rune-text-2"
+        :title="offer.task"
+        >{{ offer.task }}</span
+      >
     </header>
 
     <template v-if="!asking">
       <p class="m-0 text-rune-body" data-testid="question">Did this complete your task?</p>
       <div class="flex items-center gap-2">
-        <button
-          type="button"
-          class="h-8 flex-1 cursor-pointer rounded-full border border-white/25 bg-transparent text-rune-caption text-zinc-200 uppercase transition hover:bg-white/10"
+        <RuneButton
+          variant="ghost"
+          size="sm"
+          class="flex-1"
           data-testid="no"
           @click="agent.answerComplete(false)"
         >
           No
-        </button>
-        <button
-          type="button"
-          class="h-8 flex-1 cursor-pointer rounded-full border-0 bg-primary text-rune-caption text-[#111] uppercase transition hover:bg-white"
+        </RuneButton>
+        <RuneButton
+          variant="primary"
+          size="sm"
+          class="flex-1"
           data-testid="yes"
           @click="agent.answerComplete(true)"
         >
           Yes
-        </button>
+        </RuneButton>
       </div>
-      <button
-        type="button"
-        class="h-6 cursor-pointer self-center border-0 bg-transparent text-rune-caption text-zinc-500 uppercase transition hover:text-zinc-300"
+      <RuneButton
+        variant="link"
+        class="self-center"
         data-testid="skip"
         @click="agent.answerComplete(null)"
       >
         Skip
-      </button>
+      </RuneButton>
     </template>
 
     <template v-else>
@@ -81,27 +86,29 @@ const CHIP = {
         v-model="reason"
         rows="2"
         placeholder="A few words help"
-        class="min-h-14 w-full resize-none rounded-2xl border-0 bg-white/8 px-3 py-2 text-rune-body text-zinc-100 placeholder:text-zinc-500"
+        class="min-h-14 w-full resize-none rounded-rune-tile bg-rune-surface px-3 py-2 text-rune-body text-rune-ink placeholder:text-rune-text-3"
         data-testid="why"
         @keydown.enter.exact.prevent="agent.answerWhy(reason)"
       />
       <div class="flex items-center gap-2">
-        <button
-          type="button"
-          class="h-8 flex-1 cursor-pointer rounded-full border border-white/25 bg-transparent text-rune-caption text-zinc-200 uppercase transition hover:bg-white/10"
+        <RuneButton
+          variant="ghost"
+          size="sm"
+          class="flex-1"
           data-testid="skip-why"
           @click="agent.answerWhy('')"
         >
           Skip
-        </button>
-        <button
-          type="button"
-          class="h-8 flex-1 cursor-pointer rounded-full border-0 bg-primary text-rune-caption text-[#111] uppercase transition hover:bg-white"
+        </RuneButton>
+        <RuneButton
+          variant="primary"
+          size="sm"
+          class="flex-1"
           data-testid="send-why"
           @click="agent.answerWhy(reason)"
         >
           Send
-        </button>
+        </RuneButton>
       </div>
     </template>
   </section>

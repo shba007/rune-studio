@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import RuneButton from './RuneButton.vue'
 import { onKeyStroke, useElementSize } from '@vueuse/core'
 import { computed, ref, useTemplateRef, watch } from 'vue'
 
@@ -241,11 +242,11 @@ function onOrb() {
     <div
       data-tauri-drag-region
       :title="`Personality: ${personality.name}`"
-      class="relative isolate flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-full border-0 bg-rune-surface outline-none [clip-path:circle(50%)]"
+      class="relative isolate flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-full bg-rune-surface outline-none [clip-path:circle(50%)]"
     >
       <span
         v-if="showPersonality"
-        class="pointer-events-none absolute bottom-1 left-1/2 z-20 grid size-4 -translate-x-1/2 place-items-center rounded-full bg-black/85 text-[10px] leading-none text-zinc-100"
+        class="pointer-events-none absolute bottom-1 left-1/2 z-20 grid size-4 -translate-x-1/2 place-items-center rounded-full bg-black/85 text-[10px] leading-none text-rune-ink"
         :aria-label="`Active personality: ${personality.name}`"
         ><PersonalitySymbol :mark="personality.mark" class="size-3"
       /></span>
@@ -294,7 +295,7 @@ function onOrb() {
       />
       <button
         type="button"
-        class="relative size-14 cursor-pointer border-0 rounded-full bg-primary focus-visible:-outline-offset-3"
+        class="relative size-14 cursor-pointer rounded-full bg-primary focus-visible:-outline-offset-3"
         :aria-label="hint.label"
         :aria-description="orbTitle"
         :title="orbTitle"
@@ -316,7 +317,7 @@ function onOrb() {
             activeModels.length > 1 ? 'Multiple models active' : `Active model: ${activeModels[0]}`
           "
         >
-          <span class="grid size-7 place-items-center rounded-full bg-primary text-[#111]">
+          <span class="grid size-7 place-items-center rounded-full bg-primary text-black">
             <span v-if="activeModels.length > 1" class="text-[11px] font-bold">{{
               activeModels.length
             }}</span>
@@ -343,7 +344,7 @@ function onOrb() {
               <DecisionInbox v-if="shows('decision')" compact :model="decisions" />
               <button
                 v-if="shows('decisionLink')"
-                class="rounded-2xl border border-white/10 p-3 text-label text-zinc-200"
+                class="rounded-rune-tile p-3 text-rune-caption text-rune-ink bg-rune-raised"
                 @click="
                   agent.openWorkspace(decisions.current.value?.kind === 'goal' ? 'goals' : 'tasks')
                 "
@@ -358,33 +359,30 @@ function onOrb() {
               />
               <section
                 v-if="shows('update') && updater.latest.value"
-                class="flex w-full flex-col gap-2 rounded-[28px] border border-white/15 bg-rune-surface p-4 text-zinc-100"
+                class="flex w-full flex-col gap-2 rounded-rune-tile bg-rune-surface p-4 text-rune-ink"
                 role="alertdialog"
                 aria-label="Update available"
               >
                 <header class="flex h-6 items-center gap-2">
                   <span class="size-2 shrink-0 rounded-full bg-primary" />
-                  <span class="text-caption text-zinc-300 uppercase">Update available</span>
+                  <span class="text-rune-heading text-rune-text-2 uppercase">Update available</span>
                 </header>
-                <p class="text-body">
+                <p class="text-rune-body">
                   Version {{ updater.latest.value.version }}
-                  <span class="text-zinc-500">(you have {{ updater.version.value }})</span>
+                  <span class="text-rune-text-2">(you have {{ updater.version.value }})</span>
                 </p>
                 <div class="mt-1 flex gap-2">
-                  <button
-                    type="button"
-                    class="h-8 flex-1 cursor-pointer rounded-full border border-white/25 text-label text-zinc-200 transition hover:bg-white/10"
-                    @click="updater.dismissPrompt()"
-                  >
+                  <RuneButton size="sm" class="flex-1" @click="updater.dismissPrompt()">
                     Later
-                  </button>
-                  <button
-                    type="button"
-                    class="h-8 flex-1 cursor-pointer rounded-full bg-primary text-label text-[#111] transition hover:bg-white"
+                  </RuneButton>
+                  <RuneButton
+                    variant="primary"
+                    size="sm"
+                    class="flex-1"
                     @click="updater.install(agent.isRunning.value)"
                   >
                     Update
-                  </button>
+                  </RuneButton>
                 </div>
               </section>
               <ServerStatusCard v-if="shows('server')" :agent="agent" />
@@ -394,7 +392,7 @@ function onOrb() {
               <p
                 v-if="plan.more"
                 role="status"
-                class="m-0 px-rune-2 text-rune-caption text-zinc-500 uppercase"
+                class="m-0 px-rune-2 text-rune-caption text-rune-text-2 uppercase"
               >
                 {{ plan.more }} more waiting
               </p>

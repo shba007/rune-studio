@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import RuneButton from './RuneButton.vue'
 import { computed } from 'vue'
 import type { IntakeEntry, TaskApproval } from '@/types/decisions'
 import GoalTaskProposal from './GoalTaskProposal.vue'
@@ -21,20 +22,16 @@ const stale = computed(
   <section
     v-if="entry.pathways?.approved"
     aria-label="First-week task planning"
-    class="flex flex-col gap-4 border-t border-white/10 pt-6"
+    class="flex flex-col gap-4 pt-6"
   >
     <header class="flex flex-wrap items-center justify-between gap-rune-2">
       <div>
-        <p class="m-0 text-rune-caption uppercase tracking-wider text-zinc-500">
+        <p class="m-0 text-rune-caption uppercase tracking-wider text-rune-text-2">
           From route to action
         </p>
-        <h3 class="mt-1 mb-0 font-sans text-rune-subtitle text-zinc-100">Your first week</h3>
+        <h3 class="mt-1 mb-0 font-sans text-rune-subtitle text-rune-ink">Your first week</h3>
       </div>
-      <button
-        :disabled="busy || entry.status !== 'goal_ready'"
-        class="cursor-pointer rounded-full border border-white/20 px-4 py-2 text-rune-body text-zinc-200 disabled:opacity-40"
-        @click="$emit('generate')"
-      >
+      <RuneButton :disabled="busy || entry.status !== 'goal_ready'" @click="$emit('generate')">
         {{
           entry.status === 'task_planning'
             ? 'Drafting…'
@@ -42,14 +39,14 @@ const stale = computed(
               ? 'Draft new proposals'
               : 'Draft first-week tasks'
         }}
-      </button>
+      </RuneButton>
     </header>
-    <p class="m-0 max-w-2xl text-rune-body leading-relaxed text-zinc-500">
+    <p class="m-0 max-w-2xl text-rune-body leading-relaxed text-rune-text-2">
       Review each task, who will do it and its schedule. Approval creates pending work under this
       goal; it never starts execution or captures a screen. Field edits are saved when you approve.
     </p>
     <template v-if="draft">
-      <div class="flex flex-wrap gap-2 text-rune-caption text-zinc-400">
+      <div class="flex flex-wrap gap-2 text-rune-caption text-rune-text-2">
         <span>{{ draft.pathway.title }} ·</span
         ><span
           ><WhenText :iso="draft.startLocal" /> · seven local calendar days · {{ draft.zone }}</span
@@ -59,10 +56,10 @@ const stale = computed(
         This draft belongs to an earlier goal or pathway. Generate a new draft before creating
         tasks.
       </p>
-      <p class="m-0 max-w-3xl text-rune-body leading-relaxed text-zinc-400">
+      <p class="m-0 max-w-3xl text-rune-body leading-relaxed text-rune-text-2">
         {{ draft.assessment }}
       </p>
-      <p v-if="!draft.tasks.length" class="m-0 text-rune-body text-zinc-500">
+      <p v-if="!draft.tasks.length" class="m-0 text-rune-body text-rune-text-2">
         No supported tasks were proposed. Refine the goal or supply the missing context.
       </p>
       <div>

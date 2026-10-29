@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import RuneButton from './RuneButton.vue'
+import RuneIconButton from './RuneIconButton.vue'
 import { useIntervalFn, useNow, usePreferredReducedMotion } from '@vueuse/core'
 import { computed, nextTick, ref, watch, type ComponentPublicInstance } from 'vue'
 import type { IndependentTask, TaskBoardModel, TaskPhase } from '@/composables/useTaskBoard'
@@ -135,26 +137,26 @@ function stepLabel(phase: TaskPhase) {
   <section
     v-if="request"
     aria-label="Tasks"
-    class="flex flex-col gap-rune-2 rounded-rune-panel border border-rune-outline bg-rune-surface p-rune-2 font-rune-reading text-zinc-100"
+    class="flex flex-col gap-rune-2 rounded-rune-panel bg-rune-surface p-rune-2 font-rune-reading text-rune-ink"
     :data-request-id="request.id"
   >
     <header class="flex items-center justify-between gap-2">
-      <h2 class="m-0 font-sans text-rune-heading text-zinc-300 uppercase">Tasks</h2>
+      <h2 class="m-0 font-sans text-rune-heading text-rune-text-2 uppercase">Tasks</h2>
       <span
         data-testid="goal-eta"
-        class="text-rune-caption text-zinc-400 tabular-nums"
+        class="text-rune-caption text-rune-text-2 tabular-nums"
         title="Estimated from completed steps"
         >{{ etaText }}</span
       >
-      <button
+      <RuneIconButton
+        variant="ghost"
+        size="sm"
         v-if="!isTaskActive(request.phase)"
-        type="button"
-        class="grid size-7 shrink-0 cursor-pointer place-items-center rounded-full text-zinc-400 hover:bg-white/8 hover:text-white"
-        :aria-label="`Dismiss request ${request.id}`"
+        :label="`Dismiss request ${request.id}`"
         @click="board.dismiss(request.id)"
       >
         <AppIcon name="close" size="sm" />
-      </button>
+      </RuneIconButton>
     </header>
     <p
       v-if="tasks.length !== 1"
@@ -165,7 +167,7 @@ function stepLabel(phase: TaskPhase) {
     </p>
     <div
       v-if="tasks.length > 1"
-      class="flex items-center justify-between gap-2 text-rune-caption text-zinc-500"
+      class="flex items-center justify-between gap-2 text-rune-caption text-rune-text-2"
     >
       <span data-testid="task-count">Tasks {{ taskPosition(tasks) }}</span>
       <span v-if="tasks.length > 1"
@@ -175,7 +177,7 @@ function stepLabel(phase: TaskPhase) {
     <p
       v-if="request.phase === 'planning' || request.phase === 'queued'"
       role="status"
-      class="m-0 flex items-center gap-2 text-rune-body text-zinc-400"
+      class="m-0 flex items-center gap-2 text-rune-body text-rune-text-2"
     >
       <span class="activity-dots" aria-hidden="true">···</span
       >{{ request.phase === 'planning' ? 'Planning tasks and steps…' : 'Waiting to start…' }}
@@ -185,28 +187,28 @@ function stepLabel(phase: TaskPhase) {
     </p>
     <div
       v-if="tasks.length > 1"
-      class="flex items-center justify-between gap-2 text-rune-caption text-zinc-500"
+      class="flex items-center justify-between gap-2 text-rune-caption text-rune-text-2"
     >
       <span>Parallel tasks · view {{ position + 1 }}/{{ tasks.length }}</span>
       <div class="flex gap-1">
-        <button
-          type="button"
-          aria-label="Previous task"
+        <RuneIconButton
+          variant="ghost"
+          size="sm"
+          label="Previous task"
           :disabled="position === 0"
-          class="grid size-8 cursor-pointer place-items-center rounded-full hover:bg-white/8 disabled:opacity-25"
           @click="navigate(-1)"
         >
           <AppIcon name="chevron" class="rotate-90" size="sm" />
-        </button>
-        <button
-          type="button"
-          aria-label="Next task"
+        </RuneIconButton>
+        <RuneIconButton
+          variant="ghost"
+          size="sm"
+          label="Next task"
           :disabled="position >= tasks.length - 1"
-          class="grid size-8 cursor-pointer place-items-center rounded-full hover:bg-white/8 disabled:opacity-25"
           @click="navigate(1)"
         >
           <AppIcon name="chevron" class="-rotate-90" size="sm" />
-        </button>
+        </RuneIconButton>
       </div>
     </div>
     <div
@@ -234,7 +236,7 @@ function stepLabel(phase: TaskPhase) {
         >
           <span
             v-if="tasks.length > 1"
-            class="mb-2 flex items-center justify-between gap-2 text-rune-caption text-zinc-500"
+            class="mb-2 flex items-center justify-between gap-2 text-rune-caption text-rune-text-2"
             ><span>TASK {{ index + 1 }}</span
             ><span role="status" class="flex items-center gap-1.5"
               ><span
@@ -252,11 +254,11 @@ function stepLabel(phase: TaskPhase) {
           }}</span>
         </button>
         <div
-          class="mt-2 flex items-center justify-between gap-3 text-rune-caption text-zinc-400 tabular-nums"
+          class="mt-2 flex items-center justify-between gap-3 text-rune-caption text-rune-text-2 tabular-nums"
         >
           <span data-testid="step-count">Step {{ currentStep(task) }}/{{ task.steps.length }}</span>
           <span class="flex items-center gap-1.5"
-            ><span class="text-zinc-600">Elapsed</span
+            ><span class="text-rune-text-3">Elapsed</span
             ><time data-testid="task-elapsed">{{
               clock(taskElapsed(task, now.getTime()))
             }}</time></span
@@ -279,27 +281,28 @@ function stepLabel(phase: TaskPhase) {
               <span class="step-dot" aria-hidden="true" /><span
                 class="min-w-0 text-rune-body leading-relaxed [overflow-wrap:anywhere]"
                 >{{ stepIndex + 1 }}. {{ step.text
-                }}<span class="mt-0.5 block text-rune-caption text-zinc-500">{{
+                }}<span class="mt-0.5 block text-rune-caption text-rune-text-2">{{
                   stepLabel(step.phase)
                 }}</span></span
               >
             </li>
           </ol>
         </div>
-        <button
+        <RuneButton
+          variant="ghost"
+          size="sm"
           v-if="isTaskActive(task.phase)"
-          type="button"
-          class="mt-2 min-h-8 cursor-pointer text-rune-caption text-zinc-500 hover:text-white"
+          class="mt-2"
           :aria-label="`Cancel task ${task.id}`"
           @click="board.cancel(task.id)"
         >
           Cancel task
-        </button>
+        </RuneButton>
       </article>
     </div>
     <footer
       v-if="queued || tasks.length > 1"
-      class="flex items-center justify-between gap-2 border-t border-dotted border-white/10 pt-2 text-rune-caption text-zinc-500"
+      class="flex items-center justify-between gap-2 pt-2 text-rune-caption text-rune-text-2"
     >
       <span v-if="queued || tasks.length > 1">{{
         queued

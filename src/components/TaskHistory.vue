@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import RuneButton from './RuneButton.vue'
 import { listen } from '@tauri-apps/api/event'
 import { useDebounceFn, useEventListener } from '@vueuse/core'
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -85,20 +86,21 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="flex flex-col gap-4" aria-label="Task history">
-    <button
-      type="button"
-      class="self-end cursor-pointer text-label text-zinc-400 hover:text-zinc-100 disabled:opacity-40"
+    <RuneButton
+      variant="ghost"
+      size="sm"
+      class="self-end"
       :disabled="refreshing || deleting !== null"
       @click="refresh"
     >
       {{ refreshing ? 'Refreshing…' : 'Refresh tasks' }}
-    </button>
-    <p v-if="flight.problem.value" class="m-0 text-label text-zinc-400" role="alert">
+    </RuneButton>
+    <p v-if="flight.problem.value" class="m-0 text-rune-caption text-rune-text-2" role="alert">
       {{ flight.problem.value }}
     </p>
     <p
       v-else-if="!workspace && flight.runsLoaded.value && flight.runs.value.length === 0"
-      class="m-0 py-10 text-center text-label text-zinc-500"
+      class="m-0 py-10 text-center text-rune-caption text-rune-text-2"
       data-testid="empty"
     >
       Nothing recorded yet. Run a task and it shows up here.

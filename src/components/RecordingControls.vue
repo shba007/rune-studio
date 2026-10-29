@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import RuneButton from './RuneButton.vue'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
@@ -74,11 +75,11 @@ onMounted(async () => {
 })
 onBeforeUnmount(() => off?.())
 const button =
-  'cursor-pointer rounded-full border border-white/20 px-4 py-2 text-label text-zinc-200 disabled:cursor-not-allowed disabled:opacity-40'
+  'cursor-pointer rounded-full px-4 py-2 text-rune-caption text-rune-ink disabled:cursor-not-allowed disabled:opacity-40 bg-rune-raised'
 </script>
 <template>
   <div class="flex flex-col gap-3" aria-label="Screen recording">
-    <p class="text-label text-zinc-400">
+    <p class="text-rune-caption text-rune-text-2">
       Silent video · 2 fps · up to 60 seconds. Saved in Rune Studio’s recording folder. Screen
       Insight captures stay separate.
     </p>
@@ -89,22 +90,24 @@ const button =
         :refreshing="refreshing"
         @refresh="refresh"
       />
-      <p v-if="refreshStatus" role="status" class="text-label text-zinc-400">{{ refreshStatus }}</p>
-      <label class="flex items-center justify-between text-label text-zinc-300"
+      <p v-if="refreshStatus" role="status" class="text-rune-caption text-rune-text-2">
+        {{ refreshStatus }}
+      </p>
+      <label class="flex items-center justify-between text-rune-caption text-rune-text-2"
         >Duration (seconds)
         <input
           v-model.number="seconds"
           type="number"
           min="1"
           max="60"
-          class="w-20 rounded-lg bg-white/8 px-3 py-2 text-zinc-100"
+          class="w-20 rounded-rune-tile bg-rune-surface px-3 py-2 text-rune-ink"
         />
       </label>
-      <button type="button" :class="button" :disabled="!target || pending" @click="start">
+      <RuneButton size="sm" :disabled="!target || pending" @click="start">
         Start recording
-      </button>
+      </RuneButton>
     </template>
-    <p v-if="busy" role="status" class="text-label text-zinc-300">
+    <p v-if="busy" role="status" class="text-rune-caption text-rune-text-2">
       {{
         status.phase === 'saving'
           ? 'Saving video…'
@@ -114,26 +117,21 @@ const button =
       }}
     </p>
     <div v-if="busy" class="flex gap-2">
-      <button
-        type="button"
-        :class="button"
-        :disabled="status.phase === 'saving'"
-        @click="stop(false)"
-      >
+      <RuneButton size="sm" :disabled="status.phase === 'saving'" @click="stop(false)">
         Stop and save
-      </button>
-      <button type="button" :class="button" @click="stop(true)">Cancel and discard</button>
+      </RuneButton>
+      <RuneButton size="sm" @click="stop(true)">Cancel and discard</RuneButton>
     </div>
-    <p v-if="status.path" class="text-label break-all text-zinc-300 select-text">
+    <p v-if="status.path" class="text-rune-caption break-all text-rune-text-2 select-text">
       Saved: {{ status.path }}
     </p>
-    <p v-if="status.phase === 'cancelled'" class="text-label text-zinc-400">
+    <p v-if="status.phase === 'cancelled'" class="text-rune-caption text-rune-text-2">
       Recording discarded. No video saved.
     </p>
     <p
       v-if="notice || (status.error && status.phase === 'failed')"
       role="alert"
-      class="text-label text-error"
+      class="text-rune-caption text-error"
     >
       {{ notice || status.error }}
     </p>

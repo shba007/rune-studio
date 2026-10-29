@@ -38,17 +38,17 @@ onMounted(async () => {
 onBeforeUnmount(() => unlisten?.())
 
 const button =
-  'grid h-full w-12 cursor-pointer place-items-center border-0 bg-transparent text-zinc-400 transition hover:bg-white/10 hover:text-zinc-100'
+  'grid h-full w-12 cursor-pointer place-items-center bg-transparent text-rune-text-2 transition hover:bg-white/10 hover:text-rune-ink'
 </script>
 
 <template>
   <header
     data-tauri-drag-region
-    class="flex h-10 shrink-0 select-none items-center justify-between border-b border-white/8 bg-black"
+    class="flex h-10 shrink-0 select-none items-center justify-between bg-black"
   >
     <div data-tauri-drag-region class="pointer-events-none flex items-center gap-2 pl-4">
       <img :src="LOGO" alt="" class="size-5" />
-      <span class="text-caption text-zinc-300 uppercase">{{ title }}</span>
+      <span class="text-rune-heading text-rune-text-2 uppercase">{{ title }}</span>
     </div>
     <div class="flex h-full">
       <button
@@ -71,7 +71,7 @@ const button =
       </button>
       <button
         type="button"
-        :class="[button, 'hover:bg-[#d71921]! hover:text-white!']"
+        :class="[button, 'hover:bg-attention! hover:text-white!']"
         aria-label="Close"
         @click="win()?.close()"
       >

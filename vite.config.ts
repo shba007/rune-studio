@@ -128,7 +128,12 @@ export default defineConfig({
       customCollections: { custom: FileSystemIconLoader('./src/assets/icons') },
     }),
     Unfonts({
-      fontsource: { families: [{ name: 'Oxanium', variable: { wght: true }, subset: 'latin' }] },
+      fontsource: {
+        families: [
+          { name: 'Oxanium', variable: { wght: true }, subset: 'latin' },
+          { name: 'Inter', variable: { wght: true }, subset: 'latin' },
+        ],
+      },
     }),
   ]),
   server: {

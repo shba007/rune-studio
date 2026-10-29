@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import RuneButton from './RuneButton.vue'
 import { useFocus, useTextareaAutosize } from '@vueuse/core'
 import { computed, nextTick, ref, useId, watch } from 'vue'
 
@@ -6,6 +7,7 @@ import type { Agent } from '@/composables/useAgent'
 import type { TaskBoardModel } from '@/composables/useTaskBoard'
 
 import AppIcon from './AppIcon.vue'
+import RuneIconButton from './RuneIconButton.vue'
 import { screenRequestText } from '@/config/screenRequest'
 import {
   composerCommands,
@@ -31,6 +33,12 @@ watch(
     if (request) command.value = request.text
   },
 )
+
+function openCommands() {
+  if (!slash.value) command.value = '/'
+  menuDismissed.value = false
+  void nextTick(() => field.value?.focus())
+}
 
 const hasText = computed(() => command.value.trim().length > 0)
 const isListening = computed(() => agent.state.value === 'listening')
@@ -180,14 +188,11 @@ async function submit() {
 </script>
 
 <template>
-  <div
-    data-tauri-drag-region
-    class="flex w-full flex-col gap-rune-detail rounded-rune-panel bg-rune-surface p-rune-1 font-rune-reading"
-  >
+  <div data-tauri-drag-region class="flex w-full flex-col gap-rune-1 font-rune-reading">
     <p
       v-if="agent.notice.value"
-      class="m-0 px-rune-1 pt-rune-detail text-rune-caption"
-      :class="agent.noticeKind.value === 'info' ? 'text-zinc-200' : 'text-error'"
+      class="m-0 rounded-rune-tile bg-rune-surface p-rune-1 text-rune-caption"
+      :class="agent.noticeKind.value === 'info' ? 'text-rune-ink' : 'text-error'"
       role="status"
       aria-live="polite"
     >
@@ -195,27 +200,35 @@ async function submit() {
     </p>
     <p
       v-if="external"
-      class="m-0 px-rune-1 pt-rune-detail text-rune-caption text-zinc-400"
+      class="m-0 rounded-rune-tile bg-rune-surface p-rune-1 text-rune-caption text-rune-text-2"
       role="status"
     >
       {{ screenRequestText(agent.screenRequest.value) }}
-      <button
+      <RuneButton
+        variant="link"
+        class="ml-2"
+        @click="agent.cancelScreenRequest()"
         v-if="
           agent.screenRequest.value.waiting ||
           ['queued', 'delivered'].includes(agent.screenRequest.value.status)
         "
-        type="button"
-        class="ml-2 cursor-pointer underline"
-        @click="agent.cancelScreenRequest()"
       >
         Cancel screen request
-      </button>
+      </RuneButton>
     </p>
-    <p v-if="board?.notice.value" role="alert" class="m-0 px-rune-1 text-rune-caption text-error">
+    <p
+      v-if="board?.notice.value"
+      role="alert"
+      class="m-0 rounded-rune-tile bg-rune-surface p-rune-1 text-rune-caption text-error"
+    >
       {{ board.notice.value }}
     </p>
     <p class="sr-only" role="status" aria-live="polite">{{ agent.statusText.value }}</p>
-    <p v-if="commandNotice" role="alert" class="m-0 px-rune-1 text-rune-caption text-zinc-400">
+    <p
+      v-if="commandNotice"
+      role="alert"
+      class="m-0 rounded-rune-tile bg-rune-surface p-rune-1 text-rune-caption text-rune-text-2"
+    >
       {{ commandNotice }}
     </p>
     <div
@@ -223,7 +236,7 @@ async function submit() {
       :id="menuId"
       role="listbox"
       aria-label="Composer commands"
-      class="rounded-rune-control border border-rune-outline bg-rune-raised p-rune-detail text-zinc-100"
+      class="rounded-rune-control bg-rune-raised p-rune-detail text-rune-ink"
     >
       <button
         v-for="(item, index) in suggestions"
@@ -233,25 +246,34 @@ async function submit() {
         :aria-selected="index === selectedCommand"
         type="button"
         :disabled="unavailable(item) || commandPending"
-        class="flex w-full cursor-pointer items-center gap-rune-1 rounded-xl px-rune-1 py-rune-1 text-left text-rune-body text-zinc-100 disabled:cursor-default disabled:opacity-40"
-        :class="index === selectedCommand ? 'bg-white/10' : 'hover:bg-white/5'"
+        class="flex w-full cursor-pointer items-center gap-rune-1 rounded-rune-tile px-rune-1 py-rune-1 text-left text-rune-body text-rune-ink disabled:cursor-default disabled:opacity-40"
+        :class="index === selectedCommand ? 'bg-rune-raised' : 'hover:bg-white/5'"
         @mousedown.prevent
         @click="runCommand(item)"
       >
         <AppIcon :name="item.icon" size="sm" /><span
           ><span class="block">{{ item.command }}</span
-          ><span class="text-rune-caption text-zinc-400">{{
+          ><span class="text-rune-caption text-rune-text-2">{{
             unavailableReason(item) || item.description
           }}</span></span
         >
       </button>
-      <p v-if="!suggestions.length" class="m-0 px-rune-1 py-rune-1 text-rune-body text-zinc-400">
+      <p v-if="!suggestions.length" class="m-0 px-rune-1 py-rune-1 text-rune-body text-rune-text-2">
         No matching commands
       </p>
     </div>
     <div
-      class="flex w-full items-end gap-rune-1 rounded-rune-control bg-white/5 p-rune-1 text-zinc-100 focus-within:bg-white/8 transition-colors"
+      class="flex min-h-16 w-full items-end gap-1 rounded-rune-tile bg-rune-surface p-3 text-rune-ink focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-(--accent)"
     >
+      <RuneIconButton
+        label="Commands"
+        variant="ghost"
+        :disabled="commandPending || analysisBusy"
+        :aria-expanded="showCommands"
+        @click="openCommands"
+      >
+        <AppIcon name="add" />
+      </RuneIconButton>
       <textarea
         ref="field"
         v-model="command"
@@ -268,32 +290,24 @@ async function submit() {
           showCommands && suggestions.length ? `${menuId}-${selectedCommand}` : undefined
         "
         :placeholder="placeholder"
-        class="text-zinc-100 placeholder:text-zinc-400 max-h-[152px] min-h-8 min-w-0 flex-1 resize-none bg-transparent px-rune-detail py-rune-detail text-rune-body leading-6 outline-none [--scrollbar-thumb-hover:rgb(0_0_0/0.4)] [--scrollbar-thumb:rgb(0_0_0/0.22)] dark:[--scrollbar-thumb-hover:rgb(255_255_255/0.32)] dark:[--scrollbar-thumb:rgb(255_255_255/0.16)]"
+        class="text-rune-ink placeholder:text-rune-text-3 max-h-[152px] min-h-10 min-w-0 flex-1 resize-none bg-transparent px-rune-detail py-2 text-rune-body leading-6 outline-none [--scrollbar-thumb-hover:rgb(0_0_0/0.4)] [--scrollbar-thumb:rgb(0_0_0/0.22)] dark:[--scrollbar-thumb-hover:rgb(255_255_255/0.32)] dark:[--scrollbar-thumb:rgb(255_255_255/0.16)]"
         @keydown="onKeydown"
       />
 
-      <button
-        type="button"
-        class="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full transition"
-        :class="
-          action.tone === 'red'
-            ? 'bg-attention text-white hover:bg-attention-hover'
-            : action.tone === 'blue'
-              ? 'bg-voice hover:bg-voice-hover'
-              : 'bg-primary !text-[#111] hover:bg-white'
-        "
+      <RuneIconButton
+        :label="action.label"
+        :variant="action.tone === 'red' ? 'danger' : action.tone === 'blue' ? 'voice' : 'primary'"
         :disabled="
           commandPending ||
           (external && !slash && action.icon !== 'stop') ||
           (!slash && !analysisSubmit && board?.pending.value) ||
           (offline && !slash && action.icon !== 'stop')
         "
-        :aria-label="action.label"
         :aria-pressed="action.icon === 'mic' ? isListening : undefined"
         @click="action.run()"
       >
         <AppIcon :name="action.icon" />
-      </button>
+      </RuneIconButton>
     </div>
   </div>
 </template>

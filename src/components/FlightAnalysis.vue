@@ -69,7 +69,7 @@ watch(
     class="flex min-h-0 flex-1 flex-col overflow-auto md:flex-row"
     aria-label="Visual analysis task"
   >
-    <figure class="m-0 flex min-h-64 min-w-0 flex-1 flex-col bg-[#0a0a0a] p-4">
+    <figure class="m-0 flex min-h-64 min-w-0 flex-1 flex-col bg-rune-sunken p-4">
       <div class="flex min-h-0 flex-1 items-center justify-center">
         <div v-if="capture && !missing" class="relative max-w-full leading-none">
           <img
@@ -88,7 +88,11 @@ watch(
             :scan-key="0"
           />
         </div>
-        <p v-else class="m-0 p-6 text-body text-zinc-400" data-testid="analysis-capture-notice">
+        <p
+          v-else
+          class="m-0 p-6 text-rune-body text-rune-text-2"
+          data-testid="analysis-capture-notice"
+        >
           {{
             loading
               ? 'Loading capture…'
@@ -98,48 +102,52 @@ watch(
           }}
         </p>
       </div>
-      <figcaption v-if="analysis" class="mt-3 flex flex-wrap gap-x-3 text-label text-zinc-500">
+      <figcaption
+        v-if="analysis"
+        class="mt-3 flex flex-wrap gap-x-3 text-rune-caption text-rune-text-2"
+      >
         <span>Captured <WhenText :iso="analysis.capturedUtc" /></span>
         <span v-if="analysis.model" class="inline-flex items-center gap-2"
           ><ModelIcon :model="analysis.model" />{{ analysis.model }}</span
         >
       </figcaption>
     </figure>
-    <aside
-      class="w-full shrink-0 overflow-y-auto border-t border-white/10 p-5 md:w-80 md:border-t-0 md:border-l"
-    >
-      <fieldset v-if="analysis?.findings.length" class="mb-5 border-0 p-0">
-        <legend class="mb-2 text-caption text-zinc-500 uppercase">Highlights</legend>
+    <aside class="w-full shrink-0 overflow-y-auto p-5 md:w-80">
+      <fieldset v-if="analysis?.findings.length" class="mb-5 p-0">
+        <legend class="mb-2 text-rune-heading text-rune-text-2 uppercase">Highlights</legend>
         <label
           v-for="group in groups"
           :key="group.key"
-          class="flex items-center gap-2 py-1 text-label text-zinc-300"
+          class="flex items-center gap-2 py-1 text-rune-caption text-rune-text-2"
         >
           <input v-model="visibleGroups[group.key]" type="checkbox" :aria-label="group.label" />
           {{ group.label }}
         </label>
       </fieldset>
-      <h2 class="m-0 text-caption text-zinc-500 uppercase">Answer</h2>
-      <p class="whitespace-pre-wrap text-body text-zinc-100" data-testid="analysis-answer">
+      <h2 class="m-0 text-rune-heading text-rune-text-2 uppercase">Answer</h2>
+      <p class="whitespace-pre-wrap text-rune-body text-rune-ink" data-testid="analysis-answer">
         {{ answer || 'No answer was recorded.' }}
       </p>
-      <p v-if="analysis?.error" class="text-label text-zinc-400">{{ analysis.error }}</p>
-      <h2 v-if="analysis?.findings.length" class="mt-6 mb-2 text-caption text-zinc-500 uppercase">
+      <p v-if="analysis?.error" class="text-rune-caption text-rune-text-2">{{ analysis.error }}</p>
+      <h2
+        v-if="analysis?.findings.length"
+        class="mt-6 mb-2 text-rune-heading text-rune-text-2 uppercase"
+      >
         Observations
       </h2>
-      <article
-        v-for="finding in analysis?.findings ?? []"
-        :key="finding.n"
-        class="border-t border-white/8 py-3"
-      >
-        <h3 class="m-0 text-body text-zinc-100">{{ finding.n }} · {{ finding.label }}</h3>
-        <p v-if="finding.pose?.rejected" role="status" class="my-1 text-label text-amber-300">
+      <article v-for="finding in analysis?.findings ?? []" :key="finding.n" class="py-3">
+        <h3 class="m-0 text-rune-body text-rune-ink">{{ finding.n }} · {{ finding.label }}</h3>
+        <p
+          v-if="finding.pose?.rejected"
+          role="status"
+          class="my-1 text-rune-caption text-amber-300"
+        >
           Some pose data was invalid and omitted. Valid landmarks and connections are shown.
         </p>
-        <p class="my-1 text-label text-zinc-400">{{ finding.description }}</p>
-        <p class="m-0 text-label text-zinc-500">{{ finding.evidence }}</p>
+        <p class="my-1 text-rune-caption text-rune-text-2">{{ finding.description }}</p>
+        <p class="m-0 text-rune-caption text-rune-text-2">{{ finding.evidence }}</p>
       </article>
-      <p class="mt-5 text-label text-zinc-500">Model observations, not verified facts.</p>
+      <p class="mt-5 text-rune-caption text-rune-text-2">Model observations, not verified facts.</p>
     </aside>
   </section>
 </template>

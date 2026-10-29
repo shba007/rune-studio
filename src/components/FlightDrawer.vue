@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import RuneSegment from './RuneSegment.vue'
+import RuneIconButton from './RuneIconButton.vue'
+import RuneButton from './RuneButton.vue'
 import ModelIcon from './ModelIcon.vue'
 import { useClipboard } from '@vueuse/core'
 import { computed, ref, watch } from 'vue'
@@ -167,76 +170,61 @@ const rawText = computed(() => {
 
 <template>
   <aside
-    class="absolute inset-y-0 right-0 z-10 flex w-[380px] max-w-full flex-col border-l border-white/10 bg-black text-zinc-100 motion-safe:transition-transform motion-safe:duration-[220ms]"
+    class="absolute inset-y-0 right-0 z-10 flex w-[380px] max-w-full flex-col bg-black text-rune-ink motion-safe:transition-transform motion-safe:duration-[220ms]"
     :class="open ? 'translate-x-0' : 'translate-x-full'"
     :aria-hidden="!open"
     :inert="!open"
     aria-label="Step details"
     data-testid="drawer"
   >
-    <header class="flex h-10 shrink-0 items-center gap-2 border-b border-white/10 px-3">
-      <span class="text-caption text-zinc-400 uppercase">Details</span>
-      <button
+    <header class="flex h-10 shrink-0 items-center gap-2 px-3">
+      <span class="text-rune-heading text-rune-text-2 uppercase">Details</span>
+      <RuneButton
+        size="sm"
         v-if="developer"
-        type="button"
-        class="ml-auto h-6 cursor-pointer rounded-full border border-white/20 px-3 text-label text-zinc-300 uppercase hover:bg-white/10"
+        class="ml-auto"
         :aria-pressed="raw"
         data-testid="raw-toggle"
         @click="raw = !raw"
       >
         Raw
-      </button>
-      <button
-        type="button"
-        class="grid size-6 cursor-pointer place-items-center rounded-full text-zinc-300 hover:bg-white/10"
+      </RuneButton>
+      <RuneIconButton
+        variant="ghost"
+        size="xs"
         :class="developer ? '' : 'ml-auto'"
-        aria-label="Close details"
+        label="Close details"
         @click="emit('close')"
       >
         <AppIcon name="close" />
-      </button>
+      </RuneIconButton>
     </header>
 
-    <nav
-      class="flex shrink-0 flex-wrap gap-1 border-b border-white/10 px-3 py-2"
-      role="tablist"
-      aria-label="Detail tabs"
-    >
-      <button
+    <nav class="flex shrink-0 flex-wrap gap-1 px-3 py-2" role="tablist" aria-label="Detail tabs">
+      <RuneSegment
         v-for="id in tabs"
         :key="id"
-        type="button"
         role="tab"
         :aria-selected="tab === id"
-        class="h-6 cursor-pointer rounded-full border px-3 text-label uppercase transition"
-        :class="
-          tab === id
-            ? 'border-white/60 bg-white/10 text-zinc-50'
-            : 'border-white/15 text-zinc-400 hover:text-zinc-200'
-        "
+        :selected="tab === id"
         :data-testid="`tab-${id}`"
         @click="emit('update:tab', id)"
       >
         {{ TAB_LABEL[id] }}
-      </button>
+      </RuneSegment>
     </nav>
 
-    <div class="min-h-0 flex-1 overflow-y-auto p-3 text-body" role="tabpanel">
-      <p v-if="!step" class="m-0 text-zinc-500">No step is selected.</p>
+    <div class="min-h-0 flex-1 overflow-y-auto p-3 text-rune-body" role="tabpanel">
+      <p v-if="!step" class="m-0 text-rune-text-2">No step is selected.</p>
 
       <template v-else-if="raw && developer">
         <div class="mb-2 flex justify-end">
-          <button
-            type="button"
-            class="h-6 cursor-pointer rounded-full border border-white/20 px-3 text-label text-zinc-300 uppercase hover:bg-white/10"
-            data-testid="copy"
-            @click="copy(rawText)"
-          >
+          <RuneButton size="sm" data-testid="copy" @click="copy(rawText)">
             {{ copied ? 'Copied' : 'Copy' }}
-          </button>
+          </RuneButton>
         </div>
         <pre
-          class="m-0 text-status break-words whitespace-pre-wrap text-zinc-300"
+          class="m-0 text-rune-caption break-words whitespace-pre-wrap text-rune-text-2"
           data-testid="raw"
           >{{ rawText }}</pre>
       </template>
@@ -244,29 +232,31 @@ const rawText = computed(() => {
       <template v-else-if="tab === 'step'">
         <div class="flex items-center gap-3">
           <span
-            class="grid size-10 shrink-0 place-items-center rounded-full bg-white/8 text-zinc-100"
+            class="grid size-10 shrink-0 place-items-center rounded-full bg-rune-surface text-rune-ink"
           >
             <AppIcon :name="KIND_ICON[kindOf(step.tool ?? '')]" />
           </span>
           <div class="flex min-w-0 flex-col">
-            <span class="text-title">{{ toolLabel }}</span>
-            <span class="text-caption text-zinc-500 uppercase"
+            <span class="text-rune-title">{{ toolLabel }}</span>
+            <span class="text-rune-heading text-rune-text-2 uppercase"
               >Step {{ index + 1 }} of {{ header.steps
               }}<template v-if="step.goal !== null"> · Plan item {{ step.goal }}</template></span
             >
           </div>
           <span
-            class="ml-auto rounded-full border px-2 text-caption uppercase"
-            :class="step.error ? 'border-[#d71921]/60 text-error' : 'border-white/30 text-zinc-200'"
+            class="ml-auto rounded-full px-2 text-rune-heading uppercase"
+            :class="step.error ? 'text-error' : 'text-rune-ink'"
             >{{ step.error ? 'Error' : (step.result ?? '—') }}</span
           >
         </div>
-        <p v-if="step.error" class="m-0 mt-3 text-label text-error">{{ mask(step.error) }}</p>
+        <p v-if="step.error" class="m-0 mt-3 text-rune-caption text-error">
+          {{ mask(step.error) }}
+        </p>
 
         <div v-if="riskLevel(step.riskFinal ?? step.riskStated) >= 0" class="mt-4">
-          <div class="mb-1 flex items-center justify-between text-caption uppercase">
-            <span class="text-zinc-500">Risk</span>
-            <span class="text-zinc-300">{{
+          <div class="mb-1 flex items-center justify-between text-rune-heading uppercase">
+            <span class="text-rune-text-2">Risk</span>
+            <span class="text-rune-text-2">{{
               RISK[riskLevel(step.riskFinal ?? step.riskStated)]
             }}</span>
           </div>
@@ -278,54 +268,59 @@ const rawText = computed(() => {
               :class="
                 n - 1 <= riskLevel(step.riskFinal ?? step.riskStated)
                   ? n === 3
-                    ? 'bg-[#d71921]'
-                    : 'bg-zinc-200'
-                  : 'bg-white/10'
+                    ? 'bg-attention'
+                    : 'bg-rune-ink'
+                  : 'bg-rune-raised'
               "
             />
           </div>
         </div>
 
-        <figure v-if="mask(step.reason)" class="m-0 mt-4 border-l border-white/20 pl-3">
-          <figcaption class="mb-1 text-caption text-zinc-500 uppercase">Why</figcaption>
-          <p class="m-0 line-clamp-6 text-body leading-snug text-zinc-200">
+        <figure v-if="mask(step.reason)" class="m-0 mt-4 pl-3">
+          <figcaption class="mb-1 text-rune-heading text-rune-text-2 uppercase">Why</figcaption>
+          <p class="m-0 line-clamp-6 text-rune-body leading-snug text-rune-ink">
             {{ mask(step.reason) }}
           </p>
         </figure>
 
         <div v-if="inputRows.length || step.tool === 'type_text'" class="mt-4">
           <div class="mb-1 flex items-center justify-between">
-            <span class="text-caption text-zinc-500 uppercase">Input</span>
-            <button
+            <span class="text-rune-heading text-rune-text-2 uppercase">Input</span>
+            <RuneButton
+              variant="ghost"
+              size="sm"
               v-if="step.tool === 'type_text'"
-              type="button"
-              class="h-5 cursor-pointer rounded-full border border-white/25 bg-transparent px-2 text-caption text-zinc-300 uppercase hover:bg-white/10"
               :aria-pressed="show"
               data-testid="show-typed"
               @click="emit('toggle-show')"
             >
               {{ show ? 'Hide' : 'Show' }}
-            </button>
+            </RuneButton>
           </div>
-          <dl class="m-0 flex flex-col gap-2 rounded-xl bg-white/5 px-3 py-2" data-testid="args">
+          <dl
+            class="m-0 flex flex-col gap-2 rounded-rune-tile bg-rune-surface px-3 py-2"
+            data-testid="args"
+          >
             <div v-for="row in inputRows" :key="row.key" class="flex flex-col">
-              <dt class="text-caption text-zinc-500 uppercase">{{ row.key }}</dt>
-              <dd class="m-0 text-label break-words text-zinc-100">{{ row.value }}</dd>
+              <dt class="text-rune-heading text-rune-text-2 uppercase">{{ row.key }}</dt>
+              <dd class="m-0 text-rune-caption break-words text-rune-ink">{{ row.value }}</dd>
             </div>
-            <p v-if="inputRows.length === 0" class="m-0 text-label text-zinc-500">No input</p>
+            <p v-if="inputRows.length === 0" class="m-0 text-rune-caption text-rune-text-2">
+              No input
+            </p>
           </dl>
         </div>
         <img
           v-if="screenshot"
           :src="screenshot"
           alt="What the model saw at this step"
-          class="mt-4 w-full rounded-xl border border-white/10"
+          class="mt-4 w-full rounded-rune-tile bg-rune-raised"
           data-testid="shot"
         />
       </template>
 
       <template v-else-if="tab === 'reasoning'">
-        <p class="m-0 mb-2 text-zinc-400">
+        <p class="m-0 mb-2 text-rune-text-2">
           <template v-if="step.thinkingChars !== null"
             >{{ step.thinkingChars }} characters of reasoning</template
           >
@@ -335,36 +330,36 @@ const rawText = computed(() => {
         </p>
         <pre
           v-if="reasoning"
-          class="m-0 text-status break-words whitespace-pre-wrap text-zinc-300"
+          class="m-0 text-rune-caption break-words whitespace-pre-wrap text-rune-text-2"
           >{{ mask(reasoning) }}</pre>
-        <p v-else class="m-0 text-zinc-500">
+        <p v-else class="m-0 text-rune-text-2">
           The reasoning text itself was not recorded for this step. Open the matching call in the
           API tab to look for it.
         </p>
-        <h3 class="mt-4 mb-1 text-caption text-zinc-500 uppercase">Answer</h3>
+        <h3 class="mt-4 mb-1 text-rune-heading text-rune-text-2 uppercase">Answer</h3>
         <p class="m-0">{{ mask(step.reason) || '—' }}</p>
       </template>
 
       <template v-else-if="tab === 'prompt'">
-        <p class="m-0 mb-2 text-caption text-zinc-500 uppercase">Sent to the model</p>
+        <p class="m-0 mb-2 text-rune-heading text-rune-text-2 uppercase">Sent to the model</p>
         <div class="flex flex-col gap-1" data-testid="prompt">
           <details
             v-for="(part, at) in sections"
             :key="at"
             :open="at === 0"
-            class="group rounded-xl bg-white/5 px-3 py-2"
+            class="group rounded-rune-tile bg-rune-surface px-3 py-2"
           >
             <summary
-              class="flex cursor-pointer list-none items-center gap-2 text-caption text-zinc-300 uppercase"
+              class="flex cursor-pointer list-none items-center gap-2 text-rune-heading text-rune-text-2 uppercase"
             >
               <span class="min-w-0 flex-1 truncate">{{ part.title }}</span>
-              <span class="text-zinc-500"
+              <span class="text-rune-text-2"
                 >{{ part.lines }} {{ part.lines === 1 ? 'line' : 'lines' }}</span
               >
               <AppIcon name="chevron" size="sm" class="transition group-open:rotate-180" />
             </summary>
             <pre
-              class="m-0 mt-2 max-h-48 overflow-y-auto text-status break-words whitespace-pre-wrap text-zinc-300"
+              class="m-0 mt-2 max-h-48 overflow-y-auto text-rune-caption break-words whitespace-pre-wrap text-rune-text-2"
               >{{ part.body }}</pre>
           </details>
         </div>
@@ -378,10 +373,10 @@ const rawText = computed(() => {
               { label: 'Final', value: step.riskFinal },
             ]"
             :key="item.label"
-            class="rounded-xl bg-white/5 p-3"
+            class="rounded-rune-tile bg-rune-surface p-3"
           >
-            <span class="text-caption text-zinc-500 uppercase">{{ item.label }} risk</span>
-            <p class="m-0 text-title">
+            <span class="text-rune-heading text-rune-text-2 uppercase">{{ item.label }} risk</span>
+            <p class="m-0 text-rune-title">
               {{ riskLevel(item.value) >= 0 ? RISK[riskLevel(item.value)] : '—' }}
             </p>
             <div class="mt-2 flex gap-1" aria-hidden="true">
@@ -392,34 +387,38 @@ const rawText = computed(() => {
                 :class="
                   n - 1 <= riskLevel(item.value)
                     ? n === 3
-                      ? 'bg-[#d71921]'
-                      : 'bg-zinc-200'
-                    : 'bg-white/10'
+                      ? 'bg-attention'
+                      : 'bg-rune-ink'
+                    : 'bg-rune-raised'
                 "
               />
             </div>
           </div>
         </div>
-        <p class="m-0 mt-3 flex items-center gap-2 text-caption text-zinc-500 uppercase">
+        <p class="m-0 mt-3 flex items-center gap-2 text-rune-heading text-rune-text-2 uppercase">
           Gate
-          <span class="rounded-full border border-white/25 px-2 text-zinc-200">{{
-            step.gate ?? '—'
-          }}</span>
+          <span class="rounded-full px-2 text-rune-ink bg-rune-raised">{{ step.gate ?? '—' }}</span>
         </p>
         <ul v-if="riskReasons.length" class="m-0 mt-3 flex list-none flex-col gap-1 p-0">
           <li
             v-for="reason in riskReasons"
             :key="reason"
-            class="flex items-start gap-2 text-label text-zinc-300"
+            class="flex items-start gap-2 text-rune-caption text-rune-text-2"
           >
-            <span class="mt-1.5 size-1.5 shrink-0 rounded-full bg-zinc-400" />{{ reason }}
+            <span class="mt-1.5 size-1.5 shrink-0 rounded-full bg-rune-text-3" />{{ reason }}
           </li>
         </ul>
         <template v-if="asked.length">
-          <h3 class="mt-4 mb-1 text-caption text-zinc-500 uppercase">Questions and answers</h3>
-          <ul class="m-0 flex list-none flex-col gap-1 p-0 text-status text-zinc-300">
-            <li v-for="event in asked" :key="event.id" class="rounded-xl bg-white/5 px-3 py-2">
-              <span class="text-caption text-zinc-500 uppercase">{{ event.kind }}</span>
+          <h3 class="mt-4 mb-1 text-rune-heading text-rune-text-2 uppercase">
+            Questions and answers
+          </h3>
+          <ul class="m-0 flex list-none flex-col gap-1 p-0 text-rune-caption text-rune-text-2">
+            <li
+              v-for="event in asked"
+              :key="event.id"
+              class="rounded-rune-tile bg-rune-surface px-3 py-2"
+            >
+              <span class="text-rune-heading text-rune-text-2 uppercase">{{ event.kind }}</span>
               <br />{{ mask(event.dataJson) }}
             </li>
           </ul>
@@ -428,7 +427,7 @@ const rawText = computed(() => {
 
       <template v-else-if="tab === 'api'">
         <div
-          class="max-h-56 overflow-y-auto rounded-lg border border-white/10"
+          class="max-h-56 overflow-y-auto rounded-rune-tile bg-rune-raised"
           :style="{ height: `${Math.min(LIST_HEIGHT, calls.length * ROW)}px` }"
           data-testid="calls"
           @scroll="listTop = ($event.target as HTMLElement).scrollTop"
@@ -438,8 +437,8 @@ const rawText = computed(() => {
               v-for="(call, offset) in shownCalls"
               :key="call.id"
               type="button"
-              class="absolute right-0 left-0 flex cursor-pointer items-center gap-2 border-0 border-b border-white/5 bg-transparent px-2 text-left text-status text-zinc-200 hover:bg-white/5"
-              :class="picked === call.id ? 'bg-white/10' : ''"
+              class="absolute right-0 left-0 flex cursor-pointer items-center gap-2 bg-transparent px-2 text-left text-rune-caption text-rune-ink hover:bg-white/5"
+              :class="picked === call.id ? 'bg-rune-raised' : ''"
               :style="{ top: `${(rows.from + offset) * ROW}px`, height: `${ROW}px` }"
               :aria-expanded="picked === call.id"
               data-testid="call"
@@ -449,7 +448,7 @@ const rawText = computed(() => {
               <span class="w-8">#{{ call.attempt }}</span>
               <span class="w-9">{{ call.status ?? '—' }}</span>
               <span class="w-14">{{ timingText(call.durationMs ?? 0) }}</span>
-              <span v-if="call.waitBeforeMs > 0" class="w-14 text-zinc-400"
+              <span v-if="call.waitBeforeMs > 0" class="w-14 text-rune-text-2"
                 >+{{ timingText(call.waitBeforeMs ?? 0) }}</span
               >
               <span
@@ -465,54 +464,54 @@ const rawText = computed(() => {
             v-if="
               pickedCall.model || pickedCall.servedModel || pickedCall.swapMs || pickedCall.locality
             "
-            class="flex flex-wrap items-center gap-2 text-status"
+            class="flex flex-wrap items-center gap-2 text-rune-caption"
             data-testid="call-model-info"
           >
             <ModelIcon :model="pickedCall.servedModel || pickedCall.model" />
             <span
               v-if="pickedCall.servedModel && pickedCall.servedModel !== pickedCall.model"
-              class="rounded bg-amber-500/20 px-1.5 py-0.5 font-medium text-amber-300"
+              class="rounded-full bg-amber-500/20 px-1.5 py-0.5 font-medium text-amber-300"
               data-testid="model-mismatch-warning"
             >
               ⚠ Served by {{ pickedCall.servedModel }} (requested {{ pickedCall.model }})
             </span>
-            <span v-else-if="pickedCall.servedModel" class="text-zinc-400">
+            <span v-else-if="pickedCall.servedModel" class="text-rune-text-2">
               Model: {{ pickedCall.servedModel }}
             </span>
-            <span v-else class="text-zinc-400">Model: {{ pickedCall.model }}</span>
-            <span v-if="pickedCall.locality" class="text-zinc-400"
+            <span v-else class="text-rune-text-2">Model: {{ pickedCall.model }}</span>
+            <span v-if="pickedCall.locality" class="text-rune-text-2"
               >Locality: {{ pickedCall.locality }}</span
             >
-            <span v-if="pickedCall.swapMs" class="text-zinc-400">
+            <span v-if="pickedCall.swapMs" class="text-rune-text-2">
               Swap: {{ timingText(pickedCall.swapMs ?? 0) }}
             </span>
           </div>
-          <p v-if="pickedCall.error" class="m-0 text-status text-error">
+          <p v-if="pickedCall.error" class="m-0 text-rune-caption text-error">
             {{ mask(pickedCall.error) }}
           </p>
-          <p v-if="bodiesState === 'loading'" class="m-0 text-zinc-500">Loading…</p>
-          <p v-else-if="bodiesState === 'missing'" class="m-0 text-zinc-500">
+          <p v-if="bodiesState === 'loading'" class="m-0 text-rune-text-2">Loading…</p>
+          <p v-else-if="bodiesState === 'missing'" class="m-0 text-rune-text-2">
             The bodies of this call are not in the record.
           </p>
           <template v-else-if="pickedBodies">
             <p
               v-if="pickedCall.truncated"
-              class="m-0 text-status text-zinc-400"
+              class="m-0 text-rune-caption text-rune-text-2"
               data-testid="truncated"
             >
               This body was cut at 64 KB when it was stored.
             </p>
-            <p class="m-0 text-status text-zinc-500">
+            <p class="m-0 text-rune-caption text-rune-text-2">
               Images are not kept in the record (only their size); the screenshot of the step is
               shown above.
             </p>
-            <h3 class="m-0 text-caption text-zinc-500 uppercase">Request</h3>
+            <h3 class="m-0 text-rune-heading text-rune-text-2 uppercase">Request</h3>
             <pre
-              class="m-0 max-h-60 overflow-auto text-status break-words whitespace-pre-wrap text-zinc-300"
+              class="m-0 max-h-60 overflow-auto text-rune-caption break-words whitespace-pre-wrap text-rune-text-2"
               >{{ mask(pretty(pickedBodies.request)) }}</pre>
-            <h3 class="m-0 text-caption text-zinc-500 uppercase">Response</h3>
+            <h3 class="m-0 text-rune-heading text-rune-text-2 uppercase">Response</h3>
             <pre
-              class="m-0 max-h-60 overflow-auto text-status break-words whitespace-pre-wrap text-zinc-300"
+              class="m-0 max-h-60 overflow-auto text-rune-caption break-words whitespace-pre-wrap text-rune-text-2"
               >{{ mask(pretty(pickedBodies.response)) }}</pre>
           </template>
         </div>
@@ -523,18 +522,18 @@ const rawText = computed(() => {
           <li
             v-for="item in timing"
             :key="item.phase"
-            class="grid grid-cols-[64px_minmax(0,1fr)_auto] items-center gap-2 text-status"
+            class="grid grid-cols-[64px_minmax(0,1fr)_auto] items-center gap-2 text-rune-caption"
           >
-            <span class="text-zinc-400 uppercase">{{ item.phase }}</span>
-            <span class="h-1.5 rounded-full bg-white/10"
+            <span class="text-rune-text-2 uppercase">{{ item.phase }}</span>
+            <span class="h-1.5 rounded-full bg-rune-raised"
               ><span
-                class="block h-full rounded-full bg-zinc-200"
+                class="block h-full rounded-full bg-rune-ink"
                 :style="{ width: `${(item.ms / timingMax) * 100}%` }"
             /></span>
             <span class="text-right whitespace-nowrap">{{ timingText(item.ms) }}</span>
           </li>
         </ul>
-        <p class="mt-4 mb-0 text-status text-zinc-400">
+        <p class="mt-4 mb-0 text-rune-caption text-rune-text-2">
           Run:
           {{ header.durationSecs === null ? 'still open' : clock(header.durationSecs * 1000) }} ·
           {{ header.steps }} steps · {{ header.retries }} retried calls
@@ -548,25 +547,20 @@ const rawText = computed(() => {
         <p v-if="outside" class="m-0">
           <strong class="font-semibold">rune_{{ step.tool }}</strong> called by {{ header.source }}
         </p>
-        <pre class="m-0 mt-2 text-status break-words whitespace-pre-wrap text-zinc-300">{{
+        <pre class="m-0 mt-2 text-rune-caption break-words whitespace-pre-wrap text-rune-text-2">{{
           argsText(step, show)
         }}</pre>
       </template>
 
       <template v-else-if="tab === 'files'">
-        <ul class="m-0 list-none space-y-1 p-0 text-status text-zinc-300">
+        <ul class="m-0 list-none space-y-1 p-0 text-rune-caption text-rune-text-2">
           <li v-if="step.observationFile">{{ step.observationFile }}</li>
           <li v-if="header.video?.file">{{ header.video.file }}</li>
           <li>session.json</li>
         </ul>
-        <button
-          type="button"
-          class="mt-3 h-7 cursor-pointer rounded-full border border-white/25 px-4 text-label text-zinc-200 uppercase hover:bg-white/10"
-          data-testid="reveal"
-          @click="emit('reveal')"
-        >
+        <RuneButton size="sm" class="mt-3" data-testid="reveal" @click="emit('reveal')">
           Reveal in folder
-        </button>
+        </RuneButton>
       </template>
     </div>
   </aside>

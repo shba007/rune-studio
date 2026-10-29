@@ -22,7 +22,7 @@ const model = defineModel<string>({ required: true })
       :aria-label="label"
       spellcheck="false"
       autocomplete="off"
-      class="h-9 w-full min-w-0 max-w-full sm:w-72 rounded-xl border-0 bg-white/6 px-rune-2 text-rune-body text-zinc-100 placeholder:text-zinc-600"
+      class="h-9 w-full min-w-0 max-w-full sm:w-72 rounded-rune-tile bg-rune-raised px-rune-2 font-rune-reading text-rune-body text-rune-ink placeholder:text-rune-text-3"
       @change="$emit('commit')"
       @keydown.enter="$emit('commit')"
     />

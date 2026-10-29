@@ -1,3 +1,4 @@
+import RuneNavItem from './RuneNavItem.vue'
 import { flushPromises, shallowMount } from '@vue/test-utils'
 import { ref } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
@@ -27,7 +28,7 @@ afterEach(() => {
 
 describe('release settings availability', () => {
   it('keeps Agents available without the bridge, orders navigation, and removes the saved footer', () => {
-    const wrapper = shallowMount(SettingsWindow)
+    const wrapper = shallowMount(SettingsWindow, { global: { stubs: { RuneNavItem } } })
     expect(wrapper.findAll('nav button').map((button) => button.text())).toEqual([
       'General',
       'Models',
@@ -42,44 +43,23 @@ describe('release settings availability', () => {
     expect(wrapper.find('[data-testid="saved"]').exists()).toBe(false)
     wrapper.unmount()
   })
-  it('searches applicable sections by settings keywords', async () => {
-    const wrapper = shallowMount(SettingsWindow)
-    await wrapper.get('input[aria-label="Search sections"]').setValue('unmatched-setting')
-    expect(wrapper.text()).toContain('No matching sections')
-    await wrapper.get('input[aria-label="Search sections"]').setValue('voice')
-    expect(wrapper.findAll('nav button').map((button) => button.text())).toEqual(['Models'])
-    await wrapper.get('[data-testid="nav-models"]').trigger('click')
-    expect(wrapper.get('h1').text()).toBe('Models')
-    await wrapper.get('input[aria-label="Search sections"]').setValue('')
-    expect(wrapper.find('[data-testid="nav-capture"]').exists()).toBe(true)
+  it('has no section search field', () => {
+    const wrapper = shallowMount(SettingsWindow, { global: { stubs: { RuneNavItem } } })
+    expect(wrapper.find('input[type="search"]').exists()).toBe(false)
     wrapper.unmount()
   })
-  it('finds Shortcuts, Kit & tools and Agents by their obvious words', async () => {
-    const wrapper = shallowMount(SettingsWindow)
-    const search = wrapper.get('input[aria-label="Search sections"]')
-    const names = () => wrapper.findAll('nav button').map((button) => button.text())
-    await search.setValue('hotkey')
-    expect(names()).toEqual(['Shortcuts'])
-    await search.setValue('mcp')
-    expect(names()).toEqual(['Kit & tools'])
-    await search.setValue('host')
-    expect(names()).toEqual(['Agents'])
-    wrapper.unmount()
-  })
-  it('separates the system sections with one divider and gives Kit & tools its own icon', async () => {
-    const wrapper = shallowMount(SettingsWindow)
+  it('separates the system sections with one divider', () => {
+    const wrapper = shallowMount(SettingsWindow, { global: { stubs: { RuneNavItem } } })
     const nav = wrapper.get('nav')
     const dividers = nav.findAll('[data-testid="nav-divider"]')
     expect(dividers).toHaveLength(1)
     const order = nav.findAll('button, [data-testid="nav-divider"]').map((node) => node.text())
     expect(order.indexOf('')).toBe(order.indexOf('Developer') - 1)
-    await wrapper.get('input[aria-label="Search sections"]').setValue('developer')
-    expect(wrapper.find('[data-testid="nav-divider"]').exists()).toBe(false)
     wrapper.unmount()
   })
   it('opens task history in the workspace rather than a Settings section, including old links', async () => {
     window.history.replaceState({}, '', '/?section=artifacts')
-    const wrapper = shallowMount(SettingsWindow)
+    const wrapper = shallowMount(SettingsWindow, { global: { stubs: { RuneNavItem } } })
     const agent = vi.mocked(useAgent).mock.results.at(-1)!.value
     expect(agent.openWorkspace).toHaveBeenCalledWith('tasks')
     expect(wrapper.find('[data-testid="nav-artifacts"]').exists()).toBe(false)
@@ -103,7 +83,7 @@ describe('release settings availability', () => {
       notice: ref(null),
       bridge: ref(null),
     } as unknown as Agent)
-    const wrapper = shallowMount(SettingsWindow)
+    const wrapper = shallowMount(SettingsWindow, { global: { stubs: { RuneNavItem } } })
     const draft = wrapper.getComponent(SettingsGeneral).props('draft') as Settings
     draft.models.analysis = 'vision'
     draft.lifeConsents!.health = true
@@ -120,7 +100,7 @@ describe('release settings availability', () => {
 
   it('does not expose unfinished life controls, including through an old deep link', async () => {
     window.history.replaceState({}, '', '/?section=life')
-    const wrapper = shallowMount(SettingsWindow)
+    const wrapper = shallowMount(SettingsWindow, { global: { stubs: { RuneNavItem } } })
     await flushPromises()
     expect(wrapper.find('[data-testid="nav-life"]').exists()).toBe(false)
     expect(wrapper.find('h1').text()).toBe('General')

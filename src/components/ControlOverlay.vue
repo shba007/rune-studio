@@ -671,42 +671,42 @@ onBeforeUnmount(() => {
             :own="!identity"
           />
         </span>
-        <span class="text-caption whitespace-nowrap uppercase" :title="hint"
+        <span class="text-rune-heading whitespace-nowrap uppercase" :title="hint"
           >{{ shownName }} is in control</span
         >
 
         <Transition name="action" mode="out-in">
-          <div
-            v-if="action"
-            :key="action.key"
-            class="flex items-center gap-2 border-l border-white/20 pl-3"
-          >
+          <div v-if="action" :key="action.key" class="flex items-center gap-2 pl-3">
             <AppIcon :name="KIND_ICON[action.kind]" />
-            <span class="text-caption whitespace-nowrap uppercase">{{ action.label }}</span>
-            <span v-if="action.detail" class="max-w-64 truncate text-label text-white/70">{{
-              action.detail
-            }}</span>
+            <span class="text-rune-heading whitespace-nowrap uppercase">{{ action.label }}</span>
+            <span
+              v-if="action.detail"
+              class="max-w-64 truncate text-rune-caption text-rune-text-2"
+              >{{ action.detail }}</span
+            >
             <span
               v-if="action.typing"
-              class="flex items-center text-label whitespace-pre text-white/70"
+              class="flex items-center text-rune-caption whitespace-pre text-rune-text-2"
             >
               {{ typedShown }}<span class="caret ml-px h-4 w-[2px] bg-white" />
             </span>
           </div>
         </Transition>
 
-        <div class="flex items-center gap-2 border-l border-white/20 pr-6 pl-3">
-          <span v-if="hotkeyLabel" class="text-caption whitespace-nowrap text-white/50 uppercase">{{
-            hotkeyLabel
-          }}</span>
+        <div class="flex items-center gap-2 pr-6 pl-3">
+          <span
+            v-if="hotkeyLabel"
+            class="text-rune-heading whitespace-nowrap text-rune-text-3 uppercase"
+            >{{ hotkeyLabel }}</span
+          >
         </div>
       </OverlayBarShell>
       <OverlayBarShell v-else-if="isRecording()">
-        <span class="size-2 rounded-full bg-[#2d71c3] motion-safe:animate-pulse" />
-        <span class="text-caption whitespace-nowrap uppercase"
+        <span class="size-2 rounded-full bg-voice motion-safe:animate-pulse" />
+        <span class="text-rune-heading whitespace-nowrap uppercase"
           >Screen recording · {{ standaloneRecording?.seconds }}s</span
         >
-        <span class="border-l border-white/20 pr-6 pl-3 text-caption text-white/50 uppercase">{{
+        <span class="pr-6 pl-3 text-rune-heading text-rune-text-3 uppercase">{{
           hotkeyLabel
         }}</span>
       </OverlayBarShell>
@@ -740,7 +740,7 @@ onBeforeUnmount(() => {
                 ? 'Configured model; serving model not confirmed'
                 : undefined
             "
-            class="min-w-0 break-all font-sans text-rune-heading text-white/60 uppercase"
+            class="min-w-0 break-all font-sans text-rune-heading text-rune-text-3 uppercase"
             >{{ bubble.label }}</span
           >
           <span v-if="bubble.live" class="flex gap-1" aria-hidden="true">
@@ -753,7 +753,7 @@ onBeforeUnmount(() => {
           </span>
         </div>
         <p
-          class="m-0 text-rune-body whitespace-pre-wrap text-white/90 [overflow-wrap:anywhere]"
+          class="m-0 text-rune-body whitespace-pre-wrap text-rune-ink [overflow-wrap:anywhere]"
           :class="bubble.live ? 'line-clamp-3' : ''"
         >
           {{ bubble.text }}

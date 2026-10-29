@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import RuneButton from './RuneButton.vue'
 import { invoke } from '@tauri-apps/api/core'
 import { computed, ref } from 'vue'
 import type { IntakeEntry } from '@/types/decisions'
@@ -63,10 +64,7 @@ async function save() {
 }
 </script>
 <template>
-  <section
-    aria-label="Goal progress and tasks"
-    class="flex flex-col gap-rune-3 border-t border-white/10 pt-rune-3"
-  >
+  <section aria-label="Goal progress and tasks" class="flex flex-col gap-rune-3 pt-rune-3">
     <div class="grid gap-6 sm:grid-cols-2">
       <WorkProgress
         :value="plan.value"
@@ -83,28 +81,23 @@ async function save() {
       />
     </div>
     <div class="flex flex-wrap gap-rune-2 text-rune-body">
-      <button
-        class="cursor-pointer text-zinc-200 hover:text-white"
-        @click="emit('tasks', entry.id)"
-      >
-        {{ children.length }} linked task{{ children.length === 1 ? '' : 's' }} →</button
-      ><button
-        class="cursor-pointer text-zinc-400 hover:text-white"
-        @click="emit('create', entry.id)"
-      >
-        + Add task</button
-      ><button
+      <RuneButton variant="ghost" size="sm" @click="emit('tasks', entry.id)">
+        {{ children.length }} linked task{{ children.length === 1 ? '' : 's' }} →</RuneButton
+      ><RuneButton variant="ghost" size="sm" @click="emit('create', entry.id)">
+        + Add task</RuneButton
+      ><RuneButton
+        variant="ghost"
+        size="sm"
         :disabled="entry.status !== 'goal_ready'"
-        class="cursor-pointer text-zinc-400 hover:text-white disabled:opacity-40"
         @click="edit"
       >
         {{ entry.outcomeMetric ? 'Record outcome progress' : 'Set outcome measure' }}
-      </button>
+      </RuneButton>
     </div>
     <ul v-if="children.length" class="m-0 flex list-none flex-col gap-2 p-0 text-rune-body">
       <li v-for="task in children.slice(0, 3)" :key="task.id">
         <button
-          class="flex w-full cursor-pointer items-center justify-between gap-rune-2 text-left text-zinc-400 hover:text-white"
+          class="flex w-full cursor-pointer items-center justify-between gap-rune-2 text-left text-rune-text-2 hover:text-white"
           @click="emit('task', task.id)"
         >
           <span>{{ task.title }}</span
@@ -116,59 +109,54 @@ async function save() {
     </ul>
     <form
       v-if="editing"
-      class="grid gap-rune-2 rounded-xl bg-white/[0.025] p-4 sm:grid-cols-3"
+      class="grid gap-rune-2 rounded-rune-tile bg-white/[0.025] p-4 sm:grid-cols-3"
       aria-label="Record goal outcome"
       @submit.prevent="save"
     >
-      <label class="flex flex-col gap-2 text-rune-body text-zinc-400"
+      <label class="flex flex-col gap-2 text-rune-body text-rune-text-2"
         >Starting value<input
           v-model="baseline"
           type="number"
           step="any"
           required
           :disabled="!!entry.outcomeMetric || pending"
-          class="min-w-0 rounded-lg bg-white/5 p-2 text-zinc-100" /></label
-      ><label class="flex flex-col gap-2 text-rune-body text-zinc-400"
+          class="min-w-0 rounded-rune-tile bg-rune-surface p-2 text-rune-ink" /></label
+      ><label class="flex flex-col gap-2 text-rune-body text-rune-text-2"
         >Current value<input
           v-model="current"
           type="number"
           step="any"
           required
           :disabled="pending"
-          class="min-w-0 rounded-lg bg-white/5 p-2 text-zinc-100" /></label
-      ><label class="flex flex-col gap-2 text-rune-body text-zinc-400"
+          class="min-w-0 rounded-rune-tile bg-rune-surface p-2 text-rune-ink" /></label
+      ><label class="flex flex-col gap-2 text-rune-body text-rune-text-2"
         >Target value<input
           v-model="target"
           type="number"
           step="any"
           required
           :disabled="!!entry.outcomeMetric || pending"
-          class="min-w-0 rounded-lg bg-white/5 p-2 text-zinc-100" /></label
-      ><label class="flex flex-col gap-2 text-rune-body text-zinc-400"
+          class="min-w-0 rounded-rune-tile bg-rune-surface p-2 text-rune-ink" /></label
+      ><label class="flex flex-col gap-2 text-rune-body text-rune-text-2"
         >Unit<input
           v-model="unit"
           required
           maxlength="80"
           :disabled="!!entry.outcomeMetric || pending"
           placeholder="For example, km or currency"
-          class="rounded-lg bg-white/5 p-2 text-zinc-100" /></label
-      ><label class="flex flex-col gap-2 text-rune-body text-zinc-400 sm:col-span-2"
+          class="rounded-rune-tile bg-rune-surface p-2 text-rune-ink" /></label
+      ><label class="flex flex-col gap-2 text-rune-body text-rune-text-2 sm:col-span-2"
         >Progress note<input
           v-model="note"
           maxlength="2000"
           :disabled="pending"
-          class="rounded-lg bg-white/5 p-2 text-zinc-100"
+          class="rounded-rune-tile bg-rune-surface p-2 text-rune-ink"
       /></label>
-      <p class="m-0 text-rune-caption text-zinc-500 sm:col-span-3">
+      <p class="m-0 text-rune-caption text-rune-text-2 sm:col-span-3">
         This is your reported outcome, not automatically verified evidence. Progress is measured
         from the starting value toward the target; lower targets are supported.
       </p>
-      <button
-        :disabled="pending"
-        class="min-h-9 cursor-pointer rounded-full bg-zinc-100 px-4 py-2 text-rune-body text-zinc-950"
-      >
-        Save measurement
-      </button>
+      <RuneButton variant="primary" :disabled="pending"> Save measurement </RuneButton>
       <p v-if="error" role="alert" class="m-0 text-rune-body text-error sm:col-span-3">
         {{ error }}
       </p>

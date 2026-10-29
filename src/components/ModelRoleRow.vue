@@ -74,21 +74,21 @@ function statusLabel(status: string) {
 </script>
 
 <template>
-  <div class="flex min-w-0 flex-col gap-3 border-b border-white/8 py-5 last:border-b-0">
+  <div class="flex min-w-0 flex-col gap-3 py-5">
     <div class="flex flex-wrap items-center justify-between gap-3">
-      <label :for="inputId" class="text-body font-medium text-zinc-100">{{ roleLabel }}</label>
+      <label :for="inputId" class="text-rune-body font-medium text-rune-ink">{{ roleLabel }}</label>
       <div class="relative w-full min-w-0 sm:w-72">
         <ModelIcon
           v-if="effectiveModelId"
           :model="effectiveModelId"
-          class="pointer-events-none absolute top-3 left-3 text-zinc-300"
+          class="pointer-events-none absolute top-3 left-3 text-rune-text-2"
         />
         <select
           v-if="selectedModels"
           :id="inputId"
           v-model="modelValue"
           :aria-describedby="`${inputId}-status`"
-          class="h-10 w-full min-w-0 rounded-xl border-0 bg-white/6 px-3 text-body text-zinc-100"
+          class="h-10 w-full min-w-0 rounded-rune-tile bg-rune-surface px-3 text-rune-body text-rune-ink"
         >
           <option value="">
             {{ roleKey === 'agent' || roleKey === 'analysis' ? 'Choose a model' : 'Same as agent' }}
@@ -120,11 +120,11 @@ function statusLabel(status: string) {
           spellcheck="false"
           autocomplete="off"
           :class="effectiveModelId ? 'pl-9' : ''"
-          class="h-10 w-full min-w-0 rounded-xl border-0 bg-white/6 px-3 text-body text-zinc-100 placeholder:text-zinc-400"
+          class="h-10 w-full min-w-0 rounded-rune-tile bg-rune-surface px-3 text-rune-body text-rune-ink placeholder:text-rune-text-3"
         />
       </div>
     </div>
-    <p :id="`${inputId}-status`" class="m-0 break-words text-label text-zinc-400">
+    <p :id="`${inputId}-status`" class="m-0 break-words text-rune-caption text-rune-text-2">
       <template v-if="roleKey !== 'agent' && roleKey !== 'analysis' && !modelValue.trim()">
         Using agent model{{ effectiveModelId ? ` · ${effectiveModelId}` : '' }}.
       </template>
@@ -143,9 +143,9 @@ function statusLabel(status: string) {
           : 'Choose a model to see its capabilities.'
       }}</template>
     </p>
-    <details v-if="currentCaps" class="text-label text-zinc-300">
+    <details v-if="currentCaps" class="text-rune-caption text-rune-text-2">
       <summary
-        class="w-fit cursor-pointer rounded py-1 text-label text-zinc-400 focus-visible:outline-2 focus-visible:outline-white/40"
+        class="w-fit cursor-pointer rounded-rune-tile py-1 text-rune-caption text-rune-text-2"
       >
         Model capabilities
       </summary>
@@ -161,19 +161,23 @@ function statusLabel(status: string) {
               class="size-1.5 shrink-0 rounded-full"
               :class="
                 cap.value === 'yes'
-                  ? 'bg-zinc-100'
+                  ? 'bg-rune-ink'
                   : cap.value === 'no'
-                    ? 'border border-zinc-500'
-                    : 'bg-zinc-500'
+                    ? 'bg-rune-raised'
+                    : 'bg-rune-text-3'
               "
             />
             {{ cap.label }}
           </dt>
-          <dd class="m-0 text-zinc-400">{{ statusLabel(cap.value) }}</dd>
+          <dd class="m-0 text-rune-text-2">{{ statusLabel(cap.value) }}</dd>
         </div>
       </dl>
     </details>
-    <p v-if="warning" role="status" class="m-0 flex items-start gap-2 text-label text-attention">
+    <p
+      v-if="warning"
+      role="status"
+      class="m-0 flex items-start gap-2 text-rune-caption text-attention"
+    >
       <span aria-hidden="true" class="mt-1.5 size-1.5 shrink-0 rounded-full bg-attention" />
       {{ warning }}
     </p>

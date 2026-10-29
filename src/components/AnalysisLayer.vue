@@ -65,7 +65,7 @@ const annotations = computed(() =>
   <div class="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
     <p
       v-if="snapshot.id.startsWith('insight-') && markers.length"
-      class="absolute top-6 left-1/2 -translate-x-1/2 rounded-full bg-[#141414]/90 px-4 py-2 text-caption text-zinc-300 uppercase"
+      class="absolute top-6 left-1/2 -translate-x-1/2 rounded-full bg-rune-surface/90 px-4 py-2 text-rune-heading text-rune-text-2 uppercase"
     >
       Captured observations · Escape
     </p>
@@ -91,7 +91,7 @@ const annotations = computed(() =>
     >
       <div
         v-if="!marker.pose"
-        class="absolute inset-0 rounded-sm bg-[#2d71c3]/10 [background-image:radial-gradient(circle,rgba(45,113,195,.35)_1px,transparent_1px)] [background-size:6px_6px]"
+        class="absolute inset-0 rounded-rune-tile bg-voice/10 [background-image:radial-gradient(circle,rgba(45,113,195,.35)_1px,transparent_1px)] [background-size:6px_6px]"
       />
       <svg
         v-if="marker.pose"
@@ -130,7 +130,7 @@ const annotations = computed(() =>
           'bottom-0 right-0 border-b-2 border-r-2',
         ]"
         :key="corner"
-        class="absolute size-3 border-[#f1f1ef] [filter:drop-shadow(0_0_1px_#141414)_drop-shadow(0_1px_1px_#141414)]"
+        class="absolute size-3 [filter:drop-shadow(0_0_1px_#141414)_drop-shadow(0_1px_1px_#141414)]"
         :class="corner"
       />
       <span class="sr-only">{{ marker.n }} · {{ marker.label }}</span>
@@ -160,7 +160,7 @@ const annotations = computed(() =>
     <template v-for="(annotation, index) in annotations" :key="`label-${markers[index]!.n}`">
       <span
         v-if="annotation"
-        class="absolute truncate rounded-sm bg-[#141414]/80 px-1.5 text-[10px] font-semibold leading-[18px] tracking-wide text-[#f1f1ef] uppercase"
+        class="absolute truncate rounded-rune-tile bg-rune-surface/80 px-1.5 text-[10px] font-semibold leading-[18px] tracking-wide text-rune-ink uppercase"
         :data-annotation="markers[index]!.n"
         :style="{
           left: `${annotation.label.left}px`,

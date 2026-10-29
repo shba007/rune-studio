@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import RuneButton from './RuneButton.vue'
 import { invoke } from '@tauri-apps/api/core'
 import { computed, nextTick, ref, watch } from 'vue'
 import type { FlightRun } from '@/config/flight'
@@ -116,35 +117,25 @@ function previewRun(row: { task: WorkspaceTask | null; run: FlightRun | null }):
 <template>
   <section aria-label="Task activity timeline" class="flex flex-col gap-5">
     <header class="flex flex-wrap items-center justify-between gap-3">
-      <button
-        v-if="parentFilter"
-        class="cursor-pointer text-label text-zinc-400"
-        @click="emit('clear')"
-      >
+      <RuneButton variant="ghost" size="sm" v-if="parentFilter" @click="emit('clear')">
         Showing goal tasks · Clear filter ×
-      </button>
+      </RuneButton>
     </header>
-    <p v-if="error || workspace.error.value" role="alert" class="m-0 text-label text-error">
+    <p v-if="error || workspace.error.value" role="alert" class="m-0 text-rune-caption text-error">
       {{ error || workspace.error.value }}
     </p>
-    <p v-if="notice" role="status" class="m-0 text-label text-zinc-400">{{ notice }}</p>
-    <div class="ml-2 flex flex-col border-l border-white/10 pl-6">
-      <p v-if="!rows.length" class="m-0 text-rune-body text-zinc-400">
+    <p v-if="notice" role="status" class="m-0 text-rune-caption text-rune-text-2">{{ notice }}</p>
+    <div class="flex flex-col gap-rune-1">
+      <p v-if="!rows.length" class="m-0 text-rune-body text-rune-text-2">
         No tasks yet. Use + New task, or run a request from the Rune pill.
       </p>
       <article
         v-for="row in rows"
         :key="row.id"
         :data-work-task="row.id"
-        class="relative flex min-w-0 flex-col gap-3 border-b border-white/8 py-5 last:border-0"
-        :class="
-          focusTaskId === row.id ? 'rounded-xl bg-white/[0.025] px-4 ring-1 ring-white/15' : ''
-        "
+        class="relative flex min-w-0 flex-col gap-3 rounded-rune-tile bg-rune-surface p-rune-2"
+        :class="focusTaskId === row.id ? 'bg-rune-raised' : ''"
       >
-        <span
-          class="absolute top-7 -left-[29px] size-2 rounded-full border border-zinc-500 bg-black"
-          aria-hidden="true"
-        />
         <div class="flex flex-col gap-5 sm:flex-row">
           <TaskPreview
             :run="previewRun(row)"
@@ -153,7 +144,7 @@ function previewRun(row: { task: WorkspaceTask | null; run: FlightRun | null }):
           <div class="flex min-w-0 flex-1 flex-col gap-3">
             <header class="flex flex-wrap items-start justify-between gap-3">
               <h3
-                class="m-0 max-w-2xl line-clamp-2 text-body text-zinc-200"
+                class="m-0 max-w-2xl line-clamp-2 text-rune-body text-rune-ink"
                 :title="row.task?.title ?? row.run?.task"
               >
                 {{ row.task?.title ?? row.run?.task }}
@@ -161,12 +152,12 @@ function previewRun(row: { task: WorkspaceTask | null; run: FlightRun | null }):
               <WhenText
                 v-if="row.time"
                 :iso="new Date(row.time).toISOString()"
-                class="text-caption text-zinc-500"
+                class="text-rune-heading text-rune-text-2"
               />
-              <span v-else class="text-caption text-zinc-500">Date unavailable</span>
+              <span v-else class="text-rune-heading text-rune-text-2">Date unavailable</span>
             </header>
             <template v-if="row.task"
-              ><div class="flex flex-wrap items-center gap-3 text-caption text-zinc-500">
+              ><div class="flex flex-wrap items-center gap-3 text-rune-heading text-rune-text-2">
                 <span class="capitalize">{{
                   row.task.paused ? 'Paused' : (row.task.occurrences.at(-1)?.state ?? 'Scheduled')
                 }}</span
@@ -177,12 +168,14 @@ function previewRun(row: { task: WorkspaceTask | null; run: FlightRun | null }):
                   >Completion reported by you</span
                 >
               </div>
-              <button
+              <RuneButton
+                variant="ghost"
+                size="sm"
                 v-if="row.task.parentGoalId"
-                class="self-start cursor-pointer text-label text-zinc-300 hover:text-white"
+                class="self-start"
                 @click="emit('goal', row.task.parentGoalId)"
               >
-                ← {{ goalTitle(row.task.parentGoalId) }}</button
+                ← {{ goalTitle(row.task.parentGoalId) }}</RuneButton
               ><WorkProgress
                 :value="taskProgress(row.task)"
                 label="Latest occurrence progress"
@@ -196,14 +189,14 @@ function previewRun(row: { task: WorkspaceTask | null; run: FlightRun | null }):
                         : 'Execution steps have not been measured yet.'
                 "
               />
-              <div class="flex flex-wrap items-center gap-2 text-label">
+              <div class="flex flex-wrap items-center gap-2 text-rune-caption">
                 <template
                   v-if="
                     ['pending', 'in_progress'].includes(row.task.occurrences.at(-1)?.state ?? '')
                   "
-                  ><button
+                  ><RuneButton
+                    variant="primary"
                     :disabled="workspace.pending.value"
-                    class="cursor-pointer rounded-full bg-zinc-100 px-4 py-2 text-zinc-950 disabled:opacity-40"
                     v-if="
                       row.task.occurrences.at(-1)?.state === 'pending' ||
                       row.task.executionMode === 'analysis'
@@ -225,67 +218,70 @@ function previewRun(row: { task: WorkspaceTask | null; run: FlightRun | null }):
                         : row.task.executionMode === 'analysis'
                           ? 'Choose capture'
                           : 'Run now'
-                    }}</button
-                  ><button
+                    }}</RuneButton
+                  ><RuneButton
+                    variant="ghost"
+                    size="sm"
                     :disabled="workspace.pending.value"
-                    class="cursor-pointer px-2 py-2 text-zinc-400"
                     @click="workspace.action(row.task, 'done')"
                   >
-                    Mark done</button
-                  ><button
+                    Mark done</RuneButton
+                  ><RuneButton
+                    variant="ghost"
+                    size="sm"
                     :disabled="workspace.pending.value"
-                    class="cursor-pointer px-2 py-2 text-zinc-500"
                     @click="workspace.action(row.task, 'skip')"
                   >
                     Skip
-                  </button></template
-                ><button
+                  </RuneButton></template
+                ><RuneButton
+                  variant="ghost"
+                  size="sm"
                   v-if="
                     ['failed', 'interrupted', 'cancelled'].includes(
                       row.task.occurrences.at(-1)?.state ?? '',
                     )
                   "
                   :disabled="workspace.pending.value"
-                  class="cursor-pointer px-2 py-2 text-zinc-300"
                   @click="workspace.action(row.task, 'retry')"
                 >
-                  Prepare retry</button
-                ><button
+                  Prepare retry</RuneButton
+                ><RuneButton
+                  variant="ghost"
+                  size="sm"
                   v-if="
                     ['failed', 'interrupted', 'cancelled'].includes(
                       row.task.occurrences.at(-1)?.state ?? '',
                     )
                   "
                   :disabled="workspace.pending.value"
-                  class="cursor-pointer px-2 py-2 text-zinc-500"
                   @click="workspace.action(row.task, 'skip')"
                 >
-                  Skip occurrence</button
-                ><button
+                  Skip occurrence</RuneButton
+                ><RuneButton
+                  variant="ghost"
+                  size="sm"
                   v-if="row.task.occurrences.at(-1)?.runId"
-                  class="cursor-pointer px-2 py-2 text-zinc-400"
                   @click="emit('open', row.task.occurrences.at(-1)!.runId!)"
                 >
-                  Review execution</button
-                ><button
-                  class="cursor-pointer px-2 py-2 text-zinc-400"
-                  @click="emit('schedule', row.task)"
-                >
-                  Schedule</button
-                ><button
+                  Review execution</RuneButton
+                ><RuneButton variant="ghost" size="sm" @click="emit('schedule', row.task)">
+                  Schedule</RuneButton
+                ><RuneButton
+                  variant="ghost"
+                  size="sm"
                   v-if="row.task.schedule"
                   :disabled="workspace.pending.value"
-                  class="cursor-pointer px-2 py-2 text-zinc-500"
                   @click="workspace.action(row.task, row.task.paused ? 'resume' : 'pause')"
                 >
                   {{ row.task.paused ? 'Resume reminders' : 'Pause reminders' }}
-                </button>
+                </RuneButton>
               </div>
-              <label class="flex max-w-md items-center gap-3 text-caption text-zinc-500"
+              <label class="flex max-w-md items-center gap-3 text-rune-heading text-rune-text-2"
                 >Parent goal<select
                   :value="row.task.parentGoalId ?? ''"
                   :disabled="workspace.pending.value"
-                  class="min-w-0 rounded-lg bg-[#141414] p-2 text-zinc-300"
+                  class="min-w-0 rounded-rune-tile bg-rune-surface p-2 text-rune-text-2"
                   @change="
                     workspace.link(row.task, ($event.target as HTMLSelectElement).value || null)
                   "
@@ -300,13 +296,16 @@ function previewRun(row: { task: WorkspaceTask | null; run: FlightRun | null }):
                   </option>
                 </select></label
               >
-              <details v-if="row.task.instructions" class="text-caption text-zinc-500">
+              <details v-if="row.task.instructions" class="text-rune-heading text-rune-text-2">
                 <summary class="cursor-pointer">Task instructions</summary>
-                <p class="whitespace-pre-wrap leading-relaxed text-zinc-300">
+                <p class="whitespace-pre-wrap leading-relaxed text-rune-text-2">
                   {{ row.task.instructions }}
                 </p>
               </details>
-              <details v-if="row.task.occurrences.length > 1" class="text-caption text-zinc-500">
+              <details
+                v-if="row.task.occurrences.length > 1"
+                class="text-rune-heading text-rune-text-2"
+              >
                 <summary class="cursor-pointer">
                   {{ row.task.occurrences.length }} occurrences and attempts
                 </summary>
@@ -321,21 +320,22 @@ function previewRun(row: { task: WorkspaceTask | null; run: FlightRun | null }):
                       :iso="new Date(occurrence.dueMs).toISOString()"
                     /><span v-else>Manual task</span> · {{ occurrence.state
                     }}{{ occurrence.reported ? ' · user reported' : '' }}</span
-                  ><button
+                  ><RuneButton
+                    variant="ghost"
+                    size="sm"
                     v-if="occurrence.runId"
-                    class="cursor-pointer text-zinc-300"
                     @click="emit('open', occurrence.runId)"
                   >
                     Review →
-                  </button>
+                  </RuneButton>
                 </div>
               </details>
-              <p v-if="row.task.error" role="alert" class="m-0 text-label text-error">
+              <p v-if="row.task.error" role="alert" class="m-0 text-rune-caption text-error">
                 {{ row.task.error }}
               </p></template
             >
             <template v-else-if="row.run"
-              ><p class="m-0 text-caption text-zinc-500">
+              ><p class="m-0 text-rune-heading text-rune-text-2">
                 {{ row.run.outcome ?? 'In progress' }} · {{ row.run.source }}
               </p>
               <WorkProgress
@@ -347,29 +347,31 @@ function previewRun(row: { task: WorkspaceTask | null; run: FlightRun | null }):
                     : 'Older records may not contain a measurable step plan.'
                 "
               />
-              <div class="flex flex-wrap gap-3 text-label">
-                <button class="cursor-pointer text-zinc-200" @click="emit('open', row.run.id)">
-                  Review →</button
-                ><button
+              <div class="flex flex-wrap gap-3 text-rune-caption">
+                <RuneButton variant="ghost" size="sm" @click="emit('open', row.run.id)">
+                  Review →</RuneButton
+                ><RuneButton
+                  variant="ghost"
+                  size="sm"
                   v-if="
                     ['', 'built-in', 'task-request', 'screen-insight', 'rune'].includes(
                       row.run.source,
                     )
                   "
-                  class="cursor-pointer text-zinc-400"
                   @click="emit('organize', row.run)"
                   :disabled="row.run.active"
                 >
-                  Link goal or schedule</button
-                ><button class="cursor-pointer text-zinc-500" @click="copy(row.run)">
-                  Copy prompt</button
-                ><button
+                  Link goal or schedule</RuneButton
+                ><RuneButton variant="ghost" size="sm" @click="copy(row.run)">
+                  Copy prompt</RuneButton
+                ><RuneButton
+                  variant="ghost"
+                  size="sm"
                   :disabled="row.run.active"
-                  class="cursor-pointer text-zinc-500 disabled:opacity-30"
                   @click="emit('remove', row.run.id)"
                 >
                   Delete
-                </button>
+                </RuneButton>
               </div></template
             >
           </div>

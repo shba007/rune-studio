@@ -9,16 +9,21 @@
   --text-*: initial;
 
   /* Pilot tokens for the floating interface; existing surfaces keep their scale. */
-  --font-rune-reading: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-rune-reading: 'Inter Variable', system-ui, sans-serif;
   --spacing-rune-detail: 0.25rem;
   --spacing-rune-1: 0.5rem;
   --spacing-rune-2: 1rem;
   --spacing-rune-3: 1.5rem;
   --color-rune-surface: #141414;
-  --color-rune-raised: #1b1b1b;
-  --color-rune-outline: rgb(255 255 255 / 0.08);
-  --radius-rune-panel: 1.5rem;
-  --radius-rune-control: 1rem;
+  --color-rune-raised: #1d1d1d;
+  --color-rune-ink: #f1f1ef;
+  --color-rune-sunken: #101010;
+  --color-rune-text-2: rgb(241 241 239 / 0.72);
+  --color-rune-text-3: rgb(241 241 239 / 0.55);
+  --color-rune-outline: transparent;
+  --radius-rune-tile: 0.75rem;
+  --radius-rune-panel: var(--radius-rune-tile);
+  --radius-rune-control: var(--radius-rune-tile);
   --text-rune-title: 1.25rem;
   --text-rune-title--line-height: 1.5rem;
   --text-rune-subtitle: 1rem;
@@ -31,30 +36,6 @@
   --text-rune-heading--line-height: 1rem;
   --text-rune-heading--font-weight: 600;
   --text-rune-heading--letter-spacing: 0.04em;
-
-  --text-title: 1.125rem;
-  --text-title--line-height: 1.5rem;
-  --text-title--font-weight: 600;
-  --text-title--letter-spacing: 0.02em;
-
-  --text-body: 0.875rem;
-  --text-body--line-height: 1.25rem;
-  --text-body--font-weight: 400;
-
-  --text-status: 0.75rem;
-  --text-status--line-height: 1rem;
-  --text-status--font-weight: 500;
-  --text-status--letter-spacing: 0.03em;
-
-  --text-label: 0.6875rem;
-  --text-label--line-height: 1rem;
-  --text-label--font-weight: 500;
-  --text-label--letter-spacing: 0.04em;
-
-  --text-caption: 0.625rem;
-  --text-caption--line-height: 1rem;
-  --text-caption--font-weight: 600;
-  --text-caption--letter-spacing: 0.1em;
 }
 
 @theme static {

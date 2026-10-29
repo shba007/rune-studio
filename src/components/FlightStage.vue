@@ -142,7 +142,7 @@ defineExpose({
   >
     <div
       v-if="box.width > 0"
-      class="relative overflow-hidden bg-[#0a0a0a]"
+      class="relative overflow-hidden bg-rune-sunken"
       :style="{ width: `${box.width}px`, height: `${box.height}px` }"
     >
       <video-player v-if="videoSrc" ref="player" class="block size-full">
@@ -174,7 +174,7 @@ defineExpose({
       />
       <p
         v-else
-        class="m-0 flex size-full items-center justify-center p-6 text-center text-body text-zinc-500"
+        class="m-0 flex size-full items-center justify-center p-6 text-center text-rune-body text-rune-text-2"
         data-testid="no-picture"
       >
         {{ stillMissing ? 'This screenshot was deleted.' : 'There is no picture for this step.' }}
@@ -199,21 +199,21 @@ defineExpose({
         />
         <template v-if="layer.kind === 'click' || layer.kind === 'scroll'">
           <span
-            class="absolute -translate-x-1/2 translate-y-5 rounded-full bg-black/70 px-2 text-caption text-zinc-100"
+            class="absolute -translate-x-1/2 translate-y-5 rounded-full bg-black/70 px-2 text-rune-heading text-rune-ink"
             :style="{ left: `${layer.x / 10}%`, top: `${layer.y / 10}%` }"
             >{{ layer.label }}</span
           >
         </template>
         <p
           v-else-if="layer.kind === 'type' || layer.kind === 'keys'"
-          class="absolute bottom-6 left-1/2 m-0 max-w-[80%] -translate-x-1/2 truncate rounded-full bg-black/75 px-4 py-1 text-body text-zinc-100"
+          class="absolute bottom-6 left-1/2 m-0 max-w-[80%] -translate-x-1/2 truncate rounded-full bg-black/75 px-4 py-1 text-rune-body text-rune-ink"
           data-testid="typed"
         >
           {{ layer.text }}
         </p>
         <span
           v-if="badge"
-          class="absolute top-3 left-3 rounded-full bg-black/70 px-2 text-caption text-zinc-200"
+          class="absolute top-3 left-3 rounded-full bg-black/70 px-2 text-rune-heading text-rune-ink"
           data-testid="badge"
           >{{ badge }}</span
         >
@@ -221,7 +221,7 @@ defineExpose({
     </div>
     <p
       v-if="note"
-      class="absolute bottom-2 left-1/2 m-0 -translate-x-1/2 rounded-full bg-black/70 px-3 text-label text-zinc-400"
+      class="absolute bottom-2 left-1/2 m-0 -translate-x-1/2 rounded-full bg-black/70 px-3 text-rune-caption text-rune-text-2"
       data-testid="note"
     >
       {{ note }}

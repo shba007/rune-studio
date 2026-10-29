@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import RuneIconButton from './RuneIconButton.vue'
 import { useIntervalFn, useNow } from '@vueuse/core'
 import { computed } from 'vue'
 
@@ -77,14 +78,14 @@ function statusOf(index: number): 'done' | 'current' | 'pending' {
 
 <template>
   <section
-    class="flex w-full flex-col gap-2 rounded-rune-panel border border-rune-outline bg-rune-surface p-rune-2 font-rune-reading text-zinc-100"
+    class="flex w-full flex-col gap-2 rounded-rune-panel bg-rune-surface p-rune-2 font-rune-reading text-rune-ink"
   >
     <header class="flex h-6 items-center gap-2 whitespace-nowrap">
-      <span class="text-rune-caption text-zinc-500 uppercase">Task</span>
-      <span v-if="goals.length" class="text-rune-caption text-zinc-300 uppercase tabular-nums">
+      <span class="text-rune-caption text-rune-text-2 uppercase">Task</span>
+      <span v-if="goals.length" class="text-rune-caption text-rune-text-2 uppercase tabular-nums">
         {{ done }}/{{ goals.length }}
       </span>
-      <span v-if="agent.steps.value.length" class="text-rune-caption text-zinc-500 uppercase">
+      <span v-if="agent.steps.value.length" class="text-rune-caption text-rune-text-2 uppercase">
         · {{ agent.steps.value.length }} {{ agent.steps.value.length === 1 ? 'step' : 'steps' }}
       </span>
       <span
@@ -93,18 +94,19 @@ function statusOf(index: number): 'done' | 'current' | 'pending' {
         data-testid="eta"
         >{{ eta }}</span
       >
-      <button
+      <RuneIconButton
+        variant="ghost"
+        size="sm"
         v-if="!agent.isRunning.value"
-        type="button"
-        class="ml-auto grid size-6 cursor-pointer place-items-center rounded-full text-zinc-400 transition hover:bg-white/8 hover:text-white"
-        aria-label="Close the progress panel"
+        class="ml-auto"
+        label="Close the progress panel"
         @click="agent.clearTask()"
       >
         <AppIcon name="close" size="sm" />
-      </button>
+      </RuneIconButton>
     </header>
 
-    <p v-if="!goals.length" class="flex h-6 items-center gap-2 text-rune-caption text-zinc-400">
+    <p v-if="!goals.length" class="flex h-6 items-center gap-2 text-rune-caption text-rune-text-2">
       <span class="planning size-2 rounded-full bg-primary" />
       Planning
     </p>
@@ -123,16 +125,16 @@ function statusOf(index: number): 'done' | 'current' | 'pending' {
             class="planning size-3 rounded-full bg-primary ring-2 ring-primary/30"
             :class="{ 'bg-attention! ring-attention/30!': agent.state.value === 'failed' }"
           />
-          <span v-else class="size-3 rounded-full border border-white/25" />
+          <span v-else class="size-3 rounded-full bg-rune-raised" />
         </span>
         <span
           class="min-w-0 flex-1 truncate text-rune-caption"
           :class="
             statusOf(index) === 'current'
-              ? 'text-zinc-100'
+              ? 'text-rune-ink'
               : statusOf(index) === 'done'
-                ? 'text-zinc-500'
-                : 'text-zinc-400'
+                ? 'text-rune-text-2'
+                : 'text-rune-text-2'
           "
           :title="goal"
         >
@@ -140,7 +142,7 @@ function statusOf(index: number): 'done' | 'current' | 'pending' {
         </span>
         <span
           v-if="statusOf(index) === 'current' && goalElapsed"
-          class="shrink-0 text-rune-caption text-zinc-400 tabular-nums"
+          class="shrink-0 text-rune-caption text-rune-text-2 tabular-nums"
           data-testid="goal-elapsed"
           >{{ goalElapsed }}</span
         >
@@ -149,22 +151,22 @@ function statusOf(index: number): 'done' | 'current' | 'pending' {
 
     <div
       v-if="last && agent.isRunning.value"
-      class="flex h-8 items-center gap-2 rounded-full bg-white/5 px-3 text-rune-caption text-zinc-200"
+      class="flex h-8 items-center gap-2 rounded-full bg-rune-surface px-3 text-rune-caption text-rune-ink"
     >
       <AppIcon :name="KIND_ICON[kindOf(last.tool)]" size="sm" class="shrink-0" />
       <span class="text-rune-caption whitespace-nowrap uppercase">{{ lastLabel }}</span>
-      <span v-if="lastDetail" class="min-w-0 truncate text-zinc-400">{{ lastDetail }}</span>
+      <span v-if="lastDetail" class="min-w-0 truncate text-rune-text-2">{{ lastDetail }}</span>
     </div>
 
     <div v-if="message" class="flex flex-col gap-1">
       <span
         :title="modelCaveat"
         :aria-description="modelCaveat"
-        class="break-all text-rune-caption text-zinc-500 uppercase"
+        class="break-all text-rune-caption text-rune-text-2 uppercase"
         >{{ message.label }}</span
       >
       <p
-        class="overflow-y-auto text-rune-caption whitespace-pre-wrap text-zinc-300"
+        class="overflow-y-auto text-rune-caption whitespace-pre-wrap text-rune-text-2"
         :class="agent.isRunning.value ? 'max-h-[72px]' : 'max-h-44'"
       >
         {{ message.text }}
