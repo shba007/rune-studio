@@ -5,6 +5,8 @@ import { listen } from '@tauri-apps/api/event'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useAgent } from '@/composables/useAgent'
 import AppIcon from './AppIcon.vue'
+import RuneNotice from './RuneNotice.vue'
+import type { IconName } from '@/icons'
 import TaskHistory from './TaskHistory.vue'
 import TitleBar from './TitleBar.vue'
 import FlightPlayer from './FlightPlayer.vue'
@@ -18,7 +20,11 @@ import NewWorkForm from './NewWorkForm.vue'
 import type { WorkspaceTask } from '@/types/workspace'
 import type { FlightRun } from '@/config/flight'
 
-type Section = KnowledgeSection
+type Section = Exclude<KnowledgeSection, 'overview'>
+const resolveSection = (value: string | null | undefined): Section | null => {
+  if (value === 'overview') return 'goals'
+  return value === 'goals' || value === 'tasks' || value === 'personalities' ? value : null
+}
 const agent = useAgent()
 const personalities = ref<InstanceType<typeof PersonalitiesPanel> | null>(null)
 const decisions = useDecisions()
@@ -63,9 +69,7 @@ async function created(kind: 'goal' | 'task', id?: string) {
   await Promise.all([decisions.refresh(), workspace.refresh()])
 }
 const initial = new URLSearchParams(location.search).get('section')
-const section = ref<Section>(
-  initial === 'goals' || initial === 'personalities' || initial === 'overview' ? initial : 'tasks',
-)
+const section = ref<Section>(resolveSection(initial) ?? 'tasks')
 const previewTask = ref<string | null>(new URLSearchParams(location.search).get('run'))
 const previewParent = computed(() => {
   const task = workspace.tasks.value.find(
@@ -76,27 +80,14 @@ const previewParent = computed(() => {
   const goal = approvedGoals.value.find((goal) => goal.id === task?.parentGoalId)
   return goal ? { id: goal.id, title: goal.approvedGoal?.outcome ?? goal.text } : null
 })
-function navigate(next: Section) {
+function navigate(next: KnowledgeSection) {
   previewTask.value = null
-  section.value = next
+  section.value = resolveSection(next) ?? 'tasks'
 }
-const sections = [
-  {
-    id: 'overview' as const,
-    label: 'Overview',
-    subtitle: 'Understand Rune, explore its connections, and see what works today.',
-  },
-  {
-    id: 'personalities' as const,
-    label: 'Personalities',
-    subtitle: 'Choose the style that supports each goal.',
-  },
-  { id: 'goals' as const, label: 'Goals', subtitle: 'Long-term outcomes, pathways and progress.' },
-  {
-    id: 'tasks' as const,
-    label: 'Tasks',
-    subtitle: 'Your work, results, analysis and recordings.',
-  },
+const sections: { id: Section; label: string; icon: IconName }[] = [
+  { id: 'tasks', label: 'Tasks', icon: 'history' },
+  { id: 'goals', label: 'Goals', icon: 'target' },
+  { id: 'personalities', label: 'Personalities', icon: 'personality' },
 ]
 const current = computed(() => sections.find((item) => item.id === section.value)!)
 let unlisten: (() => void) | undefined
@@ -111,13 +102,8 @@ onMounted(async () => {
           previewTask.value = payload.runId
           return
         }
-        if (
-          payload.section === 'goals' ||
-          payload.section === 'tasks' ||
-          payload.section === 'personalities' ||
-          payload.section === 'overview'
-        )
-          navigate(payload.section)
+        const target = resolveSection(payload.section)
+        if (target) navigate(target)
       },
     )
     if (disposed) off()
@@ -149,7 +135,7 @@ onBeforeUnmount(() => {
     />
     <div v-show="!previewTask" class="flex min-h-0 flex-1">
       <nav
-        class="flex w-48 shrink-0 flex-col gap-rune-detail bg-rune-sunken p-rune-2"
+        class="flex w-64 shrink-0 flex-col gap-1 bg-rune-sunken p-4 pt-6"
         aria-label="Workspace sections"
       >
         <RuneNavItem
@@ -158,95 +144,80 @@ onBeforeUnmount(() => {
           :selected="section === item.id"
           @click="navigate(item.id)"
         >
-          <AppIcon
-            :name="
-              item.id === 'personalities'
-                ? 'personality'
-                : item.id === 'overview'
-                  ? 'graph'
-                  : item.id === 'goals'
-                    ? 'target'
-                    : 'history'
-            "
-          />{{ item.label }}
+          <AppIcon :name="item.icon" />{{ item.label }}
         </RuneNavItem>
       </nav>
-      <section class="min-w-0 flex-1 overflow-y-auto px-8 py-6">
-        <header class="mb-6">
-          <div class="flex flex-wrap items-center justify-between gap-rune-2">
+      <section class="min-w-0 flex-1 overflow-y-auto px-8 py-8 lg:px-12">
+        <div class="mx-auto flex w-full max-w-4xl flex-col gap-rune-3">
+          <header class="flex flex-wrap items-center justify-between gap-rune-2">
             <h1 class="m-0 font-sans text-rune-title">{{ current.label }}</h1>
             <RuneButton
-              variant="primary"
               v-if="section === 'goals' || section === 'tasks'"
+              variant="primary"
               @click="creation = { kind: section === 'goals' ? 'goal' : 'task' }"
             >
               + New {{ section === 'goals' ? 'goal' : 'task' }}
             </RuneButton>
             <RuneButton
-              variant="primary"
               v-if="section === 'personalities'"
+              variant="primary"
               @click="personalities?.create()"
             >
               + New personality
             </RuneButton>
-          </div>
-          <p class="mt-rune-detail text-rune-body text-rune-text-2">{{ current.subtitle }}</p>
-        </header>
-        <NewWorkForm
-          v-if="creation"
-          :key="`${creation.kind}-${creation.task?.id ?? creation.run?.id ?? creation.parent ?? 'new'}`"
-          :kind="creation.kind"
-          :goals="approvedGoals"
-          :parent-goal-id="creation.parent"
-          :task="creation.task"
-          :legacy-run-id="creation.run?.id"
-          :initial-title="creation.run?.task"
-          @close="creation = null"
-          @saved="created"
-        />
-        <p v-if="agent.notice.value" role="alert" class="text-rune-body text-rune-text-2">
-          {{ agent.notice.value }}
-        </p>
-        <TaskHistory
-          v-show="section === 'tasks'"
-          :active="section === 'tasks' && !previewTask"
-          :agent="agent"
-          :open-task="openTask"
-          :workspace="workspace"
-          :goals="approvedGoals"
-          :parent-filter="parentFilter"
-          :focus-task-id="focusTaskId"
-          @goal="openGoal"
-          @schedule="(task) => (creation = { kind: 'task', task })"
-          @organize="(run) => (creation = { kind: 'task', run })"
-          @clear="parentFilter = null"
-        />
-        <div v-if="section === 'goals'" class="text-rune-text-2">
-          <RuneButton
-            variant="ghost"
-            size="sm"
-            v-if="focusGoalId"
-            class="mb-rune-3"
-            @click="focusGoalId = null"
-          >
-            ← All goals
-          </RuneButton>
-          <DecisionInbox
-            goals-only
-            :model="decisions"
-            :workspace="workspace"
-            :focus-goal-id="focusGoalId"
-            @goal-tasks="goalTasks"
-            @task="openTask"
-            @create-task="(id) => (creation = { kind: 'task', parent: id })"
+          </header>
+          <NewWorkForm
+            v-if="creation"
+            :key="`${creation.kind}-${creation.task?.id ?? creation.run?.id ?? creation.parent ?? 'new'}`"
+            :kind="creation.kind"
+            :goals="approvedGoals"
+            :parent-goal-id="creation.parent"
+            :task="creation.task"
+            :legacy-run-id="creation.run?.id"
+            :initial-title="creation.run?.task"
+            @close="creation = null"
+            @saved="created"
           />
-          <RuneButton variant="ghost" size="sm" class="mt-8" @click="section = 'tasks'">
-            View tasks
-          </RuneButton>
+          <RuneNotice v-if="agent.notice.value">{{ agent.notice.value }}</RuneNotice>
+          <TaskHistory
+            v-show="section === 'tasks'"
+            :active="section === 'tasks' && !previewTask"
+            :agent="agent"
+            :open-task="openTask"
+            :workspace="workspace"
+            :goals="approvedGoals"
+            :parent-filter="parentFilter"
+            :focus-task-id="focusTaskId"
+            @goal="openGoal"
+            @schedule="(task) => (creation = { kind: 'task', task })"
+            @organize="(run) => (creation = { kind: 'task', run })"
+            @clear="parentFilter = null"
+          />
+          <div v-if="section === 'goals'" class="flex flex-col gap-rune-3 text-rune-text-2">
+            <RuneButton
+              variant="ghost"
+              size="sm"
+              v-if="focusGoalId"
+              class="self-start"
+              @click="focusGoalId = null"
+            >
+              ← All goals
+            </RuneButton>
+            <DecisionInbox
+              goals-only
+              :model="decisions"
+              :workspace="workspace"
+              :focus-goal-id="focusGoalId"
+              @open="openGoal"
+              @goal-tasks="goalTasks"
+              @task="openTask"
+              @create-task="(id) => (creation = { kind: 'task', parent: id })"
+            />
+            <KnowledgeOverview v-if="!focusGoalId" @navigate="navigate" />
+          </div>
+          <DecisionInbox v-if="section === 'tasks'" quiet :model="decisions" />
+          <PersonalitiesPanel v-if="section === 'personalities'" ref="personalities" />
         </div>
-        <DecisionInbox v-if="section === 'tasks'" quiet :model="decisions" />
-        <PersonalitiesPanel v-if="section === 'personalities'" ref="personalities" />
-        <KnowledgeOverview v-if="section === 'overview'" @navigate="navigate" />
       </section>
     </div>
   </main>

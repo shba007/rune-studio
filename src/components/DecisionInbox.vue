@@ -2,16 +2,21 @@
 import RuneButton from './RuneButton.vue'
 import { computed } from 'vue'
 import { useDecisions, type DecisionModel } from '@/composables/useDecisions'
+import { goalStatus, goalTitle } from '@/config/goalStatus'
 import DecisionCard from './DecisionCard.vue'
 import GoalPathways from './GoalPathways.vue'
 import GoalSummary from './GoalSummary.vue'
 import GoalWorkPanel from './GoalWorkPanel.vue'
 import GoalTaskDraft from './GoalTaskDraft.vue'
+import WorkEmpty from './WorkEmpty.vue'
+import WorkRow from './WorkRow.vue'
 import type { WorkspaceTasksModel } from '@/composables/useWorkspaceTasks'
+import type { IntakeEntry } from '@/types/decisions'
 const emit = defineEmits<{
   goalTasks: [id: string]
   task: [id: string]
   createTask: [goalId: string]
+  open: [id: string]
 }>()
 const props = defineProps<{
   compact?: boolean
@@ -33,17 +38,36 @@ const visible = computed(() =>
           (!props.focusGoalId || e.id === props.focusGoalId),
       ),
 )
+const listing = computed(() => !props.compact && props.goalsOnly && !props.focusGoalId)
+const rowMeta = (entry: IntakeEntry) => {
+  const goal = entry.goal ?? entry.approvedGoal
+  return [entry.category, goalStatus(entry).label, goal?.horizon].filter(Boolean).join(' · ')
+}
 </script>
 <template>
   <div class="flex shrink-0 flex-col gap-3">
     <p v-if="decisions.error.value" role="alert" class="m-0 text-rune-caption text-error">
       {{ decisions.error.value }}
     </p>
-    <p v-if="!compact && !quiet && !visible.length" class="m-0 text-rune-body text-rune-text-2">
-      No goals yet. Use + New goal, or type an outcome in the Rune pill.
-    </p>
+    <WorkEmpty
+      v-if="!compact && !quiet && !visible.length"
+      title="No goals yet"
+      hint="Use + New goal, or type an outcome in the Rune pill."
+    />
+    <div v-if="listing && visible.length" class="flex flex-col gap-0.5" aria-label="Goals">
+      <WorkRow
+        v-for="entry in visible"
+        :key="entry.id"
+        :data-goal="entry.id"
+        :title="goalTitle(entry)"
+        :meta="rowMeta(entry)"
+        :state="goalStatus(entry).tone"
+        interactive
+        @open="emit('open', entry.id)"
+      />
+    </div>
     <article
-      v-for="entry in visible"
+      v-for="entry in listing ? [] : visible"
       :key="entry.id"
       class="flex min-w-0 flex-col [overflow-wrap:anywhere]"
       :class="!compact && entry.kind === 'goal' ? 'gap-6 pb-10 mb-8 last:pb-0 last:mb-0' : 'gap-2'"
@@ -127,6 +151,7 @@ const visible = computed(() =>
       <div v-if="entry.status === 'goal_ready'" class="flex flex-wrap items-center gap-3">
         <RuneButton
           variant="primary"
+          size="sm"
           v-if="entry.status === 'goal_ready' && !compact"
           :disabled="decisions.pending.value"
           class="self-start"
@@ -136,6 +161,7 @@ const visible = computed(() =>
         </RuneButton>
         <RuneButton
           variant="ghost"
+          size="sm"
           v-if="entry.status === 'goal_ready'"
           :disabled="decisions.pending.value"
           class="self-start"

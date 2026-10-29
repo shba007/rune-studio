@@ -21,6 +21,16 @@ const migrated = [
   'RecordingControls.vue',
   'SettingsAbout.vue',
   'DevInputLab.vue',
+  'DecisionInbox.vue',
+  'DecisionCard.vue',
+  'GoalSummary.vue',
+  'GoalWorkPanel.vue',
+  'GoalPathways.vue',
+  'GoalTaskDraft.vue',
+  'GoalTaskProposal.vue',
+  'KnowledgeOverview.vue',
+  'PersonalitiesPanel.vue',
+  'NewWorkForm.vue',
 ]
 
 it('uses Rune controls, not native selects or checkboxes, on migrated settings pages', () => {

@@ -4,6 +4,9 @@ import RuneButton from './RuneButton.vue'
 import RuneChip from './RuneChip.vue'
 import RuneDot from './RuneDot.vue'
 import RuneIconButton from './RuneIconButton.vue'
+import RuneNotice from './RuneNotice.vue'
+import WorkEmpty from './WorkEmpty.vue'
+import WorkRow from './WorkRow.vue'
 
 describe('Rune atoms', () => {
   it('renders a pill button that defaults to a plain button', () => {
@@ -42,5 +45,29 @@ describe('Rune atoms', () => {
     expect(mount(RuneDot, { props: { state: 'busy' } }).classes()).toContain(
       'motion-safe:animate-pulse',
     )
+  })
+
+  it('opens an interactive work row and keeps a plain one inert', async () => {
+    const live = mount(WorkRow, {
+      props: { title: 'Plan trip', meta: 'Today', state: 'ok', interactive: true },
+      slots: { actions: '<span>act</span>' },
+    })
+    expect(live.text()).toContain('Plan trip')
+    expect(live.text()).toContain('act')
+    await live.get('button').trigger('click')
+    expect(live.emitted('open')).toHaveLength(1)
+    expect(
+      mount(WorkRow, { props: { title: 'Static' } })
+        .find('button')
+        .exists(),
+    ).toBe(false)
+  })
+
+  it('announces notices by tone and renders the empty state', () => {
+    expect(mount(RuneNotice, { props: { tone: 'error' } }).attributes('role')).toBe('alert')
+    expect(mount(RuneNotice).attributes('role')).toBe('status')
+    const empty = mount(WorkEmpty, { props: { title: 'No tasks', hint: 'Start one' } })
+    expect(empty.text()).toContain('No tasks')
+    expect(empty.text()).toContain('Start one')
   })
 })

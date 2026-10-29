@@ -43,10 +43,12 @@ import IconTarget from '~icons/ph/target-bold'
 import IconMagnifyingGlass from '~icons/ph/magnifying-glass-bold'
 import IconDatabase from '~icons/ph/database-bold'
 import IconInfo from '~icons/ph/info-bold'
+import IconDotsThree from '~icons/ph/dots-three-bold'
 import IconCheck from '~icons/ph/check-bold'
 
 export const icons = {
   info: IconInfo,
+  more: IconDotsThree,
   check: IconCheck,
   search: IconMagnifyingGlass,
   data: IconDatabase,

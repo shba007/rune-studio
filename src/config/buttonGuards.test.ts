@@ -4,7 +4,8 @@ import { resolve } from 'node:path'
 import { expect, it } from 'vite-plus/test'
 
 const dir = resolve(process.cwd(), 'src/components')
-const ATOMS = /^Rune(Button|IconButton|Segment|NavItem|Chip|Dot|Switch|Choice)\.vue$/
+const ATOMS =
+  /^(?:Rune(Button|IconButton|Segment|NavItem|Chip|Dot|Switch|Choice|Menu)|WorkRow).vue$/
 
 const RAW_BUTTONS: Record<string, number> = {
   'AgentPill.vue': 2,
@@ -14,10 +15,8 @@ const RAW_BUTTONS: Record<string, number> = {
   'Composer.vue': 1,
   'FlightDrawer.vue': 1,
   'FlightTaskTimeline.vue': 2,
-  'GoalWorkPanel.vue': 1,
   'KnowledgeOverview.vue': 1,
   'OrbDock.vue': 2,
-  'PersonalitiesPanel.vue': 1,
   'SettingsConnectionModels.vue': 1,
   'TaskBoard.vue': 1,
   'TaskPreview.vue': 1,

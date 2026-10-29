@@ -171,6 +171,145 @@ export function installTauriMock() {
             command:
               'claude mcp add --scope user rune-studio -- "C:/Rune Studio/rune-studio-cli.exe" mcp --agent claude',
           }
+        case 'decisions_state':
+          return [
+            {
+              id: 'goal-fit',
+              revision: 3,
+              text: 'I want to be physically fit.',
+              class: 'health',
+              kind: 'goal',
+              status: 'goal_ready',
+              category: 'Health',
+              question: null,
+              goal: null,
+              approvedGoal: {
+                outcome: 'Run 5 km without stopping',
+                horizon: '3 months',
+                current: 'Walks 30 minutes a day, no running yet.',
+                success: 'Runs 5 km in one go, three times a week.',
+                resources: 'Park nearby, 4 free evenings a week.',
+                constraints: 'Mild knee strain; avoid hard surfaces.',
+              },
+              outcomeMetric: { baseline: 0, current: 1.5, target: 5, unit: 'km', note: 'Week 3' },
+              pathways: {
+                assessment: 'A gradual run-walk plan is realistic in the time available.',
+                similarOutcome: '',
+                selected: 'route-a',
+                approved: null,
+                options: [
+                  {
+                    id: 'route-a',
+                    title: 'Run-walk intervals',
+                    summary: 'Alternate running and walking, lengthening the runs each week.',
+                    rationale: 'Lowest injury risk for a returning runner.',
+                    pros: ['Gentle on the knee'],
+                    cons: ['Slower at first'],
+                    duration: '10 to 12 weeks',
+                    resources: ['Running shoes'],
+                    feasibility: 'feasible',
+                    missingInformation: [],
+                  },
+                  {
+                    id: 'route-b',
+                    title: 'Treadmill base building',
+                    summary: 'Build endurance on a treadmill before moving outdoors.',
+                    rationale: 'Controlled surface, but needs gym access.',
+                    pros: ['Controlled pace'],
+                    cons: ['Needs a gym'],
+                    duration: '12 weeks',
+                    resources: ['Gym membership'],
+                    feasibility: 'conditional',
+                    missingInformation: ['Gym access'],
+                  },
+                ],
+              },
+              error: null,
+              taskId: null,
+            },
+            {
+              id: 'goal-save',
+              revision: 1,
+              text: 'Save money for a trip',
+              class: 'finance',
+              kind: 'goal',
+              status: 'clarifying',
+              category: 'Finance',
+              question: {
+                id: 'q1',
+                revision: 1,
+                kind: 'clarification',
+                title: 'When do you want to travel?',
+                explanation: 'The timeline decides how much to save each month.',
+                options: [
+                  { id: 'o1', label: 'In 6 months', explanation: 'A short, focused saving plan.' },
+                  { id: 'o2', label: 'Within a year', explanation: 'A relaxed monthly amount.' },
+                ],
+              },
+              goal: null,
+              approvedGoal: null,
+              pathways: null,
+              error: null,
+              taskId: null,
+            },
+          ]
+        case 'workspace_tasks_state':
+          return [
+            {
+              id: 'task-1',
+              revision: 1,
+              title: 'Run-walk: 20 minutes',
+              parentGoalId: 'goal-fit',
+              class: 'health',
+              createdMs: Date.now() - 86_400_000,
+              schedule: {
+                local: '2026-10-30T08:00',
+                zone: 'Local',
+                repeat: 'daily',
+                nextLocal: '2026-10-30T08:00',
+                nextMs: Date.now() + 86_400_000,
+              },
+              paused: false,
+              executionMode: 'manual',
+              occurrences: [
+                {
+                  id: 'occ-1',
+                  dueMs: Date.now() + 3_600_000,
+                  state: 'pending',
+                  runId: null,
+                  reported: false,
+                  completedMs: null,
+                },
+              ],
+              error: null,
+              completedSteps: 0,
+              totalSteps: 0,
+              instructions: 'Alternate 1 minute running with 2 minutes walking.',
+            },
+          ]
+        case 'personalities_state':
+          return {
+            folder: 'C:/Users/me/.rune/personalities',
+            active: { id: 'base', name: 'Rune', mark: 'companion' },
+            entries: [
+              {
+                id: 'base',
+                name: 'Rune',
+                mark: 'companion',
+                categories: [],
+                prompt: 'Clear, calm and supportive. Keep answers short.',
+              },
+              {
+                id: 'fitness-coach',
+                name: 'Fitness coach',
+                mark: 'fitness',
+                categories: ['health', 'running'],
+                prompt: 'Encourage steady progress. Celebrate small wins and avoid pressure.',
+              },
+            ],
+          }
+        case 'workspace_task_zone':
+          return 'Local'
         case 'connections_state':
           return {
             revision: 1,

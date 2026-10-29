@@ -6,6 +6,7 @@ import type { IntakeEntry } from '@/types/decisions'
 import type { WorkspaceTasksModel } from '@/composables/useWorkspaceTasks'
 import { planProgress, outcomeProgress } from '@/config/workspaceProgress'
 import WorkProgress from './WorkProgress.vue'
+import WorkRow from './WorkRow.vue'
 const props = defineProps<{ entry: IntakeEntry; workspace: WorkspaceTasksModel }>()
 const emit = defineEmits<{
   refresh: []
@@ -25,6 +26,8 @@ const unit = ref('')
 const note = ref('')
 const pending = ref(false)
 const error = ref('')
+const field =
+  'h-10 min-w-0 rounded-rune-tile bg-rune-sunken px-rune-2 font-rune-reading text-rune-body text-rune-ink placeholder:text-rune-text-3 disabled:opacity-50'
 function edit() {
   const m = props.entry.outcomeMetric
   baseline.value = m ? String(m.baseline) : ''
@@ -64,99 +67,109 @@ async function save() {
 }
 </script>
 <template>
-  <section aria-label="Goal progress and tasks" class="flex flex-col gap-rune-3 pt-rune-3">
-    <div class="grid gap-6 sm:grid-cols-2">
-      <WorkProgress
-        :value="plan.value"
-        label="Plan progress · due work"
-        :detail="`${plan.done} of ${plan.total} created or due occurrences completed. Recurring work can continue; future occurrences are not counted yet.`"
-      /><WorkProgress
-        :value="outcomeProgress(entry.outcomeMetric)"
-        label="Outcome progress · user reported"
-        :detail="
-          entry.outcomeMetric
-            ? `${entry.outcomeMetric.current} / ${entry.outcomeMetric.target} ${entry.outcomeMetric.unit} · starting at ${entry.outcomeMetric.baseline}. ${entry.outcomeMetric.note}`
-            : 'Set a numeric measure to track the real outcome separately from task completion.'
-        "
-      />
+  <section aria-label="Goal progress and tasks" class="flex flex-col gap-rune-2">
+    <div class="grid gap-0.5 sm:grid-cols-2">
+      <div
+        class="bg-rune-surface px-rune-2 py-rune-2 max-sm:first:rounded-t-rune-tile sm:rounded-l-rune-tile"
+      >
+        <WorkProgress
+          :value="plan.value"
+          label="Plan progress · due work"
+          :detail="`${plan.done} of ${plan.total} created or due occurrences completed. Recurring work can continue; future occurrences are not counted yet.`"
+        />
+      </div>
+      <div
+        class="bg-rune-surface px-rune-2 py-rune-2 max-sm:last:rounded-b-rune-tile sm:rounded-r-rune-tile"
+      >
+        <WorkProgress
+          :value="outcomeProgress(entry.outcomeMetric)"
+          label="Outcome progress · user reported"
+          :detail="
+            entry.outcomeMetric
+              ? `${entry.outcomeMetric.current} / ${entry.outcomeMetric.target} ${entry.outcomeMetric.unit} · starting at ${entry.outcomeMetric.baseline}. ${entry.outcomeMetric.note}`
+              : 'Set a numeric measure to track the real outcome separately from task completion.'
+          "
+        />
+      </div>
     </div>
-    <div class="flex flex-wrap gap-rune-2 text-rune-body">
-      <RuneButton variant="ghost" size="sm" @click="emit('tasks', entry.id)">
-        {{ children.length }} linked task{{ children.length === 1 ? '' : 's' }} →</RuneButton
-      ><RuneButton variant="ghost" size="sm" @click="emit('create', entry.id)">
-        + Add task</RuneButton
-      ><RuneButton
-        variant="ghost"
+    <div class="flex flex-wrap items-center gap-rune-1">
+      <RuneButton variant="secondary" size="sm" @click="emit('create', entry.id)">
+        + Add task
+      </RuneButton>
+      <RuneButton
+        variant="secondary"
         size="sm"
         :disabled="entry.status !== 'goal_ready'"
         @click="edit"
       >
         {{ entry.outcomeMetric ? 'Record outcome progress' : 'Set outcome measure' }}
       </RuneButton>
+      <RuneButton variant="ghost" size="sm" @click="emit('tasks', entry.id)">
+        {{ children.length }} linked task{{ children.length === 1 ? '' : 's' }} →
+      </RuneButton>
     </div>
-    <ul v-if="children.length" class="m-0 flex list-none flex-col gap-2 p-0 text-rune-body">
-      <li v-for="task in children.slice(0, 3)" :key="task.id">
-        <button
-          class="flex w-full cursor-pointer items-center justify-between gap-rune-2 text-left text-rune-text-2 hover:text-white"
-          @click="emit('task', task.id)"
-        >
-          <span>{{ task.title }}</span
-          ><span class="shrink-0 text-rune-caption"
-            >{{ task.occurrences.at(-1)?.state ?? 'scheduled' }} →</span
-          >
-        </button>
-      </li>
-    </ul>
+    <div v-if="children.length" class="flex flex-col gap-0.5">
+      <WorkRow
+        v-for="task in children.slice(0, 3)"
+        :key="task.id"
+        :title="task.title"
+        :meta="task.occurrences.at(-1)?.state ?? 'scheduled'"
+        interactive
+        @open="emit('task', task.id)"
+      />
+    </div>
     <form
       v-if="editing"
-      class="grid gap-rune-2 rounded-rune-tile bg-white/[0.025] p-4 sm:grid-cols-3"
+      class="grid gap-rune-2 rounded-rune-tile bg-rune-surface p-rune-2 sm:grid-cols-3"
       aria-label="Record goal outcome"
       @submit.prevent="save"
     >
-      <label class="flex flex-col gap-2 text-rune-body text-rune-text-2"
+      <label class="flex flex-col gap-1 text-rune-caption text-rune-text-3"
         >Starting value<input
           v-model="baseline"
           type="number"
           step="any"
           required
           :disabled="!!entry.outcomeMetric || pending"
-          class="min-w-0 rounded-rune-tile bg-rune-surface p-2 text-rune-ink" /></label
-      ><label class="flex flex-col gap-2 text-rune-body text-rune-text-2"
+          :class="field"
+      /></label>
+      <label class="flex flex-col gap-1 text-rune-caption text-rune-text-3"
         >Current value<input
           v-model="current"
           type="number"
           step="any"
           required
           :disabled="pending"
-          class="min-w-0 rounded-rune-tile bg-rune-surface p-2 text-rune-ink" /></label
-      ><label class="flex flex-col gap-2 text-rune-body text-rune-text-2"
+          :class="field"
+      /></label>
+      <label class="flex flex-col gap-1 text-rune-caption text-rune-text-3"
         >Target value<input
           v-model="target"
           type="number"
           step="any"
           required
           :disabled="!!entry.outcomeMetric || pending"
-          class="min-w-0 rounded-rune-tile bg-rune-surface p-2 text-rune-ink" /></label
-      ><label class="flex flex-col gap-2 text-rune-body text-rune-text-2"
+          :class="field"
+      /></label>
+      <label class="flex flex-col gap-1 text-rune-caption text-rune-text-3"
         >Unit<input
           v-model="unit"
           required
           maxlength="80"
           :disabled="!!entry.outcomeMetric || pending"
           placeholder="For example, km or currency"
-          class="rounded-rune-tile bg-rune-surface p-2 text-rune-ink" /></label
-      ><label class="flex flex-col gap-2 text-rune-body text-rune-text-2 sm:col-span-2"
-        >Progress note<input
-          v-model="note"
-          maxlength="2000"
-          :disabled="pending"
-          class="rounded-rune-tile bg-rune-surface p-2 text-rune-ink"
+          :class="field"
       /></label>
-      <p class="m-0 text-rune-caption text-rune-text-2 sm:col-span-3">
+      <label class="flex flex-col gap-1 text-rune-caption text-rune-text-3 sm:col-span-2"
+        >Progress note<input v-model="note" maxlength="2000" :disabled="pending" :class="field"
+      /></label>
+      <p class="m-0 text-rune-caption text-rune-text-3 sm:col-span-3">
         This is your reported outcome, not automatically verified evidence. Progress is measured
         from the starting value toward the target; lower targets are supported.
       </p>
-      <RuneButton variant="primary" :disabled="pending"> Save measurement </RuneButton>
+      <RuneButton variant="primary" size="sm" class="self-start" :disabled="pending">
+        Save measurement
+      </RuneButton>
       <p v-if="error" role="alert" class="m-0 text-rune-body text-error sm:col-span-3">
         {{ error }}
       </p>

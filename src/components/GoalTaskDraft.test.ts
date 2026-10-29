@@ -70,7 +70,10 @@ it('generates only after a click and approves edited instructions and schedules 
   expect(wrapper.emitted('review')).toBeUndefined()
   await wrapper.get('textarea').setValue('Walk for ten minutes, if comfortable')
   await wrapper.get('input[type="datetime-local"]').setValue('2028-03-01T08:30')
-  await wrapper.findAll('select')[1]!.setValue('daily')
+  await wrapper
+    .findAll('[role="radio"]')
+    .find((b) => b.text() === 'Daily')!
+    .trigger('click')
   await wrapper.get('form').trigger('submit')
   expect(wrapper.emitted('review')).toEqual([
     [
@@ -88,7 +91,7 @@ it('generates only after a click and approves edited instructions and schedules 
 })
 it('allows removing the schedule and dismissing a proposal without execution', async () => {
   const wrapper = mount(GoalTaskDraft, { props: { entry: entry(), busy: false } })
-  await wrapper.get('input[type="checkbox"]').setValue(false)
+  await wrapper.get('[role="switch"]').trigger('click')
   await wrapper.get('form').trigger('submit')
   expect((wrapper.emitted('review')![0]![1] as { schedule: unknown }).schedule).toBeNull()
   await wrapper

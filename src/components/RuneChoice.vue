@@ -10,6 +10,7 @@ const props = defineProps<{
   options: { value: T; label: string; disabled?: boolean }[]
   disabled?: boolean
   menu?: boolean
+  segments?: boolean
 }>()
 
 const model = defineModel<T>({ required: true })
@@ -18,7 +19,7 @@ const open = ref(false)
 const root = useTemplateRef<HTMLElement>('root')
 onClickOutside(root, () => (open.value = false))
 
-const asSegments = () => !props.menu && props.options.length <= 3
+const asSegments = () => !props.menu && (props.segments || props.options.length <= 3)
 const selectedLabel = () => props.options.find((o) => o.value === model.value)?.label ?? ''
 
 function pick(value: T) {

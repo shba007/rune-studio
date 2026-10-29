@@ -3,8 +3,8 @@ defineProps<{ value: number | null; label: string; detail?: string }>()
 </script>
 <template>
   <div class="min-w-0">
-    <div class="mb-2 flex items-center justify-between gap-3 text-rune-heading">
-      <span class="text-rune-text-2">{{ label }}</span
+    <div class="mb-2 flex items-center justify-between gap-3 text-rune-caption">
+      <span class="text-rune-text-3">{{ label }}</span
       ><span class="text-rune-text-2 tabular-nums">{{
         value === null ? 'Not measured' : `${value}%`
       }}</span>
@@ -16,7 +16,7 @@ defineProps<{ value: number | null; label: string; detail?: string }>()
       :aria-valuemax="100"
       :aria-valuenow="value ?? undefined"
       :aria-valuetext="value === null ? 'Not measured' : `${value}%`"
-      class="h-1.5 overflow-hidden rounded-full bg-rune-surface"
+      class="h-1.5 overflow-hidden rounded-full bg-rune-sunken"
     >
       <span
         v-if="value !== null"
@@ -24,7 +24,7 @@ defineProps<{ value: number | null; label: string; detail?: string }>()
         :style="{ width: `${Math.max(0, Math.min(100, value))}%` }"
       />
     </div>
-    <p v-if="detail" class="mt-2 mb-0 text-rune-heading leading-relaxed text-rune-text-2">
+    <p v-if="detail" class="mt-2 mb-0 text-rune-caption text-rune-text-3">
       {{ detail }}
     </p>
   </div>

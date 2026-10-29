@@ -1,5 +1,13 @@
 <script setup lang="ts">
+import AppIcon from './AppIcon.vue'
+import HubGroup from './HubGroup.vue'
 import RuneButton from './RuneButton.vue'
+import RuneChoice from './RuneChoice.vue'
+import RuneIconButton from './RuneIconButton.vue'
+import RuneMenu from './RuneMenu.vue'
+import RuneNotice from './RuneNotice.vue'
+import WorkEmpty from './WorkEmpty.vue'
+import WorkRow from './WorkRow.vue'
 import { invoke } from '@tauri-apps/api/core'
 import { computed, nextTick, ref, watch } from 'vue'
 import type { FlightRun } from '@/config/flight'
@@ -8,7 +16,6 @@ import type { WorkspaceTask } from '@/types/workspace'
 import type { WorkspaceTasksModel } from '@/composables/useWorkspaceTasks'
 import { taskProgress } from '@/config/workspaceProgress'
 import WorkProgress from './WorkProgress.vue'
-import WhenText from './WhenText.vue'
 import TaskPreview from './TaskPreview.vue'
 const props = defineProps<{
   workspace: WorkspaceTasksModel
@@ -113,270 +120,339 @@ function previewRun(row: { task: WorkspaceTask | null; run: FlightRun | null }):
   if (row.task?.legacyTaskId) ids.push(row.task.legacyTaskId)
   return ids.map((id) => props.history.find((run) => run.id === id)).find(Boolean) ?? null
 }
+
+type Row = { id: string; time: number; task: WorkspaceTask | null; run: FlightRun | null }
+type Tone = 'idle' | 'ok' | 'warn' | 'down' | 'busy'
+type Bucket = 'active' | 'scheduled' | 'done' | 'failed'
+
+const FILTERS = [
+  { value: 'all', label: 'All' },
+  { value: 'active', label: 'Active' },
+  { value: 'scheduled', label: 'Scheduled' },
+  { value: 'done', label: 'Done' },
+  { value: 'failed', label: 'Failed' },
+]
+const filter = ref('all')
+const expanded = ref(new Set<string>())
+function toggle(id: string) {
+  const next = new Set(expanded.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  expanded.value = next
+}
+
+const clock = (ms: number) =>
+  new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+const day = (ms: number) =>
+  new Date(ms).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })
+const FAILED = ['failed', 'interrupted', 'cancelled']
+
+function info(row: Row): { tone: Tone; bucket: Bucket; meta: string } {
+  const time = row.time ? clock(row.time) : 'Date unavailable'
+  if (row.task) {
+    const occurrence = row.task.occurrences.at(-1)
+    const state = row.task.paused ? 'paused' : (occurrence?.state ?? 'scheduled')
+    const tone: Tone =
+      state === 'completed'
+        ? 'ok'
+        : state === 'in_progress'
+          ? 'busy'
+          : FAILED.includes(state)
+            ? 'down'
+            : state === 'paused' || state === 'skipped'
+              ? 'warn'
+              : 'idle'
+    const bucket: Bucket =
+      state === 'completed'
+        ? 'done'
+        : state === 'in_progress'
+          ? 'active'
+          : FAILED.includes(state)
+            ? 'failed'
+            : 'scheduled'
+    const parts = [state.replace('_', ' ').replace(/^./, (c) => c.toUpperCase()), time]
+    if (row.task.schedule)
+      parts.push(`Next ${day(row.task.schedule.nextMs)} · ${row.task.schedule.repeat}`)
+    if (occurrence?.reported) parts.push('Completion reported by you')
+    return { tone, bucket, meta: parts.join(' · ') }
+  }
+  const run = row.run!
+  const tone: Tone = run.active
+    ? 'busy'
+    : run.outcome === 'succeeded'
+      ? 'ok'
+      : run.outcome
+        ? 'down'
+        : 'idle'
+  const bucket: Bucket = run.active
+    ? 'active'
+    : run.outcome === 'succeeded'
+      ? 'done'
+      : run.outcome
+        ? 'failed'
+        : 'active'
+  const label = run.outcome ?? 'In progress'
+  return {
+    tone,
+    bucket,
+    meta: [label.replace(/^./, (c) => c.toUpperCase()), time, run.source]
+      .filter(Boolean)
+      .join(' · '),
+  }
+}
+
+const visibleRows = computed(() =>
+  rows.value.filter((row) => filter.value === 'all' || info(row).bucket === filter.value),
+)
+const groups = computed(() => {
+  const today = new Date().toDateString()
+  const yesterday = new Date(Date.now() - 86_400_000).toDateString()
+  const out: { key: string; title: string; rows: Row[] }[] = []
+  for (const row of visibleRows.value) {
+    const key = row.time ? new Date(row.time).toDateString() : 'unknown'
+    let group = out.find((item) => item.key === key)
+    if (!group) {
+      group = {
+        key,
+        title:
+          key === 'unknown'
+            ? 'Date unavailable'
+            : key === today
+              ? 'Today'
+              : key === yesterday
+                ? 'Yesterday'
+                : day(row.time),
+        rows: [],
+      }
+      out.push(group)
+    }
+    group.rows.push(row)
+  }
+  return out
+})
+
+function primary(row: Row): { label: string; run: () => void } | null {
+  const task = row.task
+  if (!task) return null
+  const state = task.occurrences.at(-1)?.state ?? ''
+  if (!['pending', 'in_progress'].includes(state)) return null
+  if (state !== 'pending' && task.executionMode !== 'analysis') return null
+  const action =
+    task.executionMode === 'manual'
+      ? 'start'
+      : task.executionMode === 'analysis'
+        ? 'analysis'
+        : 'run'
+  const label =
+    task.executionMode === 'manual'
+      ? 'Begin activity'
+      : task.executionMode === 'analysis'
+        ? 'Choose capture'
+        : 'Run now'
+  return { label, run: () => void props.workspace.action(task, action) }
+}
+
+function menu(row: Row) {
+  const items: { id: string; label: string; disabled?: boolean; danger?: boolean }[] = []
+  const busy = props.workspace.pending.value
+  if (row.task) {
+    const task = row.task
+    const occurrence = task.occurrences.at(-1)
+    const state = occurrence?.state ?? ''
+    if (occurrence?.runId) items.push({ id: 'review', label: 'Review execution' })
+    if (['pending', 'in_progress'].includes(state)) {
+      items.push({ id: 'done', label: 'Mark done', disabled: busy })
+      items.push({ id: 'skip', label: 'Skip', disabled: busy })
+    }
+    if (FAILED.includes(state)) {
+      items.push({ id: 'retry', label: 'Prepare retry', disabled: busy })
+      items.push({ id: 'skip', label: 'Skip occurrence', disabled: busy })
+    }
+    items.push({ id: 'schedule', label: 'Schedule' })
+    if (task.schedule)
+      items.push({
+        id: task.paused ? 'resume' : 'pause',
+        label: task.paused ? 'Resume reminders' : 'Pause reminders',
+        disabled: busy,
+      })
+  } else if (row.run) {
+    items.push({ id: 'review', label: 'Review' })
+    if (['', 'built-in', 'task-request', 'screen-insight', 'rune'].includes(row.run.source))
+      items.push({ id: 'organize', label: 'Link goal or schedule', disabled: !!row.run.active })
+    items.push({ id: 'copy', label: 'Copy prompt' })
+    items.push({ id: 'delete', label: 'Delete', disabled: !!row.run.active, danger: true })
+  }
+  return items
+}
+
+function act(row: Row, id: string) {
+  const task = row.task
+  const run = row.run
+  if (id === 'review') emit('open', task ? task.occurrences.at(-1)!.runId! : run!.id)
+  else if (id === 'schedule' && task) emit('schedule', task)
+  else if (id === 'organize' && run) emit('organize', run)
+  else if (id === 'copy' && run) void copy(run)
+  else if (id === 'delete' && run) emit('remove', run.id)
+  else if (task && ['done', 'skip', 'retry', 'pause', 'resume'].includes(id))
+    void props.workspace.action(task, id as 'done' | 'skip' | 'retry' | 'pause' | 'resume')
+}
+
+function progressDetail(row: Row) {
+  if (row.task) {
+    const task = row.task
+    return task.executionMode === 'manual'
+      ? 'Manual activity; completion is reported by you.'
+      : task.totalSteps
+        ? `${task.completedSteps} of ${task.totalSteps} steps completed`
+        : task.occurrences.at(-1)?.state === 'completed'
+          ? 'Occurrence completed'
+          : 'Execution steps have not been measured yet.'
+  }
+  const run = row.run!
+  return meta.value[run.id]?.[1]
+    ? `${meta.value[run.id]![0]} of ${meta.value[run.id]![1]} steps completed`
+    : 'Older records may not contain a measurable step plan.'
+}
+
+function goalOptions(task: WorkspaceTask) {
+  return [
+    { value: '', label: 'Standalone' },
+    ...props.goals
+      .filter((goal) => goal.class === task.class)
+      .map((goal) => ({ value: goal.id, label: goal.approvedGoal?.outcome ?? goal.text })),
+  ]
+}
 </script>
+
 <template>
-  <section aria-label="Task activity timeline" class="flex flex-col gap-5">
-    <header class="flex flex-wrap items-center justify-between gap-3">
-      <RuneButton variant="ghost" size="sm" v-if="parentFilter" @click="emit('clear')">
-        Showing goal tasks · Clear filter ×
-      </RuneButton>
-    </header>
-    <p v-if="error || workspace.error.value" role="alert" class="m-0 text-rune-caption text-error">
+  <section aria-label="Task activity timeline" class="flex flex-col gap-rune-3">
+    <div class="flex flex-wrap items-center justify-between gap-rune-2">
+      <RuneChoice v-model="filter" label="Filter tasks" segments :options="FILTERS" />
+      <div class="flex items-center gap-rune-1">
+        <RuneButton v-if="parentFilter" variant="ghost" size="sm" @click="emit('clear')">
+          Showing goal tasks · Clear filter ×
+        </RuneButton>
+        <slot name="toolbar" />
+      </div>
+    </div>
+    <RuneNotice v-if="error || workspace.error.value" tone="error">
       {{ error || workspace.error.value }}
-    </p>
-    <p v-if="notice" role="status" class="m-0 text-rune-caption text-rune-text-2">{{ notice }}</p>
-    <div class="flex flex-col gap-rune-1">
-      <p v-if="!rows.length" class="m-0 text-rune-body text-rune-text-2">
-        No tasks yet. Use + New task, or run a request from the Rune pill.
-      </p>
-      <article
-        v-for="row in rows"
+    </RuneNotice>
+    <RuneNotice v-if="notice">{{ notice }}</RuneNotice>
+    <WorkEmpty
+      v-if="!rows.length"
+      title="No tasks yet"
+      hint="Use + New task, or run a request from the Rune pill."
+    />
+    <WorkEmpty v-else-if="!visibleRows.length" title="Nothing matches this filter" />
+    <HubGroup v-for="group in groups" :key="group.key" :title="group.title">
+      <WorkRow
+        v-for="row in group.rows"
         :key="row.id"
         :data-work-task="row.id"
-        class="relative flex min-w-0 flex-col gap-3 rounded-rune-tile bg-rune-surface p-rune-2"
-        :class="focusTaskId === row.id ? 'bg-rune-raised' : ''"
+        :title="row.task?.title ?? row.run?.task ?? ''"
+        :meta="info(row).meta"
+        :state="info(row).tone"
+        :selected="focusTaskId === row.id"
       >
-        <div class="flex flex-col gap-5 sm:flex-row">
+        <template #leading>
           <TaskPreview
             :run="previewRun(row)"
             @open="previewRun(row) && emit('open', previewRun(row)!.id)"
           />
-          <div class="flex min-w-0 flex-1 flex-col gap-3">
-            <header class="flex flex-wrap items-start justify-between gap-3">
-              <h3
-                class="m-0 max-w-2xl line-clamp-2 text-rune-body text-rune-ink"
-                :title="row.task?.title ?? row.run?.task"
-              >
-                {{ row.task?.title ?? row.run?.task }}
-              </h3>
-              <WhenText
-                v-if="row.time"
-                :iso="new Date(row.time).toISOString()"
-                class="text-rune-heading text-rune-text-2"
-              />
-              <span v-else class="text-rune-heading text-rune-text-2">Date unavailable</span>
-            </header>
-            <template v-if="row.task"
-              ><div class="flex flex-wrap items-center gap-3 text-rune-heading text-rune-text-2">
-                <span class="capitalize">{{
-                  row.task.paused ? 'Paused' : (row.task.occurrences.at(-1)?.state ?? 'Scheduled')
-                }}</span
-                ><span v-if="row.task.schedule"
-                  >Next: <WhenText :iso="new Date(row.task.schedule.nextMs).toISOString()" /> ·
-                  {{ row.task.schedule.repeat }} · {{ row.task.schedule.zone }}</span
-                ><span v-if="row.task.occurrences.at(-1)?.reported"
-                  >Completion reported by you</span
+        </template>
+        <template #actions>
+          <RuneButton
+            v-if="primary(row)"
+            variant="primary"
+            size="sm"
+            :disabled="workspace.pending.value"
+            @click="primary(row)!.run()"
+          >
+            {{ primary(row)!.label }}
+          </RuneButton>
+          <RuneMenu
+            :label="`More actions: ${row.task?.title ?? row.run?.task}`"
+            :items="menu(row)"
+            @select="(id) => act(row, id)"
+          />
+          <RuneIconButton
+            v-if="row.task"
+            variant="ghost"
+            size="sm"
+            :label="expanded.has(row.id) ? 'Hide details' : 'Show details'"
+            :aria-expanded="expanded.has(row.id)"
+            @click="toggle(row.id)"
+          >
+            <AppIcon
+              name="chevron"
+              class="transition-transform"
+              :class="expanded.has(row.id) && 'rotate-180'"
+            />
+          </RuneIconButton>
+        </template>
+        <WorkProgress
+          :value="row.task ? taskProgress(row.task) : legacyProgress(row.run!)"
+          :label="row.task ? 'Latest occurrence progress' : 'Task progress'"
+          :detail="progressDetail(row)"
+        />
+        <div
+          v-if="row.task && expanded.has(row.id)"
+          class="flex flex-col gap-rune-2 rounded-rune-tile bg-rune-sunken p-rune-2"
+        >
+          <template v-if="row.task">
+            <div class="flex flex-wrap items-center justify-between gap-rune-2">
+              <span class="text-rune-body text-rune-ink">Parent goal</span>
+              <div class="flex items-center gap-rune-1">
+                <RuneButton
+                  v-if="row.task.parentGoalId"
+                  variant="ghost"
+                  size="sm"
+                  @click="emit('goal', row.task.parentGoalId)"
                 >
+                  ← {{ goalTitle(row.task.parentGoalId) }}
+                </RuneButton>
+                <RuneChoice
+                  :model-value="row.task.parentGoalId ?? ''"
+                  label="Parent goal"
+                  menu
+                  :disabled="workspace.pending.value"
+                  :options="goalOptions(row.task)"
+                  @update:model-value="(value) => workspace.link(row.task!, value || null)"
+                />
               </div>
-              <RuneButton
-                variant="ghost"
-                size="sm"
-                v-if="row.task.parentGoalId"
-                class="self-start"
-                @click="emit('goal', row.task.parentGoalId)"
+            </div>
+            <p v-if="row.task.instructions" class="m-0 text-rune-caption text-rune-text-2">
+              <span class="block text-rune-text-3">Task instructions</span>
+              <span class="whitespace-pre-wrap">{{ row.task.instructions }}</span>
+            </p>
+            <div v-if="row.task.occurrences.length > 1" class="flex flex-col gap-1">
+              <span class="text-rune-caption text-rune-text-3">
+                {{ row.task.occurrences.length }} occurrences and attempts
+              </span>
+              <div
+                v-for="occurrence in [...row.task.occurrences].reverse()"
+                :key="occurrence.id"
+                class="flex items-center justify-between gap-3 text-rune-caption text-rune-text-2"
               >
-                ← {{ goalTitle(row.task.parentGoalId) }}</RuneButton
-              ><WorkProgress
-                :value="taskProgress(row.task)"
-                label="Latest occurrence progress"
-                :detail="
-                  row.task.executionMode === 'manual'
-                    ? 'Manual activity; completion is reported by you.'
-                    : row.task.totalSteps
-                      ? `${row.task.completedSteps} of ${row.task.totalSteps} steps completed`
-                      : row.task.occurrences.at(-1)?.state === 'completed'
-                        ? 'Occurrence completed'
-                        : 'Execution steps have not been measured yet.'
-                "
-              />
-              <div class="flex flex-wrap items-center gap-2 text-rune-caption">
-                <template
-                  v-if="
-                    ['pending', 'in_progress'].includes(row.task.occurrences.at(-1)?.state ?? '')
-                  "
-                  ><RuneButton
-                    variant="primary"
-                    :disabled="workspace.pending.value"
-                    v-if="
-                      row.task.occurrences.at(-1)?.state === 'pending' ||
-                      row.task.executionMode === 'analysis'
-                    "
-                    @click="
-                      workspace.action(
-                        row.task,
-                        row.task.executionMode === 'manual'
-                          ? 'start'
-                          : row.task.executionMode === 'analysis'
-                            ? 'analysis'
-                            : 'run',
-                      )
-                    "
-                  >
-                    {{
-                      row.task.executionMode === 'manual'
-                        ? 'Begin activity'
-                        : row.task.executionMode === 'analysis'
-                          ? 'Choose capture'
-                          : 'Run now'
-                    }}</RuneButton
-                  ><RuneButton
-                    variant="ghost"
-                    size="sm"
-                    :disabled="workspace.pending.value"
-                    @click="workspace.action(row.task, 'done')"
-                  >
-                    Mark done</RuneButton
-                  ><RuneButton
-                    variant="ghost"
-                    size="sm"
-                    :disabled="workspace.pending.value"
-                    @click="workspace.action(row.task, 'skip')"
-                  >
-                    Skip
-                  </RuneButton></template
-                ><RuneButton
+                <span
+                  >{{ occurrence.dueMs ? day(occurrence.dueMs) : 'Manual task' }} ·
+                  {{ occurrence.state }}{{ occurrence.reported ? ' · user reported' : '' }}</span
+                >
+                <RuneButton
+                  v-if="occurrence.runId"
                   variant="ghost"
                   size="sm"
-                  v-if="
-                    ['failed', 'interrupted', 'cancelled'].includes(
-                      row.task.occurrences.at(-1)?.state ?? '',
-                    )
-                  "
-                  :disabled="workspace.pending.value"
-                  @click="workspace.action(row.task, 'retry')"
+                  @click="emit('open', occurrence.runId)"
                 >
-                  Prepare retry</RuneButton
-                ><RuneButton
-                  variant="ghost"
-                  size="sm"
-                  v-if="
-                    ['failed', 'interrupted', 'cancelled'].includes(
-                      row.task.occurrences.at(-1)?.state ?? '',
-                    )
-                  "
-                  :disabled="workspace.pending.value"
-                  @click="workspace.action(row.task, 'skip')"
-                >
-                  Skip occurrence</RuneButton
-                ><RuneButton
-                  variant="ghost"
-                  size="sm"
-                  v-if="row.task.occurrences.at(-1)?.runId"
-                  @click="emit('open', row.task.occurrences.at(-1)!.runId!)"
-                >
-                  Review execution</RuneButton
-                ><RuneButton variant="ghost" size="sm" @click="emit('schedule', row.task)">
-                  Schedule</RuneButton
-                ><RuneButton
-                  variant="ghost"
-                  size="sm"
-                  v-if="row.task.schedule"
-                  :disabled="workspace.pending.value"
-                  @click="workspace.action(row.task, row.task.paused ? 'resume' : 'pause')"
-                >
-                  {{ row.task.paused ? 'Resume reminders' : 'Pause reminders' }}
+                  Review →
                 </RuneButton>
               </div>
-              <label class="flex max-w-md items-center gap-3 text-rune-heading text-rune-text-2"
-                >Parent goal<select
-                  :value="row.task.parentGoalId ?? ''"
-                  :disabled="workspace.pending.value"
-                  class="min-w-0 rounded-rune-tile bg-rune-surface p-2 text-rune-text-2"
-                  @change="
-                    workspace.link(row.task, ($event.target as HTMLSelectElement).value || null)
-                  "
-                >
-                  <option value="">Standalone</option>
-                  <option
-                    v-for="goal in goals.filter((g) => g.class === row.task!.class)"
-                    :key="goal.id"
-                    :value="goal.id"
-                  >
-                    {{ goal.approvedGoal?.outcome ?? goal.text }}
-                  </option>
-                </select></label
-              >
-              <details v-if="row.task.instructions" class="text-rune-heading text-rune-text-2">
-                <summary class="cursor-pointer">Task instructions</summary>
-                <p class="whitespace-pre-wrap leading-relaxed text-rune-text-2">
-                  {{ row.task.instructions }}
-                </p>
-              </details>
-              <details
-                v-if="row.task.occurrences.length > 1"
-                class="text-rune-heading text-rune-text-2"
-              >
-                <summary class="cursor-pointer">
-                  {{ row.task.occurrences.length }} occurrences and attempts
-                </summary>
-                <div
-                  v-for="occurrence in [...row.task.occurrences].reverse()"
-                  :key="occurrence.id"
-                  class="flex justify-between gap-3 py-2"
-                >
-                  <span
-                    ><WhenText
-                      v-if="occurrence.dueMs"
-                      :iso="new Date(occurrence.dueMs).toISOString()"
-                    /><span v-else>Manual task</span> · {{ occurrence.state
-                    }}{{ occurrence.reported ? ' · user reported' : '' }}</span
-                  ><RuneButton
-                    variant="ghost"
-                    size="sm"
-                    v-if="occurrence.runId"
-                    @click="emit('open', occurrence.runId)"
-                  >
-                    Review →
-                  </RuneButton>
-                </div>
-              </details>
-              <p v-if="row.task.error" role="alert" class="m-0 text-rune-caption text-error">
-                {{ row.task.error }}
-              </p></template
-            >
-            <template v-else-if="row.run"
-              ><p class="m-0 text-rune-heading text-rune-text-2">
-                {{ row.run.outcome ?? 'In progress' }} · {{ row.run.source }}
-              </p>
-              <WorkProgress
-                :value="legacyProgress(row.run)"
-                label="Task progress"
-                :detail="
-                  meta[row.run.id]?.[1]
-                    ? `${meta[row.run.id]![0]} of ${meta[row.run.id]![1]} steps completed`
-                    : 'Older records may not contain a measurable step plan.'
-                "
-              />
-              <div class="flex flex-wrap gap-3 text-rune-caption">
-                <RuneButton variant="ghost" size="sm" @click="emit('open', row.run.id)">
-                  Review →</RuneButton
-                ><RuneButton
-                  variant="ghost"
-                  size="sm"
-                  v-if="
-                    ['', 'built-in', 'task-request', 'screen-insight', 'rune'].includes(
-                      row.run.source,
-                    )
-                  "
-                  @click="emit('organize', row.run)"
-                  :disabled="row.run.active"
-                >
-                  Link goal or schedule</RuneButton
-                ><RuneButton variant="ghost" size="sm" @click="copy(row.run)">
-                  Copy prompt</RuneButton
-                ><RuneButton
-                  variant="ghost"
-                  size="sm"
-                  :disabled="row.run.active"
-                  @click="emit('remove', row.run.id)"
-                >
-                  Delete
-                </RuneButton>
-              </div></template
-            >
-          </div>
+            </div>
+            <RuneNotice v-if="row.task.error" tone="error">{{ row.task.error }}</RuneNotice>
+          </template>
         </div>
-      </article>
-    </div>
+      </WorkRow>
+    </HubGroup>
   </section>
 </template>

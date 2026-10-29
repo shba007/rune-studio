@@ -32,7 +32,7 @@ watch(
     type="button"
     :disabled="!run"
     :aria-label="run ? `Preview task: ${run.task}` : 'No task preview available'"
-    class="group relative aspect-video w-full overflow-hidden rounded-rune-tile bg-black disabled:cursor-default sm:w-44 sm:shrink-0"
+    class="group relative aspect-video w-24 shrink-0 overflow-hidden rounded-rune-tile bg-black disabled:cursor-default"
     @click="$emit('open')"
   >
     <img

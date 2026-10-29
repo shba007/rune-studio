@@ -22,16 +22,21 @@ const stale = computed(
   <section
     v-if="entry.pathways?.approved"
     aria-label="First-week task planning"
-    class="flex flex-col gap-4 pt-6"
+    class="flex flex-col gap-rune-2"
   >
-    <header class="flex flex-wrap items-center justify-between gap-rune-2">
-      <div>
-        <p class="m-0 text-rune-caption uppercase tracking-wider text-rune-text-2">
+    <header class="flex flex-wrap items-end justify-between gap-rune-2 px-rune-2">
+      <div class="flex flex-col gap-1">
+        <h3 class="m-0 font-sans text-rune-heading text-rune-text-3 uppercase">
           From route to action
-        </p>
-        <h3 class="mt-1 mb-0 font-sans text-rune-subtitle text-rune-ink">Your first week</h3>
+        </h3>
+        <p class="m-0 font-sans text-rune-subtitle text-rune-ink">Your first week</p>
       </div>
-      <RuneButton :disabled="busy || entry.status !== 'goal_ready'" @click="$emit('generate')">
+      <RuneButton
+        variant="secondary"
+        size="sm"
+        :disabled="busy || entry.status !== 'goal_ready'"
+        @click="$emit('generate')"
+      >
         {{
           entry.status === 'task_planning'
             ? 'Drafting…'
@@ -41,28 +46,28 @@ const stale = computed(
         }}
       </RuneButton>
     </header>
-    <p class="m-0 max-w-2xl text-rune-body leading-relaxed text-rune-text-2">
+    <p class="m-0 max-w-2xl px-rune-2 text-rune-caption text-rune-text-3">
       Review each task, who will do it and its schedule. Approval creates pending work under this
       goal; it never starts execution or captures a screen. Field edits are saved when you approve.
     </p>
     <template v-if="draft">
-      <div class="flex flex-wrap gap-2 text-rune-caption text-rune-text-2">
+      <div class="flex flex-wrap gap-2 px-rune-2 text-rune-caption text-rune-text-2">
         <span>{{ draft.pathway.title }} ·</span
         ><span
           ><WhenText :iso="draft.startLocal" /> · seven local calendar days · {{ draft.zone }}</span
         >
       </div>
-      <p v-if="stale" role="alert" class="m-0 text-rune-body text-error">
+      <p v-if="stale" role="alert" class="m-0 px-rune-2 text-rune-body text-error">
         This draft belongs to an earlier goal or pathway. Generate a new draft before creating
         tasks.
       </p>
-      <p class="m-0 max-w-3xl text-rune-body leading-relaxed text-rune-text-2">
+      <p class="m-0 max-w-3xl px-rune-2 text-rune-body text-rune-text-2">
         {{ draft.assessment }}
       </p>
-      <p v-if="!draft.tasks.length" class="m-0 text-rune-body text-rune-text-2">
+      <p v-if="!draft.tasks.length" class="m-0 px-rune-2 text-rune-body text-rune-text-2">
         No supported tasks were proposed. Refine the goal or supply the missing context.
       </p>
-      <div>
+      <div class="flex flex-col gap-0.5">
         <GoalTaskProposal
           v-for="task in draft.tasks"
           :key="`${draft.id}-${task.id}`"

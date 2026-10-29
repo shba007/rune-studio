@@ -69,7 +69,7 @@ it('shows an unsaved model suggestion and saves it only after explicit approval'
   expect(invoke).toHaveBeenCalledWith('personality_propose', { category: 'fitness' })
   expect(invoke.mock.calls.filter(([command]) => command === 'personality_save')).toHaveLength(0)
   expect(wrapper.text()).toContain('Unsaved suggestion')
-  expect(wrapper.get('select').element.value).toBe('fitness')
+  expect(wrapper.get('button[aria-label="Orb symbol"]').text()).toContain('Fitness')
   await wrapper.get('textarea').setValue('My approved coaching style')
   await wrapper.get('[aria-label="Edit personality"]').trigger('submit')
   await flushPromises()

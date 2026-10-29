@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import RuneButton from './RuneButton.vue'
 import RuneIconButton from './RuneIconButton.vue'
+import RuneChoice from './RuneChoice.vue'
 import { computed, ref, useId } from 'vue'
 import { knowledgeConcepts, knowledgeLinks, type KnowledgeSection } from '@/config/knowledge'
 const emit = defineEmits<{ navigate: [section: KnowledgeSection] }>()
@@ -14,6 +15,10 @@ const neighbors = computed(
   () => new Set<string>(connections.value.flatMap(([from, to]) => [from, to])),
 )
 const pattern = useId()
+const conceptOptions = knowledgeConcepts.map((node) => ({
+  value: node.id,
+  label: `${node.title} · ${node.status}`,
+}))
 const zoom = ref(1)
 const offset = ref({ x: 0, y: 0 })
 let drag: { id: number; x: number; y: number; startX: number; startY: number } | null = null
@@ -215,16 +220,17 @@ function keyboardPan(event: KeyboardEvent) {
       </p>
     </section>
     <section aria-label="Concept explanation" class="rounded-rune-tile p-rune-3 bg-rune-raised">
-      <label class="flex flex-col gap-2 text-rune-body text-rune-text-2"
-        >Explore every concept<select
-          v-model="selected"
-          class="max-w-sm rounded-rune-tile bg-rune-raised px-rune-2 py-2 text-rune-ink"
-        >
-          <option v-for="node in knowledgeConcepts" :key="node.id" :value="node.id">
-            {{ node.title }} · {{ node.status }}
-          </option>
-        </select></label
+      <div
+        class="flex flex-wrap items-center justify-between gap-rune-2 text-rune-body text-rune-text-2"
       >
+        <span>Explore every concept</span>
+        <RuneChoice
+          v-model="selected"
+          label="Explore every concept"
+          :options="conceptOptions"
+          menu
+        />
+      </div>
       <div class="mt-rune-3 flex flex-wrap items-center gap-rune-2">
         <h2 class="m-0 font-sans text-rune-title text-rune-ink">{{ concept.title }}</h2>
         <span

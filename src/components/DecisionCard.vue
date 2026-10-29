@@ -55,28 +55,30 @@ function typeAnswer(event: Event) {
 
 <template>
   <form
-    class="flex flex-col gap-3 rounded-rune-tile bg-rune-surface p-4 text-rune-ink"
+    class="flex flex-col gap-rune-2 rounded-rune-tile bg-rune-surface p-rune-2 text-rune-ink"
     :aria-labelledby="`${group}-title`"
     @submit.prevent="valid && !busy && emit('answer', answer())"
   >
     <h2 :id="`${group}-title`" class="m-0 text-rune-body">{{ question.title }}</h2>
-    <p v-if="question.explanation" class="m-0 text-rune-caption text-rune-text-2">
+    <p v-if="question.explanation" class="m-0 text-rune-caption text-rune-text-3">
       {{ question.explanation }}
     </p>
-    <fieldset :disabled="busy" class="m-0 flex min-w-0 flex-col gap-2 p-0">
+    <fieldset :disabled="busy" class="m-0 flex min-w-0 flex-col gap-0.5 p-0">
       <legend class="sr-only">Choose an answer or write your own</legend>
       <label
         v-for="(option, index) in question.options"
         :key="option.id"
-        class="flex cursor-pointer items-start gap-2 rounded-rune-tile p-3 text-rune-caption bg-rune-raised"
-        :class="optionId === option.id ? 'bg-rune-raised' : 'hover:bg-white/5'"
+        class="flex cursor-pointer items-start gap-rune-2 px-rune-2 py-rune-1 text-rune-body transition-colors first:rounded-t-rune-tile has-[input:focus-visible]:ring-1 has-[input:focus-visible]:ring-white/40"
+        :class="
+          optionId === option.id ? 'bg-rune-ink text-black' : 'bg-rune-raised hover:bg-white/8'
+        "
       >
         <input
           type="radio"
           :name="group"
           :value="option.id"
           :checked="optionId === option.id"
-          class="mt-1 accent-white"
+          class="sr-only"
           @change="choose(option.id)"
         />
         <span class="min-w-0"
@@ -84,31 +86,33 @@ function typeAnswer(event: Event) {
             >{{ option.label
             }}<span
               v-if="index === 0 && question.kind === 'clarification'"
-              class="ml-2 text-rune-heading text-rune-text-2"
+              class="ml-2 text-rune-heading uppercase opacity-60"
               >Recommended</span
             ></span
-          ><span class="block text-rune-heading text-rune-text-2">{{
-            option.explanation
-          }}</span></span
+          ><span
+            class="block text-rune-caption"
+            :class="optionId === option.id ? 'opacity-70' : 'text-rune-text-3'"
+            >{{ option.explanation }}</span
+          ></span
         >
       </label>
       <label
         v-if="allowsFreeform"
-        class="flex flex-col gap-2 rounded-rune-tile p-3 text-rune-caption bg-rune-raised"
+        class="flex flex-col gap-1 rounded-b-rune-tile bg-rune-raised px-rune-2 py-rune-1 text-rune-caption text-rune-text-3"
       >
         <span>Your own answer</span>
         <textarea
           :value="text"
           rows="2"
           maxlength="4000"
-          class="w-full resize-y rounded-rune-tile bg-rune-surface p-2 text-rune-ink placeholder:text-rune-text-3"
+          class="w-full resize-y rounded-rune-tile bg-rune-sunken p-rune-1 font-rune-reading text-rune-body text-rune-ink placeholder:text-rune-text-3"
           placeholder="Tell Rune otherwise"
           @input="typeAnswer"
         />
       </label>
     </fieldset>
     <p v-if="error" role="alert" class="m-0 text-rune-caption text-error">{{ error }}</p>
-    <div class="flex flex-wrap gap-2">
+    <div class="flex flex-wrap items-center gap-rune-1">
       <RuneButton
         variant="ghost"
         v-if="deferable"

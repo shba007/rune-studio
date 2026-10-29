@@ -35,10 +35,17 @@ it('saves a monthly Visual Analysis reminder with its original monthly day', asy
   const wrapper = mount(NewWorkForm, { props: { kind: 'task', goals: [] } })
   await flushPromises()
   await wrapper.get('textarea').setValue('Inspect this screen')
-  await wrapper.findAll('select')[0]!.setValue('analysis')
-  await wrapper.get('input[type="checkbox"]').setValue(true)
+  await wrapper.get('button[aria-label="Who will do this task?"]').trigger('click')
+  await wrapper
+    .findAll('[role="option"]')
+    .find((option) => option.text().startsWith('Visual Analysis'))!
+    .trigger('click')
+  await wrapper.get('[role="switch"]').trigger('click')
   await wrapper.get('input[type="datetime-local"]').setValue('2027-01-31T07:00')
-  await wrapper.findAll('select').at(-1)!.setValue('monthly')
+  await wrapper
+    .findAll('[role="radio"]')
+    .find((button) => button.text() === 'Monthly')!
+    .trigger('click')
   await wrapper.get('form').trigger('submit')
   await flushPromises()
   expect(invoke).toHaveBeenCalledWith(

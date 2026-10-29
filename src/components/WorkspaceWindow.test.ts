@@ -68,28 +68,27 @@ it('opens Goals without a Settings button in Workspace', async () => {
   expect(wrapper.get('h1').text()).toBe('Goals')
   expect(wrapper.getComponent(DecisionInbox).props('goalsOnly')).toBe(true)
   expect(wrapper.findAll('nav button').map((item) => item.text())).toEqual([
-    'Overview',
-    'Personalities',
-    'Goals',
     'Tasks',
+    'Goals',
+    'Personalities',
   ])
   expect(harness.settings).not.toHaveBeenCalled()
   wrapper.unmount()
 })
 
-it('opens the Overview graph and follows its links without remounting task history', async () => {
+it('opens old Overview links as Goals and follows graph links without remounting task history', async () => {
   window.history.replaceState({}, '', '/?view=workspace&section=overview')
   const wrapper = shallowMount(WorkspaceWindow, { global: { stubs: { RuneNavItem } } })
   await flushPromises()
   const history = wrapper.getComponent(TaskHistory)
   expect(history.props('active')).toBe(false)
-  expect(wrapper.get('h1').text()).toBe('Overview')
+  expect(wrapper.get('h1').text()).toBe('Goals')
   wrapper.getComponent(KnowledgeOverview).vm.$emit('navigate', 'personalities')
   await flushPromises()
   expect(wrapper.get('h1').text()).toBe('Personalities')
   harness.handler!({ payload: { section: 'overview' } })
   await flushPromises()
-  expect(wrapper.get('h1').text()).toBe('Overview')
+  expect(wrapper.get('h1').text()).toBe('Goals')
   expect(wrapper.getComponent(TaskHistory).vm).toBe(history.vm)
   wrapper.unmount()
 })

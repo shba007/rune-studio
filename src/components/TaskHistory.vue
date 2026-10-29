@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import RuneButton from './RuneButton.vue'
+import AppIcon from './AppIcon.vue'
+import RuneIconButton from './RuneIconButton.vue'
+import RuneNotice from './RuneNotice.vue'
+import WorkEmpty from './WorkEmpty.vue'
 import { listen } from '@tauri-apps/api/event'
 import { useDebounceFn, useEventListener } from '@vueuse/core'
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -86,25 +89,24 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="flex flex-col gap-4" aria-label="Task history">
-    <RuneButton
-      variant="ghost"
-      size="sm"
-      class="self-end"
-      :disabled="refreshing || deleting !== null"
-      @click="refresh"
-    >
-      {{ refreshing ? 'Refreshing…' : 'Refresh tasks' }}
-    </RuneButton>
-    <p v-if="flight.problem.value" class="m-0 text-rune-caption text-rune-text-2" role="alert">
-      {{ flight.problem.value }}
-    </p>
-    <p
+    <div v-if="!workspace" class="flex justify-end">
+      <RuneIconButton
+        variant="ghost"
+        size="sm"
+        label="Refresh tasks"
+        :disabled="refreshing || deleting !== null"
+        @click="refresh"
+      >
+        <AppIcon name="refresh" size="sm" :class="refreshing && 'motion-safe:animate-spin'" />
+      </RuneIconButton>
+    </div>
+    <RuneNotice v-if="flight.problem.value" tone="error">{{ flight.problem.value }}</RuneNotice>
+    <WorkEmpty
       v-else-if="!workspace && flight.runsLoaded.value && flight.runs.value.length === 0"
-      class="m-0 py-10 text-center text-rune-caption text-rune-text-2"
       data-testid="empty"
-    >
-      Nothing recorded yet. Run a task and it shows up here.
-    </p>
+      title="Nothing recorded yet"
+      hint="Run a task and it shows up here."
+    />
     <WorkspaceTaskTimeline
       v-if="workspace"
       :workspace="workspace"
@@ -119,7 +121,19 @@ onBeforeUnmount(() => {
       @organize="(run) => emit('organize', run)"
       @clear="emit('clear')"
       @remove="remove"
-    />
+    >
+      <template #toolbar>
+        <RuneIconButton
+          variant="ghost"
+          size="sm"
+          label="Refresh tasks"
+          :disabled="refreshing || deleting !== null"
+          @click="refresh"
+        >
+          <AppIcon name="refresh" size="sm" :class="refreshing && 'motion-safe:animate-spin'" />
+        </RuneIconButton>
+      </template>
+    </WorkspaceTaskTimeline>
     <div v-else class="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
       <ArtifactCard
         v-for="run in flight.runs.value"

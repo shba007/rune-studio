@@ -5,6 +5,14 @@ import { knowledgeConcepts, knowledgeLinks } from '@/config/knowledge'
 
 it('explains every concept, marks planned work honestly, and links to its workspace', async () => {
   const wrapper = mount(KnowledgeOverview)
+  const pick = async (id: string) => {
+    await wrapper.get('button[aria-haspopup="listbox"]').trigger('click')
+    const title = knowledgeConcepts.find((node) => node.id === id)!.title
+    await wrapper
+      .findAll('[role="option"]')
+      .find((option) => option.text().startsWith(title))!
+      .trigger('click')
+  }
   expect(knowledgeConcepts.find((node) => node.id === 'goals')).toMatchObject({ x: 450, y: 350 })
   expect(knowledgeLinks).toContainEqual([
     'goals',
@@ -12,7 +20,9 @@ it('explains every concept, marks planned work honestly, and links to its worksp
     'uses an approved communication style',
   ])
   expect(wrapper.findAll('svg [role="button"]')).toHaveLength(knowledgeConcepts.length)
-  expect(wrapper.findAll('option')).toHaveLength(knowledgeConcepts.length)
+  await wrapper.get('button[aria-haspopup="listbox"]').trigger('click')
+  expect(wrapper.findAll('[role="option"]')).toHaveLength(knowledgeConcepts.length)
+  await wrapper.get('button[aria-haspopup="listbox"]').trigger('click')
   await wrapper.get('[aria-label="Goals: Partial"]').trigger('keydown', { key: 'Enter' })
   expect(wrapper.get('[aria-label="Concept explanation"]').text()).toContain(
     'Protected storage requires opt-in',
@@ -20,14 +30,14 @@ it('explains every concept, marks planned work honestly, and links to its worksp
   const openGoals = wrapper.findAll('button').find((button) => button.text() === 'Open Goals')!
   await openGoals.trigger('click')
   expect(wrapper.emitted('navigate')).toEqual([['goals']])
-  await wrapper.get('select').setValue('pathways')
+  await pick('pathways')
   expect(wrapper.get('[aria-label="Concept explanation"]').text()).toContain(
     'proactive coaching remain future work',
   )
   expect(wrapper.get('[aria-label="Concept explanation"]').text()).toContain(
     'Reminders require your action',
   )
-  await wrapper.get('select').setValue('consent')
+  await pick('consent')
   expect(wrapper.get('[aria-label="Concept explanation"]').text()).toContain(
     'do not assume all are encrypted',
   )
