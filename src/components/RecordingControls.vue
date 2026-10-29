@@ -6,6 +6,8 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { friendly } from '@/config/errors'
 import type { ScreenRecording } from '@/types/protocol'
 import CaptureTargetPicker from './CaptureTargetPicker.vue'
+import HubGroup from './HubGroup.vue'
+import HubRow from './HubRow.vue'
 
 const options = ref<{ target: { kind: string; id: number }; label: string }[]>([])
 const target = ref('')
@@ -74,66 +76,76 @@ onMounted(async () => {
   await refresh()
 })
 onBeforeUnmount(() => off?.())
-const button =
-  'cursor-pointer rounded-full px-4 py-2 text-rune-caption text-rune-ink disabled:cursor-not-allowed disabled:opacity-40 bg-rune-raised'
 </script>
 <template>
-  <div class="flex flex-col gap-3" aria-label="Screen recording">
-    <p class="text-rune-caption text-rune-text-2">
-      Silent video · 2 fps · up to 60 seconds. Saved in Rune Studio’s recording folder. Screen
-      Insight captures stay separate.
-    </p>
+  <HubGroup
+    title="Screen recording"
+    hint="Silent video · 2 fps · up to 60 seconds. Saved in Rune Studio’s recording folder. Screen Insight captures stay separate."
+    aria-label="Screen recording"
+  >
     <template v-if="!busy">
-      <CaptureTargetPicker
-        v-model="target"
-        :options="options"
-        :refreshing="refreshing"
-        @refresh="refresh"
-      />
-      <p v-if="refreshStatus" role="status" class="text-rune-caption text-rune-text-2">
-        {{ refreshStatus }}
-      </p>
-      <label class="flex items-center justify-between text-rune-caption text-rune-text-2"
-        >Duration (seconds)
+      <HubRow
+        label="Capture target"
+        :hint="refreshing ? 'Refreshing…' : refreshStatus || 'Choose a screen or window.'"
+      >
+        <CaptureTargetPicker
+          v-model="target"
+          :options="options"
+          :refreshing="refreshing"
+          @refresh="refresh"
+        />
+      </HubRow>
+      <HubRow label="Duration" hint="Seconds, from 1 to 60.">
         <input
           v-model.number="seconds"
           type="number"
           min="1"
           max="60"
-          class="w-20 rounded-rune-tile bg-rune-surface px-3 py-2 text-rune-ink"
+          aria-label="Duration (seconds)"
+          class="h-10 w-24 rounded-rune-tile bg-rune-sunken px-3 text-rune-body text-rune-ink"
         />
-      </label>
-      <RuneButton size="sm" :disabled="!target || pending" @click="start">
-        Start recording
-      </RuneButton>
+      </HubRow>
+      <HubRow label="Record" hint="Starts right away. Escape stops and saves.">
+        <RuneButton size="sm" :disabled="!target || pending" @click="start">
+          Start recording
+        </RuneButton>
+      </HubRow>
     </template>
-    <p v-if="busy" role="status" class="text-rune-caption text-rune-text-2">
-      {{
-        status.phase === 'saving'
-          ? 'Saving video…'
-          : status.phase === 'starting'
-            ? 'Starting recording…'
-            : `Recording · ${status.seconds}s · Escape stops and saves`
-      }}
-    </p>
-    <div v-if="busy" class="flex gap-2">
+    <HubRow v-else label="Recording">
       <RuneButton size="sm" :disabled="status.phase === 'saving'" @click="stop(false)">
         Stop and save
       </RuneButton>
-      <RuneButton size="sm" @click="stop(true)">Cancel and discard</RuneButton>
-    </div>
-    <p v-if="status.path" class="text-rune-caption break-all text-rune-text-2 select-text">
-      Saved: {{ status.path }}
-    </p>
-    <p v-if="status.phase === 'cancelled'" class="text-rune-caption text-rune-text-2">
-      Recording discarded. No video saved.
-    </p>
-    <p
-      v-if="notice || (status.error && status.phase === 'failed')"
-      role="alert"
-      class="text-rune-caption text-error"
-    >
-      {{ notice || status.error }}
-    </p>
-  </div>
+      <RuneButton variant="ghost" size="sm" @click="stop(true)">Cancel and discard</RuneButton>
+    </HubRow>
+    <template #after>
+      <p v-if="busy" role="status" class="m-0 px-rune-2 text-rune-caption text-rune-text-2">
+        {{
+          status.phase === 'saving'
+            ? 'Saving video…'
+            : status.phase === 'starting'
+              ? 'Starting recording…'
+              : `Recording · ${status.seconds}s · Escape stops and saves`
+        }}
+      </p>
+      <p
+        v-if="status.path"
+        class="m-0 px-rune-2 text-rune-caption break-all text-rune-text-2 select-text"
+      >
+        Saved: {{ status.path }}
+      </p>
+      <p
+        v-if="status.phase === 'cancelled'"
+        class="m-0 px-rune-2 text-rune-caption text-rune-text-2"
+      >
+        Recording discarded. No video saved.
+      </p>
+      <p
+        v-if="notice || (status.error && status.phase === 'failed')"
+        role="alert"
+        class="m-0 px-rune-2 text-rune-caption text-error"
+      >
+        {{ notice || status.error }}
+      </p>
+    </template>
+  </HubGroup>
 </template>

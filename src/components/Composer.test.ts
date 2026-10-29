@@ -78,3 +78,29 @@ it('submits requests without user scheduling controls while another task runs', 
   expect(wrapper.get('textarea').attributes('disabled')).toBeUndefined()
   wrapper.unmount()
 })
+it('shows the approval mode and toggles it, and opens Settings from the tune button', async () => {
+  const saveSettings = vi.fn<(next: unknown) => Promise<boolean>>(async () => true)
+  const openSettings = vi.fn<() => void>()
+  const agent = {
+    state: ref('idle'),
+    isRunning: ref(false),
+    mode: ref('open'),
+    focusTick: ref(0),
+    settings: ref({ externalAgent: false, askEveryAction: false }),
+    health: ref({ tone: 'ok' }),
+    notice: ref(''),
+    noticeKind: ref('info'),
+    statusText: ref(''),
+    saveSettings,
+    openSettings,
+    stop: vi.fn<() => void>(),
+    toggleListening: vi.fn<() => void>(),
+  } as unknown as Agent
+  const wrapper = mount(Composer, { props: { agent } })
+  const mode = wrapper.get('[data-testid="approval-mode"]')
+  expect(mode.text()).toBe('Auto')
+  await mode.trigger('click')
+  expect(saveSettings).toHaveBeenCalledWith(expect.objectContaining({ askEveryAction: true }))
+  await wrapper.get('[aria-label="Settings"]').trigger('click')
+  expect(openSettings).toHaveBeenCalledOnce()
+})

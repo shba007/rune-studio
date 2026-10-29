@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import HubGroup from './HubGroup.vue'
+import HubRow from './HubRow.vue'
 import RuneButton from './RuneButton.vue'
 import { computed, ref } from 'vue'
 
@@ -7,10 +9,6 @@ import type { CaptureReport, ClickReport } from '@/types/protocol'
 
 const props = defineProps<{ agent: Agent }>()
 const agent = props.agent
-
-const FIELD = 'min-w-0 rounded-rune-tile bg-rune-surface px-2 py-1 text-rune-caption text-rune-ink'
-const BUTTON =
-  'cursor-pointer rounded-full bg-rune-surface px-3 py-1 text-rune-caption text-rune-ink transition hover:bg-white/15'
 
 const x = ref(500)
 const y = ref(500)
@@ -58,42 +56,33 @@ async function doType() {
 </script>
 
 <template>
-  <div class="flex flex-col gap-2 pt-4">
-    <h4 class="text-rune-heading text-rune-text-2 uppercase">Eyes and hands</h4>
-
-    <div class="flex flex-col gap-2">
-      <RuneButton size="sm" class="self-start" :disabled="busy !== null" @click="doCapture">
+  <HubGroup
+    title="Eyes and hands"
+    :hint="`Stop interrupts any of these: ${agent.settings.value?.stopHotkey || 'Escape'} or the tray.`"
+  >
+    <HubRow label="Capture screen" hint="Take one capture at native resolution.">
+      <RuneButton size="sm" :disabled="busy !== null" @click="doCapture">
         {{ busy === 'capture' ? 'Capturing…' : 'Capture screen' }}
       </RuneButton>
-      <img
-        v-if="capture"
-        :src="capture.thumbnail"
-        alt="Captured screen at native resolution"
-        class="w-full rounded-rune-tile bg-rune-raised"
-      />
-      <p v-if="capture" class="text-rune-caption text-rune-text-2">{{ captureSummary }}</p>
-    </div>
-
-    <label class="flex items-center gap-2 text-rune-caption text-rune-text-2">
-      Wait before acting
+    </HubRow>
+    <HubRow label="Wait before acting" hint="Seconds before a click, move or type.">
       <input
         v-model.number="delaySeconds"
         type="number"
         min="0"
         max="30"
-        :class="[FIELD, 'w-14']"
+        aria-label="Wait before acting (seconds)"
+        class="h-10 w-20 rounded-rune-tile bg-rune-sunken px-3 text-rune-body text-rune-ink"
       />
-      s
-    </label>
-
-    <div class="flex items-center gap-2">
+    </HubRow>
+    <HubRow label="Cursor position" hint="X and Y from 0 to 1000.">
       <input
         v-model.number="x"
         type="number"
         min="0"
         max="1000"
         aria-label="X (0 to 1000)"
-        :class="[FIELD, 'w-16']"
+        class="h-10 w-20 rounded-rune-tile bg-rune-sunken px-3 text-rune-body text-rune-ink"
       />
       <input
         v-model.number="y"
@@ -101,33 +90,43 @@ async function doType() {
         min="0"
         max="1000"
         aria-label="Y (0 to 1000)"
-        :class="[FIELD, 'w-16']"
+        class="h-10 w-20 rounded-rune-tile bg-rune-sunken px-3 text-rune-body text-rune-ink"
       />
+    </HubRow>
+    <HubRow label="Cursor actions" hint="Act at the position above.">
+      <RuneButton size="sm" :disabled="busy !== null" @click="doMove">
+        {{ busy === 'move' ? 'Moving…' : 'Move cursor' }}
+      </RuneButton>
       <RuneButton size="sm" :disabled="busy !== null" @click="doClick">
         {{ busy === 'click' ? 'Clicking…' : 'Click' }}
       </RuneButton>
-    </div>
-    <RuneButton size="sm" class="self-start" :disabled="busy !== null" @click="doMove">
-      {{ busy === 'move' ? 'Moving…' : 'Move cursor' }}
-    </RuneButton>
-    <p v-if="click" class="text-rune-caption text-rune-text-2">
-      pixel {{ click.pixelX }}, {{ click.pixelY }} · cursor {{ click.cursorX }}, {{ click.cursorY }}
-    </p>
-
-    <div class="flex items-center gap-2">
+    </HubRow>
+    <HubRow label="Type text" hint="Sent to the focused window.">
       <input
         v-model="text"
         type="text"
         aria-label="Text to type"
-        :class="[FIELD, 'flex-1']"
+        class="h-10 w-48 rounded-rune-tile bg-rune-sunken px-3 text-rune-body text-rune-ink"
         @keydown.enter="doType"
       />
       <RuneButton size="sm" :disabled="busy !== null" @click="doType">
         {{ busy === 'type' ? 'Typing…' : 'Type' }}
       </RuneButton>
-    </div>
-    <p class="text-rune-caption text-rune-text-3">
-      Stop interrupts any of these: {{ agent.settings.value?.stopHotkey || 'Escape' }} or the tray.
-    </p>
-  </div>
+    </HubRow>
+    <template #after>
+      <img
+        v-if="capture"
+        :src="capture.thumbnail"
+        alt="Captured screen at native resolution"
+        class="w-full rounded-rune-tile bg-rune-raised"
+      />
+      <p v-if="capture" class="m-0 px-rune-2 text-rune-caption text-rune-text-2">
+        {{ captureSummary }}
+      </p>
+      <p v-if="click" class="m-0 px-rune-2 text-rune-caption text-rune-text-2">
+        pixel {{ click.pixelX }}, {{ click.pixelY }} · cursor {{ click.cursorX }},
+        {{ click.cursorY }}
+      </p>
+    </template>
+  </HubGroup>
 </template>

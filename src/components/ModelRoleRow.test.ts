@@ -44,7 +44,7 @@ const fakeModels: ModelCapabilities[] = [
 ]
 
 describe('ModelRoleRow', () => {
-  it('limits new choices to selected models while preserving an existing unselected assignment', () => {
+  it('limits new choices to selected models while preserving an existing unselected assignment', async () => {
     const wrapper = mount(ModelRoleRow, {
       props: {
         roleLabel: 'Agent',
@@ -55,12 +55,12 @@ describe('ModelRoleRow', () => {
         selectedModels: ['local-omni'],
       },
     })
-    const options = wrapper.findAll('option')
-    expect(
-      options.find((option) => option.attributes('value') === 'old-model')?.attributes('disabled'),
-    ).toBeDefined()
-    expect(options.some((option) => option.attributes('value') === 'local-omni')).toBe(true)
-    expect(options.some((option) => option.attributes('value') === 'cloud-text-only')).toBe(false)
+    await wrapper.get('button[aria-label="Agent"]').trigger('click')
+    const options = wrapper.findAll('[role="option"]')
+    const stale = options.find((option) => option.text().startsWith('old-model'))
+    expect(stale?.attributes('disabled')).toBeDefined()
+    expect(options.some((option) => option.text() === 'local-omni')).toBe(true)
+    expect(options.some((option) => option.text() === 'cloud-text-only')).toBe(false)
   })
   it('requires an explicit Analysis model instead of advertising an agent fallback', () => {
     const wrapper = mount(ModelRoleRow, {

@@ -8,7 +8,7 @@ defineProps<{ draft: Settings }>()
 </script>
 
 <template>
-  <HubGroup>
+  <HubGroup title="Shortcuts">
     <HubInput v-model="draft.toggleHotkey" label="Open and close" />
     <HubInput v-model="draft.stopHotkey" label="Stop" />
   </HubGroup>

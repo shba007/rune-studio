@@ -5,20 +5,22 @@ import type { Settings } from '@/types/protocol'
 import SettingsVisualAnalysis from './SettingsVisualAnalysis.vue'
 
 describe('Visual Analysis display settings', () => {
-  it('defaults all groups on and changes only the selected checkbox', async () => {
+  it('defaults all groups on and changes only the selected switch', async () => {
     const draft = reactive({}) as Settings
     const wrapper = mount(SettingsVisualAnalysis, { props: { draft } })
     expect(
-      wrapper.findAll('input').every((input) => (input.element as HTMLInputElement).checked),
+      wrapper
+        .findAll('button[role="switch"]')
+        .every((item) => item.attributes('aria-checked') === 'true'),
     ).toBe(true)
-    await wrapper.get('input[aria-label="Depth"]').setValue(false)
+    await wrapper.get('button[aria-label="Depth"]').trigger('click')
     expect(draft.visualAnalysis).toEqual({
       entities: true,
       regions: true,
       structure: true,
       depth: false,
     })
-    await wrapper.get('input[aria-label="Depth"]').setValue(true)
+    await wrapper.get('button[aria-label="Depth"]').trigger('click')
     expect(draft.visualAnalysis?.depth).toBe(true)
     wrapper.unmount()
   })

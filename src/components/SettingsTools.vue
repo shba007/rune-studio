@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import RuneButton from './RuneButton.vue'
+import HubGroup from './HubGroup.vue'
+import HubInput from './HubInput.vue'
+import HubRow from './HubRow.vue'
+import HubToggle from './HubToggle.vue'
 import { invoke } from '@tauri-apps/api/core'
 import { onMounted, ref } from 'vue'
 defineProps<{ toolCalls?: string }>()
@@ -55,51 +59,72 @@ onMounted(async () => {
     status.value = String(error)
   }
 })
+function setEnabled(value: boolean) {
+  config.value.enabled = value
+  void save()
+}
+function setSelected(name: string, value: boolean) {
+  const others = config.value.selected.filter((item) => item !== name)
+  config.value.selected = value ? [...others, name] : others
+  void save()
+}
 </script>
 <template>
-  <div class="flex flex-col gap-rune-3 text-rune-body">
-    <p v-if="toolCalls === 'no'" role="alert">
+  <div class="flex flex-col gap-8 text-rune-body">
+    <p
+      v-if="toolCalls === 'no'"
+      role="alert"
+      class="m-0 rounded-rune-tile bg-rune-surface p-rune-2 text-attention"
+    >
       The selected agent model does not support tool calling. Choose a tool-capable model in Models
       settings.
     </p>
-    <label
-      ><input
-        v-model="config.enabled"
-        type="checkbox"
+    <HubGroup title="Kit tools">
+      <HubToggle
+        :model-value="config.enabled"
+        label="Enable Kit tools"
+        hint="Read-only tools from the shared Kit server."
+        info="Start Kit HTTP 0.6.0+ separately with serve --headless. Studio connects to the endpoint and never launches or stops the shared server."
         :disabled="toolCalls === 'no'"
-        @change="save"
+        @update:model-value="setEnabled"
       />
-      Enable Kit tools</label
-    >
-    <label class="flex flex-col gap-2"
-      >Kit HTTP endpoint
-      <input
+      <HubInput
         v-model="config.endpoint"
-        class="rounded-rune-tile bg-rune-sunken p-rune-2"
+        label="Kit HTTP endpoint"
         placeholder="http://127.0.0.1:47601/mcp"
-        @change="save"
+        @commit="save"
       />
-    </label>
-    <p class="m-0 text-rune-text-2">
-      Read-only tools only. Start Kit HTTP 0.6.0+ separately with serve --headless. Studio connects
-      to the endpoint and never launches or stops the shared server.
-    </p>
-    <p v-if="config.migration" role="alert">{{ config.migration }}</p>
-    <p class="m-0 text-rune-text-2">
-      Configure filesystem confinement on the Kit server using an explicit allowed_dir. Studio
-      cannot change that root. File contents are sent to the selected model.
-    </p>
-    <RuneButton :disabled="busy" @click="refresh">
-      {{ busy ? 'Discovering…' : 'Refresh / discover' }}
-    </RuneButton>
-    <p role="status">{{ status }}</p>
-    <label v-for="tool in tools" :key="tool.name"
-      ><input v-model="config.selected" type="checkbox" :value="tool.name" @change="save" />
-      {{ tool.name }}<span class="block text-rune-text-2">{{ tool.description }}</span></label
-    >
-    <p v-if="config.selected.length" class="text-rune-text-2">
-      Selected: {{ config.selected.join(', ') }}. Selection never grants tools permission to change
-      these settings.
-    </p>
+      <HubRow label="Discovery" hint="Find the read-only tools this server offers.">
+        <RuneButton size="sm" :disabled="busy" @click="refresh">
+          {{ busy ? 'Discovering…' : 'Refresh / discover' }}
+        </RuneButton>
+      </HubRow>
+      <template #after>
+        <p role="status" class="m-0 mt-rune-1 px-rune-2 text-rune-caption text-rune-text-2">
+          {{ status }}
+        </p>
+        <p
+          v-if="config.migration"
+          role="alert"
+          class="m-0 px-rune-2 text-rune-caption text-attention"
+        >
+          {{ config.migration }}
+        </p>
+        <p class="m-0 px-rune-2 text-rune-caption text-rune-text-3">
+          Configure filesystem confinement on the Kit server using an explicit allowed_dir. Studio
+          cannot change that root. File contents are sent to the selected model.
+        </p>
+      </template>
+    </HubGroup>
+    <HubGroup v-if="tools.length" title="Available tools">
+      <HubToggle
+        v-for="tool in tools"
+        :key="tool.name"
+        :model-value="config.selected.includes(tool.name)"
+        :label="tool.name"
+        :hint="tool.description"
+        @update:model-value="setSelected(tool.name, $event)"
+      />
+    </HubGroup>
   </div>
 </template>

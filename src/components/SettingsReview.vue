@@ -1,32 +1,28 @@
 <script setup lang="ts">
 import type { Settings } from '@/types/protocol'
 import HubRow from './HubRow.vue'
+import RuneChoice from './RuneChoice.vue'
 defineProps<{ draft: Settings }>()
+
+const REVIEW: { value: Settings['offerReview']; label: string }[] = [
+  { value: 'always', label: 'Always' },
+  { value: 'failures', label: 'Failures' },
+  { value: 'never', label: 'Never' },
+]
+const VIDEO: { value: Settings['recordSessionVideo']; label: string }[] = [
+  { value: 'off', label: 'Off' },
+  { value: 'motion', label: 'Motion' },
+]
 </script>
 
 <template>
   <HubRow label="Offer task review" hint="Choose when Rune offers a review after a task.">
-    <select
-      v-model="draft.offerReview"
-      aria-label="Offer task review"
-      class="rounded-rune-tile bg-rune-sunken px-rune-2 py-2 text-rune-body text-rune-ink"
-    >
-      <option value="always">Always</option>
-      <option value="failures">Failures</option>
-      <option value="never">Never</option>
-    </select>
+    <RuneChoice v-model="draft.offerReview" label="Offer task review" :options="REVIEW" />
   </HubRow>
   <HubRow
     label="Task video"
     hint="Motion records the screen at 2 frames per second; its cost is unmeasured."
   >
-    <select
-      v-model="draft.recordSessionVideo"
-      aria-label="Task video"
-      class="rounded-rune-tile bg-rune-sunken px-rune-2 py-2 text-rune-body text-rune-ink"
-    >
-      <option value="off">Off</option>
-      <option value="motion">Motion</option>
-    </select>
+    <RuneChoice v-model="draft.recordSessionVideo" label="Task video" :options="VIDEO" />
   </HubRow>
 </template>

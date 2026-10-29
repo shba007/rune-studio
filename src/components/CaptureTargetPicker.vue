@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import RuneButton from './RuneButton.vue'
-import { computed, ref } from 'vue'
+import { onClickOutside } from '@vueuse/core'
+import { computed, ref, useTemplateRef } from 'vue'
 import AppIcon from './AppIcon.vue'
+import RuneIconButton from './RuneIconButton.vue'
 
 const props = defineProps<{
   refreshing?: boolean
@@ -16,6 +17,8 @@ function refresh() {
 const selected = defineModel<string>({ required: true })
 const expanded = ref(false)
 const search = ref('')
+const root = useTemplateRef<HTMLElement>('root')
+onClickOutside(root, () => (expanded.value = false))
 const label = computed(
   () => props.options.find((o) => JSON.stringify(o.target) === selected.value)?.label,
 )
@@ -30,39 +33,47 @@ function choose(value: string) {
 </script>
 
 <template>
-  <div class="min-w-0 rounded-rune-tile bg-rune-surface p-1" @keydown.esc.stop="expanded = false">
+  <div
+    ref="root"
+    class="relative flex min-w-0 items-center gap-2"
+    :class="expanded && 'z-20'"
+    @keydown.esc.stop="expanded = false"
+  >
     <button
       type="button"
       aria-label="Choose capture target"
       :aria-expanded="expanded"
-      class="flex min-h-11 w-full items-center gap-2 rounded-rune-tile px-2 text-left text-rune-caption text-rune-ink hover:bg-white/5"
+      class="inline-flex h-8 max-w-64 min-w-0 cursor-pointer items-center gap-2 rounded-full bg-rune-sunken pr-3 pl-3 text-left text-rune-body text-rune-ink transition-colors hover:bg-black"
       @click="expanded = !expanded"
     >
-      <AppIcon :name="label?.startsWith('Screen') ? 'monitor' : 'app'" />
+      <AppIcon :name="label?.startsWith('Screen') ? 'monitor' : 'app'" size="sm" />
       <span class="min-w-0 flex-1 truncate">{{ label || 'Choose a screen or window' }}</span>
-      <AppIcon name="chevron" size="sm" />
+      <AppIcon name="chevron" size="sm" class="text-rune-text-3" />
     </button>
-    <RuneButton
+    <RuneIconButton
       variant="ghost"
       size="sm"
-      aria-label="Refresh capture targets"
+      label="Refresh capture targets"
       :disabled="refreshing"
       @click="refresh"
     >
-      {{ refreshing ? 'Refreshing…' : 'Refresh targets' }}
-    </RuneButton>
-    <div v-if="expanded" class="flex flex-col gap-2 p-1">
+      <AppIcon name="refresh" size="sm" />
+    </RuneIconButton>
+    <div
+      v-if="expanded"
+      class="absolute top-full right-0 mt-1 flex w-80 max-w-[80vw] flex-col gap-2 rounded-rune-tile bg-rune-raised p-2"
+    >
       <input
         v-model="search"
         aria-label="Filter capture targets"
         placeholder="Find a screen or window"
-        class="h-9 w-full rounded-rune-tile bg-black/20 px-2 text-rune-caption text-rune-ink"
+        class="h-9 w-full rounded-rune-tile bg-rune-sunken px-3 text-rune-body text-rune-ink placeholder:text-rune-text-3"
       />
-      <div class="max-h-44 overflow-x-hidden overflow-y-auto" aria-label="Capture targets">
+      <div class="max-h-48 overflow-x-hidden overflow-y-auto" aria-label="Capture targets">
         <template v-for="kind in ['screen', 'window']" :key="kind">
           <p
             v-if="filtered.some((o) => o.target.kind === kind)"
-            class="px-2 py-1 text-rune-caption text-rune-text-2 uppercase"
+            class="m-0 px-3 py-1 font-sans text-rune-heading text-rune-text-3 uppercase"
           >
             {{ kind === 'screen' ? 'Screens' : 'Windows' }}
           </p>
@@ -71,7 +82,10 @@ function choose(value: string) {
             :key="JSON.stringify(option.target)"
             type="button"
             :aria-pressed="selected === JSON.stringify(option.target)"
-            class="flex w-full items-center gap-2 rounded-rune-tile px-2 py-2 text-left text-rune-caption text-rune-text-2 hover:bg-white/8"
+            class="flex w-full cursor-pointer items-center gap-2 rounded-full px-3 py-2 text-left text-rune-body transition-colors hover:bg-white/8"
+            :class="
+              selected === JSON.stringify(option.target) ? 'text-rune-ink' : 'text-rune-text-2'
+            "
             @click="choose(JSON.stringify(option.target))"
           >
             <span
@@ -81,7 +95,7 @@ function choose(value: string) {
             <span class="min-w-0 [overflow-wrap:anywhere]">{{ option.label }}</span>
           </button>
         </template>
-        <p v-if="!filtered.length" class="px-2 py-3 text-rune-caption text-rune-text-2">
+        <p v-if="!filtered.length" class="m-0 px-3 py-3 text-rune-caption text-rune-text-3">
           No matching targets. Refresh the list to try again.
         </p>
       </div>

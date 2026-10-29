@@ -4,7 +4,8 @@ import { resolve } from 'node:path'
 import { expect, it } from 'vite-plus/test'
 
 const dir = resolve(process.cwd(), 'src/components')
-const ALLOWED = /^rounded(?:-[trbl]{1,2})?-(?:full|none|rune-tile|rune-panel|rune-control)$/
+const ALLOWED =
+  /^rounded(?:-[trbl]{1,2})?-(?:full|none|rune-tile|rune-panel|rune-control|rune-composer)$/
 const ANY = /(?<![\w-])rounded[\w[\].-]*/g
 
 const LEGACY: Record<string, number> = {}

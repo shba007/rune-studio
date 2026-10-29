@@ -9,6 +9,7 @@ import HubGroup from './HubGroup.vue'
 import HubInput from './HubInput.vue'
 import HubRow from './HubRow.vue'
 import HubToggle from './HubToggle.vue'
+import RuneSwitch from './RuneSwitch.vue'
 import ModelRoleRow from './ModelRoleRow.vue'
 import AppIcon from './AppIcon.vue'
 import ConnectionEditor from './ConnectionEditor.vue'
@@ -18,6 +19,14 @@ import {
   type ConnectionView,
 } from '@/composables/useConnections'
 const props = defineProps<{ agent: Agent; draft: Settings }>()
+const ROLES = [
+  { key: 'agent', label: 'Agent' },
+  { key: 'verifier', label: 'Verifier' },
+  { key: 'analysis', label: 'Visual Analysis' },
+  { key: 'voice', label: 'Voice' },
+  { key: 'decision', label: 'Decision' },
+  { key: 'advisor', label: 'Advisor' },
+] as const
 const detail = ref(false)
 const connections = useConnections()
 const editing = ref<ConnectionView | null | undefined>(undefined)
@@ -161,129 +170,133 @@ watch(
       @save="saveConnection"
     />
     <template v-else-if="!detail">
-      <div class="overflow-hidden rounded-rune-tile bg-rune-sunken" aria-label="Model connections">
-        <div class="flex flex-wrap items-center justify-between gap-rune-2 px-rune-2 py-4">
+      <section class="flex flex-col gap-rune-1" aria-label="Model connections">
+        <div class="flex flex-wrap items-center justify-between gap-rune-2 px-rune-2">
+          <h3 class="m-0 font-sans text-rune-heading text-rune-text-3 uppercase">Connections</h3>
           <RuneButton
+            size="sm"
             :disabled="connections.pending.value || !connections.catalog.value"
             @click="editing = null"
           >
             + Add connection
           </RuneButton>
-          <span class="text-rune-caption text-rune-text-2">{{
-            connections.catalog.value
-              ? `${connections.catalog.value.connections.length} ${connections.catalog.value.connections.length === 1 ? 'connection' : 'connections'} · ${listAvailable ? `${discovered.length} ${discovered.length === 1 ? 'model' : 'models'} on active` : 'active model list unavailable'}`
-              : 'Loading connections…'
-          }}</span>
         </div>
-        <div
-          v-for="connection in connections.catalog.value?.connections ?? []"
-          :key="connection.id"
-          class="flex flex-wrap items-center gap-4 px-rune-2 py-rune-3"
-        >
-          <span class="grid size-12 shrink-0 place-items-center rounded-rune-tile bg-black"
-            ><AppIcon name="logo" class="text-rune-ink"
-          /></span>
-          <button
-            type="button"
-            class="min-w-0 flex-1 cursor-pointer text-left"
-            :aria-label="`Open ${connection.name}`"
-            @click="openConnection(connection)"
-          >
-            <span class="block text-rune-body font-medium text-rune-ink"
-              >{{ connection.name }}
-              <span v-if="connection.active" class="ml-2 text-rune-caption text-rune-text-2"
-                >Active</span
-              ></span
-            >
-            <span class="mt-1 block break-all text-rune-body text-rune-text-2">{{
-              connection.baseUrl
-            }}</span>
-            <span
-              v-if="connection.active && listAvailable && discovered.length"
-              class="mt-2 block truncate text-rune-caption text-rune-text-2"
-              >{{
-                discovered
-                  .slice(0, 4)
-                  .map((model) => model.id)
-                  .join(' · ')
-              }}{{ discovered.length > 4 ? ' · …' : '' }}</span
-            >
-          </button>
-          <div class="flex flex-wrap items-center gap-rune-2">
-            <span
-              v-if="(connection.active && checking) || connections.testing.value === connection.id"
-              role="status"
-              class="text-rune-body text-rune-text-2"
-              >Checking…</span
-            >
-            <BackendBadge v-else-if="connection.active" :status="visibleStatus" />
-            <BackendBadge
-              v-else-if="connections.statuses.value[connection.id]"
-              :status="connections.statuses.value[connection.id]!"
-            />
-            <span v-else class="text-rune-caption text-rune-text-2">Not checked</span>
-            <RuneIconButton
-              variant="ghost"
-              size="sm"
-              :disabled="checking || !!connections.testing.value"
-              :label="`Check ${connection.name}`"
-              @click="connection.active ? refresh() : connections.check(connection.id)"
-            >
-              <AppIcon name="refresh" />
-            </RuneIconButton>
-            <RuneButton @click="editing = connection"> Edit </RuneButton>
-            <RuneButton
-              variant="primary"
-              v-if="!connection.active"
-              :disabled="connections.pending.value || agent.isRunning?.value"
-              @click="connections.activate(connection.id)"
-            >
-              Make active
-            </RuneButton>
-            <RuneButton
-              variant="ghost"
-              size="sm"
-              :disabled="
-                connections.pending.value ||
-                (connections.catalog.value?.connections.length ?? 0) <= 1
-              "
-              :aria-label="`Remove ${connection.name}`"
-              @click="removing = connection.id"
-            >
-              Remove
-            </RuneButton>
-          </div>
+        <div class="flex flex-col gap-0.5">
           <div
-            v-if="removing === connection.id"
-            class="flex w-full flex-wrap items-center gap-rune-2 pt-4 text-rune-body text-rune-text-2"
+            v-for="connection in connections.catalog.value?.connections ?? []"
+            :key="connection.id"
+            class="flex flex-wrap items-center gap-x-4 gap-y-2 bg-rune-surface px-rune-2 py-rune-2 first:rounded-t-rune-tile last:rounded-b-rune-tile"
           >
-            <span class="flex-1"
-              >Remove {{ connection.name }} and its stored key?
-              {{ connection.active ? 'Another saved connection will become active.' : '' }}</span
+            <button
+              type="button"
+              class="min-w-48 flex-1 cursor-pointer text-left"
+              :aria-label="`Open ${connection.name}`"
+              @click="openConnection(connection)"
             >
-            <RuneButton
-              variant="ghost"
-              size="sm"
-              :disabled="connections.pending.value"
-              @click="removeConnection(connection.id)"
+              <span class="block text-rune-body text-rune-ink"
+                >{{ connection.name }}
+                <span v-if="connection.active" class="ml-2 text-rune-caption text-rune-text-3"
+                  >Active</span
+                ></span
+              >
+              <span class="mt-1 block break-all text-rune-caption text-rune-text-2">{{
+                connection.baseUrl
+              }}</span>
+              <span
+                v-if="connection.active && listAvailable && discovered.length"
+                class="mt-1 block truncate text-rune-caption text-rune-text-3"
+                >{{
+                  discovered
+                    .slice(0, 4)
+                    .map((model) => model.id)
+                    .join(' · ')
+                }}{{ discovered.length > 4 ? ' · …' : '' }}</span
+              >
+            </button>
+            <div class="flex flex-wrap items-center gap-rune-1">
+              <RuneIconButton
+                variant="ghost"
+                size="sm"
+                :disabled="checking || !!connections.testing.value"
+                :label="`Check ${connection.name}`"
+                @click="connection.active ? refresh() : connections.check(connection.id)"
+              >
+                <AppIcon name="refresh" size="sm" />
+              </RuneIconButton>
+              <RuneButton size="sm" @click="editing = connection">Edit</RuneButton>
+              <RuneButton
+                v-if="!connection.active"
+                variant="primary"
+                size="sm"
+                :disabled="connections.pending.value || agent.isRunning?.value"
+                @click="connections.activate(connection.id)"
+              >
+                Make active
+              </RuneButton>
+              <RuneIconButton
+                variant="ghost"
+                size="sm"
+                :disabled="
+                  connections.pending.value ||
+                  (connections.catalog.value?.connections.length ?? 0) <= 1
+                "
+                :label="`Remove ${connection.name}`"
+                @click="removing = connection.id"
+              >
+                <AppIcon name="trash" size="sm" />
+              </RuneIconButton>
+            </div>
+            <div class="flex w-full min-w-0 items-center">
+              <span
+                v-if="
+                  (connection.active && checking) || connections.testing.value === connection.id
+                "
+                role="status"
+                class="text-rune-caption text-rune-text-2"
+                >Checking…</span
+              >
+              <BackendBadge v-else-if="connection.active" :status="visibleStatus" />
+              <BackendBadge
+                v-else-if="connections.statuses.value[connection.id]"
+                :status="connections.statuses.value[connection.id]!"
+              />
+              <span v-else class="text-rune-caption text-rune-text-3">Not checked</span>
+            </div>
+            <div
+              v-if="removing === connection.id"
+              class="flex w-full flex-wrap items-center gap-rune-2 rounded-rune-tile bg-rune-sunken p-rune-2 text-rune-caption text-rune-text-2"
             >
-              Confirm remove
-            </RuneButton>
-            <RuneButton variant="ghost" size="sm" @click="removing = null"> Cancel </RuneButton>
+              <span class="flex-1"
+                >Remove {{ connection.name }} and its stored key?
+                {{ connection.active ? 'Another saved connection will become active.' : '' }}</span
+              >
+              <RuneButton
+                variant="danger"
+                size="sm"
+                :disabled="connections.pending.value"
+                @click="removeConnection(connection.id)"
+              >
+                Confirm remove
+              </RuneButton>
+              <RuneButton variant="ghost" size="sm" @click="removing = null">Cancel</RuneButton>
+            </div>
           </div>
         </div>
-      </div>
-      <p class="m-0 text-rune-body leading-relaxed text-rune-text-2">
-        One connection is active at a time. Model roles are shared. Kit tools are configured under
-        Kit &amp; tools.
-      </p>
+        <p class="m-0 px-rune-2 text-rune-caption text-rune-text-3">
+          {{
+            connections.catalog.value
+              ? `${connections.catalog.value.connections.length} ${connections.catalog.value.connections.length === 1 ? 'connection' : 'connections'} · ${listAvailable ? `${discovered.length} ${discovered.length === 1 ? 'model' : 'models'} on active` : 'active model list unavailable'}. One connection is active at a time and model roles are shared.`
+              : 'Loading connections…'
+          }}
+        </p>
+      </section>
     </template>
     <template v-else>
-      <header class="flex flex-wrap items-center justify-between gap-rune-2 pb-rune-3">
+      <header class="flex flex-wrap items-center justify-between gap-rune-2">
         <RuneButton variant="link" @click="detail = false">
           <AppIcon name="back" size="sm" /> Connections
         </RuneButton>
-        <span class="text-rune-caption text-rune-text-2">Model roles save automatically</span>
+        <span class="text-rune-caption text-rune-text-3">Model roles save automatically</span>
       </header>
       <HubGroup title="Connection">
         <HubRow label="Backend">
@@ -297,7 +310,7 @@ watch(
             :disabled="checking"
             @click="refresh"
           >
-            <AppIcon name="refresh" />
+            <AppIcon name="refresh" size="sm" />
           </RuneIconButton>
         </HubRow>
         <HubRow label="Base URL"
@@ -309,41 +322,43 @@ watch(
           <span class="text-rune-body text-rune-text-2">{{
             activeConnection?.hasApiKey ? 'Configured' : 'Not set'
           }}</span>
-          <RuneButton v-if="activeConnection" @click="editing = activeConnection">
+          <RuneButton v-if="activeConnection" size="sm" @click="editing = activeConnection">
             Edit connection
           </RuneButton>
         </HubRow>
       </HubGroup>
 
-      <section class="flex flex-col gap-rune-2 pt-6" aria-label="Discovered models">
-        <div class="flex flex-wrap items-center justify-between gap-rune-2">
-          <div>
-            <h2 class="m-0 text-rune-body text-rune-ink">Discovered models</h2>
-            <p class="mt-1 mb-0 text-rune-caption text-rune-text-2">
-              {{
-                listAvailable
-                  ? `${discovered.length} ${discovered.length === 1 ? 'model' : 'models'} reported by the server`
-                  : 'Model list unavailable. Check the connection.'
-              }}
-            </p>
-          </div>
+      <section class="flex flex-col gap-rune-1" aria-label="Discovered models">
+        <div class="flex flex-wrap items-center justify-between gap-rune-2 px-rune-2">
+          <h3 class="m-0 font-sans text-rune-heading text-rune-text-3 uppercase">
+            Discovered models
+          </h3>
           <RuneButton variant="ghost" size="sm" :disabled="checking" @click="refresh">
             {{ checking ? 'Checking…' : 'Reload models' }}
           </RuneButton>
         </div>
+        <p class="m-0 px-rune-2 text-rune-caption text-rune-text-3">
+          {{
+            listAvailable
+              ? `${discovered.length} ${discovered.length === 1 ? 'model' : 'models'} reported by the server`
+              : 'Model list unavailable. Check the connection.'
+          }}
+        </p>
         <template v-if="listAvailable && discovered.length">
           <input
             v-model="modelSearch"
             type="search"
             aria-label="Search discovered models"
             placeholder="Search models"
-            class="h-10 w-full rounded-rune-tile bg-rune-surface px-rune-2 text-rune-body text-rune-ink placeholder:text-rune-text-3"
+            class="h-10 w-full rounded-rune-tile bg-rune-sunken px-rune-2 text-rune-body text-rune-ink placeholder:text-rune-text-3"
           />
-          <ul class="m-0 max-h-56 list-none overflow-y-auto rounded-rune-tile p-0 bg-rune-raised">
+          <ul
+            class="m-0 flex max-h-56 list-none flex-col gap-0.5 overflow-y-auto rounded-rune-tile p-0"
+          >
             <li
               v-for="model in filteredModels"
               :key="model.id"
-              class="break-all px-4 py-rune-2 text-rune-body text-rune-text-2"
+              class="bg-rune-surface px-rune-2 py-rune-1 text-rune-body break-all text-rune-text-2"
             >
               {{ model.id }}
             </li>
@@ -351,35 +366,35 @@ watch(
           <p
             v-if="!filteredModels.length"
             role="status"
-            class="m-0 text-rune-caption text-rune-text-2"
+            class="m-0 px-rune-2 text-rune-caption text-rune-text-3"
           >
             No matching models.
           </p>
         </template>
-        <p v-else-if="listAvailable" class="m-0 text-rune-caption text-rune-text-2">
+        <p v-else-if="listAvailable" class="m-0 px-rune-2 text-rune-caption text-rune-text-3">
           The server reported no models.
         </p>
       </section>
 
-      <section class="flex flex-col gap-4 pt-6" aria-label="Model selection and limits">
-        <h2 class="m-0 text-rune-body text-rune-ink">Model selection and limits</h2>
-        <p class="m-0 text-rune-body text-rune-text-2">
-          Select the models available for role assignments.
+      <section class="flex flex-col gap-rune-1" aria-label="Model selection and limits">
+        <h3 class="m-0 px-rune-2 font-sans text-rune-heading text-rune-text-3 uppercase">
+          Model selection and limits
+        </h3>
+        <p class="m-0 px-rune-2 text-rune-caption text-rune-text-3">
+          Select the models available for role assignments. Existing role assignments stay when you
+          switch connections; select their models here to assign them again.
         </p>
-        <p class="m-0 text-rune-caption text-rune-text-2">
-          Existing role assignments remain unchanged when you switch connections. Select their
-          models here to assign them again.
-        </p>
-        <label class="flex flex-col gap-2 text-rune-body text-rune-text-2"
+        <label
+          class="flex flex-col gap-2 rounded-rune-tile bg-rune-surface p-rune-2 text-rune-body text-rune-ink"
           >Additional model IDs
-          <span class="text-rune-caption text-rune-text-2"
+          <span class="text-rune-caption text-rune-text-3"
             >One per line or comma separated. Capabilities remain unknown until reported by the
             server.</span
           >
           <textarea
             v-model="additionalDraft"
             rows="3"
-            class="rounded-rune-tile bg-rune-surface p-rune-2 text-rune-ink"
+            class="rounded-rune-tile bg-rune-sunken p-rune-2 text-rune-body text-rune-ink"
           />
         </label>
         <input
@@ -387,10 +402,10 @@ watch(
           type="search"
           aria-label="Search selectable models"
           placeholder="Search selectable models"
-          class="h-10 w-full rounded-rune-tile bg-rune-surface px-rune-2 text-rune-body text-rune-ink"
+          class="h-10 w-full rounded-rune-tile bg-rune-sunken px-rune-2 text-rune-body text-rune-ink placeholder:text-rune-text-3"
         />
-        <div class="max-h-56 overflow-y-auto rounded-rune-tile bg-rune-raised">
-          <div class="flex gap-4 px-4 py-rune-2 text-rune-body text-rune-text-2">
+        <div class="flex max-h-72 flex-col gap-0.5 overflow-y-auto rounded-rune-tile">
+          <div class="flex gap-4 bg-rune-surface px-rune-2 py-rune-1">
             <RuneButton variant="link" @click="selectedDraft = [...modelIds]"
               >Select all</RuneButton
             >
@@ -399,111 +414,79 @@ watch(
           <label
             v-for="id in filteredModelIds"
             :key="id"
-            class="flex items-center gap-rune-2 px-4 py-rune-2 text-rune-body text-rune-text-2"
+            class="flex cursor-pointer items-center justify-between gap-rune-2 bg-rune-surface px-rune-2 py-rune-1 text-rune-body text-rune-text-2"
           >
-            <input
-              type="checkbox"
-              :checked="selectedDraft.includes(id)"
-              @change="toggleModel(id, ($event.target as HTMLInputElement).checked)"
-            />{{ id }}
+            {{ id }}
+            <RuneSwitch
+              :model-value="selectedDraft.includes(id)"
+              :label="`Select ${id}`"
+              @update:model-value="toggleModel(id, $event)"
+            />
           </label>
-          <p v-if="!modelIds.length" class="px-4 text-rune-caption text-rune-text-2">
+          <p
+            v-if="!modelIds.length"
+            class="m-0 bg-rune-surface px-rune-2 py-rune-2 text-rune-caption text-rune-text-3"
+          >
             No discovered or additional models.
           </p>
         </div>
-        <label class="flex flex-col gap-2 text-rune-body text-rune-text-2"
-          >Maximum output tokens
-          <input
-            v-model="limitDraft"
-            type="number"
-            min="1"
-            max="1000000"
-            placeholder="No connection cap"
-            class="rounded-rune-tile bg-rune-surface p-rune-2 text-rune-ink"
-          />
-        </label>
-        <p class="m-0 text-rune-caption text-rune-text-2">
-          Caps model output, not context length. Requests with lower limits keep their existing
-          limit. Fast checks use a separate API and are not capped. Providers may reject unsupported
-          values.
-        </p>
-        <p v-if="modelError" role="alert" class="m-0 text-rune-body text-error">
+        <div class="flex flex-col gap-0.5">
+          <HubRow
+            label="Maximum output tokens"
+            hint="Caps model output, not context length."
+            info="Requests with lower limits keep their existing limit. Fast checks use a separate API and are not capped. Providers may reject unsupported values."
+          >
+            <input
+              v-model="limitDraft"
+              type="number"
+              min="1"
+              max="1000000"
+              aria-label="Maximum output tokens"
+              placeholder="No connection cap"
+              class="h-10 w-48 rounded-rune-tile bg-rune-sunken px-rune-2 text-rune-body text-rune-ink placeholder:text-rune-text-3"
+            />
+          </HubRow>
+        </div>
+        <p v-if="modelError" role="alert" class="m-0 px-rune-2 text-rune-body text-error">
           {{ modelError }}
         </p>
         <RuneButton
           variant="primary"
           :disabled="connections.pending.value"
-          class="w-fit"
+          class="mt-rune-1 w-fit"
           @click="saveModelSettings"
         >
           Save model settings
         </RuneButton>
       </section>
 
-      <HubGroup title="Models">
-        <p class="m-0 mb-2 text-rune-body text-rune-text-2">
-          Choose a model for each job. Visual Analysis requires an explicit Analysis model with
-          image input and tool calling. Other optional roles can use the agent model when empty.
-          Open Model capabilities to check what each model supports.
-        </p>
+      <HubGroup
+        title="Model roles"
+        hint="Visual Analysis needs an explicit Analysis model with image input and tool calling. Other roles use the agent model when empty."
+      >
         <datalist id="discovered-models-list">
           <option v-for="id in roleModelIds" :key="id" :value="id" />
         </datalist>
 
         <ModelRoleRow
-          v-model="draft.models.agent"
-          role-label="Agent"
-          role-key="agent"
+          v-for="role in ROLES"
+          :key="role.key"
+          v-model="draft.models[role.key]"
+          :role-label="role.label"
+          :role-key="role.key"
           :agent-model="draft.models.agent"
           :models="discovered"
           :selected-models="activeConnection?.selectedModels"
-          placeholder="e.g. gemma-4-12b-it"
+          :placeholder="role.key === 'agent' ? 'e.g. gemma-4-12b-it' : undefined"
         />
-        <ModelRoleRow
-          v-model="draft.models.verifier"
-          role-label="Verifier"
-          role-key="verifier"
-          :agent-model="draft.models.agent"
-          :models="discovered"
-          :selected-models="activeConnection?.selectedModels"
-        />
-        <ModelRoleRow
-          v-model="draft.models.analysis"
-          role-label="Visual Analysis"
-          role-key="analysis"
-          :agent-model="draft.models.agent"
-          :models="discovered"
-          :selected-models="activeConnection?.selectedModels"
-        />
-        <ModelRoleRow
-          v-model="draft.models.voice"
-          role-label="Voice"
-          role-key="voice"
-          :agent-model="draft.models.agent"
-          :models="discovered"
-          :selected-models="activeConnection?.selectedModels"
-        />
-        <ModelRoleRow
-          v-model="draft.models.decision"
-          role-label="Decision"
-          role-key="decision"
-          :agent-model="draft.models.agent"
-          :models="discovered"
-          :selected-models="activeConnection?.selectedModels"
-        />
-        <ModelRoleRow
-          v-model="draft.models.advisor"
-          role-label="Advisor"
-          role-key="advisor"
-          :agent-model="draft.models.agent"
-          :models="discovered"
-          :selected-models="activeConnection?.selectedModels"
-        />
+      </HubGroup>
 
+      <HubGroup title="Fast checks">
         <HubToggle
           v-model="draft.fastChecks"
           label="Fast checks"
-          hint="A server that loads one model at a time swaps models for every fast check, which can add 10 seconds or more. Leave this off there."
+          hint="Skip planning for confident, simple steps."
+          info="A server that loads one model at a time swaps models for every fast check, which can add 10 seconds or more. Leave this off there."
         />
         <HubInput v-if="draft.fastChecks" v-model="draft.decisionUrl" label="Decision URL" />
       </HubGroup>

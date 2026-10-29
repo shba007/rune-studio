@@ -19,94 +19,44 @@ import SettingsConnectionModels from './SettingsConnectionModels.vue'
 import SettingsVisualAnalysis from './SettingsVisualAnalysis.vue'
 import SettingsGoalContext from './SettingsGoalContext.vue'
 
-type Section =
-  | 'general'
-  | 'shortcuts'
-  | 'agents'
-  | 'models'
-  | 'capture'
-  | 'data'
-  | 'developer'
-  | 'about'
-  | 'tools'
+type Section = 'general' | 'models' | 'capture' | 'developer' | 'about'
 
 const agent = useAgent()
 
-const SECTIONS: { id: Section; label: string; subtitle: string; icon: IconName }[] = [
-  {
-    id: 'general',
-    label: 'General',
-    subtitle: 'Safety, behavior and everyday preferences.',
-    icon: 'tune',
-  },
-  {
-    id: 'models',
-    label: 'Models',
-    subtitle: 'Manage the model server and its roles.',
-    icon: 'plug',
-  },
-  {
-    id: 'agents',
-    label: 'Agents',
-    subtitle: 'Choose how Rune executes work.',
-    icon: 'personality',
-  },
-  {
-    id: 'tools',
-    label: 'Kit & tools',
-    subtitle: 'Connect to Kit and choose available read-only tools.',
-    icon: 'link',
-  },
-  {
-    id: 'capture',
-    label: 'Capture & recording',
-    subtitle: 'Saved image quality, recording and Visual Analysis highlights.',
-    icon: 'video',
-  },
-  {
-    id: 'data',
-    label: 'Data & privacy',
-    subtitle: 'Goal classification, protected storage and category consent.',
-    icon: 'shield',
-  },
-  {
-    id: 'shortcuts',
-    label: 'Shortcuts',
-    subtitle: 'Keys that work from anywhere.',
-    icon: 'shortcut',
-  },
-  {
-    id: 'developer',
-    label: 'Developer',
-    subtitle: 'Diagnostics, input tests and animation previews.',
-    icon: 'app',
-  },
-  {
-    id: 'about',
-    label: 'About',
-    subtitle: 'Versions, updates, support and license.',
-    icon: 'logo',
-  },
+const SECTIONS: { id: Section; label: string; icon: IconName }[] = [
+  { id: 'general', label: 'General', icon: 'tune' },
+  { id: 'models', label: 'Models & tools', icon: 'plug' },
+  { id: 'capture', label: 'Capture & privacy', icon: 'video' },
+  { id: 'developer', label: 'Developer', icon: 'app' },
+  { id: 'about', label: 'About', icon: 'logo' },
 ]
+const ALIASES: Record<string, Section> = {
+  agents: 'general',
+  shortcuts: 'general',
+  tools: 'models',
+  data: 'capture',
+}
+const resolveSection = (id: string | null | undefined): Section | null => {
+  const key = id ?? ''
+  if (SECTIONS.some((item) => item.id === key)) return key as Section
+  return ALIASES[key] ?? null
+}
 const SYSTEM_SECTIONS: Section[] = ['developer', 'about']
 const visible = SECTIONS
 
 const asked = new URLSearchParams(location.search).get('section')
 if (['artifacts', 'tasks', 'goals'].includes(asked ?? ''))
   void agent.openWorkspace(asked === 'goals' ? 'goals' : 'tasks')
-const section = ref<Section>(
-  SECTIONS.some((item) => item.id === asked) ? (asked as Section) : 'general',
-)
+const section = ref<Section>(resolveSection(asked) ?? 'general')
 const current = computed(() => SECTIONS.find((item) => item.id === section.value) ?? SECTIONS[0]!)
 
 let unlisten: (() => void) | null = null
 onMounted(async () => {
   try {
-    unlisten = await listen<{ section?: Section }>('settings_section', (event) => {
+    unlisten = await listen<{ section?: string }>('settings_section', (event) => {
       const requested = event.payload?.section
-      if (requested && SECTIONS.some((item) => item.id === requested)) {
-        section.value = requested
-      }
+      const target = resolveSection(requested)
+      if (target) section.value = target
     })
   } catch {
     unlisten = null
@@ -165,12 +115,9 @@ onBeforeUnmount(() => {
     <TitleBar title="Settings" controls="close" />
     <div class="flex min-h-0 flex-1">
       <nav
-        class="flex w-64 shrink-0 flex-col gap-1 bg-rune-sunken p-4"
+        class="flex w-64 shrink-0 flex-col gap-1 bg-rune-sunken p-4 pt-6"
         aria-label="Settings sections"
       >
-        <h2 class="mx-rune-2 mt-1 mb-6 font-sans text-rune-subtitle font-medium text-rune-ink">
-          Settings
-        </h2>
         <div class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
           <template v-for="(item, index) in visible" :key="item.id">
             <hr
@@ -196,9 +143,8 @@ onBeforeUnmount(() => {
 
       <section class="flex min-w-0 flex-1 flex-col overflow-y-auto px-8 py-8 lg:px-12">
         <div class="mx-auto w-full max-w-4xl">
-          <header class="mb-8 flex flex-col gap-1">
+          <header class="mb-8">
             <h1 class="m-0 font-sans text-rune-title">{{ current.label }}</h1>
-            <p class="m-0 text-rune-body text-rune-text-2">{{ current.subtitle }}</p>
           </header>
 
           <p
@@ -211,42 +157,33 @@ onBeforeUnmount(() => {
           </p>
 
           <template v-if="draft">
-            <SettingsGeneral
-              v-if="section === 'general'"
-              :agent="agent"
-              :draft="draft"
-              view="general"
-            />
-            <div v-else-if="section === 'models'" class="flex flex-col gap-10">
+            <div v-if="section === 'general'" class="flex flex-col gap-8">
+              <SettingsGeneral :agent="agent" :draft="draft" view="general" />
+              <SettingsAgents :agent="agent" :draft="draft" execution-only />
+              <SettingsShortcuts :draft="draft" />
+            </div>
+            <div v-else-if="section === 'models'" class="flex flex-col gap-8">
               <SettingsConnectionModels :agent="agent" :draft="draft">
                 <SettingsGeneral :agent="agent" :draft="draft" view="models" />
               </SettingsConnectionModels>
+              <SettingsTools
+                :tool-calls="
+                  agent.backend.value?.models?.find(
+                    (model) => model.id === agent.settings.value?.models.agent,
+                  )?.toolCalls
+                "
+              />
             </div>
-            <div v-else-if="section === 'capture'" class="flex flex-col gap-10">
+            <div v-else-if="section === 'capture'" class="flex flex-col gap-8">
               <SettingsGeneral :agent="agent" :draft="draft" view="capture" />
               <SettingsVisualAnalysis :draft="draft" />
+              <SettingsGoalContext :draft="draft" />
             </div>
-            <SettingsGoalContext v-else-if="section === 'data'" :draft="draft" />
             <SettingsGeneral
               v-else-if="section === 'developer'"
               :agent="agent"
               :draft="draft"
               view="developer"
-            />
-            <SettingsTools
-              v-else-if="section === 'tools'"
-              :tool-calls="
-                agent.backend.value?.models?.find(
-                  (model) => model.id === agent.settings.value?.models.agent,
-                )?.toolCalls
-              "
-            />
-            <SettingsShortcuts v-else-if="section === 'shortcuts'" :draft="draft" />
-            <SettingsAgents
-              v-else-if="section === 'agents'"
-              :agent="agent"
-              :draft="draft"
-              execution-only
             />
           </template>
           <SettingsAbout v-if="section === 'about'" :agent="agent" />

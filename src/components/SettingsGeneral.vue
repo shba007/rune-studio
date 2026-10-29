@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import RuneButton from './RuneButton.vue'
-import { nextTick, useTemplateRef } from 'vue'
+import RuneChoice from './RuneChoice.vue'
+import { ref } from 'vue'
 
 import type { Agent } from '@/composables/useAgent'
 import type { AgentState, Settings } from '@/types/protocol'
@@ -22,6 +22,21 @@ withDefaults(
   { view: 'all' },
 )
 
+const MODEL_RESOLUTIONS = [
+  { value: '720', label: '720 px · Faster' },
+  { value: '1280', label: '1280 px · Balanced' },
+  { value: '1920', label: '1920 px · Detailed' },
+  { value: '2560', label: '2560 px · More detailed' },
+  { value: 'native', label: 'Native resolution' },
+]
+const RECORDING_RESOLUTIONS = [
+  { value: '720', label: '720 px' },
+  { value: '1280', label: '1280 px' },
+  { value: '1920', label: '1920 px' },
+  { value: '2560', label: '2560 px' },
+  { value: 'native', label: 'Native resolution' },
+]
+
 const DEBUG_STATES: AgentState[] = [
   'idle',
   'listening',
@@ -32,12 +47,8 @@ const DEBUG_STATES: AgentState[] = [
   'failed',
 ]
 
-const developer = useTemplateRef<HTMLDetailsElement>('developer')
-async function revealDeveloper() {
-  if (!developer.value?.open) return
-  await nextTick()
-  developer.value.scrollIntoView({ block: 'end', behavior: 'smooth' })
-}
+const previewState = ref<AgentState>('idle')
+const PREVIEW_STATES = DEBUG_STATES.map((value) => ({ value, label: value.replace('_', ' ') }))
 </script>
 
 <template>
@@ -48,17 +59,11 @@ async function revealDeveloper() {
         label="Model input resolution"
         hint="Limits images sent to models for faster inference. Independent of saved screenshot and recording quality."
       >
-        <select
+        <RuneChoice
           v-model="draft.modelImageResolution"
-          aria-label="Model input resolution"
-          class="rounded-rune-tile bg-rune-sunken px-rune-2 py-2 text-rune-body text-rune-ink"
-        >
-          <option value="720">720 px · Faster</option>
-          <option value="1280">1280 px · Balanced</option>
-          <option value="1920">1920 px · Detailed</option>
-          <option value="2560">2560 px · More detailed</option>
-          <option value="native">Native resolution</option>
-        </select>
+          label="Model input resolution"
+          :options="MODEL_RESOLUTIONS"
+        />
       </HubRow>
     </HubGroup>
 
@@ -67,29 +72,26 @@ async function revealDeveloper() {
       <HubToggle
         v-model="draft.demoMode"
         label="Show Rune in screen recordings"
-        hint="OBS, Game Bar and the Snipping Tool can capture Rune's windows. Rune hides itself from its own model either way."
+        hint="OBS, Game Bar and the Snipping Tool can capture Rune's windows."
+        info="Rune hides itself from its own model either way."
       />
     </HubGroup>
 
     <HubGroup v-if="view === 'all' || view === 'capture'" title="Capture quality">
       <HubRow
         label="Screenshot and recording resolution"
-        hint="Quality of new saved screenshots and recordings. Limits the longest edge without enlarging captures. Native preserves captured dimensions. Model input resolution is independent; video remains silent at 2 fps."
+        hint="Quality of new saved screenshots and recordings."
+        info="Limits the longest edge without enlarging captures. Native preserves captured dimensions. Model input resolution is independent; video remains silent at 2 fps."
       >
-        <select
+        <RuneChoice
           v-model="draft.recordingResolution"
-          aria-label="Screenshot and recording resolution"
-          class="rounded-rune-tile bg-rune-sunken px-rune-2 py-2 text-rune-body text-rune-ink"
-        >
-          <option value="720">720 px</option>
-          <option value="1280">1280 px</option>
-          <option value="1920">1920 px</option>
-          <option value="2560">2560 px</option>
-          <option value="native">Native resolution</option>
-        </select>
+          label="Screenshot and recording resolution"
+          :options="RECORDING_RESOLUTIONS"
+        />
       </HubRow>
-      <RecordingControls />
     </HubGroup>
+
+    <RecordingControls v-if="view === 'all' || view === 'capture'" />
 
     <HubGroup v-if="view === 'all' || view === 'general'" title="Safety &amp; behavior">
       <HubToggle
@@ -112,27 +114,19 @@ async function revealDeveloper() {
       />
     </HubGroup>
 
-    <details
-      v-if="(view === 'all' || view === 'developer') && draft.developerMode"
-      ref="developer"
-      class="rounded-rune-tile bg-rune-surface px-rune-2 py-rune-2"
-      @toggle="revealDeveloper"
-    >
-      <summary class="cursor-pointer text-rune-caption text-rune-text-2 uppercase">
-        Capture, input and animation
-      </summary>
-      <div class="flex flex-wrap gap-2 pt-rune-2">
-        <RuneButton
-          variant="ghost"
-          size="sm"
-          v-for="s in DEBUG_STATES"
-          :key="s"
-          @click="agent.debugSetState(s)"
-        >
-          {{ s }}
-        </RuneButton>
-      </div>
-      <DevInputLab :agent="agent" class="mt-3" />
-    </details>
+    <template v-if="(view === 'all' || view === 'developer') && draft.developerMode">
+      <HubGroup title="Animation states">
+        <HubRow label="Preview state" hint="Force the orb into a state to check its animation.">
+          <RuneChoice
+            v-model="previewState"
+            label="Preview state"
+            :options="PREVIEW_STATES"
+            menu
+            @update:model-value="agent.debugSetState($event)"
+          />
+        </HubRow>
+      </HubGroup>
+      <DevInputLab :agent="agent" />
+    </template>
   </div>
 </template>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import RuneButton from './RuneButton.vue'
 import { onKeyStroke, useElementSize } from '@vueuse/core'
-import { computed, ref, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 
 import { useAgent } from '@/composables/useAgent'
 import { useUpdater } from '@/composables/useUpdater'
@@ -191,6 +191,12 @@ watch(contentHeight, (height) => {
     return
   }
   if (height >= 48) void agent.fitHeight(Math.ceil(height))
+})
+
+watch(isAmbient, async (ambient) => {
+  if (ambient) return
+  await nextTick()
+  if (contentHeight.value >= 48) void agent.fitHeight(Math.ceil(contentHeight.value))
 })
 
 onKeyStroke('Escape', () => {

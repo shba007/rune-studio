@@ -131,7 +131,7 @@ export default defineConfig({
       fontsource: {
         families: [
           { name: 'Oxanium', variable: { wght: true }, subset: 'latin' },
-          { name: 'Inter', variable: { wght: true }, subset: 'latin' },
+          { name: 'Figtree', variable: { wght: true }, subset: 'latin' },
         ],
       },
     }),

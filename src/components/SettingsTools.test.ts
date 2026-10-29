@@ -34,8 +34,11 @@ describe('Kit settings', () => {
       .mockRejectedValueOnce('Git plugin discovery failed')
     const wrapper = mount(SettingsTools)
     await flushPromises()
-    expect(wrapper.get<HTMLInputElement>('input[type=checkbox]').element.checked).toBe(false)
-    await wrapper.get('button').trigger('click')
+    expect(wrapper.get('button[role=switch]').attributes('aria-checked')).toBe('false')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Refresh / discover')!
+      .trigger('click')
     await flushPromises()
     expect(wrapper.get('[role=status]').text()).toContain('Git plugin discovery failed')
     expect(invoke).toHaveBeenCalledTimes(2)
@@ -49,6 +52,6 @@ describe('Kit settings', () => {
     const wrapper = mount(SettingsTools, { props: { toolCalls: 'no' } })
     await flushPromises()
     expect(wrapper.get('[role=alert]').text()).toContain('does not support tool calling')
-    expect(wrapper.get<HTMLInputElement>('input[type=checkbox]').element.disabled).toBe(true)
+    expect(wrapper.get('button[role=switch]').attributes('disabled')).toBeDefined()
   })
 })

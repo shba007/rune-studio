@@ -49,24 +49,21 @@ function status() {
   if (updater.updating.value) return 'Updating...'
   return ''
 }
-
-const button =
-  'flex h-9 cursor-pointer items-center gap-2 rounded-full bg-rune-surface px-4 text-rune-body text-rune-ink transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50'
 </script>
 
 <template>
   <div class="flex flex-col gap-8">
-    <div class="flex items-center gap-4 pb-6">
+    <div class="flex items-center gap-4 px-rune-2">
       <img :src="LOGO" alt="" class="size-12" />
       <div class="flex flex-col">
-        <span class="text-rune-title">Rune Studio</span>
-        <span class="mt-1 text-rune-body text-rune-text-2"
+        <span class="text-rune-subtitle">Rune Studio</span>
+        <span class="mt-1 text-rune-caption text-rune-text-2"
           >Your goals, supported by local intelligence.</span
         >
       </div>
     </div>
 
-    <HubGroup title="Installed versions">
+    <HubGroup title="Installed">
       <HubRow label="Rune Studio"
         ><span class="text-rune-body text-rune-text-2">{{
           updater.version.value || 'Unavailable'
@@ -75,16 +72,23 @@ const button =
       <HubRow label="Studio CLI"
         ><span class="text-rune-body text-rune-text-2">{{ cliVersion }}</span></HubRow
       >
+      <HubRow v-if="platform" label="Platform"
+        ><span class="text-rune-body capitalize text-rune-text-2">{{ platform }}</span></HubRow
+      >
+      <HubRow v-if="arch" label="Architecture"
+        ><span class="text-rune-body text-rune-text-2">{{ arch }}</span></HubRow
+      >
     </HubGroup>
 
     <HubGroup title="Updates">
-      <HubRow label="Status" :hint="updater.error.value ?? undefined">
-        <span class="text-rune-body text-rune-text-2">{{ status() }}</span>
-      </HubRow>
-      <HubRow label="Check for updates">
+      <HubRow
+        label="Updates"
+        :hint="updater.error.value ?? (status() || 'Check whether a newer version is available.')"
+      >
         <RuneButton
-          size="sm"
           v-if="updater.phase.value === 'available' && updater.latest.value"
+          size="sm"
+          variant="primary"
           :disabled="agent.isRunning.value"
           @click="updater.install(agent.isRunning.value)"
         >
@@ -96,8 +100,8 @@ const button =
           }}
         </RuneButton>
         <RuneButton
-          size="sm"
           v-else
+          size="sm"
           :disabled="updater.phase.value === 'checking' || updater.updating.value"
           @click="updater.check()"
         >
@@ -106,15 +110,8 @@ const button =
         </RuneButton>
       </HubRow>
     </HubGroup>
-    <HubGroup v-if="platform || arch" title="Environment">
-      <HubRow v-if="platform" label="Platform"
-        ><span class="text-rune-body capitalize text-rune-text-2">{{ platform }}</span></HubRow
-      >
-      <HubRow v-if="arch" label="Architecture"
-        ><span class="text-rune-body text-rune-text-2">{{ arch }}</span></HubRow
-      >
-    </HubGroup>
-    <HubGroup title="Help">
+
+    <HubGroup title="Help and license">
       <HubRow label="Documentation"
         ><RuneButton variant="ghost" size="sm" @click="openLink('docs')">
           Read the guide ↗
@@ -130,9 +127,7 @@ const button =
           Report an issue ↗
         </RuneButton></HubRow
       >
-    </HubGroup>
-    <HubGroup title="License">
-      <HubRow label="Rune Studio" hint="Open source under the MIT license."
+      <HubRow label="License" hint="Open source under the MIT license."
         ><RuneButton variant="ghost" size="sm" @click="openLink('license')">
           MIT ↗
         </RuneButton></HubRow

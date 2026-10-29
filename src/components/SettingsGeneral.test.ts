@@ -1,4 +1,6 @@
 import RuneButton from './RuneButton.vue'
+import RuneChoice from './RuneChoice.vue'
+import AppIcon from './AppIcon.vue'
 import { shallowMount } from '@vue/test-utils'
 import { reactive, ref } from 'vue'
 import { describe, expect, it, vi } from 'vite-plus/test'
@@ -18,15 +20,25 @@ describe('developer controls', () => {
       props: { agent: {} as Agent, draft },
       global: {
         stubs: {
+          RuneChoice,
+          AppIcon,
           HubGroup: { template: '<div><slot /></div>' },
           HubRow: { template: '<div><slot /></div>' },
         },
       },
     })
-    await wrapper.get('select[aria-label="Model input resolution"]').setValue('1920')
+    await wrapper.get('button[aria-label="Model input resolution"]').trigger('click')
+    await wrapper
+      .findAll('[role="listbox"] [role="option"]')
+      .find((option) => option.text().startsWith('1920'))!
+      .trigger('click')
     expect(draft.modelImageResolution).toBe('1920')
     expect(draft.recordingResolution).toBe('native')
-    await wrapper.get('select[aria-label="Screenshot and recording resolution"]').setValue('720')
+    await wrapper.get('button[aria-label="Screenshot and recording resolution"]').trigger('click')
+    await wrapper
+      .findAll('[role="listbox"] [role="option"]')
+      .find((option) => option.text().startsWith('720'))!
+      .trigger('click')
     expect(draft.recordingResolution).toBe('720')
     expect(draft.modelImageResolution).toBe('1920')
     wrapper.unmount()
@@ -43,16 +55,28 @@ describe('developer controls', () => {
     const agent = { backend: ref(null), debugSetState } as unknown as Agent
     const wrapper = shallowMount(SettingsGeneral, {
       props: { agent, draft, apiKey: '' },
-      global: { stubs: { RuneButton } },
+      global: {
+        stubs: {
+          RuneButton,
+          RuneChoice,
+          AppIcon,
+          HubGroup: { template: '<div><slot /></div>' },
+          HubRow: { template: '<div><slot /></div>' },
+        },
+      },
     })
-    expect(wrapper.find('details').exists()).toBe(false)
+    expect(wrapper.find('[role="listbox"]').exists()).toBe(false)
+    expect(wrapper.find('button[aria-label="Preview state"]').exists()).toBe(false)
     expect(wrapper.findComponent(DevInputLab).exists()).toBe(false)
     draft.developerMode = true
     await wrapper.vm.$nextTick()
-    expect(wrapper.find('details').exists()).toBe(true)
+    expect(wrapper.find('button[aria-label="Preview state"]').exists()).toBe(true)
     expect(wrapper.findComponent(DevInputLab).exists()).toBe(true)
-    const acting = wrapper.findAll('details button').find((button) => button.text() === 'acting')!
-    await acting.trigger('click')
+    await wrapper.get('button[aria-label="Preview state"]').trigger('click')
+    await wrapper
+      .findAll('[role="option"]')
+      .find((option) => option.text() === 'acting')!
+      .trigger('click')
     expect(debugSetState).toHaveBeenCalledWith('acting')
     draft.developerMode = false
     await wrapper.vm.$nextTick()

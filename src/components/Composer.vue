@@ -34,6 +34,14 @@ watch(
   },
 )
 
+const approval = computed(() => (agent.settings?.value?.askEveryAction ? 'Ask' : 'Auto'))
+
+async function toggleApproval() {
+  const current = agent.settings?.value
+  if (!current) return
+  await agent.saveSettings({ ...current, askEveryAction: !current.askEveryAction })
+}
+
 function openCommands() {
   if (!slash.value) command.value = '/'
   menuDismissed.value = false
@@ -263,17 +271,8 @@ async function submit() {
       </p>
     </div>
     <div
-      class="flex min-h-16 w-full items-end gap-1 rounded-rune-tile bg-rune-surface p-3 text-rune-ink focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-(--accent)"
+      class="flex w-full flex-col gap-2 mb-1 rounded-rune-composer bg-rune-surface p-3 text-rune-ink focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-(--accent)"
     >
-      <RuneIconButton
-        label="Commands"
-        variant="ghost"
-        :disabled="commandPending || analysisBusy"
-        :aria-expanded="showCommands"
-        @click="openCommands"
-      >
-        <AppIcon name="add" />
-      </RuneIconButton>
       <textarea
         ref="field"
         v-model="command"
@@ -290,24 +289,59 @@ async function submit() {
           showCommands && suggestions.length ? `${menuId}-${selectedCommand}` : undefined
         "
         :placeholder="placeholder"
-        class="text-rune-ink placeholder:text-rune-text-3 max-h-[152px] min-h-10 min-w-0 flex-1 resize-none bg-transparent px-rune-detail py-2 text-rune-body leading-6 outline-none [--scrollbar-thumb-hover:rgb(0_0_0/0.4)] [--scrollbar-thumb:rgb(0_0_0/0.22)] dark:[--scrollbar-thumb-hover:rgb(255_255_255/0.32)] dark:[--scrollbar-thumb:rgb(255_255_255/0.16)]"
+        class="text-rune-ink placeholder:text-rune-text-3 max-h-[152px] min-h-12 w-full min-w-0 resize-none bg-transparent px-rune-detail py-2 text-rune-body leading-6 outline-none [--scrollbar-thumb-hover:rgb(0_0_0/0.4)] [--scrollbar-thumb:rgb(0_0_0/0.22)] dark:[--scrollbar-thumb-hover:rgb(255_255_255/0.32)] dark:[--scrollbar-thumb:rgb(255_255_255/0.16)]"
         @keydown="onKeydown"
       />
-
-      <RuneIconButton
-        :label="action.label"
-        :variant="action.tone === 'red' ? 'danger' : action.tone === 'blue' ? 'voice' : 'primary'"
-        :disabled="
-          commandPending ||
-          (external && !slash && action.icon !== 'stop') ||
-          (!slash && !analysisSubmit && board?.pending.value) ||
-          (offline && !slash && action.icon !== 'stop')
-        "
-        :aria-pressed="action.icon === 'mic' ? isListening : undefined"
-        @click="action.run()"
-      >
-        <AppIcon :name="action.icon" />
-      </RuneIconButton>
+      <div class="flex items-center justify-between">
+        <div class="flex items-center">
+          <RuneIconButton
+            label="Commands"
+            variant="ghost"
+            size="sm"
+            :disabled="commandPending || analysisBusy"
+            :aria-expanded="showCommands"
+            @click="openCommands"
+          >
+            <AppIcon name="add" />
+          </RuneIconButton>
+          <RuneIconButton label="Settings" variant="ghost" size="sm" @click="agent.openSettings()">
+            <AppIcon name="tune" />
+          </RuneIconButton>
+        </div>
+        <div class="flex items-center">
+          <RuneButton
+            variant="link"
+            class="h-8 px-2"
+            :title="
+              approval === 'Ask'
+                ? 'Asking before every action. Click for Auto.'
+                : 'Asking only for risky actions. Click to ask before every action.'
+            "
+            :aria-pressed="approval === 'Ask'"
+            data-testid="approval-mode"
+            @click="toggleApproval"
+          >
+            {{ approval }}
+          </RuneButton>
+          <RuneIconButton
+            :label="action.label"
+            size="sm"
+            :variant="
+              action.tone === 'red' ? 'danger' : action.tone === 'blue' ? 'voice' : 'primary'
+            "
+            :disabled="
+              commandPending ||
+              (external && !slash && action.icon !== 'stop') ||
+              (!slash && !analysisSubmit && board?.pending.value) ||
+              (offline && !slash && action.icon !== 'stop')
+            "
+            :aria-pressed="action.icon === 'mic' ? isListening : undefined"
+            @click="action.run()"
+          >
+            <AppIcon :name="action.icon" />
+          </RuneIconButton>
+        </div>
+      </div>
     </div>
   </div>
 </template>

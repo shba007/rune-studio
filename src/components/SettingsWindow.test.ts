@@ -27,16 +27,12 @@ afterEach(() => {
 })
 
 describe('release settings availability', () => {
-  it('keeps Agents available without the bridge, orders navigation, and removes the saved footer', () => {
+  it('orders the five navigation pages, and removes the saved footer', () => {
     const wrapper = shallowMount(SettingsWindow, { global: { stubs: { RuneNavItem } } })
     expect(wrapper.findAll('nav button').map((button) => button.text())).toEqual([
       'General',
-      'Models',
-      'Agents',
-      'Kit & tools',
-      'Capture & recording',
-      'Data & privacy',
-      'Shortcuts',
+      'Models & tools',
+      'Capture & privacy',
       'Developer',
       'About',
     ])

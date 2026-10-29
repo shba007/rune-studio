@@ -7,16 +7,33 @@ describe('session review settings', () => {
   it('reflects saved preferences and updates every choice', async () => {
     const draft = { offerReview: 'failures', recordSessionVideo: 'motion' } as Settings
     const wrapper = mount(SettingsReview, { props: { draft } })
-    const review = wrapper.get<HTMLSelectElement>('[aria-label="Offer task review"]')
-    const video = wrapper.get<HTMLSelectElement>('[aria-label="Task video"]')
-    expect(review.element.value).toBe('failures')
-    expect(video.element.value).toBe('motion')
-    for (const choice of ['always', 'never', 'failures']) {
-      await review.setValue(choice)
+    const pick = async (group: string, name: string) =>
+      wrapper
+        .get(`[aria-label="${group}"]`)
+        .findAll('[role="radio"]')
+        .find((button) => button.text() === name)!
+        .trigger('click')
+    const checked = (group: string) =>
+      wrapper
+        .get(`[aria-label="${group}"]`)
+        .findAll('[role="radio"]')
+        .find((button) => button.attributes('aria-checked') === 'true')!
+        .text()
+    expect(checked('Offer task review')).toBe('Failures')
+    expect(checked('Task video')).toBe('Motion')
+    for (const [name, choice] of [
+      ['Always', 'always'],
+      ['Never', 'never'],
+      ['Failures', 'failures'],
+    ]) {
+      await pick('Offer task review', name!)
       expect(draft.offerReview).toBe(choice)
     }
-    for (const choice of ['off', 'motion']) {
-      await video.setValue(choice)
+    for (const [name, choice] of [
+      ['Off', 'off'],
+      ['Motion', 'motion'],
+    ]) {
+      await pick('Task video', name!)
       expect(draft.recordSessionVideo).toBe(choice)
     }
     expect(wrapper.text()).toContain('2 frames per second')

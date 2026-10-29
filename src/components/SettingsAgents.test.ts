@@ -14,17 +14,19 @@ describe('execution mode', () => {
       props: { agent, draft },
       global: { stubs: { SettingsConnectionModels: true } },
     })
-    const select = wrapper.get('select')
-    expect(wrapper.text()).toContain('API')
-    await select.setValue('true')
+    const choice = (name: string) =>
+      wrapper.findAll('[role="radio"]').find((button) => button.text() === name)!
+    expect(choice('Studio model').attributes('aria-checked')).toBe('true')
+    await choice('External agent').trigger('click')
     expect(draft.externalAgent).toBe(true)
+    await wrapper.get('button[aria-label^="Details"]').trigger('click')
     expect(wrapper.text()).toContain('without calling its API model')
     running.value = true
     await wrapper.vm.$nextTick()
-    expect(select.attributes('disabled')).toBeDefined()
+    expect(choice('Studio model').attributes('disabled')).toBeDefined()
     running.value = false
     await wrapper.vm.$nextTick()
-    await select.setValue('false')
+    await choice('Studio model').trigger('click')
     expect(draft.externalAgent).toBe(false)
     wrapper.unmount()
   })

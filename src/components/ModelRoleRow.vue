@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ModelIcon from './ModelIcon.vue'
+import RuneChoice from './RuneChoice.vue'
 import { computed, useId } from 'vue'
 import type { ModelCapabilities } from '@/types/protocol'
 
@@ -71,82 +72,91 @@ const capabilities = computed(() => {
 function statusLabel(status: string) {
   return status === 'yes' ? 'Supported' : status === 'no' ? 'Not supported' : 'Unknown'
 }
+
+const choices = computed(() => {
+  const ids = props.selectedModels ?? []
+  const stale = modelValue.value && !ids.includes(modelValue.value)
+  return [
+    {
+      value: '',
+      label:
+        props.roleKey === 'agent' || props.roleKey === 'analysis'
+          ? 'Choose a model'
+          : 'Same as agent',
+    },
+    ...(stale
+      ? [{ value: modelValue.value, label: `${modelValue.value} · not selected`, disabled: true }]
+      : []),
+    ...ids.map((id) => ({ value: id, label: id })),
+  ]
+})
 </script>
 
 <template>
-  <div class="flex min-w-0 flex-col gap-3 py-5">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <label :for="inputId" class="text-rune-body font-medium text-rune-ink">{{ roleLabel }}</label>
-      <div class="relative w-full min-w-0 sm:w-72">
-        <ModelIcon
-          v-if="effectiveModelId"
-          :model="effectiveModelId"
-          class="pointer-events-none absolute top-3 left-3 text-rune-text-2"
-        />
-        <select
+  <div
+    class="flex min-w-0 flex-col gap-2 bg-rune-surface px-rune-2 py-rune-2 first:rounded-t-rune-tile last:rounded-b-rune-tile"
+  >
+    <div class="flex flex-wrap items-center justify-between gap-x-8 gap-y-2">
+      <div class="flex min-w-0 flex-1 flex-col gap-1">
+        <label :for="inputId" class="text-rune-body text-rune-ink">{{ roleLabel }}</label>
+        <p :id="`${inputId}-status`" class="m-0 break-words text-rune-caption text-rune-text-3">
+          <template v-if="roleKey !== 'agent' && roleKey !== 'analysis' && !modelValue.trim()">
+            Using agent model{{ effectiveModelId ? ` · ${effectiveModelId}` : '' }}.
+          </template>
+          <template v-if="currentCaps">
+            {{
+              isCloud
+                ? 'Cloud model'
+                : currentCaps.locality === 'local'
+                  ? 'Local model'
+                  : 'Model location unknown'
+            }}
+          </template>
+          <template v-else>{{
+            effectiveModelId
+              ? 'Capabilities unknown. Check the connection or model name.'
+              : 'Choose a model to see its capabilities.'
+          }}</template>
+        </p>
+      </div>
+      <div class="relative flex w-full min-w-0 items-center sm:w-72 sm:justify-end">
+        <RuneChoice
           v-if="selectedModels"
-          :id="inputId"
           v-model="modelValue"
-          :aria-describedby="`${inputId}-status`"
-          class="h-10 w-full min-w-0 rounded-rune-tile bg-rune-surface px-3 text-rune-body text-rune-ink"
-        >
-          <option value="">
-            {{ roleKey === 'agent' || roleKey === 'analysis' ? 'Choose a model' : 'Same as agent' }}
-          </option>
-          <option
-            v-if="modelValue && !selectedModels.includes(modelValue)"
-            :value="modelValue"
-            disabled
-          >
-            {{ modelValue }} · not selected
-          </option>
-          <option v-for="id in selectedModels" :key="id" :value="id">{{ id }}</option>
-        </select>
-        <input
-          v-else
-          :id="inputId"
-          v-model="modelValue"
-          type="text"
-          list="discovered-models-list"
-          :aria-describedby="`${inputId}-status`"
-          :placeholder="
-            placeholder ??
-            (roleKey === 'analysis'
-              ? 'Choose an Analysis model'
-              : roleKey === 'agent'
-                ? 'Choose or enter a model'
-                : 'Same as agent')
-          "
-          spellcheck="false"
-          autocomplete="off"
-          :class="effectiveModelId ? 'pl-9' : ''"
-          class="h-10 w-full min-w-0 rounded-rune-tile bg-rune-surface px-3 text-rune-body text-rune-ink placeholder:text-rune-text-3"
+          :label="roleLabel"
+          :options="choices"
+          menu
         />
+        <template v-else>
+          <ModelIcon
+            v-if="effectiveModelId"
+            :model="effectiveModelId"
+            class="pointer-events-none absolute top-3 left-3 text-rune-text-2"
+          />
+          <input
+            :id="inputId"
+            v-model="modelValue"
+            type="text"
+            list="discovered-models-list"
+            :aria-describedby="`${inputId}-status`"
+            :placeholder="
+              placeholder ??
+              (roleKey === 'analysis'
+                ? 'Choose an Analysis model'
+                : roleKey === 'agent'
+                  ? 'Choose or enter a model'
+                  : 'Same as agent')
+            "
+            spellcheck="false"
+            autocomplete="off"
+            :class="effectiveModelId ? 'pl-9' : ''"
+            class="h-10 w-full min-w-0 rounded-rune-tile bg-rune-sunken px-3 text-rune-body text-rune-ink placeholder:text-rune-text-3"
+          />
+        </template>
       </div>
     </div>
-    <p :id="`${inputId}-status`" class="m-0 break-words text-rune-caption text-rune-text-2">
-      <template v-if="roleKey !== 'agent' && roleKey !== 'analysis' && !modelValue.trim()">
-        Using agent model{{ effectiveModelId ? ` · ${effectiveModelId}` : '' }}.
-      </template>
-      <template v-if="currentCaps">
-        {{
-          isCloud
-            ? 'Cloud model'
-            : currentCaps.locality === 'local'
-              ? 'Local model'
-              : 'Model location unknown'
-        }}
-      </template>
-      <template v-else>{{
-        effectiveModelId
-          ? 'Capabilities unknown. Check the connection or model name.'
-          : 'Choose a model to see its capabilities.'
-      }}</template>
-    </p>
     <details v-if="currentCaps" class="text-rune-caption text-rune-text-2">
-      <summary
-        class="w-fit cursor-pointer rounded-rune-tile py-1 text-rune-caption text-rune-text-2"
-      >
+      <summary class="w-fit cursor-pointer py-1 text-rune-caption text-rune-text-3">
         Model capabilities
       </summary>
       <dl class="m-0 mt-2 grid gap-x-8 gap-y-2 sm:grid-cols-2">

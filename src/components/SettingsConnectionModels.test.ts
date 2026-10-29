@@ -149,7 +149,7 @@ it('saves selected models, additional IDs and the connection output cap', async 
     .trigger('click')
   await section.get('textarea').setValue('custom-model')
   const custom = section.findAll('label').find((label) => label.text() === 'custom-model')!
-  await custom.get('input').setValue(true)
+  await custom.get('button[role=switch]').trigger('click')
   await section.get('input[type="number"]').setValue('1000')
   await section
     .findAll('button')

@@ -25,3 +25,13 @@ it('uses the five rune type roles, not the retired scale', () => {
 it('leaves no palette colour classes except the warning amber', () => {
   expect(offenders(/(?<![\w-])(?:text|bg)-(?:zinc|slate|gray|neutral|stone)-\d+/)).toEqual([])
 })
+it('uses only Oxanium and Figtree as font families', () => {
+  const css = readFileSync(resolve(process.cwd(), 'src/style.css'), 'utf8')
+  const families = [...css.matchAll(/^\s*--font-(?!weight)[\w-]+:\s*([^;]+);/gm)].map((m) => m[1]!)
+  expect(families.length).toBeGreaterThan(0)
+  for (const family of families) {
+    expect(family).toMatch(/^'(?:Oxanium|Figtree) Variable', sans-serif$/)
+  }
+  const stray = components.filter(({ source }) => /font-(?:serif)|font-\[/.test(source))
+  expect(stray.map(({ name }) => name)).toEqual([])
+})

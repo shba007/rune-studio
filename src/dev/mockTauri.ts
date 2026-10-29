@@ -150,7 +150,7 @@ export function installTauriMock() {
             showThinking: false,
             askEveryAction: false,
             inputClassification: 'automatic',
-            developerMode: false,
+            developerMode: new URLSearchParams(location.search).get('developer') === '1',
             fastChecks: false,
             decisionModel: 'liquid-d1-3b',
             decisionUrl: '',
@@ -170,6 +170,28 @@ export function installTauriMock() {
             url: 'http://127.0.0.1:47600/mcp',
             command:
               'claude mcp add --scope user rune-studio -- "C:/Rune Studio/rune-studio-cli.exe" mcp --agent claude',
+          }
+        case 'connections_state':
+          return {
+            revision: 1,
+            activeId: 'local',
+            connections: [
+              {
+                id: 'local',
+                name: 'Model connection',
+                baseUrl: 'http://127.0.0.1:8080',
+                active: true,
+                hasApiKey: false,
+                selectedModels: ['gemma-4-12b-it', 'qwen3-vl'],
+              },
+              {
+                id: 'cloud',
+                name: 'Cloud provider',
+                baseUrl: 'https://api.example.com/v1',
+                active: false,
+                hasApiKey: true,
+              },
+            ],
           }
         case 'get_control_label':
           return null

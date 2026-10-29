@@ -15,8 +15,8 @@ it('loads installed Studio and CLI versions when About opens independently', asy
   const agent = { isRunning: ref(false) } as unknown as Agent
   const wrapper = mount(SettingsAbout, { props: { agent } })
   await flushPromises()
-  expect(wrapper.text()).toContain('Rune Studio0.8.2')
-  expect(wrapper.text()).toContain('Studio CLI0.8.1')
+  expect(wrapper.text()).toMatch(/Rune Studio\s*0\.8\.2/)
+  expect(wrapper.text()).toMatch(/Studio CLI\s*0\.8\.1/)
   expect(wrapper.text()).toContain('x86_64')
   await wrapper
     .findAll('button')

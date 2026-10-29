@@ -16,13 +16,13 @@ const VARIANT_CLASS = {
   link: 'bg-transparent text-rune-text-2 hover:text-rune-ink',
 } as const
 
-const SIZE_CLASS = { md: 'h-10 px-5', sm: 'h-8 px-4' } as const
+const SIZE_CLASS = { md: 'h-10 px-5', sm: 'h-8 px-3' } as const
 </script>
 
 <template>
   <button
     :type="type"
-    class="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 text-rune-heading uppercase transition-colors disabled:cursor-default disabled:opacity-40"
+    class="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 whitespace-nowrap text-rune-heading uppercase transition-colors disabled:cursor-default disabled:opacity-40"
     :class="[VARIANT_CLASS[variant], variant === 'link' ? '' : [SIZE_CLASS[size], 'rounded-full']]"
   >
     <slot />

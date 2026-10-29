@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import RuneButton from './RuneButton.vue'
+import RuneChoice from './RuneChoice.vue'
 import { useClipboard } from '@vueuse/core'
 
 import type { Agent } from '@/composables/useAgent'
@@ -26,24 +27,22 @@ const { copy, copied } = useClipboard({ copiedDuring: 1600 })
       <HubRow
         label="Execution mode"
         hint="Choose before a task. Finish or stop it before switching."
-      >
-        <select
-          v-model="draft.externalAgent"
-          :disabled="agent.isRunning.value"
-          aria-label="Execution mode"
-          class="rounded-rune-tile bg-rune-raised px-rune-2 py-2 text-rune-body"
-        >
-          <option :value="false">API — Studio model</option>
-          <option :value="true">External agent — host model</option>
-        </select>
-      </HubRow>
-      <p class="m-0 text-rune-body text-rune-text-2">
-        {{
+        :info="
           draft.externalAgent
             ? 'Start tasks and visual analysis in your external agent host. Studio provides capture and input tools without calling its API model.'
             : 'Studio runs tasks and visual analysis using the configured API models.'
-        }}
-      </p>
+        "
+      >
+        <RuneChoice
+          v-model="draft.externalAgent"
+          label="Execution mode"
+          :disabled="agent.isRunning.value"
+          :options="[
+            { value: false, label: 'Studio model' },
+            { value: true, label: 'External agent' },
+          ]"
+        />
+      </HubRow>
       <HubRow
         v-if="draft.externalAgent && agent.bridge.value?.available"
         label="Connect command"

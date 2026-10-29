@@ -3,40 +3,51 @@ import type { Settings } from '@/types/protocol'
 import HubGroup from './HubGroup.vue'
 import HubRow from './HubRow.vue'
 import HubToggle from './HubToggle.vue'
+import RuneChoice from './RuneChoice.vue'
 const props = defineProps<{ draft: Settings }>()
 props.draft.lifeConsents ??= { general: false, health: false, mind: false, finance: false }
 props.draft.inputClassification ??= 'automatic'
+
+const CLASSIFICATION: { value: NonNullable<Settings['inputClassification']>; label: string }[] = [
+  { value: 'automatic', label: 'Automatic' },
+  { value: 'always_confirm', label: 'Always confirm' },
+]
 </script>
 <template>
-  <HubGroup title="Input and goal context">
-    <HubRow
-      label="Input classification"
-      hint="Automatic asks when the intended scope is unclear. Always confirm asks you to choose Goal, Task or Step every time."
-    >
-      <select
-        v-model="draft.inputClassification"
-        aria-label="Input classification"
-        class="rounded-rune-tile bg-rune-sunken px-rune-2 py-2 text-rune-body text-rune-ink"
+  <div class="flex flex-col gap-8">
+    <HubGroup title="Input and goal context">
+      <HubRow
+        label="Input classification"
+        hint="Choose when Rune asks whether input is a Goal, Task or Step."
+        info="Automatic asks when the intended scope is unclear. Always confirm asks you to choose Goal, Task or Step every time."
       >
-        <option value="automatic">Automatic</option>
-        <option value="always_confirm">Always confirm</option>
-      </select>
-    </HubRow>
-    <HubToggle
-      :model-value="draft.lifeEnabled ?? false"
-      @update:model-value="draft.lifeEnabled = $event"
-      label="Save goal conversations"
-      hint="Allow opted-in domains to be saved in the protected Life store and resumed after restart. New goal conversations use a local model."
-    />
-    <template v-if="draft.lifeEnabled">
+        <RuneChoice
+          :model-value="draft.inputClassification ?? 'automatic'"
+          @update:model-value="draft.inputClassification = $event"
+          label="Input classification"
+          :options="CLASSIFICATION"
+        />
+      </HubRow>
+      <HubToggle
+        :model-value="draft.lifeEnabled ?? false"
+        label="Save goal conversations"
+        hint="Save opted-in domains in the protected Life store and resume them after restart."
+        info="Allow opted-in domains to be saved in the protected Life store and resumed after restart. New goal conversations use a local model."
+        @update:model-value="draft.lifeEnabled = $event"
+      />
+    </HubGroup>
+    <HubGroup
+      v-if="draft.lifeEnabled"
+      title="Context consent"
+      hint="Turning a category off stops new storage and hides saved conversations; it does not delete existing records."
+    >
       <HubToggle
         v-for="domain in ['general', 'health', 'mind', 'finance']"
         :key="domain"
         :model-value="draft.lifeConsents?.[domain] ?? false"
-        @update:model-value="draft.lifeConsents![domain] = $event"
         :label="`Allow ${domain} context`"
-        hint="Turning this off stops new storage and hides saved conversations; it does not delete existing records."
+        @update:model-value="draft.lifeConsents![domain] = $event"
       />
-    </template>
-  </HubGroup>
+    </HubGroup>
+  </div>
 </template>

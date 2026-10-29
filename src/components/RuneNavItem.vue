@@ -5,7 +5,7 @@ withDefaults(defineProps<{ selected?: boolean }>(), { selected: false })
 <template>
   <button
     type="button"
-    class="flex h-10 w-full cursor-pointer items-center gap-rune-2 rounded-rune-tile px-rune-2 text-left text-rune-body transition-colors disabled:cursor-default disabled:opacity-40"
+    class="flex h-10 w-full cursor-pointer items-center gap-rune-2 rounded-full px-rune-2 text-left text-rune-body transition-colors disabled:cursor-default disabled:opacity-40"
     :class="
       selected
         ? 'bg-rune-raised text-rune-ink'

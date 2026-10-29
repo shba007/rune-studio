@@ -7,7 +7,10 @@ it('defaults to Automatic and requires explicit opt-in for each saved domain', a
   const draft = reactive({}) as Settings
   const wrapper = mount(SettingsGoalContext, { props: { draft } })
   expect(draft.inputClassification).toBe('automatic')
-  await wrapper.get('select[aria-label="Input classification"]').setValue('always_confirm')
+  await wrapper
+    .findAll('[role="radio"]')
+    .find((button) => button.text() === 'Always confirm')!
+    .trigger('click')
   expect(draft.inputClassification).toBe('always_confirm')
   expect(wrapper.find('[aria-label="Allow health context"]').exists()).toBe(false)
   await wrapper.get('[aria-label="Save goal conversations"]').trigger('click')
