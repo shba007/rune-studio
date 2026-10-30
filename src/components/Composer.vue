@@ -8,8 +8,6 @@ import type { TaskBoardModel } from '@/composables/useTaskBoard'
 
 import AppIcon from './AppIcon.vue'
 import RuneIconButton from './RuneIconButton.vue'
-import LifeDots from './LifeDots.vue'
-import type { IntakeEntry } from '@/types/decisions'
 import { screenRequestText } from '@/config/screenRequest'
 import {
   composerCommands,
@@ -24,7 +22,7 @@ const props = defineProps<{
   analysisBusy?: boolean
   cancelAnalysis?: () => unknown
   intakeBusy?: boolean
-  goals?: IntakeEntry[]
+  attached?: boolean
 }>()
 const agent = props.agent
 
@@ -274,7 +272,8 @@ async function submit() {
       </p>
     </div>
     <div
-      class="flex w-full flex-col gap-2 mb-1 rounded-rune-composer bg-rune-surface p-3 text-rune-ink focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-(--accent)"
+      class="flex w-full flex-col gap-2 rounded-rune-composer bg-rune-surface p-3 text-rune-ink focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-(--accent)"
+      :class="attached ? 'relative z-10 shadow-[0_1px_0_rgb(0_0_0/0.35)]' : 'mb-1'"
     >
       <textarea
         ref="field"
@@ -308,7 +307,6 @@ async function submit() {
             <AppIcon name="add" />
           </RuneIconButton>
         </div>
-        <LifeDots v-if="goals" :entries="goals" @open="agent.openWorkspace('goals')" />
         <div class="flex items-center">
           <RuneButton
             variant="link"

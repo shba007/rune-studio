@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, useId } from 'vue'
+import { useElementSize } from '@vueuse/core'
+import { computed, ref, useId, useTemplateRef } from 'vue'
 import { DOMAINS, UNASSIGNED, domainIcon, domainOf, type Domain } from '@/config/domains'
 import { goalTitle } from '@/config/goalStatus'
 import { outcomeProgress, planProgress, taskProgress } from '@/config/workspaceProgress'
@@ -12,9 +13,13 @@ import RuneButton from './RuneButton.vue'
 import RuneIconButton from './RuneIconButton.vue'
 
 const props = defineProps<{ entries: IntakeEntry[]; tasks: WorkspaceTask[] }>()
-const emit = defineEmits<{ openGoal: [id: string]; openTask: [id: string] }>()
+const emit = defineEmits<{ openGoal: [id: string]; openTask: [id: string]; start: [] }>()
 const { showSanctuary, overrides } = useDomainPrefs()
 const pattern = useId()
+const logo = '/logo.svg'
+const canvas = useTemplateRef<HTMLElement>('canvas')
+const { width, height } = useElementSize(canvas)
+const centre = computed(() => ({ x: (width.value || 600) / 2, y: (height.value || 400) / 2 }))
 
 const domainId = ref<string | null>(null)
 const goalId = ref<string | null>(null)
@@ -46,7 +51,12 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 function ring(count: number, make: (index: number) => Omit<Spot, 'x' | 'y'>): Spot[] {
   return Array.from({ length: count }, (_, index) => {
     const angle = -Math.PI / 2 + (index / count) * Math.PI * 2
-    return { ...make(index), x: 50 + 36 * Math.cos(angle), y: 50 + 34 * Math.sin(angle) }
+    const radius = Math.min(width.value || 600, height.value || 400) * 0.36
+    return {
+      ...make(index),
+      x: centre.value.x + radius * Math.cos(angle),
+      y: centre.value.y + radius * Math.sin(angle),
+    }
   })
 }
 
@@ -122,7 +132,7 @@ const crumbs = computed(() => [
 ])
 
 function enter(spot: Spot) {
-  origin.value = `${spot.x}% ${spot.y}%`
+  origin.value = `${spot.x}px ${spot.y}px`
   direction.value = 'in'
   if (level.value === 'life') domainId.value = spot.id
   else if (level.value === 'domain') goalId.value = spot.id
@@ -168,6 +178,15 @@ const dash = (percent: number | null) => `${percent ?? 0} 100`
         <span v-else class="truncate px-2 text-rune-ink">{{ crumb.label }}</span>
       </template>
       <RuneButton
+        v-if="level === 'life'"
+        variant="primary"
+        size="sm"
+        class="ml-auto"
+        @click="emit('start')"
+      >
+        Start
+      </RuneButton>
+      <RuneButton
         v-if="level === 'goal'"
         variant="ghost"
         size="sm"
@@ -177,7 +196,7 @@ const dash = (percent: number | null) => `${percent ?? 0} 100`
         Open goal →
       </RuneButton>
     </nav>
-    <div class="absolute inset-0 overflow-hidden">
+    <div ref="canvas" class="absolute inset-0 overflow-hidden">
       <svg class="absolute inset-0 size-full" aria-hidden="true">
         <defs>
           <pattern :id="pattern" width="24" height="24" patternUnits="userSpaceOnUse">
@@ -193,23 +212,17 @@ const dash = (percent: number | null) => `${percent ?? 0} 100`
           :style="{ transformOrigin: origin }"
           :data-level="level"
         >
-          <svg
-            class="absolute inset-0 size-full text-rune-text-3"
-            viewBox="0 0 100 100"
-            preserveAspectRatio="none"
-            aria-hidden="true"
-          >
+          <svg class="absolute inset-0 size-full text-rune-text-3" aria-hidden="true">
             <line
               v-for="spot in spots"
               :key="spot.id"
-              x1="50"
-              y1="50"
+              :x1="centre.x"
+              :y1="centre.y"
               :x2="spot.x"
               :y2="spot.y"
               stroke="currentColor"
               stroke-width="1"
               stroke-dasharray="3 4"
-              vector-effect="non-scaling-stroke"
               opacity="0.5"
             />
           </svg>
@@ -217,7 +230,11 @@ const dash = (percent: number | null) => `${percent ?? 0} 100`
             class="absolute top-1/2 left-1/2 flex w-40 -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1 text-center"
             data-testid="hub"
           >
-            <span class="grid size-14 place-items-center rounded-full bg-rune-raised text-rune-ink">
+            <img v-if="level === 'life'" :src="logo" alt="" class="size-14" />
+            <span
+              v-else
+              class="grid size-14 place-items-center rounded-full bg-rune-raised text-rune-ink"
+            >
               <AppIcon :name="hub.icon" />
             </span>
             <span class="line-clamp-2 text-rune-body text-rune-ink">{{ hub.label }}</span>
@@ -232,7 +249,7 @@ const dash = (percent: number | null) => `${percent ?? 0} 100`
             :data-node="spot.id"
             :aria-label="label(spot)"
             class="group absolute flex w-28 -translate-x-1/2 -translate-y-1/2 cursor-pointer flex-col items-center gap-1 text-center"
-            :style="{ left: `${spot.x}%`, top: `${spot.y}%` }"
+            :style="{ left: `${spot.x}px`, top: `${spot.y}px` }"
             @click="enter(spot)"
           >
             <span
@@ -266,7 +283,10 @@ const dash = (percent: number | null) => `${percent ?? 0} 100`
               </svg>
               <AppIcon :name="spot.icon" />
             </span>
-            <span class="line-clamp-2 text-rune-caption text-rune-ink">{{ spot.label }}</span>
+            <span
+              class="line-clamp-2 text-rune-caption text-rune-ink opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+              >{{ spot.label }}</span
+            >
             <span class="text-rune-caption text-rune-text-3 tabular-nums">
               {{ spot.percent !== null ? `${spot.percent}%` : spot.note }}
             </span>
@@ -274,6 +294,7 @@ const dash = (percent: number | null) => `${percent ?? 0} 100`
         </div>
       </Transition>
     </div>
+    <slot />
   </section>
 </template>
 

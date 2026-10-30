@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { DOMAINS, domainOf } from '@/config/domains'
+import { DOMAINS, domainIcon, domainOf } from '@/config/domains'
 import { outcomeProgress } from '@/config/workspaceProgress'
 import { useDomainPrefs } from '@/composables/useDomainPrefs'
 import type { IntakeEntry } from '@/types/decisions'
+import AppIcon from './AppIcon.vue'
 import RuneButton from './RuneButton.vue'
 
 const props = defineProps<{ entries: IntakeEntry[] }>()
@@ -38,23 +39,25 @@ const summary = computed(() => `Life progress. ${dots.value.map(describe).join('
 </script>
 
 <template>
-  <RuneButton
-    v-if="active"
-    variant="ghost"
-    size="sm"
-    class="gap-1.5"
-    :aria-label="summary"
-    data-testid="life-dots"
-    @click="emit('open')"
-  >
-    <span
-      v-for="dot in dots"
-      :key="dot.id"
-      :title="describe(dot)"
-      :data-dot="dot.id"
-      class="size-1.5 rounded-full bg-rune-ink"
-      :class="weakest === dot.id && 'motion-safe:animate-pulse'"
-      :style="{ opacity: dot.level }"
-    />
-  </RuneButton>
+  <div v-if="active" class="w-full rounded-b-rune-composer bg-rune-surface">
+    <RuneButton
+      variant="ghost"
+      class="h-10 w-full justify-between rounded-b-rune-composer rounded-t-none px-rune-2"
+      :aria-label="summary"
+      data-testid="life-dots"
+      @click="emit('open')"
+    >
+      <span
+        v-for="dot in dots"
+        :key="dot.id"
+        :title="describe(dot)"
+        :data-dot="dot.id"
+        class="grid size-5 place-items-center text-rune-ink"
+        :class="weakest === dot.id && 'motion-safe:animate-pulse'"
+        :style="{ opacity: dot.level }"
+      >
+        <AppIcon :name="domainIcon(dot.id)" size="sm" />
+      </span>
+    </RuneButton>
+  </div>
 </template>

@@ -8,6 +8,7 @@ import { useUpdater } from '@/composables/useUpdater'
 import { DOCK_GAP, DOCK_WIDTH, PAGE_GAP, PAGE_WIDTH } from '@/config/layout'
 
 import Composer from './Composer.vue'
+import LifeDots from './LifeDots.vue'
 import OrbDock from './OrbDock.vue'
 import ConfirmCard from './ConfirmCard.vue'
 import { useAnalysis } from '@/composables/useAnalysis'
@@ -157,6 +158,9 @@ watch(
   },
 )
 
+const lifeActive = computed(() =>
+  decisions.entries.value.some((entry) => entry.kind === 'goal' && entry.approvedGoal),
+)
 const isAmbient = computed(() => agent.mode.value === 'ambient')
 
 const plan = computed(() =>
@@ -407,15 +411,23 @@ function onOrb() {
                 :key="agent.question.value.id"
                 :agent="agent"
               />
-              <Composer
-                :agent="agent"
-                :board="taskBoard"
-                :intake-busy="decisions.busy.value"
-                :goals="decisions.entries.value"
-                :analysis-submit="agent.mode.value === 'analysis' ? submitAnalysis : undefined"
-                :analysis-busy="analysis.busy.value"
-                :cancel-analysis="analysis.cancel"
-              />
+              <div class="flex flex-col">
+                <Composer
+                  :attached="lifeActive"
+                  :agent="agent"
+                  :board="taskBoard"
+                  :intake-busy="decisions.busy.value"
+                  :analysis-submit="agent.mode.value === 'analysis' ? submitAnalysis : undefined"
+                  :analysis-busy="analysis.busy.value"
+                  :cancel-analysis="analysis.cancel"
+                />
+                <LifeDots
+                  v-if="lifeActive"
+                  class="-mt-5 pt-5"
+                  :entries="decisions.entries.value"
+                  @open="agent.openWorkspace('goals')"
+                />
+              </div>
             </div>
           </Transition>
         </div>

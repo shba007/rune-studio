@@ -26,6 +26,7 @@ import { useMindsetCatalog } from '@/composables/useMindsetCatalog'
 import { useWorkspaceTasks } from '@/composables/useWorkspaceTasks'
 import NewWorkForm from './NewWorkForm.vue'
 import NewGoalForm from './NewGoalForm.vue'
+import LifeSetup from './LifeSetup.vue'
 import type { IntakeEntry } from '@/types/decisions'
 import type { WorkspaceTask } from '@/types/workspace'
 import type { FlightRun } from '@/config/flight'
@@ -102,6 +103,11 @@ const domainChoice = computed({
 })
 const parentFilter = ref<string | null>(null)
 const focusTaskId = ref<string | null>(null)
+const settingUp = ref(false)
+async function setupDone(count: number) {
+  settingUp.value = false
+  if (count) await created('goal')
+}
 const creation = ref<{
   kind: 'goal' | 'task'
   parent?: string | null
@@ -315,7 +321,10 @@ useNativeBlur(windowRoot, true)
             :tasks="workspace.tasks.value"
             @open-goal="openGoal"
             @open-task="openTask"
-          />
+            @start="settingUp = true"
+          >
+            <LifeSetup v-if="settingUp" @close="settingUp = false" @done="setupDone" />
+          </LifeGraph>
           <MindsetsPanel v-if="section === 'mindsets'" ref="mindsets" />
           <KnowledgeOverview v-if="section === 'help'" @navigate="navigate" />
         </div>
