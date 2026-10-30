@@ -52,12 +52,57 @@ pub struct SubDomainSelection {
     pub skipped: bool,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    Manual,
+    Auto,
+}
+
+impl Mode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Manual => "manual",
+            Self::Auto => "auto",
+        }
+    }
+}
+
 pub struct Selection {
+    pub mode: Mode,
     pub domain: Option<String>,
     pub sub_domains: Vec<SubDomainSelection>,
 }
 
 impl Selection {
+    pub fn create(
+        text: Option<String>,
+        domain: Option<String>,
+        mode: Option<&str>,
+        sub_domains: Vec<String>,
+    ) -> Result<(String, Self), String> {
+        let mut selection = Self::manual(None, domain, sub_domains)?;
+        match mode.unwrap_or("manual") {
+            "manual" => {
+                let text = text.ok_or("Enter a goal for Manual creation")?;
+                if text.trim().is_empty() || text.chars().count() > 4000 {
+                    return Err("Enter a goal of 1 to 4000 characters".into());
+                }
+                Ok((text, selection))
+            }
+            "auto" => {
+                if text.is_some() {
+                    return Err("Auto starts from a domain and answers, without goal text".into());
+                }
+                if selection.domain.is_none() {
+                    return Err("Choose a domain explicitly before starting Auto".into());
+                }
+                selection.mode = Mode::Auto;
+                Ok((String::new(), selection))
+            }
+            _ => Err("Choose Manual or Auto goal creation".into()),
+        }
+    }
+
     pub fn manual(
         mode: Option<&str>,
         domain: Option<String>,
@@ -90,6 +135,7 @@ impl Selection {
             });
         }
         Ok(Self {
+            mode: Mode::Manual,
             domain,
             sub_domains: selected,
         })
@@ -99,6 +145,52 @@ impl Selection {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn auto_creation_requires_an_explicit_domain_and_no_goal_text() {
+        assert!(Selection::create(None, None, Some("auto"), vec![]).is_err());
+        assert!(
+            Selection::create(
+                Some(String::new()),
+                Some("physical".into()),
+                Some("auto"),
+                vec![]
+            )
+            .is_err()
+        );
+        assert!(
+            Selection::create(
+                Some("A typed goal".into()),
+                Some("physical".into()),
+                Some("auto"),
+                vec![]
+            )
+            .is_err()
+        );
+        assert!(Selection::create(None, Some("invalid".into()), Some("auto"), vec![]).is_err());
+        assert!(
+            Selection::create(
+                None,
+                Some("physical".into()),
+                Some("auto"),
+                vec!["digital-hygiene".into()]
+            )
+            .is_err()
+        );
+        let (text, selection) =
+            Selection::create(None, Some("cognitive".into()), Some("auto"), vec![]).unwrap();
+        assert!(text.is_empty());
+        assert!(selection.mode == Mode::Auto);
+        assert_eq!(selection.domain.as_deref(), Some("cognitive"));
+        let (text, selection) =
+            Selection::create(Some("A legacy text-only goal".into()), None, None, vec![]).unwrap();
+        assert_eq!(text, "A legacy text-only goal");
+        assert!(selection.mode == Mode::Manual);
+        assert!(Selection::create(None, None, None, vec![]).is_err());
+        assert!(Selection::create(Some(" ".into()), None, None, vec![]).is_err());
+        assert!(Selection::create(Some("x".repeat(4001)), None, None, vec![]).is_err());
+        assert!(Selection::create(None, None, Some("invalid"), vec![]).is_err());
+    }
 
     #[test]
     fn manual_accepts_legacy_calls_and_validates_domain_membership() {

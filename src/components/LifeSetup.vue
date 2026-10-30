@@ -32,11 +32,15 @@ const ready = computed(() => (mode.value === 'auto' ? autoReady.value : !!text.v
 onMounted(async () => {
   try {
     autoReady.value = (await invoke<string[]>('workspace_goal_modes')).includes('auto')
-    if (autoReady.value) mode.value = 'auto'
   } catch {
     autoReady.value = false
   }
 })
+
+function changeMode(value: 'manual' | 'auto') {
+  if (value === 'auto' && !autoReady.value) return
+  mode.value = value
+}
 
 function next() {
   text.value = ''
@@ -95,7 +99,7 @@ async function add() {
           :model-value="mode"
           label="How should we start?"
           :options="modes"
-          @update:model-value="(value: 'manual' | 'auto') => (mode = value)"
+          @update:model-value="changeMode"
         />
         <p v-if="!autoReady" class="m-0 text-rune-caption text-rune-text-3">
           Rune-asked questions need a Rune update that is not installed yet.
@@ -118,7 +122,15 @@ async function add() {
             {{ last ? 'Finish' : 'Skip' }}
           </RuneButton>
           <RuneButton variant="primary" type="submit" :disabled="pending || !ready">
-            {{ pending ? 'Starting…' : last ? 'Add goal & finish' : 'Add goal & next' }}
+            {{
+              pending
+                ? 'Starting…'
+                : mode === 'auto'
+                  ? `Start ${domain.name} discovery`
+                  : last
+                    ? 'Add goal & finish'
+                    : 'Add goal & next'
+            }}
           </RuneButton>
         </div>
       </fieldset>

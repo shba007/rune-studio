@@ -186,6 +186,64 @@ it('allows explicit skips without an answer and disables them while busy', async
   wrapper.unmount()
 })
 
+it('supports Auto discovery answers and skips without asking the user to type a goal', async () => {
+  const discovery = {
+    ...question,
+    kind: 'discovery',
+    title: 'How rested do you usually feel?',
+    domain: 'physical',
+  }
+  const wrapper = mount(DecisionCard, { props: { question: discovery } })
+  expect(wrapper.text()).not.toContain('What would you like to achieve')
+  await wrapper.get('textarea').setValue('My current sleep routine varies')
+  await wrapper.get('form').trigger('submit')
+  expect(wrapper.emitted('answer')!.at(-1)).toEqual([
+    { id: question.id, revision: 1, optionId: null, text: 'My current sleep routine varies' },
+  ])
+  await wrapper
+    .findAll('button')
+    .find((button) => button.text() === 'Skip remaining questions')!
+    .trigger('click')
+  expect(wrapper.emitted('answer')!.at(-1)).toEqual([
+    { id: question.id, revision: 1, optionId: 'skip_all', text: '' },
+  ])
+  await wrapper.setProps({ question: { ...discovery, kind: 'discovery_required', revision: 2 } })
+  expect(
+    wrapper.findAll('button').some((button) => button.text() === 'Skip remaining questions'),
+  ).toBe(false)
+  expect(wrapper.find('textarea').exists()).toBe(true)
+  wrapper.unmount()
+})
+
+it('allows Auto draft edits as changes with no direct goal approval option', async () => {
+  const wrapper = mount(DecisionCard, {
+    props: {
+      question: {
+        ...question,
+        kind: 'discovery_review',
+        title: "Review Rune's proposed goal",
+        options: [
+          {
+            id: 'continue',
+            label: 'Use draft and clarify',
+            explanation: 'Clarify before goal approval.',
+          },
+          { id: 'refine', label: 'Edit the draft', explanation: 'Write requested changes.' },
+          { id: 'more', label: 'Answer more questions', explanation: 'Gather more context.' },
+        ],
+      },
+    },
+  })
+  expect(wrapper.text()).toContain('Your changes')
+  expect(wrapper.find('input[value="approve"]').exists()).toBe(false)
+  await wrapper.get('textarea').setValue('Keep the draft smaller')
+  await wrapper.get('form').trigger('submit')
+  expect(wrapper.emitted('answer')!.at(-1)).toEqual([
+    { id: question.id, revision: 1, optionId: null, text: 'Keep the draft smaller' },
+  ])
+  wrapper.unmount()
+})
+
 it('requires an explicit answer and includes the record revision when confirming', async () => {
   const wrapper = mount(DecisionCard, { props: { question } })
   expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeDefined()

@@ -93,29 +93,10 @@ pub fn parse(
         }
         return Ok(response);
     }
-    if response.question.trim().is_empty()
-        || response.question.chars().count() > 600
-        || response.explanation.chars().count() > 1200
-        || response.options.len() != 3
-    {
+    if !valid_question(&response.question, &response.explanation, &response.options) {
         return Err(error());
     }
-    let mut ids = std::collections::HashSet::new();
     for choice in &mut response.options {
-        if choice.id.is_empty()
-            || choice.id.chars().count() > 80
-            || matches!(
-                choice.id.as_str(),
-                "cancel" | "settings" | "skip" | "skip_all"
-            )
-            || !ids.insert(choice.id.clone())
-            || choice.label.trim().is_empty()
-            || choice.label.chars().count() > 200
-            || choice.explanation.trim().is_empty()
-            || choice.explanation.chars().count() > 1000
-        {
-            return Err(error());
-        }
         if selection {
             let sub = domain
                 .sub_domains
@@ -126,6 +107,24 @@ pub fn parse(
         }
     }
     Ok(response)
+}
+
+pub fn valid_question(question: &str, explanation: &str, options: &[Choice]) -> bool {
+    let mut ids = std::collections::HashSet::new();
+    !question.trim().is_empty()
+        && question.chars().count() <= 600
+        && explanation.chars().count() <= 1200
+        && options.len() == 3
+        && options.iter().all(|o| {
+            !o.id.is_empty()
+                && o.id.chars().count() <= 80
+                && !matches!(o.id.as_str(), "cancel" | "settings" | "skip" | "skip_all")
+                && ids.insert(&o.id)
+                && !o.label.trim().is_empty()
+                && o.label.chars().count() <= 200
+                && !o.explanation.trim().is_empty()
+                && o.explanation.chars().count() <= 1000
+        })
 }
 
 #[cfg(test)]

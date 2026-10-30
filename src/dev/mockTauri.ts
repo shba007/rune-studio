@@ -316,7 +316,7 @@ export function installTauriMock() {
         case 'workspace_task_zone':
           return 'Local'
         case 'workspace_goal_modes':
-          return ['manual']
+          return ['manual', 'auto']
         case 'workspace_new_goal':
           return 'goal-new'
         case 'connections_state':

@@ -1,9 +1,12 @@
 import type { IntakeEntry } from '@/types/decisions'
+import { domainById } from './domains'
 
 export type GoalTone = 'idle' | 'ok' | 'warn' | 'down' | 'busy'
 
 export function goalStatus(entry: IntakeEntry): { label: string; tone: GoalTone } {
   const reviewing = !!entry.question && !!entry.approvedGoal
+  if (entry.status === 'discovery_planning') return { label: 'Discovering a goal', tone: 'busy' }
+  if (entry.status === 'discovery_review') return { label: 'Review proposed goal', tone: 'warn' }
   if (entry.status === 'domain_planning') return { label: 'Suggesting a domain', tone: 'busy' }
   if (entry.status === 'domain_selection') return { label: 'Confirm domain', tone: 'warn' }
   if (entry.status === 'subdomain_planning')
@@ -18,5 +21,9 @@ export function goalStatus(entry: IntakeEntry): { label: string; tone: GoalTone 
 }
 
 export function goalTitle(entry: IntakeEntry): string {
-  return (entry.goal ?? entry.approvedGoal)?.outcome || entry.text
+  return (
+    (entry.goal ?? entry.approvedGoal)?.outcome ||
+    entry.text ||
+    (entry.domainMode === 'auto' ? `${domainById(entry.domain ?? '').name} · discovery` : '')
+  )
 }

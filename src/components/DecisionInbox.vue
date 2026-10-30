@@ -85,7 +85,9 @@ const rowMeta = (entry: IntakeEntry) => {
         @create="(id) => emit('createTask', id)"
       />
       <template v-if="brief || entry.kind !== 'goal'">
-        <p class="m-0 text-rune-caption text-rune-text-2 whitespace-pre-wrap">{{ entry.text }}</p>
+        <p class="m-0 text-rune-caption text-rune-text-2 whitespace-pre-wrap">
+          {{ entry.text || goalTitle(entry) }}
+        </p>
         <p
           v-if="entry.kind === 'goal' && entry.category"
           class="m-0 text-rune-heading text-rune-text-2"
@@ -139,19 +141,21 @@ const rowMeta = (entry: IntakeEntry) => {
         class="m-0 text-rune-caption text-rune-text-2"
       >
         {{
-          entry.status === 'domain_planning'
-            ? 'Suggesting a domain for you to confirm…'
-            : entry.status === 'subdomain_planning'
-              ? 'Preparing optional questions for your selected goal context…'
-              : entry.status === 'goal_ready'
-                ? 'Goal approved. Compare pathways or review linked tasks.'
-                : entry.status === 'pathway_planning'
-                  ? 'Comparing pathways using the approved goal…'
-                  : entry.status === 'task_planning'
-                    ? 'Drafting your first week using the preferred pathway…'
-                    : entry.status === 'interrupted'
-                      ? 'Review task history before creating another execution attempt.'
-                      : 'Understanding your request…'
+          entry.status === 'discovery_planning'
+            ? 'Asking about your current situation to propose a goal…'
+            : entry.status === 'domain_planning'
+              ? 'Suggesting a domain for you to confirm…'
+              : entry.status === 'subdomain_planning'
+                ? 'Preparing optional questions for your selected goal context…'
+                : entry.status === 'goal_ready'
+                  ? 'Goal approved. Compare pathways or review linked tasks.'
+                  : entry.status === 'pathway_planning'
+                    ? 'Comparing pathways using the approved goal…'
+                    : entry.status === 'task_planning'
+                      ? 'Drafting your first week using the preferred pathway…'
+                      : entry.status === 'interrupted'
+                        ? 'Review task history before creating another execution attempt.'
+                        : 'Understanding your request…'
         }}
       </p>
       <div v-if="entry.status === 'goal_ready'" class="flex flex-wrap items-center gap-3">

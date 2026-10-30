@@ -41,6 +41,9 @@ const allowsFreeform = computed(() =>
     'domain',
     'subdomains',
     'subdomain_detail',
+    'discovery',
+    'discovery_required',
+    'discovery_review',
     'clarification',
     'goal_review',
     'attachment',
@@ -150,9 +153,14 @@ function chooseDomain(value: string) {
             }}<span
               v-if="
                 index === 0 &&
-                ['domain', 'subdomains', 'subdomain_detail', 'clarification'].includes(
-                  question.kind,
-                )
+                [
+                  'domain',
+                  'subdomains',
+                  'subdomain_detail',
+                  'discovery',
+                  'discovery_review',
+                  'clarification',
+                ].includes(question.kind)
               "
               class="ml-2 text-rune-heading uppercase opacity-60"
               >Recommended</span
@@ -192,13 +200,17 @@ function chooseDomain(value: string) {
         v-if="allowsFreeform"
         class="flex flex-col gap-1 rounded-b-rune-tile bg-rune-raised px-rune-2 py-rune-1 text-rune-caption text-rune-text-3"
       >
-        <span>Your own answer</span>
+        <span>{{ question.kind === 'discovery_review' ? 'Your changes' : 'Your own answer' }}</span>
         <textarea
           :value="text"
           rows="2"
           maxlength="4000"
           class="w-full resize-y rounded-rune-tile bg-rune-sunken p-rune-1 font-rune-reading text-rune-body text-rune-ink placeholder:text-rune-text-3"
-          placeholder="Tell Rune otherwise"
+          :placeholder="
+            question.kind === 'discovery_review'
+              ? 'Describe edits to the draft'
+              : 'Tell Rune otherwise'
+          "
           @input="typeAnswer"
         />
       </label>
@@ -220,7 +232,7 @@ function chooseDomain(value: string) {
     <p v-if="error" role="alert" class="m-0 text-rune-caption text-error">{{ error }}</p>
     <div class="flex flex-wrap items-center gap-rune-1">
       <RuneButton
-        v-if="question.kind === 'subdomain_detail'"
+        v-if="['subdomain_detail', 'discovery'].includes(question.kind)"
         variant="ghost"
         :disabled="busy"
         @click="
@@ -235,7 +247,7 @@ function chooseDomain(value: string) {
         Skip this part
       </RuneButton>
       <RuneButton
-        v-if="['subdomains', 'subdomain_detail'].includes(question.kind)"
+        v-if="['subdomains', 'subdomain_detail', 'discovery'].includes(question.kind)"
         variant="ghost"
         :disabled="busy"
         @click="

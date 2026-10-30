@@ -59,6 +59,8 @@ pub struct Entry {
     sub_domains: Vec<crate::goal_domains::SubDomainSelection>,
     #[serde(default)]
     subdomain_progress: Option<crate::intake_subdomains::Progress>,
+    #[serde(default)]
+    discovery: Option<crate::intake_discovery::Progress>,
     question: Option<Question>,
     answers: Vec<Value>,
     goal: Option<Value>,
@@ -178,7 +180,7 @@ fn decode_entry(store: &LifeStore, body: &str) -> Result<Entry, String> {
     }
     if matches!(
         entry.status.as_str(),
-        "domain_planning" | "subdomain_planning"
+        "domain_planning" | "subdomain_planning" | "discovery_planning"
     ) {
         entry.error = Some(
             "Context planning was interrupted. Retry when ready; your earlier choices are preserved.".into(),
@@ -222,6 +224,9 @@ pub fn decisions_state(app: AppHandle) -> Result<Vec<Entry>, String> {
             e.status != "cancelled"
                 && e.status != "submitted"
                 && (matches!(e.status.as_str(), "consent" | "retry" | "classifying")
+                    || (e.status == "discovery_planning"
+                        && e.goal.is_none()
+                        && crate::intake_discovery::answered(&e.sub_domains, &e.answers) == 0)
                     || consent(&app, e.class))
         })
         .cloned()
@@ -238,7 +243,14 @@ fn question(e: &mut Entry, kind: &str, title: &str, explanation: &str, options: 
         title: title.into(),
         explanation: explanation.into(),
         options,
-        domain: if matches!(kind, "subdomains" | "subdomain_detail") {
+        domain: if matches!(
+            kind,
+            "subdomains"
+                | "subdomain_detail"
+                | "discovery"
+                | "discovery_required"
+                | "discovery_review"
+        ) {
             e.domain.clone()
         } else {
             None
@@ -454,6 +466,9 @@ async fn advance(app: &AppHandle, e: &mut Entry) -> Result<(), String> {
     if e.token.is_cancelled() {
         return Err("Request interrupted".into());
     }
+    if needs_discovery(e) {
+        return discover(app, e).await;
+    }
     if require_consent(app, e)? {
         return Ok(());
     }
@@ -472,6 +487,326 @@ async fn advance(app: &AppHandle, e: &mut Entry) -> Result<(), String> {
         }
         _ => Err("Choose Goal, Task or Step".into()),
     }
+}
+fn needs_discovery(e: &Entry) -> bool {
+    e.domain_mode.as_deref() == Some("auto")
+        && e.approved_goal.is_none()
+        && e.discovery
+            .as_ref()
+            .is_some_and(|d| d.phase != crate::intake_discovery::Phase::Clarifying)
+}
+
+fn discovery_review_question(e: &mut Entry, explanation: &str) -> Result<(), String> {
+    if e.goal.is_none() || crate::intake_discovery::answered(&e.sub_domains, &e.answers) == 0 {
+        return Err("Answer at least one discovery question before reviewing a draft".into());
+    }
+    question(
+        e,
+        "discovery_review",
+        "Review Rune's proposed goal",
+        explanation,
+        vec![
+            option(
+                "continue",
+                "Use this draft and clarify",
+                "Continue to the existing clarification step. The goal is not approved yet.",
+            ),
+            option(
+                "refine",
+                "Edit the draft",
+                "Write the changes you want in your own answer.",
+            ),
+            option(
+                "more",
+                "Answer more questions",
+                "Gather more current context within the remaining question limit.",
+            ),
+        ],
+    );
+    Ok(())
+}
+
+fn discovery_required_question(e: &mut Entry) {
+    question(
+        e,
+        "discovery_required",
+        "One answer is needed before Rune can propose a goal",
+        "The questions were skipped, so no goal was generated. Share one detail about your current situation in your own answer, revisit the skipped questions, or cancel. Unknown details stay unknown.",
+        vec![
+            option(
+                "revisit",
+                "Revisit skipped questions",
+                "Explicitly reopen the selected domain's skipped parts.",
+            ),
+            option(
+                "settings",
+                "Review context settings",
+                "Review protected storage and local model settings.",
+            ),
+            option(
+                "cancel",
+                "Cancel discovery",
+                "Finish without creating or approving a goal.",
+            ),
+        ],
+    );
+}
+
+fn apply_discovery(
+    e: &mut Entry,
+    response: crate::intake_discovery::Response,
+) -> Result<(), String> {
+    use crate::intake_discovery::Phase;
+    if response.ready && crate::intake_discovery::answered(&e.sub_domains, &e.answers) == 0 {
+        return Err("Answer at least one discovery question before generating a draft".into());
+    }
+    let progress = e
+        .discovery
+        .as_mut()
+        .ok_or("Discovery progress unavailable")?;
+    if response.ready {
+        let draft = response.goal.ok_or("Discovery returned no draft")?;
+        e.goal = Some(serde_json::to_value(draft).map_err(|_| "Invalid discovery draft")?);
+        progress.phase = Phase::Reviewing;
+        progress.current = None;
+        discovery_review_question(
+            e,
+            &format!(
+                "{} Review the definition below. Edit it or continue to clarification; this does not approve the goal or create work.",
+                response.explanation
+            ),
+        )?;
+    } else {
+        let id = response
+            .sub_domain
+            .ok_or("Discovery returned no question topic")?;
+        let domain = e
+            .domain
+            .as_deref()
+            .and_then(crate::goal_domains::find)
+            .ok_or("Choose a domain first")?;
+        let sub = domain
+            .sub_domains
+            .iter()
+            .find(|s| s.id == id)
+            .ok_or("Unsupported discovery topic")?;
+        progress.current = Some(id);
+        let options = response
+            .options
+            .into_iter()
+            .map(|o| option(&o.id, &o.label, &o.explanation))
+            .collect();
+        question(
+            e,
+            "discovery",
+            &format!("{}: {}", sub.name, response.question),
+            &response.explanation,
+            options,
+        );
+    }
+    if response.class.is_sensitive() {
+        e.class = response.class;
+    }
+    Ok(())
+}
+
+async fn discover(app: &AppHandle, e: &mut Entry) -> Result<(), String> {
+    use crate::intake_discovery::Phase;
+    if e.token.is_cancelled() {
+        return Err("Discovery stopped".into());
+    }
+    let phase = e
+        .discovery
+        .as_ref()
+        .ok_or("Discovery progress unavailable")?
+        .phase;
+    if phase == Phase::Reviewing {
+        if require_consent(app, e)? {
+            return Ok(());
+        }
+        discovery_review_question(
+            e,
+            "Review the draft, edit it, or continue to clarification. Nothing is approved or executable yet.",
+        )?;
+        return commit(app, e);
+    }
+    let domain = e
+        .domain
+        .as_deref()
+        .and_then(crate::goal_domains::find)
+        .ok_or("Choose a domain explicitly before Auto discovery")?;
+    let available = crate::intake_discovery::available(&e.sub_domains);
+    let answered = crate::intake_discovery::answered(&e.sub_domains, &e.answers);
+    if available.is_empty() && answered == 0 {
+        if require_consent(app, e)? {
+            return Ok(());
+        }
+        discovery_required_question(e);
+        return commit(app, e);
+    }
+    let progress = e
+        .discovery
+        .as_mut()
+        .ok_or("Discovery progress unavailable")?;
+    if available.is_empty() {
+        progress.phase = Phase::Drafting;
+    }
+    let draft_only = progress.phase == Phase::Drafting;
+    let require_question = !draft_only && (answered == 0 || progress.require_question);
+    e.status = "discovery_planning".into();
+    e.question = None;
+    commit(app, e)?;
+    e.persistable = false;
+    let value = tokio::time::timeout(std::time::Duration::from_secs(90), infer(
+        app, e, include_str!("../prompts/intake/discovery.md"),
+        &json!({"stage":if draft_only { "draft" } else { "question" },"requireQuestion":require_question,
+            "domain":crate::intake_subdomains::context(domain),"availableSubDomains":available,
+            "subDomains":subdomain_context(e),"answers":e.answers,"previousClass":e.class,"existingDraft":e.goal}),
+        &crate::intake_discovery::schema(&available, require_question, draft_only), false,
+    )).await.map_err(|_| "Auto discovery timed out".to_string())??;
+    if e.token.is_cancelled() {
+        return Err("Discovery stopped".into());
+    }
+    let response =
+        crate::intake_discovery::parse(value, &available, answered, require_question, draft_only)?;
+    apply_discovery(e, response)?;
+    e.persistable = true;
+    e.confirm_classification = false;
+    if require_consent(app, e)? {
+        return Ok(());
+    }
+    commit(app, e)
+}
+
+fn discovery_reply(e: &mut Entry, q: &Question, choice: &str, text: &str) -> Result<(), String> {
+    use crate::intake_discovery::Phase;
+    let progress = e
+        .discovery
+        .as_mut()
+        .ok_or("Discovery progress unavailable")?;
+    if progress.phase != Phase::Questioning {
+        return Err("This discovery question has already changed".into());
+    }
+    if q.kind == "discovery_required" {
+        if choice == "revisit" {
+            for sub in &mut e.sub_domains {
+                sub.skipped = false;
+            }
+            progress.require_question = true;
+            e.answers
+                .push(json!({"kind":"discovery_revisit","source":"user"}));
+        } else if choice.is_empty() && !text.trim().is_empty() {
+            e.persistable = false;
+            e.answers.push(
+                json!({"kind":"discovery","subDomain":null,"answer":text.trim(),"source":"user"}),
+            );
+            progress.phase = Phase::Drafting;
+            progress.require_question = false;
+        } else {
+            return Err("Revisit questions, share current context, or cancel discovery".into());
+        }
+    } else if choice == "skip_all" {
+        for sub in &mut e.sub_domains {
+            if sub.answers.len() < crate::intake_subdomains::MAX_QUESTIONS {
+                sub.skipped = true;
+            }
+        }
+        e.answers
+            .push(json!({"kind":"discovery_skip","scope":"remaining","source":"user"}));
+        if crate::intake_discovery::answered(&e.sub_domains, &e.answers) > 0 {
+            progress.phase = Phase::Drafting;
+        }
+    } else {
+        let id = progress
+            .current
+            .as_deref()
+            .ok_or("No discovery question is pending")?;
+        let sub = e
+            .sub_domains
+            .iter_mut()
+            .find(|s| s.id == id)
+            .ok_or("This discovery part is not selected")?;
+        if sub.skipped || sub.answers.len() >= crate::intake_subdomains::MAX_QUESTIONS {
+            return Err("This discovery part is finished".into());
+        }
+        if choice == "skip" {
+            sub.skipped = true;
+            e.answers
+                .push(json!({"kind":"discovery_skip","subDomain":id,"source":"user"}));
+        } else {
+            let reply = q
+                .options
+                .iter()
+                .find(|o| o.id == choice)
+                .map(|o| o.label.as_str())
+                .unwrap_or(text.trim());
+            if reply.is_empty() {
+                return Err("Choose an answer or share current context".into());
+            }
+            e.persistable = false;
+            sub.answers.push(
+                json!({"kind":"discovery","question":q.title,"answer":reply,"source":"user"}),
+            );
+            e.answers
+                .push(json!({"kind":"discovery","subDomain":id,"source":"user"}));
+            progress.require_question = false;
+        }
+    }
+    progress.current = None;
+    e.question = None;
+    Ok(())
+}
+
+fn discovery_review_reply(e: &mut Entry, choice: &str, text: &str) -> Result<bool, String> {
+    use crate::intake_discovery::Phase;
+    if e.discovery
+        .as_ref()
+        .is_none_or(|p| p.phase != Phase::Reviewing)
+    {
+        return Err("This discovery draft has already changed".into());
+    }
+    if choice == "continue" {
+        e.discovery
+            .as_mut()
+            .ok_or("Discovery progress unavailable")?
+            .phase = Phase::Clarifying;
+        e.answers.push(
+            json!({"kind":"discovery_draft","acceptedForClarification":true,"source":"user"}),
+        );
+    } else if choice == "more" {
+        if crate::intake_discovery::available(&e.sub_domains).is_empty() {
+            discovery_review_question(
+                e,
+                "The selected parts have no remaining questions. Edit the draft or continue to clarification; skipped parts remain skipped.",
+            )?;
+            return Ok(false);
+        }
+        let progress = e
+            .discovery
+            .as_mut()
+            .ok_or("Discovery progress unavailable")?;
+        progress.phase = Phase::Questioning;
+        progress.require_question = true;
+    } else if choice == "refine" || choice.is_empty() {
+        if text.trim().is_empty() {
+            discovery_review_question(
+                e,
+                "Write the changes you want in your own answer. The current draft is preserved.",
+            )?;
+            return Ok(false);
+        }
+        e.persistable = false;
+        e.answers
+            .push(json!({"kind":"discovery_refinement","answer":text.trim(),"source":"user"}));
+        e.discovery
+            .as_mut()
+            .ok_or("Discovery progress unavailable")?
+            .phase = Phase::Drafting;
+    } else {
+        return Err("Choose how to review this draft".into());
+    }
+    e.question = None;
+    Ok(true)
 }
 fn needs_domain(e: &Entry) -> bool {
     e.domain_mode.as_deref() == Some("manual")
@@ -860,7 +1195,7 @@ async fn clarify(app: &AppHandle, e: &mut Entry) -> Result<(), String> {
         app,
         e,
         include_str!("../prompts/intake/clarify.md"),
-        &json!({"input":e.text,"answers":e.answers,"draft":e.goal,"domain":domain_context(e),"subDomains":subdomain_context(e)}),
+        &json!({"mode":e.domain_mode,"input":e.text,"answers":e.answers,"draft":e.goal,"domain":domain_context(e),"subDomains":subdomain_context(e)}),
         &schema,
         false,
     )
@@ -1004,7 +1339,13 @@ fn submit_intent(
     supplied_id: Option<String>,
     selection: Option<crate::goal_domains::Selection>,
 ) -> Result<u64, String> {
-    if text.trim().is_empty() || text.chars().count() > 4000 {
+    let auto = selection
+        .as_ref()
+        .is_some_and(|s| s.mode == crate::goal_domains::Mode::Auto);
+    if (!auto && text.trim().is_empty())
+        || text.chars().count() > 4000
+        || (auto && (!text.is_empty() || requested_kind.as_deref() != Some("goal")))
+    {
         return Err("Enter a request of 1 to 4000 characters".into());
     }
     if app.state::<AppState>().settings.locked().external_agent {
@@ -1019,13 +1360,54 @@ fn submit_intent(
     {
         return Err("Resolve or cancel pending decisions before adding more requests".into());
     }
-    let subdomain_progress = Some(crate::intake_subdomains::Progress::new(
-        selection
-            .as_ref()
-            .is_some_and(|s| !s.sub_domains.is_empty()),
-    ));
+    let e = new_entry(
+        supplied_id.map_or_else(uid, Ok)?,
+        text,
+        keep_mic,
+        voice_wav,
+        requested_kind,
+        selection,
+    );
+    ENTRIES.locked().insert(e.id.clone(), e.clone());
+    let _ = app.emit("decisions_changed", ());
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let _serial = SERIAL.lock().await;
+        let mut e = e;
+        let result = if auto {
+            discover(&app, &mut e).await
+        } else {
+            classify(&app, &mut e).await
+        };
+        if let Err(err) = result {
+            fail(&app, &mut e, err);
+        }
+    });
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    Ok(NEXT.fetch_add(1, Ordering::Relaxed))
+}
+
+fn new_entry(
+    id: String,
+    text: &str,
+    keep_mic: bool,
+    voice_wav: Vec<u8>,
+    requested_kind: Option<String>,
+    selection: Option<crate::goal_domains::Selection>,
+) -> Entry {
+    let mode = selection
+        .as_ref()
+        .map_or(crate::goal_domains::Mode::Manual, |s| s.mode);
+    let auto = mode == crate::goal_domains::Mode::Auto;
+    let subdomain_progress = (!auto).then(|| {
+        crate::intake_subdomains::Progress::new(
+            selection
+                .as_ref()
+                .is_some_and(|s| !s.sub_domains.is_empty()),
+        )
+    });
     let mut e = Entry {
-        id: supplied_id.map_or_else(uid, Ok)?,
+        id,
         revision: 0,
         text: text.trim().into(),
         class: DataClass::General,
@@ -1037,17 +1419,23 @@ fn submit_intent(
             .map(|_| "user".into()),
         // Mark new intake at creation so goals reached through the composer also confirm a domain.
         // Older stored entries retain None and are never enrolled by a load or retry.
-        domain_mode: Some("manual".into()),
+        domain_mode: Some(mode.as_str().into()),
         domain: selection.as_ref().and_then(|s| s.domain.clone()),
         sub_domains: selection.map(|s| s.sub_domains).unwrap_or_default(),
         subdomain_progress,
-        status: "classifying".into(),
+        discovery: auto.then(Default::default),
+        status: if auto {
+            "discovery_planning"
+        } else {
+            "classifying"
+        }
+        .into(),
         question: None,
         answers: Vec::new(),
         goal: None,
         approved_goal: None,
         outcome_metric: None,
-        requested_kind,
+        requested_kind: if auto { None } else { requested_kind },
         pathways: None,
         task_proposals: None,
         error: None,
@@ -1060,18 +1448,21 @@ fn submit_intent(
         keep_mic,
         voice_wav,
     };
-    ENTRIES.locked().insert(e.id.clone(), e.clone());
-    let _ = app.emit("decisions_changed", ());
-    let app = app.clone();
-    tauri::async_runtime::spawn(async move {
-        let _serial = SERIAL.lock().await;
-        let result = classify(&app, &mut e).await;
-        if let Err(err) = result {
-            fail(&app, &mut e, err);
-        }
-    });
-    static NEXT: AtomicU64 = AtomicU64::new(1);
-    Ok(NEXT.fetch_add(1, Ordering::Relaxed))
+    if auto
+        && e.sub_domains.is_empty()
+        && let Some(domain) = e.domain.as_deref().and_then(crate::goal_domains::find)
+    {
+        e.sub_domains = domain
+            .sub_domains
+            .iter()
+            .map(|s| crate::goal_domains::SubDomainSelection {
+                id: s.id.clone(),
+                answers: vec![],
+                skipped: false,
+            })
+            .collect();
+    }
+    e
 }
 fn fail(app: &AppHandle, e: &mut Entry, error: String) {
     e.error = Some(error);
@@ -1120,6 +1511,7 @@ fn processing_status(status: &str) -> bool {
         "classifying"
             | "domain_planning"
             | "subdomain_planning"
+            | "discovery_planning"
             | "clarifying"
             | "dispatching"
             | "pathway_planning"
@@ -1147,8 +1539,12 @@ fn validate_answer(
         .clone()
         .ok_or("This decision has already been answered")?;
     let skip = option_id.is_some_and(|id| {
-        (id == "skip_all" && matches!(q.kind.as_str(), "subdomains" | "subdomain_detail"))
-            || (id == "skip" && q.kind == "subdomain_detail")
+        (id == "skip_all"
+            && matches!(
+                q.kind.as_str(),
+                "subdomains" | "subdomain_detail" | "discovery"
+            ))
+            || (id == "skip" && matches!(q.kind.as_str(), "subdomain_detail" | "discovery"))
     });
     if option_id.is_some_and(|id| id != "cancel" && !skip && !q.options.iter().any(|o| o.id == id))
     {
@@ -1175,6 +1571,7 @@ mod tests {
             domain_mode: None,
             sub_domains: vec![],
             subdomain_progress: None,
+            discovery: None,
             kind: "goal".into(),
             status: "clarification".into(),
             question: Some(Question {
@@ -1509,6 +1906,227 @@ mod tests {
     }
 
     #[test]
+    fn auto_starts_with_domain_context_without_synthesizing_goal_text() {
+        let e = auto_entry(vec![]);
+        assert!(e.text.is_empty());
+        assert_eq!(e.kind, "goal");
+        assert_eq!(e.domain_mode.as_deref(), Some("auto"));
+        assert_eq!(e.domain_source.as_deref(), Some("user"));
+        assert_eq!(e.domain.as_deref(), Some("physical"));
+        assert_eq!(e.sub_domains.len(), 6);
+        assert!(e.goal.is_none() && e.approved_goal.is_none());
+        assert!(e.requested_kind.is_none());
+        assert!(!e.persistable);
+        assert!(e.subdomain_progress.is_none());
+        assert!(needs_discovery(&e));
+        assert!(!needs_subdomains(&e));
+        assert!(processing_status("discovery_planning"));
+        assert!(!processing_status("discovery"));
+        let restricted = auto_entry(vec!["sleep-and-circadian-architecture".into()]);
+        assert_eq!(restricted.sub_domains.len(), 1);
+    }
+
+    fn auto_entry(parts: Vec<String>) -> Entry {
+        let (text, selection) = crate::goal_domains::Selection::create(
+            None,
+            Some("physical".into()),
+            Some("auto"),
+            parts,
+        )
+        .unwrap();
+        new_entry(
+            "intake-auto".into(),
+            &text,
+            false,
+            vec![],
+            Some("goal".into()),
+            Some(selection),
+        )
+    }
+
+    fn discovery_question_response(e: &Entry) -> crate::intake_discovery::Response {
+        let available = crate::intake_discovery::available(&e.sub_domains);
+        crate::intake_discovery::parse(json!({"class":"health","ready":false,"subDomain":available[0],
+            "question":"How rested do you usually feel?","explanation":"Start with current recovery context.",
+            "options":[{"id":"steady","label":"Usually rested","explanation":"A reported steady baseline."},
+                {"id":"mixed","label":"It varies","explanation":"A reported inconsistency."},
+                {"id":"unknown","label":"I am unsure","explanation":"The baseline stays unknown."}],"goal":null}),
+            &available, crate::intake_discovery::answered(&e.sub_domains, &e.answers), true, false).unwrap()
+    }
+
+    fn discovery_draft_response() -> crate::intake_discovery::Response {
+        crate::intake_discovery::parse(json!({"class":"health","ready":true,"subDomain":null,"question":"","explanation":"A provisional draft from current context.","options":[],
+            "goal":{"outcome":"Explore a consistent wind-down routine","current":"Sleep varies","success":"Unknown","horizon":"Unknown","resources":"Unknown","constraints":"Unknown"}}),
+            &[], 1, false, true).unwrap()
+    }
+
+    #[test]
+    fn auto_draft_review_keeps_clarification_and_goal_approval_separate() {
+        let mut e = auto_entry(vec![]);
+        let first = discovery_question_response(&e);
+        apply_discovery(&mut e, first).unwrap();
+        assert_eq!(e.class, DataClass::Health);
+        assert!(e.goal.is_none());
+        let q = e.question.clone().unwrap();
+        assert_eq!(q.kind, "discovery");
+        assert_eq!(q.domain.as_deref(), Some("physical"));
+        assert!(validate_answer(&e, e.revision + 1, Some("mixed"), "").is_err());
+        assert!(validate_answer(&e, e.revision, Some("approve"), "").is_err());
+        e.persistable = true; // The actual runner checks class consent before exposing questions.
+        discovery_reply(&mut e, &q, "mixed", "").unwrap();
+        assert!(!e.persistable);
+        assert!(e.text.is_empty());
+        assert_eq!(
+            crate::intake_discovery::answered(&e.sub_domains, &e.answers),
+            1
+        );
+        apply_discovery(&mut e, discovery_draft_response()).unwrap();
+        assert_eq!(e.question.as_ref().unwrap().kind, "discovery_review");
+        assert!(e.goal.is_some() && e.approved_goal.is_none());
+        assert_eq!(e.domain.as_deref(), Some("physical"));
+        assert!(validate_answer(&e, e.revision, Some("approve"), "").is_err());
+        assert!(discovery_review_reply(&mut e, "continue", "").unwrap());
+        assert!(e.discovery.as_ref().unwrap().phase == crate::intake_discovery::Phase::Clarifying);
+        assert!(!needs_discovery(&e));
+        assert!(e.approved_goal.is_none() && e.pathways.is_none() && e.task_proposals.is_none());
+    }
+
+    #[test]
+    fn zero_answer_skips_cannot_generate_a_goal_and_revisiting_is_explicit() {
+        let mut e = auto_entry(vec![]);
+        assert!(apply_discovery(&mut e, discovery_draft_response()).is_err());
+        let first = discovery_question_response(&e);
+        apply_discovery(&mut e, first).unwrap();
+        let q = validate_answer(&e, e.revision, Some("skip_all"), "").unwrap();
+        discovery_reply(&mut e, &q, "skip_all", "").unwrap();
+        assert_eq!(
+            crate::intake_discovery::answered(&e.sub_domains, &e.answers),
+            0
+        );
+        assert!(crate::intake_discovery::available(&e.sub_domains).is_empty());
+        assert!(apply_discovery(&mut e, discovery_draft_response()).is_err());
+        assert!(e.goal.is_none());
+        discovery_required_question(&mut e);
+        let q = e.question.clone().unwrap();
+        assert!(validate_answer(&e, e.revision, Some("skip_all"), "").is_err());
+        discovery_reply(&mut e, &q, "revisit", "").unwrap();
+        assert!(e.sub_domains.iter().all(|s| !s.skipped));
+        assert_eq!(
+            crate::intake_discovery::answered(&e.sub_domains, &e.answers),
+            0
+        );
+        assert!(e.discovery.as_ref().unwrap().require_question);
+    }
+
+    #[test]
+    fn a_domain_level_answer_after_skips_is_classified_before_a_provisional_draft() {
+        let mut e = auto_entry(vec![]);
+        for sub in &mut e.sub_domains {
+            sub.skipped = true;
+        }
+        discovery_required_question(&mut e);
+        let q = e.question.clone().unwrap();
+        e.persistable = true;
+        discovery_reply(&mut e, &q, "", "My current routine feels inconsistent").unwrap();
+        assert!(!e.persistable);
+        assert_eq!(
+            crate::intake_discovery::answered(&e.sub_domains, &e.answers),
+            1
+        );
+        assert!(e.sub_domains.iter().all(|s| s.skipped));
+        assert!(e.discovery.as_ref().unwrap().phase == crate::intake_discovery::Phase::Drafting);
+        apply_discovery(&mut e, discovery_draft_response()).unwrap();
+        assert!(e.goal.is_some() && e.approved_goal.is_none());
+    }
+
+    #[test]
+    fn draft_edits_preserve_the_previous_definition_and_more_questions_obey_the_budget() {
+        let mut e = auto_entry(vec!["sleep-and-circadian-architecture".into()]);
+        let first = discovery_question_response(&e);
+        apply_discovery(&mut e, first).unwrap();
+        let q = e.question.clone().unwrap();
+        discovery_reply(&mut e, &q, "mixed", "").unwrap();
+        apply_discovery(&mut e, discovery_draft_response()).unwrap();
+        let original = e.goal.clone();
+        assert!(!discovery_review_reply(&mut e, "refine", "").unwrap());
+        assert_eq!(e.goal, original);
+        assert!(
+            discovery_review_reply(
+                &mut e,
+                "refine",
+                "Keep the draft small; my schedule changes often"
+            )
+            .unwrap()
+        );
+        assert_eq!(e.goal, original);
+        assert!(!e.persistable);
+        assert_eq!(e.answers.last().unwrap()["kind"], "discovery_refinement");
+        apply_discovery(&mut e, discovery_draft_response()).unwrap();
+        assert!(discovery_review_reply(&mut e, "more", "").unwrap());
+        assert!(e.discovery.as_ref().unwrap().require_question);
+        for _ in 1..crate::intake_subdomains::MAX_QUESTIONS {
+            let next = discovery_question_response(&e);
+            apply_discovery(&mut e, next).unwrap();
+            let q = e.question.clone().unwrap();
+            discovery_reply(&mut e, &q, "mixed", "").unwrap();
+        }
+        assert!(crate::intake_discovery::available(&e.sub_domains).is_empty());
+        assert_eq!(e.sub_domains[0].answers.len(), 3);
+        apply_discovery(&mut e, discovery_draft_response()).unwrap();
+        assert!(!discovery_review_reply(&mut e, "more", "").unwrap());
+        assert_eq!(e.question.as_ref().unwrap().kind, "discovery_review");
+        assert!(e.goal.is_some() && e.approved_goal.is_none());
+    }
+
+    #[test]
+    fn discovery_answers_drafts_and_accepted_phase_restore_from_protected_storage() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LifeStore::open(
+            &dir.path().join("intake.sqlite3"),
+            LifeCrypto::in_memory_random(),
+        )
+        .unwrap();
+        let mut e = auto_entry(vec![]);
+        let first = discovery_question_response(&e);
+        apply_discovery(&mut e, first).unwrap();
+        assert!(store_entry(&store, &e).is_err());
+        store.set_consent(DataClass::Health, true, "test").unwrap();
+        let q = e.question.clone().unwrap();
+        discovery_reply(&mut e, &q, "", "PRIVATE_DISCOVERY_CANARY").unwrap();
+        e.persistable = true; // Represents a successful protected reclassification of the answer.
+        e.status = "discovery_planning".into();
+        store_entry(&store, &e).unwrap();
+        let saved = store.get_record("intake-auto-0").unwrap().unwrap();
+        assert!(!saved.body.contains("PRIVATE_DISCOVERY_CANARY"));
+        let mut restored = decode_entry(&store, &saved.body).unwrap();
+        assert_eq!(restored.status, "retry");
+        assert!(needs_discovery(&restored));
+        assert!(restored.text.is_empty());
+        assert_eq!(
+            crate::intake_discovery::answered(&restored.sub_domains, &restored.answers),
+            1
+        );
+        restored.revision = 1;
+        apply_discovery(&mut restored, discovery_draft_response()).unwrap();
+        store_entry(&store, &restored).unwrap();
+        let saved = store.get_record("intake-auto-1").unwrap().unwrap();
+        let mut reviewing = decode_entry(&store, &saved.body).unwrap();
+        assert_eq!(
+            reviewing.question.as_ref().unwrap().kind,
+            "discovery_review"
+        );
+        assert!(reviewing.approved_goal.is_none());
+        discovery_review_reply(&mut reviewing, "continue", "").unwrap();
+        reviewing.revision = 2;
+        reviewing.status = "discovery_planning".into();
+        store_entry(&store, &reviewing).unwrap();
+        let saved = store.get_record("intake-auto-2").unwrap().unwrap();
+        let accepted = decode_entry(&store, &saved.body).unwrap();
+        assert!(!needs_discovery(&accepted));
+        assert!(accepted.goal.is_some() && accepted.approved_goal.is_none());
+    }
+
+    #[test]
     fn legacy_entries_decode_without_domain_metadata() {
         let original = sample(DataClass::Mind);
         let mut value = serde_json::to_value(&original).unwrap();
@@ -1518,6 +2136,7 @@ mod tests {
             "domainMode",
             "subDomains",
             "subdomainProgress",
+            "discovery",
         ] {
             value.as_object_mut().unwrap().remove(key);
         }
@@ -1527,10 +2146,11 @@ mod tests {
         assert!(restored.domain_mode.is_none());
         assert!(restored.sub_domains.is_empty());
         assert!(restored.subdomain_progress.is_none());
+        assert!(restored.discovery.is_none());
         assert_eq!(restored.answers, original.answers);
         assert_eq!(restored.class, original.class);
         assert_eq!(restored.status, original.status);
-        assert_eq!(workspace_goal_modes(), vec!["manual"]);
+        assert_eq!(workspace_goal_modes(), vec!["manual", "auto"]);
     }
 
     #[test]
@@ -1700,7 +2320,7 @@ fn ready_goal(app: &AppHandle, id: &str, revision: u64) -> Result<Entry, String>
 }
 #[tauri::command]
 pub fn workspace_goal_modes() -> Vec<String> {
-    vec!["manual".into()]
+    vec!["manual".into(), "auto".into()]
 }
 #[tauri::command]
 pub fn workspace_new_goal(
@@ -1710,12 +2330,12 @@ pub fn workspace_new_goal(
     mode: Option<String>,
     sub_domains: Option<Vec<String>>,
 ) -> Result<String, String> {
-    let selection = crate::goal_domains::Selection::manual(
-        mode.as_deref(),
+    let (text, selection) = crate::goal_domains::Selection::create(
+        text,
         domain,
+        mode.as_deref(),
         sub_domains.unwrap_or_default(),
     )?;
-    let text = text.ok_or("Enter a goal for Manual creation")?;
     let id = uid()?;
     submit_intent(
         &app,
@@ -2018,6 +2638,27 @@ pub async fn decision_answer(
                 }
                 advance(&app, &mut e).await
             }
+            Err(error) => Err(error),
+        },
+        "discovery" | "discovery_required" => match discovery_reply(&mut e, &q, choice, &text) {
+            Ok(()) => {
+                if e.persistable {
+                    e.status = "discovery_planning".into();
+                    commit(&app, &mut e)?;
+                }
+                advance(&app, &mut e).await
+            }
+            Err(error) => Err(error),
+        },
+        "discovery_review" => match discovery_review_reply(&mut e, choice, &text) {
+            Ok(true) => {
+                if e.persistable {
+                    e.status = "discovery_planning".into();
+                    commit(&app, &mut e)?;
+                }
+                advance(&app, &mut e).await
+            }
+            Ok(false) => commit(&app, &mut e),
             Err(error) => Err(error),
         },
         "clarification" => {

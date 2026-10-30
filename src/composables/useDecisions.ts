@@ -19,6 +19,7 @@ export function useDecisions() {
         'classifying',
         'domain_planning',
         'subdomain_planning',
+        'discovery_planning',
         'clarifying',
         'dispatching',
         'pathway_planning',

@@ -40,6 +40,11 @@ export interface IntakeEntry {
     completed: string[]
     finished: boolean
   } | null
+  discovery?: {
+    phase: 'questioning' | 'drafting' | 'reviewing' | 'clarifying'
+    current: string | null
+    requireQuestion: boolean
+  } | null
   question: DecisionQuestion | null
   goal: Record<string, string> | null
   approvedGoal?: Record<string, string> | null

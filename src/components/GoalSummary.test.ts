@@ -65,3 +65,21 @@ it('distinguishes proposed changes from the saved definition during review', () 
   expect(wrapper.text()).not.toContain('Approved goal')
   wrapper.unmount()
 })
+
+it('shows a useful title and discovery origin before an Auto draft exists', () => {
+  const entry = makeEntry({
+    text: '',
+    domainMode: 'auto',
+    domain: 'physical',
+    status: 'discovery_planning',
+    goal: null,
+    approvedGoal: null,
+  })
+  const wrapper = mount(GoalSummary, { props: { entry } })
+  expect(wrapper.get('h2').text()).toBe('Physical Vitality · discovery')
+  expect(wrapper.text()).toContain('Discovering a goal')
+  expect(wrapper.get('details').text()).toContain('Discovery context')
+  expect(wrapper.get('details').text()).toContain('Started with questions about Physical Vitality.')
+  expect(wrapper.text()).not.toContain('Approved goal')
+  wrapper.unmount()
+})

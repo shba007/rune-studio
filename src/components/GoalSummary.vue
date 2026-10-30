@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { goalStatus, goalTitle } from '@/config/goalStatus'
 import type { IntakeEntry } from '@/types/decisions'
 import RuneChip from './RuneChip.vue'
+import { domainById } from '@/config/domains'
 const props = defineProps<{ entry: IntakeEntry }>()
 const goal = computed(() => props.entry.goal ?? props.entry.approvedGoal)
 const reviewing = computed(() => !!props.entry.question && !!props.entry.approvedGoal)
@@ -42,9 +43,17 @@ const facts = computed(() =>
     </div>
     <details class="text-rune-body text-rune-text-2">
       <summary class="w-fit cursor-pointer px-rune-2 py-1 hover:text-rune-ink">
-        Original request{{ reviewing ? ' & approved definition' : '' }}
+        {{ entry.domainMode === 'auto' ? 'Discovery context' : 'Original request'
+        }}{{ reviewing ? ' & approved definition' : '' }}
       </summary>
-      <p class="mx-rune-2 mt-rune-1 mb-0 whitespace-pre-wrap text-rune-text-2">{{ entry.text }}</p>
+      <p class="mx-rune-2 mt-rune-1 mb-0 whitespace-pre-wrap text-rune-text-2">
+        {{
+          entry.text ||
+          (entry.domainMode === 'auto'
+            ? `Started with questions about ${domainById(entry.domain ?? '').name}.`
+            : '')
+        }}
+      </p>
       <dl
         v-if="reviewing && entry.approvedGoal"
         class="mx-rune-2 mt-rune-2 grid gap-rune-2 sm:grid-cols-2"
