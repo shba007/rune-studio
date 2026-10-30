@@ -15,12 +15,12 @@ useIntersectionObserver(target, ([entry]) => {
   visible.value = !!entry?.isIntersecting
 })
 watch(
-  [visible, () => props.run?.id, () => props.run?.thumb],
+  [visible, () => props.run?.id, () => props.run?.thumb, () => props.run?.thumbRun],
   async () => {
     const token = ++generation
     picture.value = null
     if (!visible.value || !props.run?.thumb) return
-    const url = await flight.fileOf(props.run.thumb, props.run.id)
+    const url = await flight.fileOf(props.run.thumb, props.run.thumbRun ?? props.run.id)
     if (token === generation) picture.value = url
   },
   { immediate: true },

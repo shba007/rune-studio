@@ -256,6 +256,7 @@ pub fn run() {
             commands::set_mode,
             commands::fit_height,
             commands::pill_rect,
+            commands::set_blur_regions,
             commands::stop,
             commands::start_task,
             commands::steer,

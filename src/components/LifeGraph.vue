@@ -177,7 +177,7 @@ const dash = (percent: number | null) => `${percent ?? 0} 100`
         Open goal →
       </RuneButton>
     </nav>
-    <div class="absolute inset-0 overflow-hidden bg-rune-sunken">
+    <div class="absolute inset-0 overflow-hidden">
       <svg class="absolute inset-0 size-full" aria-hidden="true">
         <defs>
           <pattern :id="pattern" width="24" height="24" patternUnits="userSpaceOnUse">

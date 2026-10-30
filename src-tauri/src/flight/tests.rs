@@ -385,3 +385,44 @@ fn original_prompt_is_complete_and_deletion_does_not_resurrect_from_late_writes(
             .contains("Finish or stop")
     );
 }
+
+#[test]
+fn a_task_request_previews_the_final_frame_of_its_linked_run() {
+    let dir = TempDir::new();
+    let db = crate::trace::db_path(&dir.0);
+    let folder = dir.0.join("child-session");
+    std::fs::create_dir_all(folder.join("screenshots")).unwrap();
+    let first = folder.join("screenshots/001.png");
+    let last = folder.join("screenshots/002.png");
+    std::fs::write(&first, b"png").unwrap();
+    std::fs::write(&last, b"png").unwrap();
+    let rec = Recorder::start(&db);
+    rec.begin_background_run(RunInfo {
+        id: "request".into(),
+        source: "task-request".into(),
+        started_utc: "2026-10-21T10:00:00Z".into(),
+        ..Default::default()
+    });
+    rec.task_link("request", "request", 0);
+    rec.begin_background_run(RunInfo {
+        id: "child".into(),
+        source: "background-task".into(),
+        started_utc: "2026-10-21T10:00:01Z".into(),
+        session_dir: Some(folder.display().to_string()),
+        ..Default::default()
+    });
+    rec.task_link("child", "request", 1);
+    for (n, shot) in [(1, &first), (2, &last)] {
+        rec.step(StepRecord {
+            observation_path: Some(shot.display().to_string()),
+            ..StepRecord::new("child", n)
+        });
+    }
+    rec.end_run("child", "succeeded", "done");
+    rec.end_run("request", "succeeded", "done");
+    rec.flush();
+    let listed = runs(&db, 10, None).unwrap();
+    let request = listed.iter().find(|run| run.id == "request").unwrap();
+    assert_eq!(request.thumb.as_deref(), Some("screenshots/002.png"));
+    assert_eq!(request.thumb_run.as_deref(), Some("child"));
+}

@@ -44,7 +44,7 @@ const button =
 <template>
   <header
     data-tauri-drag-region
-    class="flex h-10 shrink-0 select-none items-center justify-between bg-black"
+    class="flex h-10 shrink-0 select-none items-center justify-between"
   >
     <div data-tauri-drag-region class="pointer-events-none flex items-center gap-2 pl-4">
       <img :src="LOGO" alt="" class="size-5" />

@@ -72,7 +72,7 @@ function step(delta: number) {
       v-if="open"
       role="listbox"
       :aria-label="label"
-      class="absolute top-full right-0 mt-1 flex min-w-full flex-col gap-0.5 rounded-rune-tile bg-rune-raised p-1"
+      class="glass absolute top-full right-0 mt-1 flex min-w-full flex-col gap-0.5 rounded-rune-tile bg-rune-raised p-1"
     >
       <li v-for="option in options" :key="String(option.value)" role="presentation">
         <button

@@ -2,7 +2,8 @@
 import RuneNavItem from './RuneNavItem.vue'
 import RuneButton from './RuneButton.vue'
 import { listen } from '@tauri-apps/api/event'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
+import { useNativeBlur } from '@/composables/useNativeBlur'
 import { useAgent } from '@/composables/useAgent'
 import AppIcon from './AppIcon.vue'
 import RuneNotice from './RuneNotice.vue'
@@ -196,11 +197,14 @@ onBeforeUnmount(() => {
   disposed = true
   unlisten?.()
 })
+const windowRoot = useTemplateRef<HTMLElement>('windowRoot')
+useNativeBlur(windowRoot, true)
 </script>
 
 <template>
   <main
-    class="flex h-screen flex-col overflow-hidden bg-black font-rune-reading text-rune-ink"
+    ref="windowRoot"
+    class="flex h-screen flex-col overflow-hidden font-rune-reading text-rune-ink"
     data-testid="workspace"
   >
     <TitleBar title="Workspace" />
@@ -215,7 +219,7 @@ onBeforeUnmount(() => {
     />
     <div v-show="!previewTask" class="flex min-h-0 flex-1">
       <nav
-        class="flex w-64 shrink-0 flex-col gap-1 bg-rune-sunken p-4 pt-6"
+        class="glass flex w-64 shrink-0 flex-col gap-1 bg-rune-sunken p-4 pt-6"
         aria-label="Workspace sections"
       >
         <RuneNavItem

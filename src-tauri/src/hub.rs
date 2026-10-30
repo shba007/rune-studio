@@ -43,6 +43,7 @@ pub fn open(app: &AppHandle, section: Option<&str>) -> tauri::Result<()> {
         .resizable(true)
         .always_on_top(true)
         .decorations(false)
+        .transparent(true)
         .center()
         .build()?;
     crate::window::protect(&window)?;

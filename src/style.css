@@ -14,10 +14,11 @@
   --spacing-rune-1: 0.5rem;
   --spacing-rune-2: 1rem;
   --spacing-rune-3: 1.5rem;
-  --color-rune-surface: #141414;
-  --color-rune-raised: #1d1d1d;
+  /* Glass: translucent fills over the ambient backdrop; blur is added by the glass utility. */
+  --color-rune-surface: rgb(255 255 255 / 0.055);
+  --color-rune-raised: rgb(255 255 255 / 0.1);
   --color-rune-ink: #f1f1ef;
-  --color-rune-sunken: #101010;
+  --color-rune-sunken: rgb(0 0 0 / 0.3);
   --color-rune-text-2: rgb(241 241 239 / 0.72);
   --color-rune-text-3: rgb(241 241 239 / 0.55);
   --color-rune-outline: transparent;
@@ -52,6 +53,10 @@
     outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
+}
+
+@utility glass {
+  backdrop-filter: blur(20px) saturate(1.5);
 }
 
 @utility icon-sm {
@@ -130,10 +135,50 @@ input {
 .overlay-view #__vue-devtools-container__ {
   display: none !important;
 }
-.flight-view,
-.flight-view body,
-.flight-view #app {
-  background: #141414;
+/* The floating pill window is transparent over the desktop, so its glass needs denser tints to stay legible. */
+html:not(.flight-view) {
+  --color-rune-surface: rgb(24 24 28 / 0.94);
+  --color-rune-raised: rgb(38 38 44 / 0.94);
+  --color-rune-sunken: rgb(14 14 16 / 0.94);
+}
+
+html.native-blur {
+  --color-rune-surface: rgb(36 38 46 / 0.72);
+  --color-rune-raised: rgb(52 54 64 / 0.78);
+  --color-rune-sunken: rgb(12 12 16 / 0.7);
+}
+
+html.flight-view {
+  --text-rune-title: 1.5rem;
+  --text-rune-title--line-height: 2rem;
+  --text-rune-subtitle: 1.125rem;
+  --text-rune-subtitle--line-height: 1.75rem;
+  --text-rune-body: 1rem;
+  --text-rune-body--line-height: 1.5rem;
+  --text-rune-caption: 0.875rem;
+  --text-rune-caption--line-height: 1.25rem;
+  --text-rune-heading: 0.75rem;
+  --text-rune-heading--line-height: 1rem;
+}
+.flight-view {
+  background: #0a0b0e;
+}
+html.native-blur.flight-view {
+  background: transparent;
+}
+html.native-blur.flight-view #app > main {
+  border-radius: var(--radius-rune-tile);
+  background: rgb(14 15 20 / 0.5);
+}
+
+@layer components {
+  [class*='bg-rune-surface'],
+  [class*='bg-rune-raised'],
+  [class*='bg-rune-sunken'] {
+    box-shadow:
+      inset 1px 1px 0 rgb(255 255 255 / 0.07),
+      0 2px 12px rgb(0 0 0 / 0.14);
+  }
 }
 .flight-view pre,
 .flight-view dd,

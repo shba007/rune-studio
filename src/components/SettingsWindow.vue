@@ -2,7 +2,8 @@
 import RuneNavItem from './RuneNavItem.vue'
 import { listen } from '@tauri-apps/api/event'
 import { useDebounceFn } from '@vueuse/core'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
+import { useNativeBlur } from '@/composables/useNativeBlur'
 
 import { useAgent } from '@/composables/useAgent'
 import type { IconName } from '@/icons'
@@ -105,17 +106,20 @@ watch(
 onBeforeUnmount(() => {
   if (!saved.value) void save()
 })
+const windowRoot = useTemplateRef<HTMLElement>('windowRoot')
+useNativeBlur(windowRoot, true)
 </script>
 
 <template>
   <main
-    class="flex h-screen flex-col overflow-hidden bg-black font-rune-reading text-rune-ink"
+    ref="windowRoot"
+    class="flex h-screen flex-col overflow-hidden font-rune-reading text-rune-ink"
     data-testid="settings"
   >
     <TitleBar title="Settings" controls="close" />
     <div class="flex min-h-0 flex-1">
       <nav
-        class="flex w-64 shrink-0 flex-col gap-1 bg-rune-sunken p-4 pt-6"
+        class="glass flex w-64 shrink-0 flex-col gap-1 bg-rune-sunken p-4 pt-6"
         aria-label="Settings sections"
       >
         <div class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">

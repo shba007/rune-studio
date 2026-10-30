@@ -11,6 +11,7 @@ export interface FlightRun {
   steps: number
   verdict: string | null
   thumb: string | null
+  thumbRun?: string | null
 }
 
 export interface FlightVideo {

@@ -46,6 +46,7 @@ fn open_view(app: &AppHandle, section: Option<&str>, run: Option<&str>) -> tauri
         .resizable(true)
         .always_on_top(true)
         .decorations(false)
+        .transparent(true)
         .center()
         .build()?;
     crate::window::protect(&window)?;

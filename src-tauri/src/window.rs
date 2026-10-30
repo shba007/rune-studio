@@ -188,6 +188,68 @@ fn resize_keeping_corner(app: &AppHandle, width: Option<f64>, height: f64) -> ta
     }
 }
 
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct BlurRegion {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub radius: f64,
+}
+
+#[cfg(windows)]
+pub fn set_blur_regions(
+    window: &WebviewWindow,
+    regions: &[BlurRegion],
+    clip: bool,
+) -> tauri::Result<bool> {
+    use windows::Win32::Graphics::Gdi::{
+        CombineRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject, RGN_OR, SetWindowRgn,
+    };
+
+    let scale = window.scale_factor()?;
+    let px = |value: f64| (value * scale).round() as i32;
+    let valid: Vec<_> = regions
+        .iter()
+        .filter(|r| r.width >= 1.0 && r.height >= 1.0)
+        .collect();
+    if clip && valid.is_empty() {
+        return Ok(false);
+    }
+    window_vibrancy::apply_acrylic(window, Some((16, 17, 22, 40)))
+        .map_err(|error| tauri::Error::Io(std::io::Error::other(error.to_string())))?;
+    let hwnd = window.hwnd()?;
+    unsafe {
+        if !clip {
+            let _ = SetWindowRgn(hwnd, None, true);
+            return Ok(true);
+        }
+        let combined = CreateRectRgn(0, 0, 0, 0);
+        for region in &valid {
+            let (left, top) = (px(region.x), px(region.y));
+            let (right, bottom) = (px(region.x + region.width), px(region.y + region.height));
+            let corner = px(region.radius * 2.0).max(1);
+            let shape = CreateRoundRectRgn(left, top, right + 1, bottom + 1, corner, corner);
+            CombineRgn(Some(combined), Some(combined), Some(shape), RGN_OR);
+            let _ = DeleteObject(shape.into());
+        }
+        if SetWindowRgn(hwnd, Some(combined), true) == 0 {
+            let _ = DeleteObject(combined.into());
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+#[cfg(not(windows))]
+pub fn set_blur_regions(
+    _window: &WebviewWindow,
+    _regions: &[BlurRegion],
+    _clip: bool,
+) -> tauri::Result<bool> {
+    Ok(false)
+}
+
 pub fn set_click_through(app: &AppHandle, enabled: bool) {
     if let Some(window) = main_window(app)
         && let Err(err) = window.set_ignore_cursor_events(enabled)

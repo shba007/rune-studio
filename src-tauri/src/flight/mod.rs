@@ -23,6 +23,7 @@ pub struct FlightRun {
     pub steps: i64,
     pub verdict: Option<String>,
     pub thumb: Option<String>,
+    pub thumb_run: Option<String>,
     pub active: bool,
 }
 
@@ -106,9 +107,14 @@ pub fn runs(db: &Path, limit: usize, before: Option<&str>) -> Result<Vec<FlightR
         .filter(|row| before.is_none_or(|cut| row.started_utc.as_deref().is_some_and(|s| s < cut)))
         .take(limit)
         .map(|row| FlightRun {
+            thumb_run: row
+                .shot_run
+                .clone()
+                .filter(|run| run != &row.id && row.session_dir.is_none()),
             thumb: row
                 .session_dir
                 .as_deref()
+                .or(row.shot_dir.as_deref())
                 .zip(row.last_shot.as_deref())
                 .and_then(|(dir, shot)| files::relative_to(Path::new(dir), shot))
                 .or_else(|| {

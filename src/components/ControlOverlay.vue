@@ -730,7 +730,7 @@ onBeforeUnmount(() => {
     <Transition name="bubble">
       <div
         v-if="bubble"
-        class="absolute w-[280px] rounded-rune-control bg-black/85 px-rune-2 py-rune-1 font-rune-reading text-white"
+        class="absolute w-[280px] rounded-rune-control bg-rune-surface px-rune-2 py-rune-1 font-rune-reading text-white"
         :style="bubbleStyle"
       >
         <div class="flex items-center gap-2">
@@ -758,7 +758,7 @@ onBeforeUnmount(() => {
         >
           {{ bubble.text }}
         </p>
-        <span class="absolute right-6 -bottom-1 size-2 rotate-45 bg-black/85" />
+        <span class="absolute right-6 -bottom-1 size-2 rotate-45 bg-rune-surface shadow-none" />
       </div>
     </Transition>
   </div>

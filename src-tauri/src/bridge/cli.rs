@@ -1613,6 +1613,8 @@ mod tests {
             verdict: None,
             session_dir: None,
             last_shot: None,
+            shot_run: None,
+            shot_dir: None,
         }
     }
 

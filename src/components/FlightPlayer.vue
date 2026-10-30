@@ -383,7 +383,7 @@ const verdictLine = computed(() => {
 
 <template>
   <main
-    class="flex min-h-0 flex-col overflow-hidden bg-black text-rune-ink"
+    class="flex min-h-0 flex-col overflow-hidden text-rune-ink"
     :class="embedded ? 'h-full flex-1' : 'h-screen'"
     data-testid="flight"
   >

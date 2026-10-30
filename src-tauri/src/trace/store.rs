@@ -246,6 +246,8 @@ pub struct RunSummary {
     pub verdict: Option<String>,
     pub session_dir: Option<String>,
     pub last_shot: Option<String>,
+    pub shot_run: Option<String>,
+    pub shot_dir: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -345,7 +347,9 @@ fn list_runs_filtered(
     };
     let mut statement = db.prepare(&format!(
         "SELECT r.id, r.started_utc, r.ended_utc, r.source, r.outcome, r.task, (SELECT COUNT(*) FROM steps s WHERE {step_filter}), {verdict}, r.session_dir,
-                (SELECT s.observation_path FROM steps s WHERE s.run_id = r.id AND s.observation_path IS NOT NULL ORDER BY s.step DESC LIMIT 1)
+                (SELECT s.observation_path FROM steps s WHERE {step_filter} AND s.observation_path IS NOT NULL ORDER BY s.started_utc DESC, s.step DESC LIMIT 1),
+                (SELECT s.run_id FROM steps s WHERE {step_filter} AND s.observation_path IS NOT NULL ORDER BY s.started_utc DESC, s.step DESC LIMIT 1),
+                (SELECT x.session_dir FROM runs x WHERE x.id = (SELECT s.run_id FROM steps s WHERE {step_filter} AND s.observation_path IS NOT NULL ORDER BY s.started_utc DESC, s.step DESC LIMIT 1))
          FROM runs r {filter} ORDER BY r.started_utc DESC, r.rowid DESC LIMIT ?1"
     ))?;
     let rows = statement.query_map([i64::try_from(limit).unwrap_or(i64::MAX)], |row| {
@@ -360,6 +364,8 @@ fn list_runs_filtered(
             verdict: row.get(7)?,
             session_dir: row.get(8)?,
             last_shot: row.get(9)?,
+            shot_run: row.get(10)?,
+            shot_dir: row.get(11)?,
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)

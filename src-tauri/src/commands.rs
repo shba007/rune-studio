@@ -355,6 +355,21 @@ pub fn fit_height(app: AppHandle, height: f64) -> AppResult<()> {
 }
 
 #[tauri::command]
+pub fn set_blur_regions(
+    window: tauri::WebviewWindow,
+    regions: Vec<window::BlurRegion>,
+    clip: bool,
+) -> bool {
+    match window::set_blur_regions(&window, &regions, clip) {
+        Ok(active) => active,
+        Err(err) => {
+            log::warn!("could not apply background blur: {err}");
+            false
+        }
+    }
+}
+
+#[tauri::command]
 pub fn set_mode(app: AppHandle, mode: window::Mode) -> AppResult<()> {
     Ok(window::set_mode(&app, mode)?)
 }

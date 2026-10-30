@@ -9,7 +9,7 @@ defineEmits<{ close: [] }>()
 <template>
   <aside
     :aria-label="label"
-    class="@container flex w-[28rem] max-w-[55%] shrink-0 flex-col overflow-y-auto bg-rune-sunken"
+    class="glass @container flex w-[28rem] max-w-[55%] shrink-0 flex-col overflow-y-auto bg-rune-sunken"
     data-testid="peek"
   >
     <header

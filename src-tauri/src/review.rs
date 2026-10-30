@@ -140,6 +140,8 @@ mod tests {
             verdict: None,
             session_dir: None,
             last_shot: None,
+            shot_run: None,
+            shot_dir: None,
         };
         let selected = latest_reviewable(vec![
             row("background-task"),

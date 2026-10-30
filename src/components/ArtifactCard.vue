@@ -38,7 +38,7 @@ async function copyPrompt() {
 const { stop } = useIntersectionObserver(card, async ([entry]) => {
   if (!entry?.isIntersecting) return
   stop()
-  picture.value = await flight.fileOf(props.run.thumb, props.run.id)
+  picture.value = await flight.fileOf(props.run.thumb, props.run.thumbRun ?? props.run.id)
   failed.value = picture.value === null
 })
 

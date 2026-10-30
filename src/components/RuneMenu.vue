@@ -39,7 +39,7 @@ function pick(id: string) {
       v-if="open"
       role="menu"
       :aria-label="label"
-      class="absolute top-full right-0 m-0 mt-1 flex min-w-52 list-none flex-col gap-0.5 rounded-rune-tile bg-rune-raised p-1"
+      class="glass absolute top-full right-0 m-0 mt-1 flex min-w-52 list-none flex-col gap-0.5 rounded-rune-tile bg-rune-raised p-1"
     >
       <li v-for="item in items" :key="item.id" role="presentation">
         <button
