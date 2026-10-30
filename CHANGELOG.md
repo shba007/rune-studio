@@ -1,5 +1,47 @@
 # Changelog
 
+## v0.5.0
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.4.0...v0.5.0)
+
+### 🚀 Enhancements
+
+- Introduce goals workspace and enhance composer commands ([bf87ce2](https://github.com/shba007/rune-studio/commit/bf87ce2))
+- Add decision-making components and logic ([6dfeee2](https://github.com/shba007/rune-studio/commit/6dfeee2))
+- Add personalitiespanel component with personality management features ([db597cd](https://github.com/shba007/rune-studio/commit/db597cd))
+- Enhance workspace functionality with new decision pathways and task management ([36f4177](https://github.com/shba007/rune-studio/commit/36f4177))
+- Enhance task management and UI components ([107ab1b](https://github.com/shba007/rune-studio/commit/107ab1b))
+- Add task proposal functionality and improve scheduling ([8a3d900](https://github.com/shba007/rune-studio/commit/8a3d900))
+- Introduce connection management for api interactions ([75dfd09](https://github.com/shba007/rune-studio/commit/75dfd09))
+- Add output limit and model selection features to connection management ([6ca4ba8](https://github.com/shba007/rune-studio/commit/6ca4ba8))
+- Implement model activity tracking and enhance thinking event handling ([5c77be0](https://github.com/shba007/rune-studio/commit/5c77be0))
+- Implement local execution verification and classification discovery ([eda97b4](https://github.com/shba007/rune-studio/commit/eda97b4))
+- Add quiet mode to DecisionInbox and update related messaging ([ace132c](https://github.com/shba007/rune-studio/commit/ace132c))
+- Refactor settings components to use RuneChoice and HubToggle for improved UI consistency ([9531be3](https://github.com/shba007/rune-studio/commit/9531be3))
+- Implement desktop task merging logic in Plan struct for improved task management ([1e90787](https://github.com/shba007/rune-studio/commit/1e90787))
+- Enhance WorkspaceTaskTimeline with filtering and improved UI components ([fb06592](https://github.com/shba007/rune-studio/commit/fb06592))
+- Update flight components for improved ui and functionality, enhanced button interactions ([d464f99](https://github.com/shba007/rune-studio/commit/d464f99))
+- Add NewGoalForm component and related tests ([421d3d9](https://github.com/shba007/rune-studio/commit/421d3d9))
+- Introduce goal domains and enhance goal management features ([85122c8](https://github.com/shba007/rune-studio/commit/85122c8))
+- Implement domain suggestion and confirmation process in intake workflow ([f4de49f](https://github.com/shba007/rune-studio/commit/f4de49f))
+- Refactor workspace sections to include 'life' and 'mindsets' ([e2cdde2](https://github.com/shba007/rune-studio/commit/e2cdde2))
+- Add native blur effect and enhance UI with glassmorphism styles ([8cd9d1a](https://github.com/shba007/rune-studio/commit/8cd9d1a))
+- Add LifeSetup component for goal domain setup and integrate with WorkspaceWindow ([738f15b](https://github.com/shba007/rune-studio/commit/738f15b))
+- Enhance Windows build process with manifest embedding for MSVC ([2bad69b](https://github.com/shba007/rune-studio/commit/2bad69b))
+
+### 💅 Refactors
+
+- Terminology from "session" to "task" across the codebase ([e301ce8](https://github.com/shba007/rune-studio/commit/e301ce8))
+- Rename "Goals & Tasks" to "Knowledge" and update related functionality ([ba01bd2](https://github.com/shba007/rune-studio/commit/ba01bd2))
+- Update component styles to use new rune design tokens ([383b436](https://github.com/shba007/rune-studio/commit/383b436))
+- Rename Knowledge to Workspace across the application ([770fd47](https://github.com/shba007/rune-studio/commit/770fd47))
+- Update component styles to enhance accessibility and visual consistency ([c97b4d3](https://github.com/shba007/rune-studio/commit/c97b4d3))
+- Replace button components with RuneButton and RuneIconButton across various components ([752c159](https://github.com/shba007/rune-studio/commit/752c159))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+
 ## v0.4.0
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.3.0...v0.4.0)
