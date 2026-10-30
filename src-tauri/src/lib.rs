@@ -17,6 +17,7 @@ mod eval;
 mod events;
 mod exec;
 mod flight;
+mod goal_domains;
 mod hotkeys;
 mod hub;
 mod intake;
@@ -285,6 +286,7 @@ pub fn run() {
             crate::intake::decision_propose_tasks,
             crate::intake::decision_review_task,
             crate::intake::workspace_new_goal,
+            crate::intake::workspace_goal_modes,
             crate::intake::goal_measurement,
             workspace_tasks::workspace_tasks_state,
             workspace_tasks::workspace_task_create,

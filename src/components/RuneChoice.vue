@@ -47,7 +47,7 @@ function step(delta: number) {
       role="radio"
       :aria-checked="option.value === model"
       :selected="option.value === model"
-      :disabled="disabled"
+      :disabled="disabled || option.disabled"
       @click="model = option.value"
     >
       {{ option.label }}

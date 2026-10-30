@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { invoke } from '@tauri-apps/api/core'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { DOMAINS, domainById, suggestDomain } from '@/config/domains'
 import { useDomainPrefs } from '@/composables/useDomainPrefs'
 import HubRow from './HubRow.vue'
@@ -11,7 +11,7 @@ import RuneNotice from './RuneNotice.vue'
 import RuneSwitch from './RuneSwitch.vue'
 
 const emit = defineEmits<{ close: []; saved: [kind: 'goal', id?: string] }>()
-const { showSanctuary, overrides, subDomains } = useDomainPrefs()
+const { showSanctuary } = useDomainPrefs()
 
 const mode = ref<'manual' | 'auto'>('manual')
 const text = ref('')
@@ -53,6 +53,8 @@ const field =
   'min-w-0 rounded-rune-tile bg-rune-sunken px-rune-2 font-rune-reading text-rune-body text-rune-ink placeholder:text-rune-text-3 [color-scheme:dark]'
 
 function toggle(id: string, on: boolean) {
+  // Selecting a sub-domain explicitly accepts its displayed parent domain.
+  if (on && !domain.value && effective.value) domain.value = effective.value.id
   picked.value = on ? [...new Set([...picked.value, id])] : picked.value.filter((x) => x !== id)
 }
 function changeDomain(value: string) {
@@ -60,18 +62,21 @@ function changeDomain(value: string) {
   picked.value = []
 }
 function changeMode(value: 'manual' | 'auto') {
+  if (value === 'auto' && !autoReady.value) return
   mode.value = value
-  if (value === 'auto' && !domain.value) domain.value = visible.value[0]?.id ?? ''
   if (value === 'manual') picked.value = []
 }
 
 onMounted(async () => {
   try {
     autoReady.value = (await invoke<string[]>('workspace_goal_modes')).includes('auto')
-    if (autoReady.value) changeMode('auto')
   } catch {
     autoReady.value = false
   }
+})
+
+watch(showSanctuary, () => {
+  if (domain.value && !visible.value.some((item) => item.id === domain.value)) changeDomain('')
 })
 
 async function submit() {
@@ -87,10 +92,12 @@ async function submit() {
             mode: 'auto',
             subDomains: picked.value,
           })
-        : await invoke<string>('workspace_new_goal', { text: text.value })
-    if (effective.value && (domain.value || mode.value === 'auto'))
-      overrides.value = { ...overrides.value, [id]: effective.value.id }
-    if (picked.value.length) subDomains.value = { ...subDomains.value, [id]: picked.value }
+        : await invoke<string>('workspace_new_goal', {
+            text: text.value,
+            domain: domain.value || null,
+            mode: 'manual',
+            subDomains: picked.value,
+          })
     emit('saved', 'goal', id)
   } catch (e) {
     error.value = String(e)
@@ -173,7 +180,7 @@ async function submit() {
           :label="`${item.number} ${item.name}`"
           :hint="
             item.id === effective.subDomains[0]?.id
-              ? 'Optional. Choose the parts that matter; Rune decides when none are chosen.'
+              ? 'Optional. Choosing a part also confirms the displayed domain. Leave all off if unsure.'
               : undefined
           "
         >

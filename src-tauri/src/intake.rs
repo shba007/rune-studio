@@ -47,6 +47,14 @@ pub struct Entry {
     status: String,
     #[serde(default)]
     category: String,
+    #[serde(default)]
+    domain: Option<String>,
+    #[serde(default)]
+    domain_source: Option<String>,
+    #[serde(default)]
+    domain_mode: Option<String>,
+    #[serde(default)]
+    sub_domains: Vec<crate::goal_domains::SubDomainSelection>,
     question: Option<Question>,
     answers: Vec<Value>,
     goal: Option<Value>,
@@ -331,7 +339,7 @@ async fn classify(app: &AppHandle, e: &mut Entry) -> Result<(), String> {
         app,
         e,
         include_str!("../prompts/intake/classify.md"),
-        &json!({"input":e.text,"answers":e.answers}),
+        &json!({"input":e.text,"answers":e.answers,"domain":e.domain,"subDomains":e.sub_domains}),
         &schema,
         true,
     )
@@ -490,7 +498,7 @@ async fn clarify(app: &AppHandle, e: &mut Entry) -> Result<(), String> {
         app,
         e,
         include_str!("../prompts/intake/clarify.md"),
-        &json!({"input":e.text,"answers":e.answers,"draft":e.goal}),
+        &json!({"input":e.text,"answers":e.answers,"draft":e.goal,"domain":e.domain,"subDomains":e.sub_domains}),
         &schema,
         false,
     )
@@ -623,7 +631,7 @@ pub fn submit_voice(
     keep_mic: bool,
     voice_wav: Vec<u8>,
 ) -> Result<u64, String> {
-    submit_intent(app, text, keep_mic, voice_wav, None, None)
+    submit_intent(app, text, keep_mic, voice_wav, None, None, None)
 }
 fn submit_intent(
     app: &AppHandle,
@@ -632,6 +640,7 @@ fn submit_intent(
     voice_wav: Vec<u8>,
     requested_kind: Option<String>,
     supplied_id: Option<String>,
+    selection: Option<crate::goal_domains::Selection>,
 ) -> Result<u64, String> {
     if text.trim().is_empty() || text.chars().count() > 4000 {
         return Err("Enter a request of 1 to 4000 characters".into());
@@ -655,6 +664,13 @@ fn submit_intent(
         class: DataClass::General,
         kind: requested_kind.clone().unwrap_or_default(),
         category: String::new(),
+        domain_source: selection
+            .as_ref()
+            .and_then(|s| s.domain.as_ref())
+            .map(|_| "user".into()),
+        domain_mode: selection.as_ref().map(|_| "manual".into()),
+        domain: selection.as_ref().and_then(|s| s.domain.clone()),
+        sub_domains: selection.map(|s| s.sub_domains).unwrap_or_default(),
         status: "classifying".into(),
         question: None,
         answers: Vec::new(),
@@ -769,6 +785,10 @@ mod tests {
             text: "SENSITIVE_GOAL_CANARY".into(),
             class,
             category: "fitness".into(),
+            domain: None,
+            domain_source: None,
+            domain_mode: None,
+            sub_domains: vec![],
             kind: "goal".into(),
             status: "clarification".into(),
             question: Some(Question {
@@ -798,11 +818,37 @@ mod tests {
         }
     }
     #[test]
+    fn legacy_entries_decode_without_domain_metadata() {
+        let original = sample(DataClass::Mind);
+        let mut value = serde_json::to_value(&original).unwrap();
+        for key in ["domain", "domainSource", "domainMode", "subDomains"] {
+            value.as_object_mut().unwrap().remove(key);
+        }
+        let restored: Entry = serde_json::from_value(value).unwrap();
+        assert!(restored.domain.is_none());
+        assert!(restored.domain_source.is_none());
+        assert!(restored.domain_mode.is_none());
+        assert!(restored.sub_domains.is_empty());
+        assert_eq!(restored.answers, original.answers);
+        assert_eq!(restored.class, original.class);
+        assert_eq!(restored.status, original.status);
+        assert_eq!(workspace_goal_modes(), vec!["manual"]);
+    }
+
+    #[test]
     fn protected_questions_require_consent_and_restore_without_plaintext_bodies() {
         for class in DataClass::all() {
             let path = std::env::temp_dir().join(format!("rune-intake-{}.sqlite3", uid().unwrap()));
             let store = LifeStore::open(&path, LifeCrypto::in_memory_random()).unwrap();
             let mut e = sample(*class);
+            e.domain = Some("physical".into());
+            e.domain_source = Some("user".into());
+            e.domain_mode = Some("manual".into());
+            e.sub_domains = vec![crate::goal_domains::SubDomainSelection {
+                id: "cardiorespiratory-capacity".into(),
+                answers: vec![json!({"answer":"SUBDOMAIN_CANARY"})],
+                skipped: false,
+            }];
             e.voice_wav = b"VOICE_BYTES_MUST_REMAIN_EPHEMERAL".to_vec();
             e.pathways = Some(crate::intake_pathways::PathwaySet {
                 assessment: "PATHWAY_CANARY".into(),
@@ -833,6 +879,10 @@ mod tests {
             assert_eq!(restored.question.unwrap().revision, 1);
             assert_eq!(restored.answers, e.answers);
             assert_eq!(restored.text, e.text);
+            assert_eq!(restored.domain, e.domain);
+            assert_eq!(restored.domain_source, e.domain_source);
+            assert_eq!(restored.domain_mode, e.domain_mode);
+            assert_eq!(restored.sub_domains, e.sub_domains);
             assert!(restored.voice_wav.is_empty());
             assert_eq!(
                 restored.task_proposals.as_ref().unwrap().assessment,
@@ -944,7 +994,23 @@ fn ready_goal(app: &AppHandle, id: &str, revision: u64) -> Result<Entry, String>
     Ok(e)
 }
 #[tauri::command]
-pub fn workspace_new_goal(app: AppHandle, text: String) -> Result<String, String> {
+pub fn workspace_goal_modes() -> Vec<String> {
+    vec!["manual".into()]
+}
+#[tauri::command]
+pub fn workspace_new_goal(
+    app: AppHandle,
+    text: Option<String>,
+    domain: Option<String>,
+    mode: Option<String>,
+    sub_domains: Option<Vec<String>>,
+) -> Result<String, String> {
+    let selection = crate::goal_domains::Selection::manual(
+        mode.as_deref(),
+        domain,
+        sub_domains.unwrap_or_default(),
+    )?;
+    let text = text.ok_or("Enter a goal for Manual creation")?;
     let id = uid()?;
     submit_intent(
         &app,
@@ -953,6 +1019,7 @@ pub fn workspace_new_goal(app: AppHandle, text: String) -> Result<String, String
         vec![],
         Some("goal".into()),
         Some(id.clone()),
+        Some(selection),
     )?;
     Ok(id)
 }

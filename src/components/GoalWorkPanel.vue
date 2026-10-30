@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import RuneButton from './RuneButton.vue'
 import { invoke } from '@tauri-apps/api/core'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { IntakeEntry } from '@/types/decisions'
 import type { WorkspaceTasksModel } from '@/composables/useWorkspaceTasks'
 import { planProgress, outcomeProgress } from '@/config/workspaceProgress'
 import WorkProgress from './WorkProgress.vue'
 import WorkRow from './WorkRow.vue'
+import { domainOf } from '@/config/domains'
+import { useDomainPrefs } from '@/composables/useDomainPrefs'
 const props = defineProps<{ entry: IntakeEntry; workspace: WorkspaceTasksModel }>()
 const emit = defineEmits<{
   refresh: []
@@ -19,6 +21,13 @@ const children = computed(() =>
 )
 const plan = computed(() => planProgress(children.value))
 const editing = ref(false)
+const { showSanctuary, overrides } = useDomainPrefs()
+const trackingVisible = computed(
+  () => showSanctuary.value || domainOf(props.entry, overrides.value).zone === 'engine',
+)
+watch(trackingVisible, (visible) => {
+  if (!visible) editing.value = false
+})
 const baseline = ref('')
 const current = ref('')
 const target = ref('')
@@ -38,7 +47,7 @@ function edit() {
   editing.value = !editing.value
 }
 async function save() {
-  if (pending.value) return
+  if (pending.value || !trackingVisible.value) return
   pending.value = true
   error.value = ''
   try {
@@ -68,7 +77,7 @@ async function save() {
 </script>
 <template>
   <section aria-label="Goal progress and tasks" class="@container flex flex-col gap-rune-2">
-    <div class="grid gap-0.5 @md:grid-cols-2">
+    <div v-if="trackingVisible" class="grid gap-0.5 @md:grid-cols-2">
       <div
         class="bg-rune-surface px-rune-2 py-rune-2 max-[28rem]:first:rounded-t-rune-tile @md:rounded-l-rune-tile"
       >
@@ -97,6 +106,7 @@ async function save() {
         + Add task
       </RuneButton>
       <RuneButton
+        v-if="trackingVisible"
         variant="secondary"
         size="sm"
         :disabled="entry.status !== 'goal_ready'"
@@ -119,7 +129,7 @@ async function save() {
       />
     </div>
     <form
-      v-if="editing"
+      v-if="editing && trackingVisible"
       class="grid gap-rune-2 rounded-rune-tile bg-rune-surface p-rune-2 sm:grid-cols-3"
       aria-label="Record goal outcome"
       @submit.prevent="save"

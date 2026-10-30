@@ -8,21 +8,23 @@ import RuneButton from './RuneButton.vue'
 
 const props = defineProps<{ entries: IntakeEntry[] }>()
 const emit = defineEmits<{ open: [] }>()
-const { overrides } = useDomainPrefs()
+const { overrides, showSanctuary } = useDomainPrefs()
 
 const dots = computed(() => {
   const goals = props.entries.filter((entry) => entry.kind === 'goal' && entry.approvedGoal)
-  return DOMAINS.filter((domain) => domain.zone === 'engine').map((domain) => {
-    const own = goals.filter((entry) => domainOf(entry, overrides.value).id === domain.id)
-    const measured = own
-      .map((entry) => outcomeProgress(entry.outcomeMetric))
-      .filter((value): value is number => value !== null)
-    const percent = measured.length
-      ? Math.round(measured.reduce((sum, value) => sum + value, 0) / measured.length)
-      : null
-    const level = !own.length ? 0.14 : percent === null ? 0.4 : 0.4 + (0.6 * percent) / 100
-    return { id: domain.id, name: domain.name, goals: own.length, percent, level }
-  })
+  return DOMAINS.filter((domain) => showSanctuary.value || domain.zone === 'engine').map(
+    (domain) => {
+      const own = goals.filter((entry) => domainOf(entry, overrides.value).id === domain.id)
+      const measured = own
+        .map((entry) => outcomeProgress(entry.outcomeMetric))
+        .filter((value): value is number => value !== null)
+      const percent = measured.length
+        ? Math.round(measured.reduce((sum, value) => sum + value, 0) / measured.length)
+        : null
+      const level = !own.length ? 0.14 : percent === null ? 0.4 : 0.4 + (0.6 * percent) / 100
+      return { id: domain.id, name: domain.name, goals: own.length, percent, level }
+    },
+  )
 })
 const active = computed(() => dots.value.some((dot) => dot.goals > 0))
 const weakest = computed(() => {

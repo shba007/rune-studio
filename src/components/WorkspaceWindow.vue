@@ -41,20 +41,26 @@ const approvedGoals = computed(() =>
   decisions.entries.value.filter((goal) => goal.kind === 'goal' && goal.approvedGoal),
 )
 const focusGoalId = ref<string | null>(null)
-const { overrides } = useDomainPrefs()
+const { overrides, showSanctuary } = useDomainPrefs()
+const focusGoal = computed(() =>
+  decisions.entries.value.find((item) => item.id === focusGoalId.value),
+)
 const focusDomain = computed(() => {
-  const entry = decisions.entries.value.find((item) => item.id === focusGoalId.value)
+  const entry = focusGoal.value
   return entry ? domainOf(entry, overrides.value) : null
 })
 const domainOptions = computed(() => [
   { value: '', label: `Automatic · ${focusDomain.value?.name ?? 'Unassigned'}` },
-  ...DOMAINS.map((domain) => ({ value: domain.id, label: domain.name })),
+  ...DOMAINS.filter((domain) => showSanctuary.value || domain.zone === 'engine').map((domain) => ({
+    value: domain.id,
+    label: domain.name,
+  })),
 ])
 const domainChoice = computed({
   get: () => (focusGoalId.value && overrides.value[focusGoalId.value]) || '',
   set: (value: string) => {
     const id = focusGoalId.value
-    if (!id) return
+    if (!id || focusGoal.value?.domain != null) return
     const next = { ...overrides.value }
     if (value) next[id] = value
     else delete next[id]
@@ -248,12 +254,17 @@ onBeforeUnmount(() => {
         </div>
       </section>
       <PeekPanel
-        v-if="section === 'goals' && focusGoalId"
+        v-if="
+          section === 'goals' && focusGoalId && (showSanctuary || focusDomain?.zone !== 'sanctuary')
+        "
         label="Goal details"
         @close="focusGoalId = null"
       >
         <template #header>
-          <RuneChoice v-model="domainChoice" label="Domain" menu :options="domainOptions" />
+          <span v-if="focusGoal?.domain != null" class="text-rune-caption text-rune-text-2">{{
+            focusDomain?.name
+          }}</span>
+          <RuneChoice v-else v-model="domainChoice" label="Domain" menu :options="domainOptions" />
         </template>
         <DecisionInbox
           goals-only

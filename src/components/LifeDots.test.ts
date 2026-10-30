@@ -28,7 +28,7 @@ it('shows nothing until a goal exists', () => {
   expect(wrapper.find('[data-testid="life-dots"]').exists()).toBe(false)
 })
 
-it('shows only the six Engine domains, brighter with progress, and opens Goals', async () => {
+it('shows only the five Engine domains, brighter with progress, and opens Goals', async () => {
   const entries = [
     goal('a', 'Run 5 km', { class: 'health', outcomeMetric: metric(8) }),
     goal('b', 'Save money', { class: 'finance', outcomeMetric: metric(2) }),
@@ -39,7 +39,6 @@ it('shows only the six Engine domains, brighter with progress, and opens Goals',
   expect(dots.map((dot) => dot.attributes('data-dot'))).toEqual([
     'physical',
     'emotional',
-    'cognitive',
     'career',
     'financial',
     'environment',
@@ -54,4 +53,19 @@ it('shows only the six Engine domains, brighter with progress, and opens Goals',
   )
   await wrapper.get('[data-testid="life-dots"]').trigger('click')
   expect(wrapper.emitted('open')).toHaveLength(1)
+  wrapper.unmount()
+})
+
+it('shows Sanctuary progress dots only when the Settings switch is enabled', () => {
+  const entries = [goal('c', 'Learn Rust', { domain: 'cognitive', outcomeMetric: metric(5) })]
+  const hidden = mount(LifeDots, { props: { entries } })
+  expect(hidden.find('[data-testid="life-dots"]').exists()).toBe(false)
+  hidden.unmount()
+  localStorage.setItem('rune.showSanctuary', 'true')
+  const shown = mount(LifeDots, { props: { entries } })
+  expect(shown.findAll('[data-dot]')).toHaveLength(12)
+  expect(shown.get('[data-testid="life-dots"]').attributes('aria-label')).toContain(
+    'Cognitive & Intellectual Capital: 50%',
+  )
+  shown.unmount()
 })

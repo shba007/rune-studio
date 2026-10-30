@@ -29,6 +29,10 @@ export interface IntakeEntry {
   kind: string
   status: string
   category?: string
+  domain?: string | null
+  domainSource?: 'user' | 'auto' | null
+  domainMode?: 'manual' | 'auto' | null
+  subDomains?: { id: string; answers: unknown[]; skipped: boolean }[]
   question: DecisionQuestion | null
   goal: Record<string, string> | null
   approvedGoal?: Record<string, string> | null

@@ -100,7 +100,7 @@ const PREVIEW_STATES = DEBUG_STATES.map((value) => ({ value, label: value.replac
       <HubToggle
         v-model="showSanctuary"
         label="Show Sanctuary domains"
-        hint="Romance, tribe, family, play, purpose and legacy goals. Off by default; these areas are meant to stay free of metrics."
+        hint="Reveal cognitive, romance, social, family, play, purpose and legacy goals, including their numeric progress and outcome measurement controls. Off by default."
       />
     </HubGroup>
 
