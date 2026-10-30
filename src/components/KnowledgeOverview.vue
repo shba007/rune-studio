@@ -71,35 +71,9 @@ function keyboardPan(event: KeyboardEvent) {
     <section class="rounded-rune-tile bg-rune-sunken p-rune-3">
       <h2 class="m-0 font-sans text-rune-subtitle text-rune-ink">Goals anchor the Life Harness</h2>
       <p class="mb-0 text-rune-body leading-relaxed text-rune-text-2">
-        Type or say a request. Rune identifies its scope, asks when clarification is needed, and
-        keeps the resulting work reviewable. A goal describes where you want to be; a task produces
-        a bounded result; a step belongs inside a task. Workspace brings those conversations,
-        results, and styles together. Goals anchor the longer-term loop and connect directly to
-        approved personalities. You can still run standalone tasks and steps.
+        A goal is where you want to be. A task is a bounded piece of work toward it, and a step
+        belongs inside a task. Define a goal, run tasks, then review the results in Tasks.
       </p>
-      <div class="mt-4 grid gap-rune-2 text-rune-body sm:grid-cols-3">
-        <div class="rounded-rune-tile bg-rune-surface p-rune-2">
-          <span class="block text-rune-caption text-rune-text-2">01 · DEFINE</span>
-          <p class="mb-0 text-rune-ink">“I want to be physically fit.”</p>
-          <p class="mb-0 text-rune-text-2">
-            Clarify your starting point and approve a focused goal.
-          </p>
-        </div>
-        <div class="rounded-rune-tile bg-rune-surface p-rune-2">
-          <span class="block text-rune-caption text-rune-text-2">02 · DO</span>
-          <p class="mb-0 text-rune-ink">“Calculate 14 + 27.”</p>
-          <p class="mb-0 text-rune-text-2">
-            Run a bounded task; its answer appears in the orb bubble.
-          </p>
-        </div>
-        <div class="rounded-rune-tile bg-rune-surface p-rune-2">
-          <span class="block text-rune-caption text-rune-text-2">03 · REVIEW</span>
-          <p class="mb-0 text-rune-ink">“What happened?”</p>
-          <p class="mb-0 text-rune-text-2">
-            Open Tasks for results, attempts, captures, and replay.
-          </p>
-        </div>
-      </div>
     </section>
     <section
       aria-label="How Rune connects"

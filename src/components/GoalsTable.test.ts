@@ -27,6 +27,18 @@ it('has twelve domains, six per zone, in a fixed set', () => {
   expect(DOMAINS.filter((domain) => domain.zone === 'engine')).toHaveLength(6)
 })
 
+it('follows the framework PDF: numbered domains with their sub-domains', () => {
+  expect(DOMAINS.map((domain) => domain.number).sort((a, b) => a - b)).toEqual([
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+  ])
+  const counts = Object.fromEntries(DOMAINS.map((d) => [d.id, d.subDomains.length]))
+  expect(counts).toMatchObject({ physical: 6, environment: 6, family: 5, legacy: 5 })
+  expect(DOMAINS.find((domain) => domain.id === 'physical')!.subDomains[0]).toMatchObject({
+    number: '1.1',
+    name: 'Sleep & Circadian Architecture',
+  })
+})
+
 it('maps goals by class and keywords, and honours an override', () => {
   expect(domainOf(goal('a', 'Run 5 km', { class: 'health' })).id).toBe('physical')
   expect(domainOf(goal('b', 'Save for a trip', { class: 'finance' })).id).toBe('financial')
@@ -60,5 +72,13 @@ it('shows every Engine domain, hides Sanctuary goals with a note, and filters', 
     .trigger('click')
   expect(wrapper.find('[data-goal="a"]').exists()).toBe(false)
   expect(wrapper.find('[data-goal="c"]').exists()).toBe(true)
+  wrapper.unmount()
+})
+it('moves a goal to the domain chosen in overrides', async () => {
+  localStorage.setItem('rune.goalDomains', JSON.stringify({ b: 'career' }))
+  const wrapper = mount(GoalsTable, {
+    props: { entries: [goal('b', 'Plan family dinner')], tasks: [] },
+  })
+  expect(wrapper.get('[data-domain="career"]').find('[data-goal="b"]').exists()).toBe(true)
   wrapper.unmount()
 })

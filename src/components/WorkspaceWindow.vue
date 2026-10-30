@@ -13,8 +13,8 @@ import FlightPlayer from './FlightPlayer.vue'
 import DecisionInbox from './DecisionInbox.vue'
 import GoalsTable from './GoalsTable.vue'
 import PeekPanel from './PeekPanel.vue'
-import RuneChip from './RuneChip.vue'
-import { domainOf } from '@/config/domains'
+import RuneChoice from './RuneChoice.vue'
+import { DOMAINS, domainOf } from '@/config/domains'
 import { useDomainPrefs } from '@/composables/useDomainPrefs'
 import PersonalitiesPanel from './PersonalitiesPanel.vue'
 import KnowledgeOverview from './KnowledgeOverview.vue'
@@ -22,13 +22,16 @@ import type { KnowledgeSection } from '@/config/knowledge'
 import { useDecisions } from '@/composables/useDecisions'
 import { useWorkspaceTasks } from '@/composables/useWorkspaceTasks'
 import NewWorkForm from './NewWorkForm.vue'
+import NewGoalForm from './NewGoalForm.vue'
 import type { WorkspaceTask } from '@/types/workspace'
 import type { FlightRun } from '@/config/flight'
 
 type Section = Exclude<KnowledgeSection, 'overview'>
 const resolveSection = (value: string | null | undefined): Section | null => {
   if (value === 'overview') return 'goals'
-  return value === 'goals' || value === 'tasks' || value === 'personalities' ? value : null
+  return value === 'goals' || value === 'tasks' || value === 'personalities' || value === 'help'
+    ? value
+    : null
 }
 const agent = useAgent()
 const personalities = ref<InstanceType<typeof PersonalitiesPanel> | null>(null)
@@ -42,6 +45,21 @@ const { overrides } = useDomainPrefs()
 const focusDomain = computed(() => {
   const entry = decisions.entries.value.find((item) => item.id === focusGoalId.value)
   return entry ? domainOf(entry, overrides.value) : null
+})
+const domainOptions = computed(() => [
+  { value: '', label: `Automatic · ${focusDomain.value?.name ?? 'Unassigned'}` },
+  ...DOMAINS.map((domain) => ({ value: domain.id, label: domain.name })),
+])
+const domainChoice = computed({
+  get: () => (focusGoalId.value && overrides.value[focusGoalId.value]) || '',
+  set: (value: string) => {
+    const id = focusGoalId.value
+    if (!id) return
+    const next = { ...overrides.value }
+    if (value) next[id] = value
+    else delete next[id]
+    overrides.value = next
+  },
 })
 const parentFilter = ref<string | null>(null)
 const focusTaskId = ref<string | null>(null)
@@ -98,7 +116,10 @@ const sections: { id: Section; label: string; icon: IconName }[] = [
   { id: 'tasks', label: 'Tasks', icon: 'history' },
   { id: 'goals', label: 'Goals', icon: 'target' },
   { id: 'personalities', label: 'Personalities', icon: 'personality' },
+  { id: 'help', label: 'Help', icon: 'help' },
 ]
+const mainSections = sections.filter((item) => item.id !== 'help')
+const helpSection = sections.find((item) => item.id === 'help')!
 const current = computed(() => sections.find((item) => item.id === section.value)!)
 let unlisten: (() => void) | undefined
 let disposed = false
@@ -149,12 +170,16 @@ onBeforeUnmount(() => {
         aria-label="Workspace sections"
       >
         <RuneNavItem
-          v-for="item in sections"
+          v-for="item in mainSections"
           :key="item.id"
           :selected="section === item.id"
           @click="navigate(item.id)"
         >
           <AppIcon :name="item.icon" />{{ item.label }}
+        </RuneNavItem>
+        <div class="flex-1" />
+        <RuneNavItem :selected="section === 'help'" @click="navigate('help')">
+          <AppIcon :name="helpSection.icon" />{{ helpSection.label }}
         </RuneNavItem>
       </nav>
       <section class="min-w-0 flex-1 overflow-y-auto px-8 py-8 lg:px-12">
@@ -179,10 +204,10 @@ onBeforeUnmount(() => {
               + New personality
             </RuneButton>
           </header>
+          <NewGoalForm v-if="creation?.kind === 'goal'" @close="creation = null" @saved="created" />
           <NewWorkForm
-            v-if="creation"
+            v-else-if="creation"
             :key="`${creation.kind}-${creation.task?.id ?? creation.run?.id ?? creation.parent ?? 'new'}`"
-            :kind="creation.kind"
             :goals="approvedGoals"
             :parent-goal-id="creation.parent"
             :task="creation.task"
@@ -216,10 +241,10 @@ onBeforeUnmount(() => {
               :selected-id="focusGoalId"
               @open="openGoal"
             />
-            <KnowledgeOverview @navigate="navigate" />
           </div>
           <DecisionInbox v-if="section === 'tasks'" quiet :model="decisions" />
           <PersonalitiesPanel v-if="section === 'personalities'" ref="personalities" />
+          <KnowledgeOverview v-if="section === 'help'" @navigate="navigate" />
         </div>
       </section>
       <PeekPanel
@@ -228,7 +253,7 @@ onBeforeUnmount(() => {
         @close="focusGoalId = null"
       >
         <template #header>
-          <RuneChip v-if="focusDomain">{{ focusDomain.name }}</RuneChip>
+          <RuneChoice v-model="domainChoice" label="Domain" menu :options="domainOptions" />
         </template>
         <DecisionInbox
           goals-only

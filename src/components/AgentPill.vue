@@ -411,6 +411,7 @@ function onOrb() {
                 :agent="agent"
                 :board="taskBoard"
                 :intake-busy="decisions.busy.value"
+                :goals="decisions.entries.value"
                 :analysis-submit="agent.mode.value === 'analysis' ? submitAnalysis : undefined"
                 :analysis-busy="analysis.busy.value"
                 :cancel-analysis="analysis.cancel"

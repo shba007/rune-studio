@@ -11,7 +11,7 @@ beforeEach(() => {
     )
 })
 it('saves manual work without dispatching execution', async () => {
-  const wrapper = mount(NewWorkForm, { props: { kind: 'task', goals: [] } })
+  const wrapper = mount(NewWorkForm, { props: { goals: [] } })
   await flushPromises()
   await wrapper.get('textarea').setValue('Go jogging')
   await wrapper.get('form').trigger('submit')
@@ -23,16 +23,8 @@ it('saves manual work without dispatching execution', async () => {
   expect(invoke.mock.calls.some(([command]) => command === 'workspace_task_action')).toBe(false)
   expect(wrapper.emitted('saved')).toEqual([['task', 'created-id']])
 })
-it('starts explicit goal clarification and returns the stable id', async () => {
-  const wrapper = mount(NewWorkForm, { props: { kind: 'goal', goals: [] } })
-  await wrapper.get('textarea').setValue('Be physically fit')
-  await wrapper.get('form').trigger('submit')
-  await flushPromises()
-  expect(invoke).toHaveBeenCalledWith('workspace_new_goal', { text: 'Be physically fit' })
-  expect(wrapper.emitted('saved')).toEqual([['goal', 'created-id']])
-})
 it('saves a monthly Visual Analysis reminder with its original monthly day', async () => {
-  const wrapper = mount(NewWorkForm, { props: { kind: 'task', goals: [] } })
+  const wrapper = mount(NewWorkForm, { props: { goals: [] } })
   await flushPromises()
   await wrapper.get('textarea').setValue('Inspect this screen')
   await wrapper.get('button[aria-label="Who will do this task?"]').trigger('click')

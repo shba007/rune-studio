@@ -72,6 +72,7 @@ it('opens Goals without a Settings button in Workspace', async () => {
     'Tasks',
     'Goals',
     'Personalities',
+    'Help',
   ])
   expect(harness.settings).not.toHaveBeenCalled()
   wrapper.unmount()
@@ -84,6 +85,12 @@ it('opens old Overview links as Goals and follows graph links without remounting
   const history = wrapper.getComponent(TaskHistory)
   expect(history.props('active')).toBe(false)
   expect(wrapper.get('h1').text()).toBe('Goals')
+  expect(wrapper.findComponent(KnowledgeOverview).exists()).toBe(false)
+  await wrapper
+    .findAll('nav button')
+    .find((button) => button.text() === 'Help')!
+    .trigger('click')
+  expect(wrapper.get('h1').text()).toBe('Help')
   wrapper.getComponent(KnowledgeOverview).vm.$emit('navigate', 'personalities')
   await flushPromises()
   expect(wrapper.get('h1').text()).toBe('Personalities')

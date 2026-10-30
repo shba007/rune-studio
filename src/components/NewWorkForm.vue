@@ -10,7 +10,6 @@ import RuneChoice from './RuneChoice.vue'
 import RuneNotice from './RuneNotice.vue'
 import RuneSwitch from './RuneSwitch.vue'
 const props = defineProps<{
-  kind: 'goal' | 'task'
   goals: IntakeEntry[]
   parentGoalId?: string | null
   task?: WorkspaceTask
@@ -67,7 +66,7 @@ const repeats: { value: 'once' | 'daily' | 'weekly' | 'monthly'; label: string }
 const field =
   'min-w-0 rounded-rune-tile bg-rune-sunken px-rune-2 font-rune-reading text-rune-body text-rune-ink placeholder:text-rune-text-3 [color-scheme:dark]'
 onMounted(async () => {
-  if (props.kind === 'task' && !zone.value)
+  if (!zone.value)
     try {
       zone.value = await invoke<string>('workspace_task_zone')
     } catch (e) {
@@ -88,9 +87,7 @@ async function submit() {
           anchorDay: repeat.value === 'monthly' ? monthlyDay.value : null,
         }
       : null
-    if (props.kind === 'goal')
-      id = await invoke<string>('workspace_new_goal', { text: title.value })
-    else if (props.task) {
+    if (props.task) {
       await invoke('workspace_task_schedule', {
         id: props.task.id,
         revision: props.task.revision,
@@ -112,7 +109,7 @@ async function submit() {
         class: parentGoal.value?.class ?? privacy.value,
         schedule,
       })
-    emit('saved', props.kind, id)
+    emit('saved', 'task', id)
   } catch (e) {
     error.value = String(e)
   } finally {
@@ -128,15 +125,7 @@ async function submit() {
   >
     <header class="flex items-center justify-between gap-rune-2">
       <h2 class="m-0 font-sans text-rune-subtitle text-rune-ink">
-        {{
-          task
-            ? 'Schedule task'
-            : kind === 'goal'
-              ? 'New goal'
-              : legacyRunId
-                ? 'Organize this task'
-                : 'New task'
-        }}
+        {{ task ? 'Schedule task' : legacyRunId ? 'Organize this task' : 'New task' }}
       </h2>
       <RuneIconButton
         variant="ghost"
@@ -153,8 +142,7 @@ async function submit() {
       <label
         v-if="!task"
         class="flex flex-col gap-1 rounded-rune-tile bg-rune-surface p-rune-2 text-rune-caption text-rune-text-3"
-        >{{ kind === 'goal' ? 'What would you like to achieve?' : 'What needs to be done?'
-        }}<textarea
+        >What needs to be done?<textarea
           v-model="title"
           rows="2"
           maxlength="4000"
@@ -163,91 +151,77 @@ async function submit() {
           :class="[field, 'resize-y py-rune-1']"
         />
       </label>
-      <template v-if="kind === 'task'">
-        <div v-if="!task" class="flex flex-col gap-0.5">
-          <HubRow v-if="!legacyRunId" label="Who will do this task?">
-            <RuneChoice
-              v-model="executionMode"
-              label="Who will do this task?"
-              :options="modes"
-              menu
-            />
-          </HubRow>
-          <HubRow label="Parent goal">
-            <RuneChoice v-model="parentChoice" label="Parent goal" :options="parentOptions" menu />
-          </HubRow>
-          <HubRow
-            label="Protected storage category"
-            hint="Saved tasks use the protected Life store and need category consent in Settings. A parent goal supplies its privacy category."
+      <div v-if="!task" class="flex flex-col gap-0.5">
+        <HubRow v-if="!legacyRunId" label="Who will do this task?">
+          <RuneChoice
+            v-model="executionMode"
+            label="Who will do this task?"
+            :options="modes"
+            menu
+          />
+        </HubRow>
+        <HubRow label="Parent goal">
+          <RuneChoice v-model="parentChoice" label="Parent goal" :options="parentOptions" menu />
+        </HubRow>
+        <HubRow
+          label="Protected storage category"
+          hint="Saved tasks use the protected Life store and need category consent in Settings. A parent goal supplies its privacy category."
+        >
+          <span v-if="parentGoal" class="text-rune-body text-rune-text-2"
+            >{{ parentGoal.class }} · inherited from goal</span
           >
-            <span v-if="parentGoal" class="text-rune-body text-rune-text-2"
-              >{{ parentGoal.class }} · inherited from goal</span
-            >
-            <RuneChoice
-              v-else
-              v-model="privacy"
-              label="Protected storage category"
-              :options="privacyOptions"
-              segments
+          <RuneChoice
+            v-else
+            v-model="privacy"
+            label="Protected storage category"
+            :options="privacyOptions"
+            segments
+          />
+        </HubRow>
+      </div>
+      <div class="flex flex-col gap-0.5">
+        <HubRow label="Schedule this task">
+          <RuneSwitch v-model="scheduled" label="Schedule this task" />
+        </HubRow>
+        <template v-if="scheduled">
+          <HubRow label="First or next occurrence">
+            <input
+              v-model="local"
+              type="datetime-local"
+              required
+              aria-label="First or next occurrence"
+              :class="[field, 'h-10']"
             />
           </HubRow>
-        </div>
-        <div class="flex flex-col gap-0.5">
-          <HubRow label="Schedule this task">
-            <RuneSwitch v-model="scheduled" label="Schedule this task" />
+          <HubRow label="Repeat">
+            <RuneChoice v-model="repeat" label="Repeat" :options="repeats" segments />
           </HubRow>
-          <template v-if="scheduled">
-            <HubRow label="First or next occurrence">
-              <input
-                v-model="local"
-                type="datetime-local"
-                required
-                aria-label="First or next occurrence"
-                :class="[field, 'h-10']"
-              />
-            </HubRow>
-            <HubRow label="Repeat">
-              <RuneChoice v-model="repeat" label="Repeat" :options="repeats" segments />
-            </HubRow>
-            <HubRow v-if="repeat === 'monthly'" label="Monthly day">
-              <input
-                v-model.number="monthlyDay"
-                type="number"
-                min="1"
-                max="31"
-                required
-                aria-label="Monthly day"
-                :class="[field, 'h-10 w-24']"
-              />
-            </HubRow>
-            <p
-              class="m-0 rounded-b-rune-tile bg-rune-surface px-rune-2 py-rune-1 text-rune-caption text-rune-text-3"
-            >
-              Timezone: {{ zone || 'Reading device timezone…' }}. Rune asks before running every
-              occurrence.{{ repeat === 'monthly' ? ' Shorter months use their last day.' : '' }}
-            </p>
-          </template>
-        </div>
-      </template>
-      <p v-else class="m-0 px-rune-2 text-rune-caption text-rune-text-3">
-        Rune will clarify your current situation and desired outcome before asking you to approve
-        the goal.
-      </p>
+          <HubRow v-if="repeat === 'monthly'" label="Monthly day">
+            <input
+              v-model.number="monthlyDay"
+              type="number"
+              min="1"
+              max="31"
+              required
+              aria-label="Monthly day"
+              :class="[field, 'h-10 w-24']"
+            />
+          </HubRow>
+          <p
+            class="m-0 rounded-b-rune-tile bg-rune-surface px-rune-2 py-rune-1 text-rune-caption text-rune-text-3"
+          >
+            Timezone: {{ zone || 'Reading device timezone…' }}. Rune asks before running every
+            occurrence.{{ repeat === 'monthly' ? ' Shorter months use their last day.' : '' }}
+          </p>
+        </template>
+      </div>
       <RuneButton
         variant="primary"
         type="submit"
-        :disabled="pending || (kind === 'task' && scheduled && !zone)"
+        :disabled="pending || (scheduled && !zone)"
         class="self-start"
       >
-        {{
-          pending
-            ? 'Saving…'
-            : kind === 'goal'
-              ? 'Start goal conversation'
-              : task
-                ? 'Save schedule'
-                : 'Save task'
-        }}
+        {{ pending ? 'Saving…' : task ? 'Save schedule' : 'Save task' }}
       </RuneButton>
     </fieldset>
     <RuneNotice v-if="error" tone="error">{{ error }}</RuneNotice>

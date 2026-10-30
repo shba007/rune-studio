@@ -8,6 +8,8 @@ import type { TaskBoardModel } from '@/composables/useTaskBoard'
 
 import AppIcon from './AppIcon.vue'
 import RuneIconButton from './RuneIconButton.vue'
+import LifeDots from './LifeDots.vue'
+import type { IntakeEntry } from '@/types/decisions'
 import { screenRequestText } from '@/config/screenRequest'
 import {
   composerCommands,
@@ -22,6 +24,7 @@ const props = defineProps<{
   analysisBusy?: boolean
   cancelAnalysis?: () => unknown
   intakeBusy?: boolean
+  goals?: IntakeEntry[]
 }>()
 const agent = props.agent
 
@@ -305,6 +308,7 @@ async function submit() {
             <AppIcon name="add" />
           </RuneIconButton>
         </div>
+        <LifeDots v-if="goals" :entries="goals" @open="agent.openWorkspace('goals')" />
         <div class="flex items-center">
           <RuneButton
             variant="link"

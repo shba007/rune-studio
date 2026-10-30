@@ -1,4 +1,4 @@
-export type KnowledgeSection = 'overview' | 'goals' | 'tasks' | 'personalities'
+export type KnowledgeSection = 'overview' | 'goals' | 'tasks' | 'personalities' | 'help'
 export interface KnowledgeConcept {
   id: string
   title: string
