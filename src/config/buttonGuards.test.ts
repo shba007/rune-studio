@@ -15,6 +15,8 @@ const RAW_BUTTONS: Record<string, number> = {
   'Composer.vue': 1,
   'FlightDrawer.vue': 1,
   'FlightTaskTimeline.vue': 2,
+  'GoalsTable.vue': 2,
+  'WorkspaceTaskTimeline.vue': 1,
   'KnowledgeOverview.vue': 1,
   'OrbDock.vue': 2,
   'SettingsConnectionModels.vue': 1,

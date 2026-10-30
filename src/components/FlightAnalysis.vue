@@ -9,6 +9,10 @@ import type { AnalysisGroup, VisualAnalysisVisibility } from '@/types/protocol'
 import { fileUrl } from '@/composables/useFlight'
 import AnalysisLayer from './AnalysisLayer.vue'
 import WhenText from './WhenText.vue'
+import HubGroup from './HubGroup.vue'
+import HubRow from './HubRow.vue'
+import RuneNotice from './RuneNotice.vue'
+import RuneSwitch from './RuneSwitch.vue'
 
 const props = defineProps<{
   id: string
@@ -66,10 +70,12 @@ watch(
 
 <template>
   <section
-    class="flex min-h-0 flex-1 flex-col overflow-auto md:flex-row"
+    class="flex min-h-0 flex-1 flex-col gap-rune-2 overflow-auto px-rune-3 pb-rune-3 md:flex-row"
     aria-label="Visual analysis task"
   >
-    <figure class="m-0 flex min-h-64 min-w-0 flex-1 flex-col bg-rune-sunken p-4">
+    <figure
+      class="m-0 flex min-h-64 min-w-0 flex-1 flex-col rounded-rune-tile bg-rune-sunken p-rune-2"
+    >
       <div class="flex min-h-0 flex-1 items-center justify-center">
         <div v-if="capture && !missing" class="relative max-w-full leading-none">
           <img
@@ -78,7 +84,7 @@ watch(
             :key="id"
             :src="capture"
             alt="Saved visual analysis capture"
-            class="block max-h-[65vh] max-w-full object-contain"
+            class="block max-h-[65vh] max-w-full rounded-rune-tile object-contain"
             @error="missing = true"
           />
           <AnalysisLayer
@@ -90,7 +96,7 @@ watch(
         </div>
         <p
           v-else
-          class="m-0 p-6 text-rune-body text-rune-text-2"
+          class="m-0 p-rune-3 text-rune-body text-rune-text-3"
           data-testid="analysis-capture-notice"
         >
           {{
@@ -104,7 +110,7 @@ watch(
       </div>
       <figcaption
         v-if="analysis"
-        class="mt-3 flex flex-wrap gap-x-3 text-rune-caption text-rune-text-2"
+        class="mt-rune-2 flex flex-wrap gap-x-3 text-rune-caption text-rune-text-3"
       >
         <span>Captured <WhenText :iso="analysis.capturedUtc" /></span>
         <span v-if="analysis.model" class="inline-flex items-center gap-2"
@@ -112,42 +118,44 @@ watch(
         >
       </figcaption>
     </figure>
-    <aside class="w-full shrink-0 overflow-y-auto p-5 md:w-80">
-      <fieldset v-if="analysis?.findings.length" class="mb-5 p-0">
-        <legend class="mb-2 text-rune-heading text-rune-text-2 uppercase">Highlights</legend>
-        <label
-          v-for="group in groups"
-          :key="group.key"
-          class="flex items-center gap-2 py-1 text-rune-caption text-rune-text-2"
+    <aside class="flex w-full shrink-0 flex-col gap-rune-3 overflow-y-auto md:w-96">
+      <HubGroup title="Answer">
+        <div class="rounded-rune-tile bg-rune-surface p-rune-2">
+          <p
+            class="m-0 text-rune-body whitespace-pre-wrap text-rune-ink"
+            data-testid="analysis-answer"
+          >
+            {{ answer || 'No answer was recorded.' }}
+          </p>
+        </div>
+      </HubGroup>
+      <RuneNotice v-if="analysis?.error" tone="error">{{ analysis.error }}</RuneNotice>
+      <HubGroup v-if="analysis?.findings.length" title="Highlights">
+        <HubRow v-for="group in groups" :key="group.key" :label="group.label">
+          <RuneSwitch v-model="visibleGroups[group.key]" :label="group.label" />
+        </HubRow>
+      </HubGroup>
+      <HubGroup v-if="analysis?.findings.length" title="Observations">
+        <article
+          v-for="finding in analysis?.findings ?? []"
+          :key="finding.n"
+          class="flex flex-col gap-1 bg-rune-surface p-rune-2 first:rounded-t-rune-tile last:rounded-b-rune-tile"
         >
-          <input v-model="visibleGroups[group.key]" type="checkbox" :aria-label="group.label" />
-          {{ group.label }}
-        </label>
-      </fieldset>
-      <h2 class="m-0 text-rune-heading text-rune-text-2 uppercase">Answer</h2>
-      <p class="whitespace-pre-wrap text-rune-body text-rune-ink" data-testid="analysis-answer">
-        {{ answer || 'No answer was recorded.' }}
+          <h3 class="m-0 text-rune-body text-rune-ink">{{ finding.n }} · {{ finding.label }}</h3>
+          <p
+            v-if="finding.pose?.rejected"
+            role="status"
+            class="m-0 text-rune-caption text-rune-text-2"
+          >
+            Some pose data was invalid and omitted. Valid landmarks and connections are shown.
+          </p>
+          <p class="m-0 text-rune-caption text-rune-text-2">{{ finding.description }}</p>
+          <p class="m-0 text-rune-caption text-rune-text-3">{{ finding.evidence }}</p>
+        </article>
+      </HubGroup>
+      <p class="m-0 px-rune-2 text-rune-caption text-rune-text-3">
+        Model observations, not verified facts.
       </p>
-      <p v-if="analysis?.error" class="text-rune-caption text-rune-text-2">{{ analysis.error }}</p>
-      <h2
-        v-if="analysis?.findings.length"
-        class="mt-6 mb-2 text-rune-heading text-rune-text-2 uppercase"
-      >
-        Observations
-      </h2>
-      <article v-for="finding in analysis?.findings ?? []" :key="finding.n" class="py-3">
-        <h3 class="m-0 text-rune-body text-rune-ink">{{ finding.n }} · {{ finding.label }}</h3>
-        <p
-          v-if="finding.pose?.rejected"
-          role="status"
-          class="my-1 text-rune-caption text-amber-300"
-        >
-          Some pose data was invalid and omitted. Valid landmarks and connections are shown.
-        </p>
-        <p class="my-1 text-rune-caption text-rune-text-2">{{ finding.description }}</p>
-        <p class="m-0 text-rune-caption text-rune-text-2">{{ finding.evidence }}</p>
-      </article>
-      <p class="mt-5 text-rune-caption text-rune-text-2">Model observations, not verified facts.</p>
     </aside>
   </section>
 </template>

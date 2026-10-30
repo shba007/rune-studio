@@ -35,9 +35,11 @@ const visible = computed(() =>
     : decisions.entries.value.filter(
         (e) =>
           (props.goalsOnly ? e.kind === 'goal' : true) &&
+          (!props.quiet || !!e.question) &&
           (!props.focusGoalId || e.id === props.focusGoalId),
       ),
 )
+const brief = computed(() => props.compact || props.quiet)
 const listing = computed(() => !props.compact && props.goalsOnly && !props.focusGoalId)
 const rowMeta = (entry: IntakeEntry) => {
   const goal = entry.goal ?? entry.approvedGoal
@@ -70,11 +72,11 @@ const rowMeta = (entry: IntakeEntry) => {
       v-for="entry in listing ? [] : visible"
       :key="entry.id"
       class="flex min-w-0 flex-col [overflow-wrap:anywhere]"
-      :class="!compact && entry.kind === 'goal' ? 'gap-6 pb-10 mb-8 last:pb-0 last:mb-0' : 'gap-2'"
+      :class="!brief && entry.kind === 'goal' ? 'gap-6 pb-10 mb-8 last:pb-0 last:mb-0' : 'gap-2'"
     >
-      <GoalSummary v-if="!compact && entry.kind === 'goal'" :entry="entry" />
+      <GoalSummary v-if="!brief && entry.kind === 'goal'" :entry="entry" />
       <GoalWorkPanel
-        v-if="!compact && entry.kind === 'goal' && entry.approvedGoal && workspace"
+        v-if="!brief && entry.kind === 'goal' && entry.approvedGoal && workspace"
         :entry="entry"
         :workspace="workspace"
         @refresh="decisions.refresh"
@@ -82,7 +84,7 @@ const rowMeta = (entry: IntakeEntry) => {
         @task="(id) => emit('task', id)"
         @create="(id) => emit('createTask', id)"
       />
-      <template v-if="compact || entry.kind !== 'goal'">
+      <template v-if="brief || entry.kind !== 'goal'">
         <p class="m-0 text-rune-caption text-rune-text-2 whitespace-pre-wrap">{{ entry.text }}</p>
         <p
           v-if="entry.kind === 'goal' && entry.category"
@@ -116,7 +118,7 @@ const rowMeta = (entry: IntakeEntry) => {
         </dl>
       </template>
       <p
-        v-if="!compact && entry.kind === 'goal' && entry.error"
+        v-if="!brief && entry.kind === 'goal' && entry.error"
         role="alert"
         class="m-0 text-rune-caption text-error"
       >
@@ -152,7 +154,7 @@ const rowMeta = (entry: IntakeEntry) => {
         <RuneButton
           variant="primary"
           size="sm"
-          v-if="entry.status === 'goal_ready' && !compact"
+          v-if="entry.status === 'goal_ready' && !brief"
           :disabled="decisions.pending.value"
           class="self-start"
           @click="decisions.comparePathways(entry)"
@@ -171,13 +173,13 @@ const rowMeta = (entry: IntakeEntry) => {
         </RuneButton>
       </div>
       <GoalPathways
-        v-if="!compact && entry.pathways"
+        v-if="!brief && entry.pathways"
         :entry="entry"
         :busy="decisions.pending.value"
         @select="(id) => decisions.selectPathway(entry, id)"
       />
       <GoalTaskDraft
-        v-if="!compact && entry.pathways?.approved"
+        v-if="!brief && entry.pathways?.approved"
         :entry="entry"
         :busy="decisions.pending.value"
         @generate="decisions.proposeTasks(entry)"

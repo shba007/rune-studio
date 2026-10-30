@@ -96,7 +96,10 @@ describe('FlightPlayer states', () => {
     })
     const wrapper = await open('r1')
     expect(wrapper.get('[data-testid="task"]').text()).toBe('Added step')
-    await wrapper.get('select[aria-label="Execution attempt"]').setValue('r1')
+    await wrapper
+      .findAll('[role="radio"]')
+      .find((b) => b.text() === 'Attempt 1')!
+      .trigger('click')
     await flushPromises()
     expect(invoke).toHaveBeenCalledWith('flight_run', { id: 'r1' })
     expect(wrapper.get('[data-testid="task"]').text()).toBe('Open notepad')
@@ -400,11 +403,11 @@ describe('FlightPlayer controls', () => {
     })
     const wrapper = await open()
     const toggle = wrapper.find('[data-testid="typed-toggle"]')
-    expect(toggle.text()).toContain('Mask secrets')
-    expect(toggle.attributes('aria-pressed')).toBe('true')
+    expect(wrapper.text()).toContain('Mask secrets')
+    expect(toggle.attributes('aria-checked')).toBe('true')
     expect(wrapper.text()).not.toContain('hunter2')
     await toggle.trigger('click')
-    expect(toggle.attributes('aria-pressed')).toBe('false')
+    expect(toggle.attributes('aria-checked')).toBe('false')
   })
 
   it('has no Actions button, and hides the API tab outside developer mode', async () => {

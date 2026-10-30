@@ -67,10 +67,10 @@ async function save() {
 }
 </script>
 <template>
-  <section aria-label="Goal progress and tasks" class="flex flex-col gap-rune-2">
-    <div class="grid gap-0.5 sm:grid-cols-2">
+  <section aria-label="Goal progress and tasks" class="@container flex flex-col gap-rune-2">
+    <div class="grid gap-0.5 @md:grid-cols-2">
       <div
-        class="bg-rune-surface px-rune-2 py-rune-2 max-sm:first:rounded-t-rune-tile sm:rounded-l-rune-tile"
+        class="bg-rune-surface px-rune-2 py-rune-2 max-[28rem]:first:rounded-t-rune-tile @md:rounded-l-rune-tile"
       >
         <WorkProgress
           :value="plan.value"
@@ -79,7 +79,7 @@ async function save() {
         />
       </div>
       <div
-        class="bg-rune-surface px-rune-2 py-rune-2 max-sm:last:rounded-b-rune-tile sm:rounded-r-rune-tile"
+        class="bg-rune-surface px-rune-2 py-rune-2 max-[28rem]:last:rounded-b-rune-tile @md:rounded-r-rune-tile"
       >
         <WorkProgress
           :value="outcomeProgress(entry.outcomeMetric)"

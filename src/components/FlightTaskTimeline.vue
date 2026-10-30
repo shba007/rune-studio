@@ -14,7 +14,7 @@ const failed = (phase: string) => ['failed', 'blocked'].includes(phase)
 <template>
   <section
     aria-label="Task timelines"
-    class="mx-4 my-3 max-h-64 shrink-0 overflow-auto rounded-rune-tile bg-rune-raised"
+    class="mx-rune-3 my-rune-2 max-h-64 shrink-0 overflow-auto rounded-rune-tile bg-rune-surface"
   >
     <div
       v-for="task in timeline.rows"

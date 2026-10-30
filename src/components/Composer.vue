@@ -304,9 +304,6 @@ async function submit() {
           >
             <AppIcon name="add" />
           </RuneIconButton>
-          <RuneIconButton label="Settings" variant="ghost" size="sm" @click="agent.openSettings()">
-            <AppIcon name="tune" />
-          </RuneIconButton>
         </div>
         <div class="flex items-center">
           <RuneButton

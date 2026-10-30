@@ -6,6 +6,7 @@ import WorkspaceWindow from './WorkspaceWindow.vue'
 import TaskHistory from './TaskHistory.vue'
 import FlightPlayer from './FlightPlayer.vue'
 import DecisionInbox from './DecisionInbox.vue'
+import GoalsTable from './GoalsTable.vue'
 import KnowledgeOverview from './KnowledgeOverview.vue'
 
 const harness = vi.hoisted(() => ({
@@ -23,7 +24,7 @@ vi.mock('@/composables/useAgent', () => ({
   useAgent: () => ({ notice: ref(null), openSettings: harness.settings }),
 }))
 vi.mock('@/composables/useDecisions', () => ({
-  useDecisions: () => ({ entries: ref([]), refresh: async () => {} }),
+  useDecisions: () => ({ entries: ref([]), error: ref(''), refresh: async () => {} }),
 }))
 vi.mock('@/composables/useWorkspaceTasks', () => ({
   useWorkspaceTasks: () => ({ tasks: ref([]), refresh: async () => {} }),
@@ -66,7 +67,7 @@ it('opens Goals without a Settings button in Workspace', async () => {
   const wrapper = shallowMount(WorkspaceWindow, { global: { stubs: { RuneNavItem } } })
   await flushPromises()
   expect(wrapper.get('h1').text()).toBe('Goals')
-  expect(wrapper.getComponent(DecisionInbox).props('goalsOnly')).toBe(true)
+  expect(wrapper.findComponent(GoalsTable).exists()).toBe(true)
   expect(wrapper.findAll('nav button').map((item) => item.text())).toEqual([
     'Tasks',
     'Goals',

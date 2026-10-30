@@ -1,3 +1,3 @@
 # analysis / question
 
-Summarize what is visible and identify any apparent errors or issues.
+Summarize what is visible and identify.

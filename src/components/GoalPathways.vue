@@ -17,7 +17,7 @@ const detailLabels = {
   <section
     v-if="entry.pathways"
     aria-label="Goal pathways"
-    class="flex flex-col gap-rune-2 text-rune-body"
+    class="@container flex flex-col gap-rune-2 text-rune-body"
   >
     <header class="flex flex-wrap items-end justify-between gap-rune-2 px-rune-2">
       <div class="flex flex-col gap-1">
@@ -67,7 +67,7 @@ const detailLabels = {
     </p>
     <div
       class="grid items-stretch gap-rune-1"
-      :class="entry.pathways.options.length === 2 ? 'lg:grid-cols-2' : 'lg:grid-cols-3'"
+      :class="entry.pathways.options.length === 2 ? '@2xl:grid-cols-2' : '@2xl:grid-cols-3'"
     >
       <article
         v-for="(route, index) in entry.pathways.options"

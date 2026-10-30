@@ -37,21 +37,65 @@ function mountTimeline(history: FlightRun[], tasks: WorkspaceTask[] = []) {
   return { wrapper, action }
 }
 
-it('groups the timeline by day, includes previews, and opens the matching replay', async () => {
+it('groups unlinked work under Misc, newest first, and opens the matching replay', async () => {
+  localStorage.setItem('rune.tasksView', 'cards')
   const { wrapper } = mountTimeline([
-    run('run-a', 'Calculate 14 + 27', 'succeeded', now),
     run('run-b', 'Older job', 'failed', now - 3 * 86_400_000),
+    run('run-a', 'Calculate 14 + 27', 'succeeded', now),
   ])
   await flushPromises()
-  expect(wrapper.text()).not.toContain('Calendar')
-  const titles = wrapper.findAll('h3').map((heading) => heading.text())
-  expect(titles[0]).toBe('Today')
-  expect(titles).toHaveLength(2)
+  expect(wrapper.findAll('h3').map((heading) => heading.text())).toEqual(['Misc'])
+  expect(
+    wrapper.findAll('[data-work-task]').map((card) => card.attributes('data-work-task')),
+  ).toEqual(['run-a', 'run-b'])
   const preview = wrapper.getComponent(TaskPreview)
   expect(preview.props('run')).toMatchObject({ id: 'run-a' })
   preview.vm.$emit('open')
   expect(wrapper.emitted('open')).toEqual([['run-a']])
   expect(wrapper.get('[data-work-task="run-a"]').text()).toContain('Calculate 14 + 27')
+  wrapper.unmount()
+})
+
+it('groups linked tasks under their goal and opens the goal from the heading', async () => {
+  const task = {
+    id: 'task-1',
+    revision: 1,
+    title: 'Run-walk',
+    parentGoalId: 'goal-1',
+    class: 'health',
+    createdMs: now,
+    schedule: null,
+    paused: false,
+    executionMode: 'manual',
+    occurrences: [],
+    error: null,
+    completedSteps: 0,
+    totalSteps: 0,
+  } as unknown as WorkspaceTask
+  const action = vi.fn<(task: WorkspaceTask, name: string) => Promise<void>>()
+  const workspace = {
+    tasks: ref([task]),
+    error: ref(''),
+    pending: ref(false),
+    action,
+    link: vi.fn<() => Promise<void>>(),
+  } as unknown as WorkspaceTasksModel
+  const wrapper = mount(WorkspaceTaskTimeline, {
+    props: {
+      workspace,
+      history: [run('run-a', 'Loose job', 'succeeded', now)],
+      goals: [{ id: 'goal-1', class: 'health', approvedGoal: { outcome: 'Get fit' } }] as never,
+      active: true,
+    },
+    global: { stubs: { TaskPreview: true } },
+  })
+  await flushPromises()
+  expect(wrapper.findAll('h3').map((heading) => heading.text())).toEqual(['Get fit', 'Misc'])
+  await wrapper
+    .findAll('button')
+    .find((button) => button.text().startsWith('Open goal'))!
+    .trigger('click')
+  expect(wrapper.emitted('goal')).toEqual([['goal-1']])
   wrapper.unmount()
 })
 
@@ -86,5 +130,15 @@ it('keeps secondary actions in the row menu and routes them', async () => {
     .find((item) => item.text() === 'Delete')!
     .trigger('click')
   expect(wrapper.emitted('remove')).toEqual([['run-a']])
+  wrapper.unmount()
+})
+it('lists tasks as a table with a preview in each row and opens the player from it', async () => {
+  localStorage.removeItem('rune.tasksView')
+  const { wrapper } = mountTimeline([run('run-a', 'Finished work', 'succeeded', now)])
+  await flushPromises()
+  expect(wrapper.find('[role="table"]').exists()).toBe(true)
+  expect(wrapper.find('[data-testid="peek"]').exists()).toBe(false)
+  wrapper.findComponent(TaskPreview).vm.$emit('open')
+  expect(wrapper.emitted('open')).toEqual([['run-a']])
   wrapper.unmount()
 })

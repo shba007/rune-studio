@@ -1,21 +1,21 @@
 <script setup lang="ts">
 import AppIcon from './AppIcon.vue'
-import HubGroup from './HubGroup.vue'
 import RuneButton from './RuneButton.vue'
 import RuneChoice from './RuneChoice.vue'
 import RuneIconButton from './RuneIconButton.vue'
 import RuneMenu from './RuneMenu.vue'
 import RuneNotice from './RuneNotice.vue'
 import WorkEmpty from './WorkEmpty.vue'
-import WorkRow from './WorkRow.vue'
+import RuneDot from './RuneDot.vue'
+import TaskCard from './TaskCard.vue'
 import { invoke } from '@tauri-apps/api/core'
+import { useLocalStorage } from '@vueuse/core'
 import { computed, nextTick, ref, watch } from 'vue'
 import type { FlightRun } from '@/config/flight'
 import type { IntakeEntry } from '@/types/decisions'
 import type { WorkspaceTask } from '@/types/workspace'
 import type { WorkspaceTasksModel } from '@/composables/useWorkspaceTasks'
 import { taskProgress } from '@/config/workspaceProgress'
-import WorkProgress from './WorkProgress.vue'
 import TaskPreview from './TaskPreview.vue'
 const props = defineProps<{
   workspace: WorkspaceTasksModel
@@ -133,22 +133,34 @@ const FILTERS = [
   { value: 'failed', label: 'Failed' },
 ]
 const filter = ref('all')
-const expanded = ref(new Set<string>())
-function toggle(id: string) {
-  const next = new Set(expanded.value)
-  if (next.has(id)) next.delete(id)
-  else next.add(id)
-  expanded.value = next
-}
+const view = useLocalStorage<'table' | 'cards'>('rune.tasksView', 'table')
+const VIEWS = [
+  { value: 'table', label: 'Table' },
+  { value: 'cards', label: 'Cards' },
+]
+const selectedId = ref<string | null>(null)
+const collapsed = ref<Record<string, boolean>>({})
+watch(
+  () => props.focusTaskId,
+  (id) => {
+    if (id) selectedId.value = id
+  },
+)
 
 const clock = (ms: number) =>
   new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 const day = (ms: number) =>
   new Date(ms).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })
+function stamp(ms: number) {
+  const date = new Date(ms).toDateString()
+  if (date === new Date().toDateString()) return `Today ${clock(ms)}`
+  if (date === new Date(Date.now() - 86_400_000).toDateString()) return `Yesterday ${clock(ms)}`
+  return `${day(ms)} ${clock(ms)}`
+}
 const FAILED = ['failed', 'interrupted', 'cancelled']
 
-function info(row: Row): { tone: Tone; bucket: Bucket; meta: string } {
-  const time = row.time ? clock(row.time) : 'Date unavailable'
+function info(row: Row): { tone: Tone; bucket: Bucket; meta: string; label: string; when: string } {
+  const time = row.time ? stamp(row.time) : 'Date unavailable'
   if (row.task) {
     const occurrence = row.task.occurrences.at(-1)
     const state = row.task.paused ? 'paused' : (occurrence?.state ?? 'scheduled')
@@ -174,7 +186,7 @@ function info(row: Row): { tone: Tone; bucket: Bucket; meta: string } {
     if (row.task.schedule)
       parts.push(`Next ${day(row.task.schedule.nextMs)} · ${row.task.schedule.repeat}`)
     if (occurrence?.reported) parts.push('Completion reported by you')
-    return { tone, bucket, meta: parts.join(' · ') }
+    return { tone, bucket, meta: parts.join(' · '), label: parts[0]!, when: time }
   }
   const run = row.run!
   const tone: Tone = run.active
@@ -195,6 +207,8 @@ function info(row: Row): { tone: Tone; bucket: Bucket; meta: string } {
   return {
     tone,
     bucket,
+    label: label.replace(/^./, (c) => c.toUpperCase()),
+    when: time,
     meta: [label.replace(/^./, (c) => c.toUpperCase()), time, run.source]
       .filter(Boolean)
       .join(' · '),
@@ -205,31 +219,30 @@ const visibleRows = computed(() =>
   rows.value.filter((row) => filter.value === 'all' || info(row).bucket === filter.value),
 )
 const groups = computed(() => {
-  const today = new Date().toDateString()
-  const yesterday = new Date(Date.now() - 86_400_000).toDateString()
-  const out: { key: string; title: string; rows: Row[] }[] = []
+  const out: { key: string; goalId: string | null; title: string; rows: Row[] }[] = []
   for (const row of visibleRows.value) {
-    const key = row.time ? new Date(row.time).toDateString() : 'unknown'
+    const goalId = row.task?.parentGoalId ?? null
+    const key = goalId ?? 'misc'
     let group = out.find((item) => item.key === key)
     if (!group) {
-      group = {
-        key,
-        title:
-          key === 'unknown'
-            ? 'Date unavailable'
-            : key === today
-              ? 'Today'
-              : key === yesterday
-                ? 'Yesterday'
-                : day(row.time),
-        rows: [],
-      }
+      group = { key, goalId, title: goalId ? goalTitle(goalId) : 'Misc', rows: [] }
       out.push(group)
     }
     group.rows.push(row)
   }
   return out
 })
+const isCollapsed = (key: string) => collapsed.value[key] ?? false
+const toggleGroup = (key: string) =>
+  (collapsed.value = { ...collapsed.value, [key]: !isCollapsed(key) })
+const who = (row: Row) =>
+  row.task
+    ? row.task.executionMode === 'manual'
+      ? 'You'
+      : row.task.executionMode === 'analysis'
+        ? 'Visual Analysis'
+        : 'Rune'
+    : (row.run?.source ?? '') || 'Rune'
 
 function primary(row: Row): { label: string; run: () => void } | null {
   const task = row.task
@@ -327,7 +340,10 @@ function goalOptions(task: WorkspaceTask) {
 <template>
   <section aria-label="Task activity timeline" class="flex flex-col gap-rune-3">
     <div class="flex flex-wrap items-center justify-between gap-rune-2">
-      <RuneChoice v-model="filter" label="Filter tasks" segments :options="FILTERS" />
+      <div class="flex flex-wrap items-center gap-rune-1">
+        <RuneChoice v-model="filter" label="Filter tasks" segments :options="FILTERS" />
+        <RuneChoice v-model="view" label="Task view" segments :options="VIEWS" />
+      </div>
       <div class="flex items-center gap-rune-1">
         <RuneButton v-if="parentFilter" variant="ghost" size="sm" @click="emit('clear')">
           Showing goal tasks · Clear filter ×
@@ -345,114 +361,105 @@ function goalOptions(task: WorkspaceTask) {
       hint="Use + New task, or run a request from the Rune pill."
     />
     <WorkEmpty v-else-if="!visibleRows.length" title="Nothing matches this filter" />
-    <HubGroup v-for="group in groups" :key="group.key" :title="group.title">
-      <WorkRow
-        v-for="row in group.rows"
-        :key="row.id"
-        :data-work-task="row.id"
-        :title="row.task?.title ?? row.run?.task ?? ''"
-        :meta="info(row).meta"
-        :state="info(row).tone"
-        :selected="focusTaskId === row.id"
-      >
-        <template #leading>
-          <TaskPreview
-            :run="previewRun(row)"
-            @open="previewRun(row) && emit('open', previewRun(row)!.id)"
-          />
-        </template>
-        <template #actions>
-          <RuneButton
-            v-if="primary(row)"
-            variant="primary"
-            size="sm"
-            :disabled="workspace.pending.value"
-            @click="primary(row)!.run()"
-          >
-            {{ primary(row)!.label }}
-          </RuneButton>
-          <RuneMenu
-            :label="`More actions: ${row.task?.title ?? row.run?.task}`"
-            :items="menu(row)"
-            @select="(id) => act(row, id)"
-          />
-          <RuneIconButton
-            v-if="row.task"
-            variant="ghost"
-            size="sm"
-            :label="expanded.has(row.id) ? 'Hide details' : 'Show details'"
-            :aria-expanded="expanded.has(row.id)"
-            @click="toggle(row.id)"
-          >
-            <AppIcon
-              name="chevron"
-              class="transition-transform"
-              :class="expanded.has(row.id) && 'rotate-180'"
-            />
-          </RuneIconButton>
-        </template>
-        <WorkProgress
-          :value="row.task ? taskProgress(row.task) : legacyProgress(row.run!)"
-          :label="row.task ? 'Latest occurrence progress' : 'Task progress'"
-          :detail="progressDetail(row)"
-        />
-        <div
-          v-if="row.task && expanded.has(row.id)"
-          class="flex flex-col gap-rune-2 rounded-rune-tile bg-rune-sunken p-rune-2"
+    <section v-for="group in groups" :key="group.key" class="flex flex-col gap-0.5">
+      <header class="flex items-center justify-between gap-rune-2">
+        <button
+          type="button"
+          class="flex cursor-pointer items-center gap-2 rounded-rune-tile px-rune-2 py-1 text-left text-rune-body text-rune-ink hover:bg-white/5"
+          :aria-expanded="!isCollapsed(group.key)"
+          @click="toggleGroup(group.key)"
         >
-          <template v-if="row.task">
-            <div class="flex flex-wrap items-center justify-between gap-rune-2">
-              <span class="text-rune-body text-rune-ink">Parent goal</span>
-              <div class="flex items-center gap-rune-1">
-                <RuneButton
-                  v-if="row.task.parentGoalId"
-                  variant="ghost"
-                  size="sm"
-                  @click="emit('goal', row.task.parentGoalId)"
-                >
-                  ← {{ goalTitle(row.task.parentGoalId) }}
-                </RuneButton>
-                <RuneChoice
-                  :model-value="row.task.parentGoalId ?? ''"
-                  label="Parent goal"
-                  menu
-                  :disabled="workspace.pending.value"
-                  :options="goalOptions(row.task)"
-                  @update:model-value="(value) => workspace.link(row.task!, value || null)"
-                />
-              </div>
-            </div>
-            <p v-if="row.task.instructions" class="m-0 text-rune-caption text-rune-text-2">
-              <span class="block text-rune-text-3">Task instructions</span>
-              <span class="whitespace-pre-wrap">{{ row.task.instructions }}</span>
-            </p>
-            <div v-if="row.task.occurrences.length > 1" class="flex flex-col gap-1">
-              <span class="text-rune-caption text-rune-text-3">
-                {{ row.task.occurrences.length }} occurrences and attempts
-              </span>
-              <div
-                v-for="occurrence in [...row.task.occurrences].reverse()"
-                :key="occurrence.id"
-                class="flex items-center justify-between gap-3 text-rune-caption text-rune-text-2"
-              >
-                <span
-                  >{{ occurrence.dueMs ? day(occurrence.dueMs) : 'Manual task' }} ·
-                  {{ occurrence.state }}{{ occurrence.reported ? ' · user reported' : '' }}</span
-                >
-                <RuneButton
-                  v-if="occurrence.runId"
-                  variant="ghost"
-                  size="sm"
-                  @click="emit('open', occurrence.runId)"
-                >
-                  Review →
-                </RuneButton>
-              </div>
-            </div>
-            <RuneNotice v-if="row.task.error" tone="error">{{ row.task.error }}</RuneNotice>
-          </template>
+          <AppIcon
+            name="chevron"
+            size="sm"
+            class="text-rune-text-3 transition-transform"
+            :class="isCollapsed(group.key) && '-rotate-90'"
+          />
+          <h3 class="m-0 font-sans text-rune-body font-normal">{{ group.title }}</h3>
+          <span class="text-rune-caption text-rune-text-3">{{ group.rows.length }}</span>
+        </button>
+        <RuneButton
+          v-if="group.goalId"
+          variant="ghost"
+          size="sm"
+          @click="emit('goal', group.goalId)"
+        >
+          Open goal →
+        </RuneButton>
+      </header>
+      <template v-if="!isCollapsed(group.key)">
+        <div v-if="view === 'table'" class="@container flex flex-col gap-0.5" role="table">
+          <div
+            v-for="row in group.rows"
+            :key="row.id"
+            :data-work-task="row.id"
+            class="grid items-center gap-rune-2 bg-rune-surface px-rune-2 py-rune-1 transition-colors first:rounded-t-rune-tile last:rounded-b-rune-tile hover:bg-rune-raised grid-cols-[6rem_minmax(0,1fr)_8rem_2.5rem] @2xl:grid-cols-[6rem_minmax(0,1fr)_8rem_6rem_9rem_6rem_2.5rem]"
+            :class="selectedId === row.id && 'bg-rune-raised'"
+          >
+            <TaskPreview
+              :run="previewRun(row)"
+              @open="previewRun(row) && emit('open', previewRun(row)!.id)"
+            />
+            <span class="line-clamp-2 text-rune-body text-rune-ink">{{
+              row.task?.title ?? row.run?.task ?? ''
+            }}</span>
+            <span class="flex items-center gap-2 text-rune-caption text-rune-text-2">
+              <RuneDot :state="info(row).tone" /><span class="truncate">{{ info(row).label }}</span>
+            </span>
+            <span class="hidden truncate text-rune-caption text-rune-text-2 @2xl:block">{{
+              who(row)
+            }}</span>
+            <span class="hidden truncate text-rune-caption text-rune-text-2 @2xl:block">{{
+              info(row).when
+            }}</span>
+            <span class="hidden text-rune-caption text-rune-text-3 tabular-nums @2xl:block">{{
+              (row.task ? taskProgress(row.task) : legacyProgress(row.run!)) === null
+                ? '—'
+                : `${row.task ? taskProgress(row.task) : legacyProgress(row.run!)}%`
+            }}</span>
+            <span class="justify-self-end">
+              <RuneMenu
+                :label="`More actions: ${row.task?.title ?? row.run?.task}`"
+                :items="menu(row)"
+                @select="(id) => act(row, id)"
+              />
+            </span>
+          </div>
         </div>
-      </WorkRow>
-    </HubGroup>
+        <div v-else class="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-rune-1">
+          <TaskCard
+            v-for="row in group.rows"
+            :key="row.id"
+            :data-work-task="row.id"
+            :title="row.task?.title ?? row.run?.task ?? ''"
+            :meta="info(row).meta"
+            :state="info(row).tone"
+            :run="previewRun(row)"
+            :progress="row.task ? taskProgress(row.task) : legacyProgress(row.run!)"
+            :selected="selectedId === row.id"
+            @open="previewRun(row) && emit('open', previewRun(row)!.id)"
+          >
+            <template #actions>
+              <RuneMenu
+                :label="`More actions: ${row.task?.title ?? row.run?.task}`"
+                :items="menu(row)"
+                @select="(id) => act(row, id)"
+              />
+            </template>
+            <template #footer>
+              <RuneButton
+                v-if="primary(row)"
+                variant="primary"
+                size="sm"
+                :disabled="workspace.pending.value"
+                @click="primary(row)!.run()"
+              >
+                {{ primary(row)!.label }}
+              </RuneButton>
+            </template>
+          </TaskCard>
+        </div>
+      </template>
+    </section>
   </section>
 </template>

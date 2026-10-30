@@ -2,6 +2,9 @@
 import RuneSegment from './RuneSegment.vue'
 import RuneIconButton from './RuneIconButton.vue'
 import RuneButton from './RuneButton.vue'
+import RuneChip from './RuneChip.vue'
+import RuneChoice from './RuneChoice.vue'
+import RuneSwitch from './RuneSwitch.vue'
 import ModelIcon from './ModelIcon.vue'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
@@ -55,6 +58,16 @@ async function openTask(id: string) {
   }
   selectedAttempt.value = attempts.value.at(-1) ?? id
   await openRun(selectedAttempt.value)
+}
+const attemptOptions = computed(() =>
+  attempts.value.map((id, at) => ({
+    value: id,
+    label: `Attempt ${at + 1}${at === attempts.value.length - 1 ? ' · Latest' : ''}`,
+  })),
+)
+function chooseAttempt(id: string) {
+  selectedAttempt.value = id
+  void openRun(id)
 }
 const stage = ref<InstanceType<typeof FlightStage> | null>(null)
 
@@ -391,28 +404,17 @@ const verdictLine = computed(() => {
     </section>
 
     <template v-else>
-      <header class="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2 px-5 py-3">
-        <RuneIconButton
-          variant="ghost"
-          size="sm"
-          label="Back to Tasks"
-          data-testid="back"
-          @click="back"
-        >
-          <AppIcon name="back" />
-        </RuneIconButton>
-        <div class="flex min-w-0 flex-1 flex-col">
-          <select
-            v-if="attempts.length > 1"
-            v-model="selectedAttempt"
-            aria-label="Execution attempt"
-            class="mb-2 self-start rounded-rune-tile bg-rune-raised px-2 py-1 text-rune-caption text-rune-ink"
-            @change="openRun(selectedAttempt)"
+      <header class="flex shrink-0 flex-col gap-rune-1 px-rune-3 py-rune-2">
+        <div class="flex flex-wrap items-center gap-rune-1">
+          <RuneIconButton
+            variant="ghost"
+            size="sm"
+            label="Back to Tasks"
+            data-testid="back"
+            @click="back"
           >
-            <option v-for="(id, index) in attempts" :key="id" :value="id">
-              Attempt {{ index + 1 }}{{ index === attempts.length - 1 ? ' · Latest' : '' }}
-            </option>
-          </select>
+            <AppIcon name="back" />
+          </RuneIconButton>
           <RuneButton
             v-if="parentGoal"
             variant="link"
@@ -421,59 +423,61 @@ const verdictLine = computed(() => {
           >
             ← {{ parentGoal.title }}
           </RuneButton>
-          <h1 class="m-0 truncate text-rune-title" :title="header.task" data-testid="task">
-            {{ header.task }}
-          </h1>
-          <p class="m-0 flex items-center gap-2 text-rune-heading text-rune-text-2 uppercase">
-            <span
-              v-if="flight.live.value"
-              class="flex items-center gap-1 text-rune-ink"
-              data-testid="live"
-              ><span
-                class="size-1.5 motion-safe:animate-pulse rounded-full bg-attention"
-              />Live</span
-            >
-            <span v-else class="flex items-center gap-1" :class="outcomeClass" data-testid="outcome"
-              ><span class="size-1.5 rounded-full" :class="outcomeDot" />{{
-                header.outcome ?? 'ended'
-              }}</span
-            >
-            <template v-if="verdictLine">
-              <span>·</span>
-              <span class="max-w-56 truncate" :title="verdictLine" data-testid="verdict">{{
-                header.verdict?.result
-              }}</span>
-            </template>
-            <span>· <WhenText :iso="header.startedUtc" /></span>
-          </p>
+          <RuneChoice
+            v-if="attempts.length > 1"
+            class="ml-auto"
+            :model-value="selectedAttempt"
+            label="Execution attempt"
+            :options="attemptOptions"
+            @update:model-value="chooseAttempt"
+          />
         </div>
-        <dl
-          class="m-0 flex flex-wrap gap-x-6 gap-y-1 text-rune-heading uppercase"
-          data-testid="meta"
+        <h1
+          class="m-0 truncate px-rune-1 font-sans text-rune-title"
+          :title="header.task"
+          data-testid="task"
         >
-          <div class="flex flex-col">
-            <dt class="text-rune-text-2">Duration</dt>
-            <dd class="m-0 text-rune-ink tabular-nums">{{ duration ?? '—' }}</dd>
-          </div>
-          <div class="flex flex-col">
-            <dt class="text-rune-text-2">Steps</dt>
-            <dd class="m-0 text-rune-ink tabular-nums">{{ header.steps }}</dd>
-          </div>
-          <div class="flex flex-col">
-            <dt class="text-rune-text-2">Retries</dt>
-            <dd class="m-0 text-rune-ink tabular-nums">{{ header.retries }}</dd>
-          </div>
-          <div v-if="outside" class="flex flex-col">
-            <dt class="text-rune-text-2">Agent</dt>
-            <dd class="m-0 text-rune-ink tabular-nums">{{ header.source }}</dd>
-          </div>
-          <div v-if="!outside && header.model" class="flex flex-col">
-            <dt class="text-rune-text-2">Model</dt>
-            <dd class="m-0 flex items-center gap-2 text-rune-ink tabular-nums">
-              <ModelIcon :model="header.model" />{{ header.model }}
-            </dd>
-          </div>
-        </dl>
+          {{ header.task }}
+        </h1>
+        <div class="flex flex-wrap items-center gap-rune-1 px-rune-1">
+          <RuneChip v-if="flight.live.value" variant="red" data-testid="live"
+            ><span class="size-1.5 motion-safe:animate-pulse rounded-full bg-white" />Live</RuneChip
+          >
+          <RuneChip v-else data-testid="outcome" :class="outcomeClass"
+            ><span class="size-1.5 rounded-full" :class="outcomeDot" />{{
+              header.outcome ?? 'ended'
+            }}</RuneChip
+          >
+          <RuneChip v-if="verdictLine" :title="verdictLine" data-testid="verdict">{{
+            header.verdict?.result
+          }}</RuneChip>
+          <span class="text-rune-caption text-rune-text-3"
+            ><WhenText :iso="header.startedUtc"
+          /></span>
+          <span class="flex flex-wrap items-center gap-rune-1" data-testid="meta">
+            <RuneChip
+              ><span class="text-rune-text-3">Duration</span
+              ><span class="text-rune-ink tabular-nums">{{ duration ?? '—' }}</span></RuneChip
+            >
+            <RuneChip
+              ><span class="text-rune-text-3">Steps</span
+              ><span class="text-rune-ink tabular-nums">{{ header.steps }}</span></RuneChip
+            >
+            <RuneChip
+              ><span class="text-rune-text-3">Retries</span
+              ><span class="text-rune-ink tabular-nums">{{ header.retries }}</span></RuneChip
+            >
+            <RuneChip v-if="outside"
+              ><span class="text-rune-text-3">Agent</span
+              ><span class="text-rune-ink">{{ header.source }}</span></RuneChip
+            >
+            <RuneChip v-if="!outside && header.model"
+              ><ModelIcon :model="header.model" /><span class="text-rune-ink">{{
+                header.model
+              }}</span></RuneChip
+            >
+          </span>
+        </div>
       </header>
 
       <FlightAnalysis
@@ -511,59 +515,60 @@ const verdictLine = computed(() => {
           />
 
           <div
-            class="flex shrink-0 flex-wrap items-center gap-2 px-4 pt-2"
-            role="toolbar"
-            aria-label="Playback"
+            class="flex shrink-0 flex-wrap items-center justify-between gap-rune-2 px-rune-3 pt-rune-2"
           >
-            <RuneIconButton
-              size="sm"
-              label="Previous step"
-              data-testid="prev"
-              @click="previousStep"
+            <div
+              class="flex flex-wrap items-center gap-rune-1 rounded-full bg-rune-sunken p-1 pr-rune-2"
+              role="toolbar"
+              aria-label="Playback"
             >
-              <AppIcon name="prev" />
-            </RuneIconButton>
-            <RuneIconButton
-              variant="primary"
-              size="sm"
-              :label="playing ? 'Pause' : 'Play'"
-              data-testid="play"
-              @click="toggle"
-            >
-              <AppIcon :name="playing ? 'pause' : 'play'" />
-            </RuneIconButton>
-            <RuneIconButton size="sm" label="Next step" data-testid="next" @click="nextStep">
-              <AppIcon name="next" />
-            </RuneIconButton>
-            <span class="text-rune-caption text-rune-text-2 tabular-nums" data-testid="time"
-              >{{ clock(timeMs) }} / {{ clock(flight.total.value) }}</span
-            >
-            <span class="ml-2 flex gap-1" role="group" aria-label="Speed">
-              <RuneSegment
-                v-for="speed in SPEEDS"
-                :key="speed"
-                :selected="rate === speed"
-                :aria-pressed="rate === speed"
-                @click="setRate(speed)"
-              >
-                {{ speed }}x
-              </RuneSegment>
-            </span>
-            <span class="ml-auto flex items-center gap-1">
-              <RuneButton
-                variant="ghost"
+              <RuneIconButton
                 size="sm"
-                :aria-pressed="!showTyped"
-                title="Hide what was typed (passwords, messages) in the player"
-                data-testid="typed-toggle"
-                @click="showTyped = !showTyped"
+                label="Previous step"
+                data-testid="prev"
+                @click="previousStep"
               >
-                <span
-                  class="size-1.5 rounded-full"
-                  :class="showTyped ? 'bg-rune-raised' : 'bg-rune-ink'"
+                <AppIcon name="prev" />
+              </RuneIconButton>
+              <RuneIconButton
+                variant="primary"
+                size="sm"
+                :label="playing ? 'Pause' : 'Play'"
+                data-testid="play"
+                @click="toggle"
+              >
+                <AppIcon :name="playing ? 'pause' : 'play'" />
+              </RuneIconButton>
+              <RuneIconButton size="sm" label="Next step" data-testid="next" @click="nextStep">
+                <AppIcon name="next" />
+              </RuneIconButton>
+              <span class="px-1 text-rune-caption text-rune-text-2 tabular-nums" data-testid="time"
+                >{{ clock(timeMs) }} / {{ clock(flight.total.value) }}</span
+              >
+              <span class="flex gap-1" role="group" aria-label="Speed">
+                <RuneSegment
+                  v-for="speed in SPEEDS"
+                  :key="speed"
+                  :selected="rate === speed"
+                  :aria-pressed="rate === speed"
+                  @click="setRate(speed)"
+                >
+                  {{ speed }}x
+                </RuneSegment>
+              </span>
+            </div>
+            <div class="flex items-center gap-rune-2">
+              <span
+                class="flex items-center gap-2 text-rune-caption text-rune-text-2"
+                title="Hide what was typed (passwords, messages) in the player"
+                >Mask secrets
+                <RuneSwitch
+                  :model-value="!showTyped"
+                  label="Mask secrets"
+                  data-testid="typed-toggle"
+                  @update:model-value="showTyped = !$event"
                 />
-                Mask secrets
-              </RuneButton>
+              </span>
               <RuneIconButton
                 size="sm"
                 v-if="hasVideo"
@@ -580,7 +585,7 @@ const verdictLine = computed(() => {
               >
                 <AppIcon name="drawer" size="sm" /> Details
               </RuneButton>
-            </span>
+            </div>
           </div>
 
           <FlightTaskTimeline
@@ -602,7 +607,11 @@ const verdictLine = computed(() => {
             @seek="seek"
           />
 
-          <p v-if="notice" class="m-0 px-4 pb-2 text-rune-caption text-rune-text-2" role="status">
+          <p
+            v-if="notice"
+            class="m-0 px-rune-3 pb-rune-2 text-rune-caption text-rune-text-3"
+            role="status"
+          >
             {{ notice }}
           </p>
         </div>

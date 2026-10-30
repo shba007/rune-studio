@@ -12,6 +12,7 @@ import HubRow from './HubRow.vue'
 import SettingsReview from './SettingsReview.vue'
 import RecordingControls from './RecordingControls.vue'
 import SettingsGoalContext from './SettingsGoalContext.vue'
+import { useDomainPrefs } from '@/composables/useDomainPrefs'
 
 withDefaults(
   defineProps<{
@@ -21,6 +22,8 @@ withDefaults(
   }>(),
   { view: 'all' },
 )
+
+const { showSanctuary } = useDomainPrefs()
 
 const MODEL_RESOLUTIONS = [
   { value: '720', label: '720 px · Faster' },
@@ -92,6 +95,14 @@ const PREVIEW_STATES = DEBUG_STATES.map((value) => ({ value, label: value.replac
     </HubGroup>
 
     <RecordingControls v-if="view === 'all' || view === 'capture'" />
+
+    <HubGroup v-if="view === 'all' || view === 'general'" title="Workspace">
+      <HubToggle
+        v-model="showSanctuary"
+        label="Show Sanctuary domains"
+        hint="Romance, tribe, family, play, purpose and legacy goals. Off by default; these areas are meant to stay free of metrics."
+      />
+    </HubGroup>
 
     <HubGroup v-if="view === 'all' || view === 'general'" title="Safety &amp; behavior">
       <HubToggle

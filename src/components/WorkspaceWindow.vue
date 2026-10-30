@@ -11,6 +11,11 @@ import TaskHistory from './TaskHistory.vue'
 import TitleBar from './TitleBar.vue'
 import FlightPlayer from './FlightPlayer.vue'
 import DecisionInbox from './DecisionInbox.vue'
+import GoalsTable from './GoalsTable.vue'
+import PeekPanel from './PeekPanel.vue'
+import RuneChip from './RuneChip.vue'
+import { domainOf } from '@/config/domains'
+import { useDomainPrefs } from '@/composables/useDomainPrefs'
 import PersonalitiesPanel from './PersonalitiesPanel.vue'
 import KnowledgeOverview from './KnowledgeOverview.vue'
 import type { KnowledgeSection } from '@/config/knowledge'
@@ -33,6 +38,11 @@ const approvedGoals = computed(() =>
   decisions.entries.value.filter((goal) => goal.kind === 'goal' && goal.approvedGoal),
 )
 const focusGoalId = ref<string | null>(null)
+const { overrides } = useDomainPrefs()
+const focusDomain = computed(() => {
+  const entry = decisions.entries.value.find((item) => item.id === focusGoalId.value)
+  return entry ? domainOf(entry, overrides.value) : null
+})
 const parentFilter = ref<string | null>(null)
 const focusTaskId = ref<string | null>(null)
 const creation = ref<{
@@ -148,7 +158,10 @@ onBeforeUnmount(() => {
         </RuneNavItem>
       </nav>
       <section class="min-w-0 flex-1 overflow-y-auto px-8 py-8 lg:px-12">
-        <div class="mx-auto flex w-full max-w-4xl flex-col gap-rune-3">
+        <div
+          class="mx-auto flex w-full flex-col gap-rune-3"
+          :class="section === 'goals' ? 'max-w-6xl' : 'max-w-4xl'"
+        >
           <header class="flex flex-wrap items-center justify-between gap-rune-2">
             <h1 class="m-0 font-sans text-rune-title">{{ current.label }}</h1>
             <RuneButton
@@ -194,31 +207,39 @@ onBeforeUnmount(() => {
             @clear="parentFilter = null"
           />
           <div v-if="section === 'goals'" class="flex flex-col gap-rune-3 text-rune-text-2">
-            <RuneButton
-              variant="ghost"
-              size="sm"
-              v-if="focusGoalId"
-              class="self-start"
-              @click="focusGoalId = null"
-            >
-              ← All goals
-            </RuneButton>
-            <DecisionInbox
-              goals-only
-              :model="decisions"
-              :workspace="workspace"
-              :focus-goal-id="focusGoalId"
+            <RuneNotice v-if="decisions.error.value" tone="error">{{
+              decisions.error.value
+            }}</RuneNotice>
+            <GoalsTable
+              :entries="decisions.entries.value"
+              :tasks="workspace.tasks.value"
+              :selected-id="focusGoalId"
               @open="openGoal"
-              @goal-tasks="goalTasks"
-              @task="openTask"
-              @create-task="(id) => (creation = { kind: 'task', parent: id })"
             />
-            <KnowledgeOverview v-if="!focusGoalId" @navigate="navigate" />
+            <KnowledgeOverview @navigate="navigate" />
           </div>
           <DecisionInbox v-if="section === 'tasks'" quiet :model="decisions" />
           <PersonalitiesPanel v-if="section === 'personalities'" ref="personalities" />
         </div>
       </section>
+      <PeekPanel
+        v-if="section === 'goals' && focusGoalId"
+        label="Goal details"
+        @close="focusGoalId = null"
+      >
+        <template #header>
+          <RuneChip v-if="focusDomain">{{ focusDomain.name }}</RuneChip>
+        </template>
+        <DecisionInbox
+          goals-only
+          :model="decisions"
+          :workspace="workspace"
+          :focus-goal-id="focusGoalId"
+          @goal-tasks="goalTasks"
+          @task="openTask"
+          @create-task="(id) => (creation = { kind: 'task', parent: id })"
+        />
+      </PeekPanel>
     </div>
   </main>
 </template>

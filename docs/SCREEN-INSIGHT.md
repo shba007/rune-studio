@@ -2,8 +2,7 @@
 
 Select API mode, configure an explicit Analysis role model in General settings,
 then click Screen Analysis. Choose a screen/window and optionally enter a question;
-press Ask to capture one frame. Default question: "Summarize what is visible and
-identify any apparent errors or issues."
+press Ask to capture one frame. Default question: "Summarize what is visible and identify."
 
 Infer must advertise image input and tool calling for that model. The same
 captured frame is sent to the configured model and shown with the answer, capture

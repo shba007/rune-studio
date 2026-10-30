@@ -134,7 +134,7 @@ const playheadLeft = computed(() => props.timeMs * pxPerMs.value - scrollLeft.va
 </script>
 
 <template>
-  <section class="flex flex-col gap-1 px-4 pt-2" aria-label="Timeline">
+  <section class="flex flex-col gap-1 px-rune-3 pt-rune-2" aria-label="Timeline">
     <div
       ref="track"
       class="relative h-20 cursor-pointer touch-none overflow-hidden rounded-rune-tile bg-rune-sunken select-none"

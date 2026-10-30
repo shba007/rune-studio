@@ -72,6 +72,17 @@ export const flightSteps = [
 
 export const flightRuns = [
   {
+    id: '110000-1-insight',
+    task: 'What is on this screen?',
+    source: 'screen-insight',
+    outcome: 'succeeded',
+    startedUtc: at(0),
+    endedUtc: at(5),
+    steps: 0,
+    verdict: null,
+    thumb: null,
+  },
+  {
     id: '100000-1-open-notepad',
     task: 'Open Notepad and write a note: buy milk and call Sam',
     source: 'built-in',
@@ -118,6 +129,35 @@ export function flightHeader(id: string, withVideo: boolean) {
     },
     video: withVideo ? { file: 'session.mp4', kind: 'storyboard', frames: 6, seconds: 55 } : null,
     sessionDir: 'C:/fixture',
+    analysis:
+      run.source === 'screen-insight'
+        ? {
+            answer:
+              'A settings dialog with a name field and a red Delete button. The user can fill in the name or confirm.',
+            findings: [
+              {
+                n: 1,
+                label: 'Name field',
+                kind: 'control',
+                box: [156, 250, 563, 306],
+                description: 'A text field for a name.',
+                evidence: 'light grey input with an empty value',
+              },
+              {
+                n: 2,
+                label: 'Delete',
+                kind: 'issue',
+                box: [703, 778, 844, 845],
+                description: 'A red button that probably deletes the entry.',
+                evidence: 'red fill, bottom right',
+              },
+            ],
+            model: 'gemma-4-12b-it',
+            capturedUtc: run.startedUtc,
+            captureFile: 'screenshots/3.jpg',
+            error: null,
+          }
+        : null,
   }
 }
 

@@ -78,9 +78,8 @@ it('submits requests without user scheduling controls while another task runs', 
   expect(wrapper.get('textarea').attributes('disabled')).toBeUndefined()
   wrapper.unmount()
 })
-it('shows the approval mode and toggles it, and opens Settings from the tune button', async () => {
+it('shows the approval mode and and toggles it', async () => {
   const saveSettings = vi.fn<(next: unknown) => Promise<boolean>>(async () => true)
-  const openSettings = vi.fn<() => void>()
   const agent = {
     state: ref('idle'),
     isRunning: ref(false),
@@ -92,7 +91,6 @@ it('shows the approval mode and toggles it, and opens Settings from the tune but
     noticeKind: ref('info'),
     statusText: ref(''),
     saveSettings,
-    openSettings,
     stop: vi.fn<() => void>(),
     toggleListening: vi.fn<() => void>(),
   } as unknown as Agent
@@ -101,6 +99,4 @@ it('shows the approval mode and toggles it, and opens Settings from the tune but
   expect(mode.text()).toBe('Auto')
   await mode.trigger('click')
   expect(saveSettings).toHaveBeenCalledWith(expect.objectContaining({ askEveryAction: true }))
-  await wrapper.get('[aria-label="Settings"]').trigger('click')
-  expect(openSettings).toHaveBeenCalledOnce()
 })

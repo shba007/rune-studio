@@ -4,7 +4,7 @@ import { ref, useTemplateRef, watch } from 'vue'
 import type { FlightRun } from '@/config/flight'
 import { useFlight } from '@/composables/useFlight'
 import AppIcon from './AppIcon.vue'
-const props = defineProps<{ run?: FlightRun | null }>()
+const props = defineProps<{ run?: FlightRun | null; fill?: boolean }>()
 defineEmits<{ open: [] }>()
 const target = useTemplateRef<HTMLElement>('target')
 const visible = ref(false)
@@ -32,14 +32,18 @@ watch(
     type="button"
     :disabled="!run"
     :aria-label="run ? `Preview task: ${run.task}` : 'No task preview available'"
-    class="group relative aspect-video w-24 shrink-0 overflow-hidden rounded-rune-tile bg-black disabled:cursor-default"
+    class="group overflow-hidden bg-black disabled:cursor-default"
+    :class="
+      fill ? 'absolute inset-0 size-full' : 'relative aspect-video w-24 shrink-0 rounded-rune-tile'
+    "
     @click="$emit('open')"
   >
     <img
       v-if="picture"
       :src="picture"
       alt=""
-      class="size-full object-contain"
+      class="size-full"
+      :class="fill ? 'object-cover' : 'object-contain'"
       @error="picture = null"
     />
     <span v-else class="absolute inset-0 grid place-items-center text-rune-text-3"

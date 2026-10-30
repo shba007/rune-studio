@@ -170,15 +170,15 @@ const rawText = computed(() => {
 
 <template>
   <aside
-    class="absolute inset-y-0 right-0 z-10 flex w-[380px] max-w-full flex-col bg-black text-rune-ink motion-safe:transition-transform motion-safe:duration-[220ms]"
+    class="absolute inset-y-0 right-0 z-10 flex w-[380px] max-w-full flex-col bg-rune-sunken text-rune-ink motion-safe:transition-transform motion-safe:duration-[220ms]"
     :class="open ? 'translate-x-0' : 'translate-x-full'"
     :aria-hidden="!open"
     :inert="!open"
     aria-label="Step details"
     data-testid="drawer"
   >
-    <header class="flex h-10 shrink-0 items-center gap-2 px-3">
-      <span class="text-rune-heading text-rune-text-2 uppercase">Details</span>
+    <header class="flex h-12 shrink-0 items-center gap-2 px-rune-2">
+      <span class="text-rune-heading text-rune-text-3 uppercase">Details</span>
       <RuneButton
         size="sm"
         v-if="developer"
@@ -200,7 +200,11 @@ const rawText = computed(() => {
       </RuneIconButton>
     </header>
 
-    <nav class="flex shrink-0 flex-wrap gap-1 px-3 py-2" role="tablist" aria-label="Detail tabs">
+    <nav
+      class="flex shrink-0 flex-wrap gap-1 px-rune-2 py-rune-1"
+      role="tablist"
+      aria-label="Detail tabs"
+    >
       <RuneSegment
         v-for="id in tabs"
         :key="id"
@@ -214,7 +218,7 @@ const rawText = computed(() => {
       </RuneSegment>
     </nav>
 
-    <div class="min-h-0 flex-1 overflow-y-auto p-3 text-rune-body" role="tabpanel">
+    <div class="min-h-0 flex-1 overflow-y-auto p-rune-2 text-rune-body" role="tabpanel">
       <p v-if="!step" class="m-0 text-rune-text-2">No step is selected.</p>
 
       <template v-else-if="raw && developer">
@@ -230,15 +234,15 @@ const rawText = computed(() => {
       </template>
 
       <template v-else-if="tab === 'step'">
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-rune-2 rounded-rune-tile bg-rune-surface p-rune-2">
           <span
-            class="grid size-10 shrink-0 place-items-center rounded-full bg-rune-surface text-rune-ink"
+            class="grid size-10 shrink-0 place-items-center rounded-full bg-rune-raised text-rune-ink"
           >
             <AppIcon :name="KIND_ICON[kindOf(step.tool ?? '')]" />
           </span>
           <div class="flex min-w-0 flex-col">
             <span class="text-rune-title">{{ toolLabel }}</span>
-            <span class="text-rune-heading text-rune-text-2 uppercase"
+            <span class="text-rune-heading text-rune-text-3 uppercase"
               >Step {{ index + 1 }} of {{ header.steps
               }}<template v-if="step.goal !== null"> · Plan item {{ step.goal }}</template></span
             >
@@ -249,11 +253,17 @@ const rawText = computed(() => {
             >{{ step.error ? 'Error' : (step.result ?? '—') }}</span
           >
         </div>
-        <p v-if="step.error" class="m-0 mt-3 text-rune-caption text-error">
+        <p
+          v-if="step.error"
+          class="m-0 mt-0.5 rounded-rune-tile bg-rune-surface p-rune-2 text-rune-caption text-error"
+        >
           {{ mask(step.error) }}
         </p>
 
-        <div v-if="riskLevel(step.riskFinal ?? step.riskStated) >= 0" class="mt-4">
+        <div
+          v-if="riskLevel(step.riskFinal ?? step.riskStated) >= 0"
+          class="mt-0.5 rounded-rune-tile bg-rune-surface p-rune-2"
+        >
           <div class="mb-1 flex items-center justify-between text-rune-heading uppercase">
             <span class="text-rune-text-2">Risk</span>
             <span class="text-rune-text-2">{{
@@ -276,16 +286,22 @@ const rawText = computed(() => {
           </div>
         </div>
 
-        <figure v-if="mask(step.reason)" class="m-0 mt-4 pl-3">
-          <figcaption class="mb-1 text-rune-heading text-rune-text-2 uppercase">Why</figcaption>
+        <figure
+          v-if="mask(step.reason)"
+          class="m-0 mt-0.5 rounded-rune-tile bg-rune-surface p-rune-2"
+        >
+          <figcaption class="mb-1 text-rune-heading text-rune-text-3 uppercase">Why</figcaption>
           <p class="m-0 line-clamp-6 text-rune-body leading-snug text-rune-ink">
             {{ mask(step.reason) }}
           </p>
         </figure>
 
-        <div v-if="inputRows.length || step.tool === 'type_text'" class="mt-4">
+        <div
+          v-if="inputRows.length || step.tool === 'type_text'"
+          class="mt-0.5 rounded-rune-tile bg-rune-surface p-rune-2"
+        >
           <div class="mb-1 flex items-center justify-between">
-            <span class="text-rune-heading text-rune-text-2 uppercase">Input</span>
+            <span class="text-rune-heading text-rune-text-3 uppercase">Input</span>
             <RuneButton
               variant="ghost"
               size="sm"
@@ -298,11 +314,11 @@ const rawText = computed(() => {
             </RuneButton>
           </div>
           <dl
-            class="m-0 flex flex-col gap-2 rounded-rune-tile bg-rune-surface px-3 py-2"
+            class="m-0 flex flex-col gap-2 rounded-rune-tile bg-rune-sunken px-rune-2 py-rune-1"
             data-testid="args"
           >
             <div v-for="row in inputRows" :key="row.key" class="flex flex-col">
-              <dt class="text-rune-heading text-rune-text-2 uppercase">{{ row.key }}</dt>
+              <dt class="text-rune-heading text-rune-text-3 uppercase">{{ row.key }}</dt>
               <dd class="m-0 text-rune-caption break-words text-rune-ink">{{ row.value }}</dd>
             </div>
             <p v-if="inputRows.length === 0" class="m-0 text-rune-caption text-rune-text-2">
@@ -314,7 +330,7 @@ const rawText = computed(() => {
           v-if="screenshot"
           :src="screenshot"
           alt="What the model saw at this step"
-          class="mt-4 w-full rounded-rune-tile bg-rune-raised"
+          class="mt-0.5 w-full rounded-rune-tile bg-rune-surface"
           data-testid="shot"
         />
       </template>
@@ -336,21 +352,21 @@ const rawText = computed(() => {
           The reasoning text itself was not recorded for this step. Open the matching call in the
           API tab to look for it.
         </p>
-        <h3 class="mt-4 mb-1 text-rune-heading text-rune-text-2 uppercase">Answer</h3>
+        <h3 class="mt-4 mb-1 text-rune-heading text-rune-text-3 uppercase">Answer</h3>
         <p class="m-0">{{ mask(step.reason) || '—' }}</p>
       </template>
 
       <template v-else-if="tab === 'prompt'">
-        <p class="m-0 mb-2 text-rune-heading text-rune-text-2 uppercase">Sent to the model</p>
+        <p class="m-0 mb-2 text-rune-heading text-rune-text-3 uppercase">Sent to the model</p>
         <div class="flex flex-col gap-1" data-testid="prompt">
           <details
             v-for="(part, at) in sections"
             :key="at"
             :open="at === 0"
-            class="group rounded-rune-tile bg-rune-surface px-3 py-2"
+            class="group rounded-rune-tile bg-rune-surface px-rune-2 py-rune-1"
           >
             <summary
-              class="flex cursor-pointer list-none items-center gap-2 text-rune-heading text-rune-text-2 uppercase"
+              class="flex cursor-pointer list-none items-center gap-2 text-rune-heading text-rune-text-3 uppercase"
             >
               <span class="min-w-0 flex-1 truncate">{{ part.title }}</span>
               <span class="text-rune-text-2"
@@ -373,9 +389,9 @@ const rawText = computed(() => {
               { label: 'Final', value: step.riskFinal },
             ]"
             :key="item.label"
-            class="rounded-rune-tile bg-rune-surface p-3"
+            class="rounded-rune-tile bg-rune-surface p-rune-2"
           >
-            <span class="text-rune-heading text-rune-text-2 uppercase">{{ item.label }} risk</span>
+            <span class="text-rune-heading text-rune-text-3 uppercase">{{ item.label }} risk</span>
             <p class="m-0 text-rune-title">
               {{ riskLevel(item.value) >= 0 ? RISK[riskLevel(item.value)] : '—' }}
             </p>
@@ -395,9 +411,11 @@ const rawText = computed(() => {
             </div>
           </div>
         </div>
-        <p class="m-0 mt-3 flex items-center gap-2 text-rune-heading text-rune-text-2 uppercase">
+        <p class="m-0 mt-3 flex items-center gap-2 text-rune-heading text-rune-text-3 uppercase">
           Gate
-          <span class="rounded-full px-2 text-rune-ink bg-rune-raised">{{ step.gate ?? '—' }}</span>
+          <span class="rounded-full bg-rune-raised px-rune-1 text-rune-ink">{{
+            step.gate ?? '—'
+          }}</span>
         </p>
         <ul v-if="riskReasons.length" class="m-0 mt-3 flex list-none flex-col gap-1 p-0">
           <li
@@ -409,7 +427,7 @@ const rawText = computed(() => {
           </li>
         </ul>
         <template v-if="asked.length">
-          <h3 class="mt-4 mb-1 text-rune-heading text-rune-text-2 uppercase">
+          <h3 class="mt-4 mb-1 text-rune-heading text-rune-text-3 uppercase">
             Questions and answers
           </h3>
           <ul class="m-0 flex list-none flex-col gap-1 p-0 text-rune-caption text-rune-text-2">
@@ -418,7 +436,7 @@ const rawText = computed(() => {
               :key="event.id"
               class="rounded-rune-tile bg-rune-surface px-3 py-2"
             >
-              <span class="text-rune-heading text-rune-text-2 uppercase">{{ event.kind }}</span>
+              <span class="text-rune-heading text-rune-text-3 uppercase">{{ event.kind }}</span>
               <br />{{ mask(event.dataJson) }}
             </li>
           </ul>
@@ -427,7 +445,7 @@ const rawText = computed(() => {
 
       <template v-else-if="tab === 'api'">
         <div
-          class="max-h-56 overflow-y-auto rounded-rune-tile bg-rune-raised"
+          class="max-h-56 overflow-y-auto rounded-rune-tile bg-rune-surface"
           :style="{ height: `${Math.min(LIST_HEIGHT, calls.length * ROW)}px` }"
           data-testid="calls"
           @scroll="listTop = ($event.target as HTMLElement).scrollTop"
@@ -470,7 +488,7 @@ const rawText = computed(() => {
             <ModelIcon :model="pickedCall.servedModel || pickedCall.model" />
             <span
               v-if="pickedCall.servedModel && pickedCall.servedModel !== pickedCall.model"
-              class="rounded-full bg-amber-500/20 px-1.5 py-0.5 font-medium text-amber-300"
+              class="rounded-full bg-rune-raised px-rune-1 py-0.5 text-error"
               data-testid="model-mismatch-warning"
             >
               ⚠ Served by {{ pickedCall.servedModel }} (requested {{ pickedCall.model }})
@@ -505,11 +523,11 @@ const rawText = computed(() => {
               Images are not kept in the record (only their size); the screenshot of the step is
               shown above.
             </p>
-            <h3 class="m-0 text-rune-heading text-rune-text-2 uppercase">Request</h3>
+            <h3 class="m-0 text-rune-heading text-rune-text-3 uppercase">Request</h3>
             <pre
               class="m-0 max-h-60 overflow-auto text-rune-caption break-words whitespace-pre-wrap text-rune-text-2"
               >{{ mask(pretty(pickedBodies.request)) }}</pre>
-            <h3 class="m-0 text-rune-heading text-rune-text-2 uppercase">Response</h3>
+            <h3 class="m-0 text-rune-heading text-rune-text-3 uppercase">Response</h3>
             <pre
               class="m-0 max-h-60 overflow-auto text-rune-caption break-words whitespace-pre-wrap text-rune-text-2"
               >{{ mask(pretty(pickedBodies.response)) }}</pre>
