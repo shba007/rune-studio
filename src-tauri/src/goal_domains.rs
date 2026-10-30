@@ -7,6 +7,8 @@ use std::sync::LazyLock;
 #[serde(rename_all = "camelCase")]
 pub struct Domain {
     pub id: String,
+    pub name: String,
+    pub zone: String,
     pub sub_domains: Vec<SubDomain>,
 }
 
@@ -18,6 +20,26 @@ pub struct SubDomain {
 pub static REGISTRY: LazyLock<Vec<Domain>> = LazyLock::new(|| {
     serde_json::from_str(include_str!("goal_domains.json")).expect("valid compiled goal registry")
 });
+
+pub fn find(answer: &str) -> Option<&'static Domain> {
+    let answer = answer.trim();
+    REGISTRY.iter().find(|domain| {
+        domain.id.eq_ignore_ascii_case(answer) || domain.name.eq_ignore_ascii_case(answer)
+    })
+}
+
+pub fn context() -> Value {
+    Value::Array(
+        REGISTRY
+            .iter()
+            .map(|domain| {
+                serde_json::json!({
+                    "id": domain.id, "name": domain.name, "zone": domain.zone,
+                })
+            })
+            .collect(),
+    )
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]

@@ -15,6 +15,55 @@ vi.mock('@tauri-apps/api/event', () => ({
     return harness.off
   },
 }))
+it('treats domain inference as busy and domain confirmation as a resumable user decision', async () => {
+  harness.invoke.mockReset()
+  let entry = {
+    id: 'domain-goal',
+    revision: 1,
+    kind: 'goal',
+    status: 'domain_planning',
+    question: null,
+  } as IntakeEntry
+  harness.invoke.mockImplementation(async (command) =>
+    command === 'decisions_state' ? [entry] : null,
+  )
+  let decisions!: ReturnType<typeof useDecisions>
+  const wrapper = mount(
+    defineComponent({
+      setup() {
+        decisions = useDecisions()
+        return () => null
+      },
+    }),
+  )
+  await flushPromises()
+  expect(decisions.busy.value).toBe(true)
+  entry = {
+    ...entry,
+    revision: 2,
+    status: 'domain_selection',
+    question: {
+      id: entry.id,
+      revision: 2,
+      kind: 'domain',
+      title: 'Which domain?',
+      explanation: '',
+      options: [],
+    },
+  }
+  await decisions.refresh()
+  expect(decisions.busy.value).toBe(false)
+  expect(decisions.current.value?.question?.kind).toBe('domain')
+  await decisions.answer({ id: entry.id, revision: 2, optionId: null, text: 'family' })
+  expect(harness.invoke).toHaveBeenCalledWith('decision_answer', {
+    id: entry.id,
+    revision: 2,
+    optionId: null,
+    text: 'family',
+  })
+  wrapper.unmount()
+})
+
 it('versions pathway requests and selection without dispatching executable tasks', async () => {
   harness.invoke.mockReset()
   const entry = {

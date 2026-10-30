@@ -2,6 +2,9 @@
 import RuneButton from './RuneButton.vue'
 import { computed, ref, useId, watch } from 'vue'
 import type { DecisionAnswer, DecisionQuestion } from '@/types/decisions'
+import { DOMAINS, domainById } from '@/config/domains'
+import { useDomainPrefs } from '@/composables/useDomainPrefs'
+import RuneChoice from './RuneChoice.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -21,14 +24,25 @@ const emit = defineEmits<{
 const group = useId()
 const optionId = ref<string | null>(null)
 const text = ref('')
+const domainChoice = ref('')
+const { showSanctuary } = useDomainPrefs()
+const domainOptions = computed(() => [
+  { value: '', label: 'Choose another domain' },
+  ...DOMAINS.map((domain) => ({
+    value: domain.id,
+    label: `${domain.name}${domain.zone === 'sanctuary' && !showSanctuary.value ? ' · Sanctuary (hidden)' : ''}`,
+  })),
+])
 const allowsFreeform = computed(() =>
-  ['clarification', 'goal_review', 'attachment'].includes(props.question.kind),
+  ['domain', 'clarification', 'goal_review', 'attachment'].includes(props.question.kind),
 )
 watch(
   () => [props.question.id, props.question.revision],
   () => {
     optionId.value = props.question.draft?.optionId ?? null
     text.value = props.question.draft?.text ?? ''
+    domainChoice.value =
+      props.question.kind === 'domain' && DOMAINS.some((d) => d.id === text.value) ? text.value : ''
   },
   { immediate: true },
 )
@@ -44,11 +58,21 @@ const valid = computed(() =>
     : allowsFreeform.value && text.value.trim().length > 0,
 )
 function choose(id: string | null) {
+  if (id !== null && props.question.kind === 'domain') {
+    domainChoice.value = ''
+    text.value = ''
+  }
   optionId.value = id
   emit('draft', answer())
 }
 function typeAnswer(event: Event) {
+  domainChoice.value = ''
   text.value = (event.target as HTMLTextAreaElement).value
+  choose(null)
+}
+function chooseDomain(value: string) {
+  domainChoice.value = value
+  text.value = value
   choose(null)
 }
 </script>
@@ -85,7 +109,7 @@ function typeAnswer(event: Event) {
           ><span class="block"
             >{{ option.label
             }}<span
-              v-if="index === 0 && question.kind === 'clarification'"
+              v-if="index === 0 && ['domain', 'clarification'].includes(question.kind)"
               class="ml-2 text-rune-heading uppercase opacity-60"
               >Recommended</span
             ></span
@@ -93,6 +117,14 @@ function typeAnswer(event: Event) {
             class="block text-rune-caption"
             :class="optionId === option.id ? 'opacity-70' : 'text-rune-text-3'"
             >{{ option.explanation }}</span
+          ><span
+            v-if="
+              question.kind === 'domain' &&
+              !showSanctuary &&
+              domainById(option.id).zone === 'sanctuary'
+            "
+            class="block text-rune-caption"
+            >Sanctuary · hidden in Workspace</span
           ></span
         >
       </label>
@@ -111,6 +143,20 @@ function typeAnswer(event: Event) {
         />
       </label>
     </fieldset>
+    <template v-if="question.kind === 'domain'">
+      <RuneChoice
+        :model-value="domainChoice"
+        label="Another goal domain"
+        menu
+        :disabled="busy"
+        :options="domainOptions"
+        @update:model-value="chooseDomain"
+      />
+      <p v-if="!showSanctuary" class="m-0 text-rune-caption text-rune-text-3">
+        Sanctuary domains are hidden. You can confirm one here; turn on Show Sanctuary domains in
+        Settings to display its goal and numeric tracking. Confirmation does not change Settings.
+      </p>
+    </template>
     <p v-if="error" role="alert" class="m-0 text-rune-caption text-error">{{ error }}</p>
     <div class="flex flex-wrap items-center gap-rune-1">
       <RuneButton

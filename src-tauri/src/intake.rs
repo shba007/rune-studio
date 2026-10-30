@@ -172,6 +172,12 @@ fn decode_entry(store: &LifeStore, body: &str) -> Result<Entry, String> {
         entry.status = "goal_ready".into();
         entry.error=Some("Planning was interrupted. Earlier approved choices and drafts are preserved; retry when ready.".into());
     }
+    if entry.status == "domain_planning" {
+        entry.error = Some(
+            "Domain suggestion was interrupted. Retry when ready; no domain was assigned.".into(),
+        );
+        retry_question(&mut entry);
+    }
     Ok(entry)
 }
 fn load(app: &AppHandle) -> Result<(), String> {
@@ -444,11 +450,116 @@ async fn advance(app: &AppHandle, e: &mut Entry) -> Result<(), String> {
         "step" => attach_question(app, e),
         "goal" => {
             e.voice_wav.clear();
-            clarify(app, e).await
+            if needs_domain(e) {
+                suggest_domain(app, e).await
+            } else {
+                clarify(app, e).await
+            }
         }
         _ => Err("Choose Goal, Task or Step".into()),
     }
 }
+fn needs_domain(e: &Entry) -> bool {
+    e.domain_mode.as_deref() == Some("manual")
+        && e.domain.is_none()
+        && e.goal.is_none()
+        && e.approved_goal.is_none()
+}
+
+fn domain_question(
+    e: &mut Entry,
+    suggestion: crate::intake_domain::Suggestion,
+) -> Result<(), String> {
+    if e.domain.is_some() {
+        return Err("A chosen domain cannot be replaced by a suggestion".into());
+    }
+    let mut ranked = vec![crate::intake_domain::Alternative {
+        id: suggestion.domain,
+        reason: suggestion.reason,
+    }];
+    ranked.extend(suggestion.alternatives);
+    let options = ranked
+        .into_iter()
+        .map(|candidate| {
+            let domain =
+                crate::goal_domains::find(&candidate.id).ok_or("Unsupported suggested domain")?;
+            Ok(option(&domain.id, &domain.name, &candidate.reason))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let uncertainty = if suggestion.confidence < 0.5 {
+        "The match is uncertain. "
+    } else {
+        ""
+    };
+    question(
+        e,
+        "domain",
+        "Which domain fits this goal?",
+        &format!(
+            "{uncertainty}Confirm a suggested domain, choose any other domain, or explain in your own words. This saves a domain choice only; it does not approve the goal."
+        ),
+        options,
+    );
+    e.status = "domain_selection".into();
+    Ok(())
+}
+
+async fn suggest_domain(app: &AppHandle, e: &mut Entry) -> Result<(), String> {
+    if !needs_domain(e) {
+        return Err("This goal does not need a domain suggestion".into());
+    }
+    e.status = "domain_planning".into();
+    e.question = None;
+    // Only already-classified context may be checkpointed; new freeform replies stay in memory.
+    commit(app, e)?;
+    e.persistable = false;
+    let value = tokio::time::timeout(std::time::Duration::from_secs(90), infer(
+        app, e, include_str!("../prompts/intake/domain.md"),
+        &json!({"input":e.text,"answers":e.answers,"previousClass":e.class,"registry":crate::goal_domains::context()}),
+        &crate::intake_domain::schema(), false,
+    )).await.map_err(|_| "Domain suggestion timed out".to_string())??;
+    if e.token.is_cancelled() {
+        return Err("Domain suggestion stopped".into());
+    }
+    let suggestion = crate::intake_domain::parse(value)?;
+    if suggestion.class.is_sensitive() {
+        e.class = suggestion.class;
+    }
+    domain_question(e, suggestion)?;
+    e.confirm_classification = false;
+    e.persistable = true;
+    if require_consent(app, e)? {
+        return Ok(());
+    }
+    commit(app, e)
+}
+
+fn domain_reply(e: &mut Entry, q: &Question, choice: &str, text: &str) -> Result<bool, String> {
+    if e.domain.is_some() {
+        return Err("This goal already has a chosen domain; refresh its current decision".into());
+    }
+    let reply = if choice.is_empty() {
+        text.trim()
+    } else {
+        choice
+    };
+    let chosen = crate::goal_domains::find(reply);
+    if !choice.is_empty() && chosen.is_none() {
+        return Err("Choose a supported goal domain".into());
+    }
+    // New answers may disclose a different sensitive class. Reclassify via protected inference
+    // before saving them, whether proceeding to clarification or asking for another suggestion.
+    e.persistable = false;
+    e.answers
+        .push(json!({"kind":"domain","question":q.title,"answer":reply,"source":"user"}));
+    e.question = None;
+    if let Some(domain) = chosen {
+        e.domain = Some(domain.id.clone());
+        e.domain_source = Some("user".into());
+    }
+    Ok(chosen.is_some())
+}
+
 fn attach_question(app: &AppHandle, e: &mut Entry) -> Result<(), String> {
     let db = app
         .state::<AppState>()
@@ -668,7 +779,9 @@ fn submit_intent(
             .as_ref()
             .and_then(|s| s.domain.as_ref())
             .map(|_| "user".into()),
-        domain_mode: selection.as_ref().map(|_| "manual".into()),
+        // Mark new intake at creation so goals reached through the composer also confirm a domain.
+        // Older stored entries retain None and are never enrolled by a load or retry.
+        domain_mode: Some("manual".into()),
         domain: selection.as_ref().and_then(|s| s.domain.clone()),
         sub_domains: selection.map(|s| s.sub_domains).unwrap_or_default(),
         status: "classifying".into(),
@@ -705,6 +818,12 @@ fn submit_intent(
 }
 fn fail(app: &AppHandle, e: &mut Entry, error: String) {
     e.error = Some(error);
+    retry_question(e);
+    let _ = commit(app, e);
+    ENTRIES.locked().insert(e.id.clone(), e.clone());
+    let _ = app.emit("decisions_changed", ());
+}
+fn retry_question(e: &mut Entry) {
     question(
         e,
         "retry",
@@ -724,27 +843,30 @@ fn fail(app: &AppHandle, e: &mut Entry, error: String) {
             option("cancel", "Cancel request", "Do not continue."),
         ],
     );
-    let _ = commit(app, e);
-    ENTRIES.locked().insert(e.id.clone(), e.clone());
-    let _ = app.emit("decisions_changed", ());
 }
 pub fn stop() {
     for entry in ENTRIES.locked().values() {
-        if matches!(
-            entry.status.as_str(),
-            "classifying" | "clarifying" | "dispatching" | "pathway_planning" | "task_planning"
-        ) {
+        if processing_status(&entry.status) {
             entry.token.cancel();
         }
     }
 }
 pub fn busy() -> bool {
-    ENTRIES.locked().values().any(|e| {
-        matches!(
-            e.status.as_str(),
-            "classifying" | "clarifying" | "dispatching" | "pathway_planning" | "task_planning"
-        )
-    })
+    ENTRIES
+        .locked()
+        .values()
+        .any(|e| processing_status(&e.status))
+}
+fn processing_status(status: &str) -> bool {
+    matches!(
+        status,
+        "classifying"
+            | "domain_planning"
+            | "clarifying"
+            | "dispatching"
+            | "pathway_planning"
+            | "task_planning"
+    )
 }
 fn api_task_source(source: &str) -> bool {
     matches!(
@@ -817,6 +939,123 @@ mod tests {
             voice_wav: Vec::new(),
         }
     }
+    #[test]
+    fn only_new_unassigned_goals_enter_domain_confirmation() {
+        let mut e = sample(DataClass::General);
+        assert!(!needs_domain(&e)); // Legacy entries are not migrated.
+        e.domain_mode = Some("manual".into());
+        assert!(needs_domain(&e));
+        e.goal = Some(json!({"outcome":"An existing draft"}));
+        assert!(!needs_domain(&e));
+        e.goal = None;
+        e.approved_goal = Some(json!({"outcome":"An existing approved goal"}));
+        assert!(!needs_domain(&e));
+        e.approved_goal = None;
+        e.domain = Some("physical".into());
+        assert!(!needs_domain(&e));
+        assert!(processing_status("domain_planning"));
+        assert!(!processing_status("domain_selection"));
+    }
+
+    fn domain_proposal() -> crate::intake_domain::Suggestion {
+        crate::intake_domain::parse(json!({"class":"general","domain":"career","confidence":0.3,
+            "reason":"May concern work; context is limited.","alternatives":[
+                {"id":"cognitive","reason":"May concern learning."},
+                {"id":"purpose","reason":"May concern meaning."}]}))
+        .unwrap()
+    }
+
+    #[test]
+    fn suggestions_never_assign_a_domain_and_all_registry_choices_require_a_versioned_answer() {
+        let mut e = sample(DataClass::General);
+        e.domain_mode = Some("manual".into());
+        domain_question(&mut e, domain_proposal()).unwrap();
+        assert_eq!(e.status, "domain_selection");
+        assert!(e.domain.is_none());
+        assert!(e.domain_source.is_none());
+        assert!(
+            e.question
+                .as_ref()
+                .unwrap()
+                .explanation
+                .contains("uncertain")
+        );
+        assert_eq!(e.question.as_ref().unwrap().options.len(), 3);
+        assert!(validate_answer(&e, e.revision - 1, Some("career"), "").is_err());
+        assert!(validate_answer(&e, e.revision, Some("physical"), "").is_err());
+        for domain in crate::goal_domains::REGISTRY.iter() {
+            let mut selected = e.clone();
+            // The all-domain picker travels through the existing freeform answer contract.
+            let q = validate_answer(&selected, selected.revision, None, &domain.id).unwrap();
+            assert!(domain_reply(&mut selected, &q, "", &domain.id).unwrap());
+            assert_eq!(selected.domain.as_deref(), Some(domain.id.as_str()));
+            assert_eq!(selected.domain_source.as_deref(), Some("user"));
+            assert!(!selected.persistable); // Classified before newly disclosed content is saved.
+            assert!(selected.question.is_none());
+            assert!(validate_answer(&selected, selected.revision, None, &domain.id).is_err());
+            let saved = selected.answers.clone();
+            assert!(domain_question(&mut selected, domain_proposal()).is_err());
+            assert!(domain_reply(&mut selected, &q, "career", "").is_err());
+            assert_eq!(selected.domain.as_deref(), Some(domain.id.as_str()));
+            assert_eq!(selected.answers, saved);
+        }
+    }
+
+    #[test]
+    fn freeform_context_requests_another_proposal_while_exact_names_confirm_a_choice() {
+        let mut e = sample(DataClass::General);
+        e.domain_mode = Some("manual".into());
+        domain_question(&mut e, domain_proposal()).unwrap();
+        let q = e.question.clone().unwrap();
+        assert!(
+            !domain_reply(
+                &mut e,
+                &q,
+                "",
+                "I meant relationships, not professional work"
+            )
+            .unwrap()
+        );
+        assert!(needs_domain(&e));
+        assert_eq!(e.answers.last().unwrap()["kind"], "domain");
+        assert!(!e.persistable);
+        domain_question(&mut e, domain_proposal()).unwrap();
+        let q = e.question.clone().unwrap();
+        assert!(domain_reply(&mut e, &q, "", "  Family & Kinship  ").unwrap());
+        assert_eq!(e.domain.as_deref(), Some("family"));
+    }
+
+    #[test]
+    fn domain_decisions_restore_and_interrupted_suggestions_offer_explicit_retry() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LifeStore::open(
+            &dir.path().join("intake.sqlite3"),
+            LifeCrypto::in_memory_random(),
+        )
+        .unwrap();
+        store.set_consent(DataClass::General, true, "test").unwrap();
+        let mut e = sample(DataClass::General);
+        e.domain_mode = Some("manual".into());
+        domain_question(&mut e, domain_proposal()).unwrap();
+        store_entry(&store, &e).unwrap();
+        let saved = store.get_record("intake-test-1").unwrap().unwrap();
+        let restored = decode_entry(&store, &saved.body).unwrap();
+        assert_eq!(restored.status, "domain_selection");
+        assert!(restored.domain.is_none());
+        assert_eq!(restored.question.unwrap().options.len(), 3);
+        e.revision = 2;
+        e.status = "domain_planning".into();
+        e.question = None;
+        store_entry(&store, &e).unwrap();
+        let saved = store.get_record("intake-test-2").unwrap().unwrap();
+        let restored = decode_entry(&store, &saved.body).unwrap();
+        assert_eq!(restored.status, "retry");
+        assert!(needs_domain(&restored));
+        assert_eq!(restored.question.as_ref().unwrap().kind, "retry");
+        assert!(validate_answer(&restored, restored.revision, Some("retry"), "").is_ok());
+        assert!(!processing_status(&restored.status));
+    }
+
     #[test]
     fn legacy_entries_decode_without_domain_metadata() {
         let original = sample(DataClass::Mind);
@@ -1300,6 +1539,11 @@ pub async fn decision_answer(
                 classify(&app, &mut e).await
             }
         }
+        "domain" => match domain_reply(&mut e, &q, choice, &text) {
+            Ok(true) => clarify(&app, &mut e).await,
+            Ok(false) => suggest_domain(&app, &mut e).await,
+            Err(error) => Err(error),
+        },
         "clarification" => {
             let reply = q
                 .options

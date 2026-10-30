@@ -4,6 +4,8 @@ export type GoalTone = 'idle' | 'ok' | 'warn' | 'down' | 'busy'
 
 export function goalStatus(entry: IntakeEntry): { label: string; tone: GoalTone } {
   const reviewing = !!entry.question && !!entry.approvedGoal
+  if (entry.status === 'domain_planning') return { label: 'Suggesting a domain', tone: 'busy' }
+  if (entry.status === 'domain_selection') return { label: 'Confirm domain', tone: 'warn' }
   if (entry.status === 'pathway_planning') return { label: 'Comparing routes', tone: 'busy' }
   if (entry.status === 'task_planning') return { label: 'Drafting first-week tasks', tone: 'busy' }
   if (reviewing) return { label: 'Review changes', tone: 'warn' }

@@ -15,9 +15,14 @@ export function useDecisions() {
   const off: (() => void)[] = []
   const busy = computed(() =>
     entries.value.some((e) =>
-      ['classifying', 'clarifying', 'dispatching', 'pathway_planning', 'task_planning'].includes(
-        e.status,
-      ),
+      [
+        'classifying',
+        'domain_planning',
+        'clarifying',
+        'dispatching',
+        'pathway_planning',
+        'task_planning',
+      ].includes(e.status),
     ),
   )
   const questions = computed(() => entries.value.filter((e) => e.question))

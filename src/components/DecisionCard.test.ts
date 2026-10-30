@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { expect, it } from 'vite-plus/test'
+import { beforeEach, expect, it } from 'vite-plus/test'
 import DecisionCard from './DecisionCard.vue'
 import type { DecisionQuestion } from '@/types/decisions'
 
@@ -15,6 +15,75 @@ const question: DecisionQuestion = {
     { id: 'step', label: 'Step', explanation: 'One action inside a task.' },
   ],
 }
+
+beforeEach(() => localStorage.clear())
+
+const domainQuestion: DecisionQuestion = {
+  ...question,
+  kind: 'domain',
+  title: 'Which domain fits this goal?',
+  options: [
+    { id: 'career', label: 'Career & Professional Impact', explanation: 'May concern work.' },
+    {
+      id: 'cognitive',
+      label: 'Cognitive & Intellectual Capital',
+      explanation: 'May concern learning.',
+    },
+    { id: 'purpose', label: 'Character, Identity & Purpose', explanation: 'May concern meaning.' },
+  ],
+}
+
+it('offers ranked suggestions and freeform without auto-confirming or revealing Sanctuary', async () => {
+  const wrapper = mount(DecisionCard, { props: { question: domainQuestion } })
+  expect(wrapper.findAll('input[type="radio"]')).toHaveLength(3)
+  expect(wrapper.text()).toContain('Recommended')
+  expect(wrapper.text()).toContain('Sanctuary · hidden in Workspace')
+  expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeDefined()
+  expect(wrapper.emitted('answer')).toBeUndefined()
+  await wrapper.get('input[value="cognitive"]').setValue(true)
+  expect(wrapper.emitted('answer')).toBeUndefined()
+  await wrapper.get('form').trigger('submit')
+  expect(wrapper.emitted('answer')!.at(-1)).toEqual([
+    { id: question.id, revision: 1, optionId: 'cognitive', text: '' },
+  ])
+  expect(localStorage.getItem('rune.showSanctuary')).toBe('false')
+  await wrapper.get('textarea').setValue('I meant a different kind of personal direction')
+  await wrapper.get('form').trigger('submit')
+  expect(wrapper.emitted('answer')!.at(-1)).toEqual([
+    {
+      id: question.id,
+      revision: 1,
+      optionId: null,
+      text: 'I meant a different kind of personal direction',
+    },
+  ])
+  wrapper.unmount()
+})
+
+it('offers all twelve domains through versioned freeform and clears stale picker state', async () => {
+  const wrapper = mount(DecisionCard, { props: { question: domainQuestion } })
+  await wrapper.get('button[aria-label="Another goal domain"]').trigger('click')
+  expect(wrapper.findAll('[role="option"]')).toHaveLength(13)
+  await wrapper
+    .findAll('[role="option"]')
+    .find((node) => node.text().startsWith('Family & Kinship'))!
+    .trigger('click')
+  expect(wrapper.emitted('answer')).toBeUndefined()
+  expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('family')
+  await wrapper.get('form').trigger('submit')
+  expect(wrapper.emitted('answer')!.at(-1)).toEqual([
+    { id: question.id, revision: 1, optionId: null, text: 'family' },
+  ])
+  await wrapper.setProps({ question: { ...domainQuestion, revision: 2 }, busy: true })
+  expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeDefined()
+  expect(
+    wrapper.get('button[aria-label="Another goal domain"]').attributes('disabled'),
+  ).toBeDefined()
+  expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('')
+  await wrapper.get('form').trigger('submit')
+  expect(wrapper.emitted('answer')).toHaveLength(1)
+  wrapper.unmount()
+})
 
 it('requires an explicit answer and includes the record revision when confirming', async () => {
   const wrapper = mount(DecisionCard, { props: { question } })

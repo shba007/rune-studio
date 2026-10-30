@@ -48,6 +48,8 @@ export function domainOf(entry: IntakeEntry, overrides: Record<string, string> =
   if (entry.domain != null) return domainById(entry.domain)
   const chosen = overrides[entry.id]
   if (chosen) return domainById(chosen)
+  // Suggestions never file a new goal before the user confirms, including hidden Sanctuary.
+  if (entry.domainMode === 'manual' && !entry.goal && !entry.approvedGoal) return UNASSIGNED
   const goal = entry.approvedGoal ?? entry.goal
   const hit = suggestDomain(`${entry.category ?? ''} ${goal?.outcome ?? ''} ${entry.text}`)
   const byClass = CLASS_DOMAIN[entry.class]

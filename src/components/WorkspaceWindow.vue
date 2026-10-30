@@ -45,6 +45,12 @@ const { overrides, showSanctuary } = useDomainPrefs()
 const focusGoal = computed(() =>
   decisions.entries.value.find((item) => item.id === focusGoalId.value),
 )
+const domainPending = computed(
+  () =>
+    focusGoal.value?.domainMode === 'manual' &&
+    !focusGoal.value.goal &&
+    !focusGoal.value.approvedGoal,
+)
 const focusDomain = computed(() => {
   const entry = focusGoal.value
   return entry ? domainOf(entry, overrides.value) : null
@@ -60,7 +66,7 @@ const domainChoice = computed({
   get: () => (focusGoalId.value && overrides.value[focusGoalId.value]) || '',
   set: (value: string) => {
     const id = focusGoalId.value
-    if (!id || focusGoal.value?.domain != null) return
+    if (!id || focusGoal.value?.domain != null || domainPending.value) return
     const next = { ...overrides.value }
     if (value) next[id] = value
     else delete next[id]
@@ -261,9 +267,11 @@ onBeforeUnmount(() => {
         @close="focusGoalId = null"
       >
         <template #header>
-          <span v-if="focusGoal?.domain != null" class="text-rune-caption text-rune-text-2">{{
-            focusDomain?.name
-          }}</span>
+          <span
+            v-if="focusGoal?.domain != null || domainPending"
+            class="text-rune-caption text-rune-text-2"
+            >{{ focusDomain?.name }}</span
+          >
           <RuneChoice v-else v-model="domainChoice" label="Domain" menu :options="domainOptions" />
         </template>
         <DecisionInbox

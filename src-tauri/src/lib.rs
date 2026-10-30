@@ -21,6 +21,7 @@ mod goal_domains;
 mod hotkeys;
 mod hub;
 mod intake;
+mod intake_domain;
 mod intake_pathways;
 mod kit;
 pub mod life;

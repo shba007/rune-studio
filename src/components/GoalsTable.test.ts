@@ -85,6 +85,18 @@ it('uses stored domains before conflicting local overrides or inferred classific
   )
 })
 
+it('keeps unconfirmed new Manual goals unassigned while preserving legacy fallback', () => {
+  const entry = goal('new', 'Plan family dinner', {
+    domainMode: 'manual',
+    status: 'domain_selection',
+    goal: null,
+    approvedGoal: null,
+  })
+  expect(domainOf(entry).id).toBe('unassigned')
+  expect(domainOf({ ...entry, domainMode: undefined }).id).toBe('family')
+  expect(domainOf(entry, { new: 'career' }).id).toBe('career')
+})
+
 it('reveals Cognitive goals and numeric progress only when Sanctuary is enabled', () => {
   const entries = [
     goal('c', 'Learn something', {
