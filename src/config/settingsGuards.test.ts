@@ -29,7 +29,7 @@ const migrated = [
   'GoalTaskDraft.vue',
   'GoalTaskProposal.vue',
   'KnowledgeOverview.vue',
-  'PersonalitiesPanel.vue',
+  'MindsetsPanel.vue',
   'FlightPlayer.vue',
   'FlightDrawer.vue',
   'FlightAnalysis.vue',

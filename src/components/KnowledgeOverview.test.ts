@@ -16,7 +16,7 @@ it('explains every concept, marks planned work honestly, and links to its worksp
   expect(knowledgeConcepts.find((node) => node.id === 'goals')).toMatchObject({ x: 450, y: 350 })
   expect(knowledgeLinks).toContainEqual([
     'goals',
-    'personalities',
+    'mindsets',
     'uses an approved communication style',
   ])
   expect(wrapper.findAll('svg [role="button"]')).toHaveLength(knowledgeConcepts.length)

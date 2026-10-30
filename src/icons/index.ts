@@ -46,15 +46,30 @@ import IconInfo from '~icons/ph/info-bold'
 import IconQuestion from '~icons/ph/question-fill'
 import IconDotsThree from '~icons/ph/dots-three-bold'
 import IconCheck from '~icons/ph/check-bold'
+import IconHeartbeat from '~icons/ph/heartbeat-fill'
+import IconSmiley from '~icons/ph/smiley-fill'
+import IconLightbulb from '~icons/ph/lightbulb-fill'
+import IconBriefcase from '~icons/ph/briefcase-fill'
+import IconCoins from '~icons/ph/coins-fill'
+import IconHouseLine from '~icons/ph/house-line-fill'
+import IconHeart from '~icons/ph/heart-fill'
+import IconUsersThree from '~icons/ph/users-three-fill'
+import IconBaby from '~icons/ph/baby-fill'
+import IconGameController from '~icons/ph/game-controller-fill'
+import IconCompass from '~icons/ph/compass-fill'
+import IconTree from '~icons/ph/tree-fill'
+import IconTag from '~icons/ph/tag-fill'
+import IconPulse from '~icons/ph/pulse-fill'
 
 export const icons = {
   info: IconInfo,
   help: IconQuestion,
+  life: IconPulse,
   more: IconDotsThree,
   check: IconCheck,
   search: IconMagnifyingGlass,
   data: IconDatabase,
-  personality: IconMasks,
+  mindset: IconMasks,
   graph: IconGraph,
   target: IconTarget,
   app: IconAppWindow,
@@ -97,6 +112,19 @@ export const icons = {
   drawer: IconSidebar,
   expand: IconArrowsOut,
   hide: IconEyeSlash,
+  'domain-physical': IconHeartbeat,
+  'domain-emotional': IconSmiley,
+  'domain-cognitive': IconLightbulb,
+  'domain-career': IconBriefcase,
+  'domain-financial': IconCoins,
+  'domain-environment': IconHouseLine,
+  'domain-romantic': IconHeart,
+  'domain-social': IconUsersThree,
+  'domain-family': IconBaby,
+  'domain-play': IconGameController,
+  'domain-purpose': IconCompass,
+  'domain-legacy': IconTree,
+  'domain-unassigned': IconTag,
 } as const
 
 export type IconName = keyof typeof icons

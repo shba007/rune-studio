@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { personalitySymbol } from '@/config/personalitySymbols'
+import { mindsetSymbol } from '@/config/mindsetSymbols'
 defineProps<{ mark: string }>()
 </script>
 <template>
@@ -12,6 +12,6 @@ defineProps<{ mark: string }>()
     stroke-linejoin="round"
     aria-hidden="true"
   >
-    <path :d="personalitySymbol(mark).path" />
+    <path :d="mindsetSymbol(mark).path" />
   </svg>
 </template>

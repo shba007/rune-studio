@@ -141,15 +141,17 @@ const rowMeta = (entry: IntakeEntry) => {
         {{
           entry.status === 'domain_planning'
             ? 'Suggesting a domain for you to confirm…'
-            : entry.status === 'goal_ready'
-              ? 'Goal approved. Compare pathways or review linked tasks.'
-              : entry.status === 'pathway_planning'
-                ? 'Comparing pathways using the approved goal…'
-                : entry.status === 'task_planning'
-                  ? 'Drafting your first week using the preferred pathway…'
-                  : entry.status === 'interrupted'
-                    ? 'Review task history before creating another execution attempt.'
-                    : 'Understanding your request…'
+            : entry.status === 'subdomain_planning'
+              ? 'Preparing optional questions for your selected goal context…'
+              : entry.status === 'goal_ready'
+                ? 'Goal approved. Compare pathways or review linked tasks.'
+                : entry.status === 'pathway_planning'
+                  ? 'Comparing pathways using the approved goal…'
+                  : entry.status === 'task_planning'
+                    ? 'Drafting your first week using the preferred pathway…'
+                    : entry.status === 'interrupted'
+                      ? 'Review task history before creating another execution attempt.'
+                      : 'Understanding your request…'
         }}
       </p>
       <div v-if="entry.status === 'goal_ready'" class="flex flex-wrap items-center gap-3">

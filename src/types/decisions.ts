@@ -11,6 +11,7 @@ export interface DecisionQuestion {
   title: string
   explanation: string
   options: DecisionOption[]
+  domain?: string | null
   draft?: { optionId: string | null; text: string }
 }
 
@@ -33,6 +34,12 @@ export interface IntakeEntry {
   domainSource?: 'user' | 'auto' | null
   domainMode?: 'manual' | 'auto' | null
   subDomains?: { id: string; answers: unknown[]; skipped: boolean }[]
+  subdomainProgress?: {
+    selectionDone: boolean
+    current: string | null
+    completed: string[]
+    finished: boolean
+  } | null
   question: DecisionQuestion | null
   goal: Record<string, string> | null
   approvedGoal?: Record<string, string> | null

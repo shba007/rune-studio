@@ -1,4 +1,5 @@
 import registry from '../../src-tauri/src/goal_domains.json'
+import { icons, type IconName } from '@/icons'
 import type { IntakeEntry } from '@/types/decisions'
 
 export type DomainZone = 'engine' | 'sanctuary'
@@ -56,3 +57,5 @@ export function domainOf(entry: IntakeEntry, overrides: Record<string, string> =
   if (byClass && (!hit || hit.id === 'career')) return domainById(byClass)
   return hit ?? UNASSIGNED
 }
+export const domainIcon = (id: string): IconName =>
+  (`domain-${id}` in icons ? `domain-${id}` : 'domain-unassigned') as IconName

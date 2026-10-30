@@ -2,23 +2,23 @@
 import RuneButton from './RuneButton.vue'
 import { invoke } from '@tauri-apps/api/core'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import type { Personality, PersonalityCatalog } from '@/types/personalities'
-import { personalitySymbol, personalitySymbols } from '@/config/personalitySymbols'
-import PersonalitySymbol from './PersonalitySymbol.vue'
+import type { Mindset, MindsetCatalog } from '@/types/mindsets'
+import { mindsetSymbol, mindsetSymbols } from '@/config/mindsetSymbols'
+import MindsetSymbol from './MindsetSymbol.vue'
 import HubGroup from './HubGroup.vue'
 import HubRow from './HubRow.vue'
 import RuneChoice from './RuneChoice.vue'
 import RuneNotice from './RuneNotice.vue'
 import WorkRow from './WorkRow.vue'
-const symbolOptions = personalitySymbols.map((symbol) => ({
+const symbolOptions = mindsetSymbols.map((symbol) => ({
   value: symbol.id,
   label: symbol.label,
 }))
 const field =
   'h-10 min-w-0 rounded-rune-tile bg-rune-sunken px-rune-2 font-rune-reading text-rune-body text-rune-ink placeholder:text-rune-text-3'
-const catalog = ref<PersonalityCatalog | null>(null)
-const draft = ref<Personality | null>(null)
-const expected = ref<Personality | null>(null)
+const catalog = ref<MindsetCatalog | null>(null)
+const draft = ref<Mindset | null>(null)
+const expected = ref<Mindset | null>(null)
 const categories = ref('')
 const error = ref('')
 const pending = ref(false)
@@ -28,11 +28,11 @@ const suggestionCategory = ref('')
 const suggestion = ref(false)
 let disposed = false
 const saved = ref(false)
-function edit(profile: Personality) {
+function edit(profile: Mindset) {
   expected.value = { ...profile, categories: [...profile.categories] }
   draft.value = {
     ...profile,
-    mark: personalitySymbol(profile.mark).id,
+    mark: mindsetSymbol(profile.mark).id,
     categories: [...profile.categories],
   }
   categories.value = profile.categories.join(', ')
@@ -42,7 +42,7 @@ function edit(profile: Personality) {
 }
 async function load() {
   try {
-    const next = await invoke<PersonalityCatalog>('personalities_state')
+    const next = await invoke<MindsetCatalog>('personalities_state')
     catalog.value = next
     const profile = next.entries.find((p) => p.id === draft.value?.id) ?? next.entries[0]
     if (profile) edit(profile)
@@ -64,7 +64,7 @@ async function suggest() {
   generating.value = true
   error.value = ''
   try {
-    const profile = await invoke<Personality>('personality_propose', {
+    const profile = await invoke<Mindset>('personality_propose', {
       category: suggestionCategory.value.trim(),
     })
     if (disposed) return
@@ -96,7 +96,7 @@ async function save() {
               ),
             ],
     }
-    catalog.value = await invoke<PersonalityCatalog>('personality_save', {
+    catalog.value = await invoke<MindsetCatalog>('personality_save', {
       profile,
       expected: expected.value,
     })
@@ -112,7 +112,7 @@ onMounted(load)
 onBeforeUnmount(() => {
   disposed = true
 })
-const open = (profile: Personality) => {
+const open = (profile: Mindset) => {
   if (!busy.value) edit(profile)
 }
 defineExpose({ create })
@@ -120,9 +120,10 @@ defineExpose({ create })
 <template>
   <div class="flex flex-col gap-rune-3">
     <p class="m-0 px-rune-2 text-rune-caption text-rune-text-3">
-      A different voice for each goal. Unassigned categories use Rune.
+      Each mindset can guide several goals. Pick a goal's mindset from the goal itself; unassigned
+      goals use Rune.
     </p>
-    <HubGroup v-if="catalog?.entries.length" title="Saved personalities">
+    <HubGroup v-if="catalog?.entries.length" title="Saved mindsets">
       <WorkRow
         v-for="profile in catalog.entries"
         :key="profile.id"
@@ -138,7 +139,7 @@ defineExpose({ create })
       >
         <template #leading>
           <span class="grid size-10 shrink-0 place-items-center rounded-rune-tile bg-rune-sunken"
-            ><PersonalitySymbol :mark="profile.mark" class="size-5 text-rune-ink"
+            ><MindsetSymbol :mark="profile.mark" class="size-5 text-rune-ink"
           /></span>
         </template>
       </WorkRow>
@@ -149,7 +150,7 @@ defineExpose({ create })
       </summary>
       <form
         class="flex flex-col gap-rune-2 px-rune-2 pb-rune-2"
-        aria-label="Suggest a personality"
+        aria-label="Suggest a mindset"
         @submit.prevent="suggest"
       >
         <label class="flex flex-col gap-1 text-rune-text-3"
@@ -171,20 +172,20 @@ defineExpose({ create })
           class="self-start"
           :disabled="busy || !suggestionCategory.trim()"
         >
-          {{ generating ? 'Drafting…' : 'Suggest personality' }}
+          {{ generating ? 'Drafting…' : 'Suggest mindset' }}
         </RuneButton>
       </form>
     </details>
     <RuneNotice v-if="suggestion">Unsaved suggestion · review and approve below.</RuneNotice>
     <form
       v-if="draft"
-      aria-label="Edit personality"
+      aria-label="Edit mindset"
       class="flex flex-col gap-rune-3"
       @submit.prevent="save"
     >
       <fieldset :disabled="busy" class="m-0 flex min-w-0 flex-col gap-rune-3 p-0">
         <HubGroup
-          :title="expected ? draft.name : 'New personality'"
+          :title="expected ? draft.name : 'New mindset'"
           :hint="
             draft.id === 'base'
               ? 'Fallback for every unassigned goal'
@@ -259,6 +260,6 @@ defineExpose({ create })
       </p>
     </details>
     <RuneNotice v-if="error" tone="error">{{ error }} Your draft is preserved.</RuneNotice>
-    <RuneNotice v-if="saved">Personality saved. New model turns use the approved style.</RuneNotice>
+    <RuneNotice v-if="saved">Mindset saved. New model turns use the approved style.</RuneNotice>
   </div>
 </template>

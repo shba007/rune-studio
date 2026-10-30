@@ -18,6 +18,7 @@ export function useDecisions() {
       [
         'classifying',
         'domain_planning',
+        'subdomain_planning',
         'clarifying',
         'dispatching',
         'pathway_planning',
@@ -134,6 +135,22 @@ export function useDecisions() {
         await invoke('decision_refine', { id: entry.id, revision: entry.revision })
       } catch (err) {
         error.value = problemText(err)
+      } finally {
+        pending.value = false
+        await refresh()
+      }
+    },
+    remove: async (entry: IntakeEntry) => {
+      if (pending.value) return false
+      pending.value = true
+      error.value = ''
+      try {
+        await invoke('decision_delete', { id: entry.id, revision: entry.revision })
+        return true
+      } catch (err) {
+        const text = problemText(err)
+        error.value = /not found/i.test(text) ? 'Deleting goals needs a Rune update.' : text
+        return false
       } finally {
         pending.value = false
         await refresh()

@@ -35,6 +35,8 @@ pub struct Question {
     title: String,
     explanation: String,
     options: Vec<OptionItem>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    domain: Option<String>,
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -55,6 +57,8 @@ pub struct Entry {
     domain_mode: Option<String>,
     #[serde(default)]
     sub_domains: Vec<crate::goal_domains::SubDomainSelection>,
+    #[serde(default)]
+    subdomain_progress: Option<crate::intake_subdomains::Progress>,
     question: Option<Question>,
     answers: Vec<Value>,
     goal: Option<Value>,
@@ -172,9 +176,12 @@ fn decode_entry(store: &LifeStore, body: &str) -> Result<Entry, String> {
         entry.status = "goal_ready".into();
         entry.error=Some("Planning was interrupted. Earlier approved choices and drafts are preserved; retry when ready.".into());
     }
-    if entry.status == "domain_planning" {
+    if matches!(
+        entry.status.as_str(),
+        "domain_planning" | "subdomain_planning"
+    ) {
         entry.error = Some(
-            "Domain suggestion was interrupted. Retry when ready; no domain was assigned.".into(),
+            "Context planning was interrupted. Retry when ready; your earlier choices are preserved.".into(),
         );
         retry_question(&mut entry);
     }
@@ -231,6 +238,11 @@ fn question(e: &mut Entry, kind: &str, title: &str, explanation: &str, options: 
         title: title.into(),
         explanation: explanation.into(),
         options,
+        domain: if matches!(kind, "subdomains" | "subdomain_detail") {
+            e.domain.clone()
+        } else {
+            None
+        },
     });
 }
 fn option(id: &str, label: &str, explanation: &str) -> OptionItem {
@@ -345,7 +357,7 @@ async fn classify(app: &AppHandle, e: &mut Entry) -> Result<(), String> {
         app,
         e,
         include_str!("../prompts/intake/classify.md"),
-        &json!({"input":e.text,"answers":e.answers,"domain":e.domain,"subDomains":e.sub_domains}),
+        &json!({"input":e.text,"answers":e.answers,"domain":domain_context(e),"subDomains":subdomain_context(e)}),
         &schema,
         true,
     )
@@ -452,6 +464,8 @@ async fn advance(app: &AppHandle, e: &mut Entry) -> Result<(), String> {
             e.voice_wav.clear();
             if needs_domain(e) {
                 suggest_domain(app, e).await
+            } else if needs_subdomains(e) {
+                plan_subdomains(app, e).await
             } else {
                 clarify(app, e).await
             }
@@ -464,6 +478,243 @@ fn needs_domain(e: &Entry) -> bool {
         && e.domain.is_none()
         && e.goal.is_none()
         && e.approved_goal.is_none()
+}
+
+fn needs_subdomains(e: &Entry) -> bool {
+    e.domain_mode.as_deref() == Some("manual")
+        && e.domain.is_some()
+        && e.goal.is_none()
+        && e.approved_goal.is_none()
+        && e.subdomain_progress.as_ref().is_some_and(|p| !p.finished)
+}
+
+fn domain_context(e: &Entry) -> Value {
+    e.domain
+        .as_deref()
+        .and_then(crate::goal_domains::find)
+        .map_or(
+            Value::Null,
+            |d| json!({"id":d.id,"name":d.name,"zone":d.zone}),
+        )
+}
+
+fn subdomain_context(e: &Entry) -> Value {
+    let domain = e.domain.as_deref().and_then(crate::goal_domains::find);
+    Value::Array(
+        e.sub_domains
+            .iter()
+            .map(|s| {
+                let name = domain
+                    .and_then(|d| d.sub_domains.iter().find(|sub| sub.id == s.id))
+                    .map(|sub| &sub.name);
+                json!({"id":s.id,"name":name,"answers":s.answers,"skipped":s.skipped})
+            })
+            .collect(),
+    )
+}
+
+async fn plan_subdomains(app: &AppHandle, e: &mut Entry) -> Result<(), String> {
+    let domain = e
+        .domain
+        .as_deref()
+        .and_then(crate::goal_domains::find)
+        .ok_or("Confirm a domain first")?;
+    loop {
+        let progress = e
+            .subdomain_progress
+            .as_mut()
+            .ok_or("This conversation has no sub-domain step")?;
+        let selection = !progress.selection_done;
+        let current = if selection {
+            None
+        } else {
+            progress.next(&e.sub_domains)
+        };
+        if !selection && current.is_none() {
+            progress.finished = true;
+            progress.current = None;
+            return clarify(app, e).await;
+        }
+        progress.current = current.clone();
+        let answered = current
+            .as_ref()
+            .and_then(|id| e.sub_domains.iter().find(|s| &s.id == id))
+            .map_or(0, |s| s.answers.len());
+        e.status = "subdomain_planning".into();
+        e.question = None;
+        commit(app, e)?;
+        e.persistable = false;
+        let value = tokio::time::timeout(
+            std::time::Duration::from_secs(90),
+            infer(
+                app,
+                e,
+                include_str!("../prompts/intake/subdomains.md"),
+                &json!({"stage":if selection { "selection" } else { "detail" },"input":e.text,
+                "domain":crate::intake_subdomains::context(domain),"currentSubDomain":current,
+                "subDomains":e.sub_domains,"answers":e.answers,"previousClass":e.class}),
+                &crate::intake_subdomains::schema(domain, selection),
+                false,
+            ),
+        )
+        .await
+        .map_err(|_| "Sub-domain planning timed out".to_string())??;
+        if e.token.is_cancelled() {
+            return Err("Sub-domain planning stopped".into());
+        }
+        let response = crate::intake_subdomains::parse(value, domain, selection, answered)?;
+        if response.class.is_sensitive() {
+            e.class = response.class;
+        }
+        if response.ready {
+            let progress = e
+                .subdomain_progress
+                .as_mut()
+                .ok_or("Sub-domain progress unavailable")?;
+            if let Some(id) = progress.current.take() {
+                progress.completed.push(id);
+            }
+        } else {
+            let title = current
+                .as_ref()
+                .and_then(|id| domain.sub_domains.iter().find(|s| &s.id == id))
+                .map_or(response.question.clone(), |sub| {
+                    format!("{}: {}", sub.name, response.question)
+                });
+            let options = response
+                .options
+                .into_iter()
+                .map(|o| option(&o.id, &o.label, &o.explanation))
+                .collect();
+            question(
+                e,
+                if selection {
+                    "subdomains"
+                } else {
+                    "subdomain_detail"
+                },
+                &title,
+                &response.explanation,
+                options,
+            );
+            if selection {
+                e.status = "subdomain_selection".into();
+            }
+        }
+        e.confirm_classification = false;
+        e.persistable = true;
+        if require_consent(app, e)? {
+            return Ok(());
+        }
+        commit(app, e)?;
+        if !response.ready {
+            return Ok(());
+        }
+    }
+}
+
+fn subdomain_reply(e: &mut Entry, q: &Question, choice: &str, text: &str) -> Result<(), String> {
+    let domain = e
+        .domain
+        .as_deref()
+        .and_then(crate::goal_domains::find)
+        .ok_or("Confirm a domain first")?;
+    let progress = e
+        .subdomain_progress
+        .as_mut()
+        .ok_or("Sub-domain progress unavailable")?;
+    if progress.finished {
+        return Err("The sub-domain step has already finished".into());
+    }
+    if choice == "skip_all" {
+        for s in &mut e.sub_domains {
+            if !progress.completed.contains(&s.id)
+                && s.answers.len() < crate::intake_subdomains::MAX_QUESTIONS
+            {
+                s.skipped = true;
+            }
+        }
+        progress.selection_done = true;
+        progress.finished = true;
+        progress.current = None;
+        e.answers.push(
+            json!({"kind":q.kind,"skipped":true,"scope":"remaining_subdomains","source":"user"}),
+        );
+    } else if q.kind == "subdomains" {
+        if progress.selection_done {
+            return Err("Sub-domains were already selected".into());
+        }
+        let reply = if choice.is_empty() {
+            text.trim()
+        } else {
+            choice
+        };
+        let ids = if reply.starts_with('[') {
+            Some(
+                serde_json::from_str::<Vec<String>>(reply)
+                    .map_err(|_| "Choose valid sub-domains from this domain")?,
+            )
+        } else {
+            domain
+                .sub_domains
+                .iter()
+                .find(|s| s.id.eq_ignore_ascii_case(reply) || s.name.eq_ignore_ascii_case(reply))
+                .map(|s| vec![s.id.clone()])
+        };
+        if let Some(ids) = ids {
+            if ids.is_empty() {
+                return Err("Choose a sub-domain or explicitly skip this step".into());
+            }
+            let selections =
+                crate::goal_domains::Selection::manual(Some("manual"), e.domain.clone(), ids)?;
+            e.sub_domains = selections.sub_domains;
+            progress.selection_done = true;
+        } else if !choice.is_empty() {
+            return Err("Choose a supported sub-domain".into());
+        }
+        e.persistable = false;
+        e.answers
+            .push(json!({"kind":"subdomains","question":q.title,"answer":reply,"source":"user"}));
+    } else if q.kind == "subdomain_detail" {
+        let id = progress
+            .current
+            .as_deref()
+            .ok_or("No sub-domain question is pending")?;
+        let selected = e
+            .sub_domains
+            .iter_mut()
+            .find(|s| s.id == id)
+            .ok_or("This sub-domain is not selected")?;
+        if selected.skipped
+            || selected.answers.len() >= crate::intake_subdomains::MAX_QUESTIONS
+            || progress.completed.contains(&selected.id)
+        {
+            return Err("This sub-domain has already finished".into());
+        }
+        if choice == "skip" {
+            selected.skipped = true;
+            e.answers.push(
+                json!({"kind":"subdomain_detail","subDomain":id,"skipped":true,"source":"user"}),
+            );
+        } else {
+            let reply = q
+                .options
+                .iter()
+                .find(|o| o.id == choice)
+                .map(|o| o.label.as_str())
+                .unwrap_or(text.trim());
+            let answer = json!({"kind":"subdomain_detail","subDomain":id,"question":q.title,"answer":reply,"source":"user"});
+            selected.answers.push(answer);
+            // Keep the reply once in subDomains; the conversation history links to it.
+            e.answers
+                .push(json!({"kind":"subdomain_detail","subDomain":id,"source":"user"}));
+            e.persistable = false;
+        }
+    } else {
+        return Err("This question is not a sub-domain decision".into());
+    }
+    e.question = None;
+    Ok(())
 }
 
 fn domain_question(
@@ -609,7 +860,7 @@ async fn clarify(app: &AppHandle, e: &mut Entry) -> Result<(), String> {
         app,
         e,
         include_str!("../prompts/intake/clarify.md"),
-        &json!({"input":e.text,"answers":e.answers,"draft":e.goal,"domain":e.domain,"subDomains":e.sub_domains}),
+        &json!({"input":e.text,"answers":e.answers,"draft":e.goal,"domain":domain_context(e),"subDomains":subdomain_context(e)}),
         &schema,
         false,
     )
@@ -768,6 +1019,11 @@ fn submit_intent(
     {
         return Err("Resolve or cancel pending decisions before adding more requests".into());
     }
+    let subdomain_progress = Some(crate::intake_subdomains::Progress::new(
+        selection
+            .as_ref()
+            .is_some_and(|s| !s.sub_domains.is_empty()),
+    ));
     let mut e = Entry {
         id: supplied_id.map_or_else(uid, Ok)?,
         revision: 0,
@@ -784,6 +1040,7 @@ fn submit_intent(
         domain_mode: Some("manual".into()),
         domain: selection.as_ref().and_then(|s| s.domain.clone()),
         sub_domains: selection.map(|s| s.sub_domains).unwrap_or_default(),
+        subdomain_progress,
         status: "classifying".into(),
         question: None,
         answers: Vec::new(),
@@ -862,6 +1119,7 @@ fn processing_status(status: &str) -> bool {
         status,
         "classifying"
             | "domain_planning"
+            | "subdomain_planning"
             | "clarifying"
             | "dispatching"
             | "pathway_planning"
@@ -888,7 +1146,12 @@ fn validate_answer(
         .question
         .clone()
         .ok_or("This decision has already been answered")?;
-    if option_id.is_some_and(|id| id != "cancel" && !q.options.iter().any(|o| o.id == id)) {
+    let skip = option_id.is_some_and(|id| {
+        (id == "skip_all" && matches!(q.kind.as_str(), "subdomains" | "subdomain_detail"))
+            || (id == "skip" && q.kind == "subdomain_detail")
+    });
+    if option_id.is_some_and(|id| id != "cancel" && !skip && !q.options.iter().any(|o| o.id == id))
+    {
         return Err("That option is not part of this question".into());
     }
     if option_id.is_none() && text.trim().is_empty() {
@@ -911,6 +1174,7 @@ mod tests {
             domain_source: None,
             domain_mode: None,
             sub_domains: vec![],
+            subdomain_progress: None,
             kind: "goal".into(),
             status: "clarification".into(),
             question: Some(Question {
@@ -920,6 +1184,7 @@ mod tests {
                 title: "What is your starting position?".into(),
                 explanation: String::new(),
                 options: vec![option("baseline", "Baseline", "Describe it.")],
+                domain: None,
             }),
             answers: vec![json!({"kind":"clarification","answer":"CANARY_ANSWER"})],
             goal: None,
@@ -1057,10 +1322,203 @@ mod tests {
     }
 
     #[test]
+    fn manual_subdomain_selection_is_explicit_and_validates_parent_membership() {
+        let mut e = sample(DataClass::General);
+        e.domain = Some("environment".into());
+        e.domain_mode = Some("manual".into());
+        assert!(!needs_subdomains(&e)); // Stored conversations without progress are not enrolled.
+        e.subdomain_progress = Some(crate::intake_subdomains::Progress::new(false));
+        assert!(needs_subdomains(&e));
+        question(
+            &mut e,
+            "subdomains",
+            "Which parts?",
+            "Choose or skip.",
+            vec![option(
+                "digital-hygiene",
+                "Digital Hygiene",
+                "Reduce stated distractions.",
+            )],
+        );
+        let q = validate_answer(
+            &e,
+            e.revision,
+            None,
+            "[\"digital-hygiene\",\"geographic-fit\"]",
+        )
+        .unwrap();
+        assert_eq!(q.domain.as_deref(), Some("environment"));
+        assert!(validate_answer(&e, e.revision - 1, Some("digital-hygiene"), "").is_err());
+        assert!(subdomain_reply(&mut e, &q, "", "[\"cardiorespiratory-capacity\"]").is_err());
+        assert!(
+            subdomain_reply(&mut e, &q, "", "[\"digital-hygiene\",\"digital-hygiene\"]").is_err()
+        );
+        assert!(e.sub_domains.is_empty());
+        subdomain_reply(&mut e, &q, "", "[\"digital-hygiene\",\"geographic-fit\"]").unwrap();
+        assert_eq!(e.sub_domains.len(), 2);
+        assert!(e.subdomain_progress.as_ref().unwrap().selection_done);
+        assert!(!e.persistable);
+        assert!(e.question.is_none());
+        assert_eq!(subdomain_context(&e)[1]["name"], "Sensory Fit");
+        assert_eq!(subdomain_context(&e)[1]["id"], "geographic-fit");
+        assert!(subdomain_reply(&mut e, &q, "digital-hygiene", "").is_err());
+    }
+
+    #[test]
+    fn subdomain_freeform_is_context_not_an_automatic_selection() {
+        let mut e = sample(DataClass::General);
+        e.domain = Some("environment".into());
+        e.subdomain_progress = Some(crate::intake_subdomains::Progress::new(false));
+        question(&mut e, "subdomains", "Which parts?", "", vec![]);
+        let q = e.question.clone().unwrap();
+        subdomain_reply(&mut e, &q, "", "I am unsure; noise seems to be the issue").unwrap();
+        assert!(!e.subdomain_progress.as_ref().unwrap().selection_done);
+        assert!(e.sub_domains.is_empty());
+        assert!(!e.persistable);
+        assert_eq!(
+            e.answers.last().unwrap()["answer"],
+            "I am unsure; noise seems to be the issue"
+        );
+    }
+
+    fn detail_entry() -> Entry {
+        let mut e = sample(DataClass::General);
+        e.domain = Some("environment".into());
+        e.domain_mode = Some("manual".into());
+        e.sub_domains = crate::goal_domains::Selection::manual(
+            None,
+            e.domain.clone(),
+            vec!["digital-hygiene".into(), "geographic-fit".into()],
+        )
+        .unwrap()
+        .sub_domains;
+        let mut progress = crate::intake_subdomains::Progress::new(true);
+        progress.current = Some("digital-hygiene".into());
+        e.subdomain_progress = Some(progress);
+        question(
+            &mut e,
+            "subdomain_detail",
+            "What interrupts you?",
+            "",
+            vec![option("messages", "Messages", "Your stated interruption.")],
+        );
+        e
+    }
+
+    #[test]
+    fn details_are_versioned_bounded_and_skips_preserve_partial_answers() {
+        let mut e = detail_entry();
+        for _ in 0..crate::intake_subdomains::MAX_QUESTIONS {
+            let q = validate_answer(&e, e.revision, Some("messages"), "").unwrap();
+            subdomain_reply(&mut e, &q, "messages", "").unwrap();
+            assert!(!e.persistable);
+            assert!(e.question.is_none());
+            e.revision += 1;
+            question(
+                &mut e,
+                "subdomain_detail",
+                "Another focused question?",
+                "",
+                vec![option("messages", "Messages", "Context.")],
+            );
+        }
+        assert_eq!(e.sub_domains[0].answers.len(), 3);
+        let q = e.question.clone().unwrap();
+        assert!(subdomain_reply(&mut e, &q, "messages", "").is_err());
+        assert_eq!(
+            e.subdomain_progress
+                .as_ref()
+                .unwrap()
+                .next(&e.sub_domains)
+                .as_deref(),
+            Some("geographic-fit")
+        );
+        let mut partial = detail_entry();
+        let q = partial.question.clone().unwrap();
+        subdomain_reply(&mut partial, &q, "", "A specific interruption").unwrap();
+        question(
+            &mut partial,
+            "subdomain_detail",
+            "More context?",
+            "",
+            vec![],
+        );
+        let q = validate_answer(&partial, partial.revision, Some("skip"), "").unwrap();
+        subdomain_reply(&mut partial, &q, "skip", "").unwrap();
+        assert!(partial.sub_domains[0].skipped);
+        assert_eq!(partial.sub_domains[0].answers.len(), 1);
+        assert_eq!(subdomain_context(&partial)[0]["skipped"], true);
+    }
+
+    #[test]
+    fn skipping_remaining_parts_finishes_context_without_approving_the_goal() {
+        let mut e = detail_entry();
+        let q = validate_answer(&e, e.revision, Some("skip_all"), "").unwrap();
+        subdomain_reply(&mut e, &q, "skip_all", "").unwrap();
+        assert!(e.subdomain_progress.as_ref().unwrap().finished);
+        assert!(e.sub_domains.iter().all(|s| s.skipped));
+        assert!(!needs_subdomains(&e));
+        assert!(e.goal.is_none());
+        assert!(e.approved_goal.is_none());
+        let unrelated = sample(DataClass::General);
+        assert!(validate_answer(&unrelated, unrelated.revision, Some("skip"), "").is_err());
+        assert!(validate_answer(&unrelated, unrelated.revision, Some("skip_all"), "").is_err());
+        let mut selection = detail_entry();
+        selection.sub_domains.clear();
+        selection.subdomain_progress = Some(crate::intake_subdomains::Progress::new(false));
+        question(&mut selection, "subdomains", "Which parts?", "", vec![]);
+        let q = validate_answer(&selection, selection.revision, Some("skip_all"), "").unwrap();
+        subdomain_reply(&mut selection, &q, "skip_all", "").unwrap();
+        assert!(!needs_subdomains(&selection));
+        assert!(selection.sub_domains.is_empty());
+    }
+
+    #[test]
+    fn interrupted_subdomain_planning_restores_progress_for_explicit_retry() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LifeStore::open(
+            &dir.path().join("intake.sqlite3"),
+            LifeCrypto::in_memory_random(),
+        )
+        .unwrap();
+        store.set_consent(DataClass::General, true, "test").unwrap();
+        let mut e = detail_entry();
+        e.status = "subdomain_planning".into();
+        e.question = None;
+        e.sub_domains[0]
+            .answers
+            .push(json!({"answer":"Previously classified context"}));
+        store_entry(&store, &e).unwrap();
+        let saved = store.get_record("intake-test-1").unwrap().unwrap();
+        let restored = decode_entry(&store, &saved.body).unwrap();
+        assert_eq!(restored.status, "retry");
+        assert!(needs_subdomains(&restored));
+        assert_eq!(restored.sub_domains[0].answers.len(), 1);
+        assert_eq!(
+            restored
+                .subdomain_progress
+                .as_ref()
+                .unwrap()
+                .current
+                .as_deref(),
+            Some("digital-hygiene")
+        );
+        assert!(processing_status("subdomain_planning"));
+        assert!(!processing_status("subdomain_detail"));
+        assert!(validate_answer(&restored, restored.revision, Some("retry"), "").is_ok());
+    }
+
+    #[test]
     fn legacy_entries_decode_without_domain_metadata() {
         let original = sample(DataClass::Mind);
         let mut value = serde_json::to_value(&original).unwrap();
-        for key in ["domain", "domainSource", "domainMode", "subDomains"] {
+        for key in [
+            "domain",
+            "domainSource",
+            "domainMode",
+            "subDomains",
+            "subdomainProgress",
+        ] {
             value.as_object_mut().unwrap().remove(key);
         }
         let restored: Entry = serde_json::from_value(value).unwrap();
@@ -1068,6 +1526,7 @@ mod tests {
         assert!(restored.domain_source.is_none());
         assert!(restored.domain_mode.is_none());
         assert!(restored.sub_domains.is_empty());
+        assert!(restored.subdomain_progress.is_none());
         assert_eq!(restored.answers, original.answers);
         assert_eq!(restored.class, original.class);
         assert_eq!(restored.status, original.status);
@@ -1088,6 +1547,9 @@ mod tests {
                 answers: vec![json!({"answer":"SUBDOMAIN_CANARY"})],
                 skipped: false,
             }];
+            let mut progress = crate::intake_subdomains::Progress::new(true);
+            progress.current = Some("cardiorespiratory-capacity".into());
+            e.subdomain_progress = Some(progress);
             e.voice_wav = b"VOICE_BYTES_MUST_REMAIN_EPHEMERAL".to_vec();
             e.pathways = Some(crate::intake_pathways::PathwaySet {
                 assessment: "PATHWAY_CANARY".into(),
@@ -1122,6 +1584,10 @@ mod tests {
             assert_eq!(restored.domain_source, e.domain_source);
             assert_eq!(restored.domain_mode, e.domain_mode);
             assert_eq!(restored.sub_domains, e.sub_domains);
+            assert_eq!(
+                restored.subdomain_progress.unwrap().current.as_deref(),
+                Some("cardiorespiratory-capacity")
+            );
             assert!(restored.voice_wav.is_empty());
             assert_eq!(
                 restored.task_proposals.as_ref().unwrap().assessment,
@@ -1309,7 +1775,7 @@ pub async fn decision_pathways(app: AppHandle, id: String, revision: u64) -> Res
             &app,
             &e,
             include_str!("../prompts/intake/pathways.md"),
-            &json!({"approvedGoal":approved,"category":e.category}),
+            &json!({"approvedGoal":approved,"category":e.category,"domain":domain_context(&e),"subDomains":subdomain_context(&e)}),
             &crate::intake_pathways::schema(),
             false,
         ),
@@ -1389,7 +1855,7 @@ pub async fn decision_propose_tasks(
     commit(&app, &mut e)?;
     let result = tokio::time::timeout(std::time::Duration::from_secs(90), infer(&app, &e,
         include_str!("../prompts/intake/tasks.md"),
-        &json!({"approvedGoal":goal,"preferredPathway":pathway,"currentLocalTime":start,"timezone":zone,"existingLinkedTasks":existing}),
+        &json!({"approvedGoal":goal,"preferredPathway":pathway,"currentLocalTime":start,"timezone":zone,"existingLinkedTasks":existing,"domain":domain_context(&e),"subDomains":subdomain_context(&e)}),
         &crate::task_proposals::schema(), false)).await.map_err(|_| "Task proposal generation timed out".to_string())
         .and_then(|r| r).and_then(|value| crate::task_proposals::parse(value, draft_id, goal, pathway, start, zone));
     e.status = "goal_ready".into();
@@ -1540,8 +2006,18 @@ pub async fn decision_answer(
             }
         }
         "domain" => match domain_reply(&mut e, &q, choice, &text) {
-            Ok(true) => clarify(&app, &mut e).await,
+            Ok(true) => advance(&app, &mut e).await,
             Ok(false) => suggest_domain(&app, &mut e).await,
+            Err(error) => Err(error),
+        },
+        "subdomains" | "subdomain_detail" => match subdomain_reply(&mut e, &q, choice, &text) {
+            Ok(()) => {
+                if e.persistable {
+                    e.status = "subdomain_planning".into();
+                    commit(&app, &mut e)?;
+                }
+                advance(&app, &mut e).await
+            }
             Err(error) => Err(error),
         },
         "clarification" => {

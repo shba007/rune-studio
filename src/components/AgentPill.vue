@@ -27,8 +27,8 @@ import { useTaskBoard } from '@/composables/useTaskBoard'
 import { taskOrbState } from '@/config/taskActivity'
 import { useDecisions } from '@/composables/useDecisions'
 import DecisionInbox from './DecisionInbox.vue'
-import PersonalitySymbol from './PersonalitySymbol.vue'
-import { usePersonality } from '@/composables/usePersonality'
+import MindsetSymbol from './MindsetSymbol.vue'
+import { useMindset } from '@/composables/useMindset'
 import TaskReminder from './TaskReminder.vue'
 import ModelIcon from './ModelIcon.vue'
 import { useModelActivity } from '@/composables/useModelActivity'
@@ -44,7 +44,7 @@ const modelTooltip = computed(() =>
     .map((item) => `${item.model} (${item.reported ? 'reported by server' : 'requested'})`)
     .join(', '),
 )
-const personality = usePersonality()
+const mindset = useMindset()
 const taskBoard = useTaskBoard()
 const decisions = useDecisions()
 const expandedDecision = ref<string | null>(null)
@@ -218,7 +218,7 @@ const orbTitle = computed(() =>
       ? `Active models: ${modelTooltip.value}`
       : agent.health.value.title,
 )
-const showPersonality = computed(
+const showMindset = computed(
   () =>
     !agent.settings.value?.externalAgent && ['ok', 'checking'].includes(agent.health.value.tone),
 )
@@ -247,14 +247,14 @@ function onOrb() {
     </div>
     <div
       data-tauri-drag-region
-      :title="`Personality: ${personality.name}`"
+      :title="`Mindset: ${mindset.name}`"
       class="relative isolate flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-full bg-rune-surface outline-none [clip-path:circle(50%)]"
     >
       <span
-        v-if="showPersonality"
+        v-if="showMindset"
         class="pointer-events-none absolute bottom-1 left-1/2 z-20 grid size-4 -translate-x-1/2 place-items-center rounded-full bg-black/85 text-[10px] leading-none text-rune-ink"
-        :aria-label="`Active personality: ${personality.name}`"
-        ><PersonalitySymbol :mark="personality.mark" class="size-3"
+        :aria-label="`Active mindset: ${mindset.name}`"
+        ><MindsetSymbol :mark="mindset.mark" class="size-3"
       /></span>
       <svg v-if="updating" viewBox="0 0 64 64" class="update-ring" aria-hidden="true">
         <circle cx="32" cy="32" r="30" fill="none" class="update-track" />

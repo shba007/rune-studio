@@ -373,7 +373,7 @@ export function useAgent() {
       void refreshScreenRequest()
   }, 1000)
   const openSettings = (section = 'general') => call('open_settings_window', { section })
-  const openWorkspace = (section = 'tasks') => call('open_workspace', { section })
+  const openWorkspace = (section = 'life') => call('open_workspace', { section })
   const toggleListening = () => call('toggle_listening')
   async function answer(approved: boolean) {
     const waiting = question.value

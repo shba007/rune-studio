@@ -6,10 +6,14 @@ pub const SECTION_EVENT: &str = "workspace_section";
 
 fn clean(section: Option<&str>) -> &'static str {
     match section {
+        Some("life") => "life",
+        Some("mindsets") => "mindsets",
         Some("goals") => "goals",
+        Some("tasks" | "artifacts") => "tasks",
+        Some("help") => "help",
         Some("personalities") => "personalities",
         Some("overview") => "overview",
-        _ => "tasks",
+        _ => "life",
     }
 }
 
@@ -52,10 +56,12 @@ fn open_view(app: &AppHandle, section: Option<&str>, run: Option<&str>) -> tauri
 #[cfg(test)]
 mod tests {
     #[test]
-    fn defaults_and_legacy_sections_land_on_tasks() {
-        assert_eq!(super::clean(None), "tasks");
+    fn defaults_land_on_life_and_legacy_sections_on_tasks() {
+        assert_eq!(super::clean(None), "life");
+        assert_eq!(super::clean(Some("unknown")), "life");
         assert_eq!(super::clean(Some("artifacts")), "tasks");
-        assert_eq!(super::clean(Some("unknown")), "tasks");
+        assert_eq!(super::clean(Some("tasks")), "tasks");
+        assert_eq!(super::clean(Some("mindsets")), "mindsets");
         assert_eq!(super::clean(Some("goals")), "goals");
         assert_eq!(super::clean(Some("overview")), "overview");
     }

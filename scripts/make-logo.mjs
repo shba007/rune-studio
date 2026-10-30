@@ -1,4 +1,4 @@
-// Draws the Rune Studio logo: the dot-matrix orb as a mark.
+// Draws the Rune Studio logo: the dot-matrix orb as a mark, dark dots on a white disc.
 //
 //   node scripts/make-logo.mjs
 //
@@ -54,9 +54,9 @@ function colour() {
     .join('\n')
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   <title>Rune Studio</title>
-  <circle cx="512" cy="512" r="496" fill="#141414"/>
-  <circle cx="512" cy="512" r="496" fill="none" stroke="#f1f1ef" stroke-opacity="0.35" stroke-width="16"/>
-  <g fill="#f1f1ef">
+  <circle cx="512" cy="512" r="496" fill="#f1f1ef"/>
+  <circle cx="512" cy="512" r="496" fill="none" stroke="#141414" stroke-opacity="0.35" stroke-width="16"/>
+  <g fill="#141414">
 ${circles}
   </g>
 </svg>

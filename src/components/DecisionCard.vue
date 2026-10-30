@@ -5,6 +5,7 @@ import type { DecisionAnswer, DecisionQuestion } from '@/types/decisions'
 import { DOMAINS, domainById } from '@/config/domains'
 import { useDomainPrefs } from '@/composables/useDomainPrefs'
 import RuneChoice from './RuneChoice.vue'
+import RuneSwitch from './RuneSwitch.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -25,6 +26,8 @@ const group = useId()
 const optionId = ref<string | null>(null)
 const text = ref('')
 const domainChoice = ref('')
+const pickedSubdomains = ref<string[]>([])
+const subdomainOptions = computed(() => domainById(props.question.domain ?? '').subDomains)
 const { showSanctuary } = useDomainPrefs()
 const domainOptions = computed(() => [
   { value: '', label: 'Choose another domain' },
@@ -34,13 +37,37 @@ const domainOptions = computed(() => [
   })),
 ])
 const allowsFreeform = computed(() =>
-  ['domain', 'clarification', 'goal_review', 'attachment'].includes(props.question.kind),
+  [
+    'domain',
+    'subdomains',
+    'subdomain_detail',
+    'clarification',
+    'goal_review',
+    'attachment',
+  ].includes(props.question.kind),
 )
 watch(
   () => [props.question.id, props.question.revision],
   () => {
     optionId.value = props.question.draft?.optionId ?? null
     text.value = props.question.draft?.text ?? ''
+    pickedSubdomains.value = []
+    if (props.question.kind === 'subdomains' && text.value.startsWith('[')) {
+      try {
+        const ids: unknown = JSON.parse(text.value)
+        if (
+          Array.isArray(ids) &&
+          ids.every(
+            (id) => typeof id === 'string' && subdomainOptions.value.some((s) => s.id === id),
+          )
+        ) {
+          pickedSubdomains.value = ids
+          text.value = ''
+        }
+      } catch {
+        /* Keep an ordinary freeform draft as text. */
+      }
+    }
     domainChoice.value =
       props.question.kind === 'domain' && DOMAINS.some((d) => d.id === text.value) ? text.value : ''
   },
@@ -50,14 +77,18 @@ const answer = (): DecisionAnswer => ({
   id: props.question.id,
   revision: props.question.revision,
   optionId: optionId.value,
-  text: text.value.trim(),
+  text:
+    props.question.kind === 'subdomains' && pickedSubdomains.value.length
+      ? JSON.stringify(pickedSubdomains.value)
+      : text.value.trim(),
 })
 const valid = computed(() =>
   optionId.value !== null
     ? props.question.options.some((option) => option.id === optionId.value)
-    : allowsFreeform.value && text.value.trim().length > 0,
+    : allowsFreeform.value && (text.value.trim().length > 0 || pickedSubdomains.value.length > 0),
 )
 function choose(id: string | null) {
+  if (id !== null) pickedSubdomains.value = []
   if (id !== null && props.question.kind === 'domain') {
     domainChoice.value = ''
     text.value = ''
@@ -66,8 +97,16 @@ function choose(id: string | null) {
   emit('draft', answer())
 }
 function typeAnswer(event: Event) {
+  pickedSubdomains.value = []
   domainChoice.value = ''
   text.value = (event.target as HTMLTextAreaElement).value
+  choose(null)
+}
+function toggleSubdomain(id: string, on: boolean) {
+  pickedSubdomains.value = on
+    ? [...new Set([...pickedSubdomains.value, id])]
+    : pickedSubdomains.value.filter((item) => item !== id)
+  text.value = ''
   choose(null)
 }
 function chooseDomain(value: string) {
@@ -109,7 +148,12 @@ function chooseDomain(value: string) {
           ><span class="block"
             >{{ option.label
             }}<span
-              v-if="index === 0 && ['domain', 'clarification'].includes(question.kind)"
+              v-if="
+                index === 0 &&
+                ['domain', 'subdomains', 'subdomain_detail', 'clarification'].includes(
+                  question.kind,
+                )
+              "
               class="ml-2 text-rune-heading uppercase opacity-60"
               >Recommended</span
             ></span
@@ -128,6 +172,22 @@ function chooseDomain(value: string) {
           ></span
         >
       </label>
+      <fieldset v-if="question.kind === 'subdomains'" class="flex flex-col gap-1 p-rune-2">
+        <legend class="text-rune-caption text-rune-text-3">Or choose any combination</legend>
+        <div
+          v-for="sub in subdomainOptions"
+          :key="sub.id"
+          class="flex items-center gap-rune-2 text-rune-body"
+        >
+          <span class="flex-1">{{ sub.name }}</span>
+          <RuneSwitch
+            :label="sub.name"
+            :model-value="pickedSubdomains.includes(sub.id)"
+            :disabled="busy"
+            @update:model-value="(on: boolean) => toggleSubdomain(sub.id, on)"
+          />
+        </div>
+      </fieldset>
       <label
         v-if="allowsFreeform"
         class="flex flex-col gap-1 rounded-b-rune-tile bg-rune-raised px-rune-2 py-rune-1 text-rune-caption text-rune-text-3"
@@ -159,6 +219,36 @@ function chooseDomain(value: string) {
     </template>
     <p v-if="error" role="alert" class="m-0 text-rune-caption text-error">{{ error }}</p>
     <div class="flex flex-wrap items-center gap-rune-1">
+      <RuneButton
+        v-if="question.kind === 'subdomain_detail'"
+        variant="ghost"
+        :disabled="busy"
+        @click="
+          emit('answer', {
+            id: question.id,
+            revision: question.revision,
+            optionId: 'skip',
+            text: '',
+          })
+        "
+      >
+        Skip this part
+      </RuneButton>
+      <RuneButton
+        v-if="['subdomains', 'subdomain_detail'].includes(question.kind)"
+        variant="ghost"
+        :disabled="busy"
+        @click="
+          emit('answer', {
+            id: question.id,
+            revision: question.revision,
+            optionId: 'skip_all',
+            text: '',
+          })
+        "
+      >
+        Skip remaining questions
+      </RuneButton>
       <RuneButton
         variant="ghost"
         v-if="deferable"

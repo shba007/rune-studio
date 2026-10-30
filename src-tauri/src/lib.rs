@@ -23,6 +23,7 @@ mod hub;
 mod intake;
 mod intake_domain;
 mod intake_pathways;
+mod intake_subdomains;
 mod kit;
 pub mod life;
 mod model;

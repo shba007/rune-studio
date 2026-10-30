@@ -1,4 +1,4 @@
-export type KnowledgeSection = 'overview' | 'goals' | 'tasks' | 'personalities' | 'help'
+export type KnowledgeSection = 'overview' | 'life' | 'goals' | 'tasks' | 'mindsets' | 'help'
 export interface KnowledgeConcept {
   id: string
   title: string
@@ -21,7 +21,7 @@ export const knowledgeConcepts: KnowledgeConcept[] = [
       'Your workspace for understanding goals, reviewing tasks and evidence, and managing Rune’s communication styles.',
     example: 'Review a calculation, replay a capture, or edit your fitness coach in one workspace.',
     today:
-      'Contains this overview, Goals, Tasks with embedded Preview, and Personalities. This graph explains the product; it is not a map of private records or a claim that every planned connection exists.',
+      'Contains this overview, Goals, Tasks with embedded Preview, and Mindsets. This graph explains the product; it is not a map of private records or a claim that every planned connection exists.',
     section: 'overview',
   },
   {
@@ -87,11 +87,11 @@ export const knowledgeConcepts: KnowledgeConcept[] = [
       'Flexible topic labels for goals. They are not a fixed list, execution permissions, or privacy classifications.',
     example: 'Fitness, finances, learning, or another topic relevant to your goal.',
     today:
-      'Rune suggests a category during intake. Approved personality assignments match category labels; unmatched categories use the base personality. Privacy consent uses separate protected data classes.',
+      'Rune suggests a category during intake. Approved mindset assignments match category labels; unmatched categories use the base mindset. Privacy consent uses separate protected data classes.',
   },
   {
-    id: 'personalities',
-    title: 'Personalities',
+    id: 'mindsets',
+    title: 'Mindsets',
     status: 'Partial',
     x: 185,
     y: 445,
@@ -100,8 +100,8 @@ export const knowledgeConcepts: KnowledgeConcept[] = [
     example:
       'A fitness coach can encourage consistency; a finance companion can help clarify constraints without claiming credentials.',
     today:
-      'Only the base personality ships. You can draft a style with a model verified as local, edit it, and explicitly approve it before saving. An orb symbol identifies the selected style. Profiles are editable files in Studio’s user-data prompts/personalities folder. Permissions and JSON contracts remain protected.',
-    section: 'personalities',
+      'Only the base mindset ships. You can draft a style with a model verified as local, edit it, and explicitly approve it before saving. An orb symbol identifies the selected style. Profiles are editable files in Studio’s user-data prompts/personalities folder. Permissions and JSON contracts remain protected.',
+    section: 'mindsets',
   },
   {
     id: 'context',
@@ -127,7 +127,7 @@ export const knowledgeConcepts: KnowledgeConcept[] = [
     example:
       'Allow protected goal conversations while separately controlling capture and recording settings.',
     today:
-      'Goal-related decisions use the encrypted Life store after opt-in. Task archives, captures, recordings, logs, and editable personality files are separate; do not assume all are encrypted or share one retention rule. Completed analyses may save captures for replay. Personal records belong in protected conversations, not style prompts.',
+      'Goal-related decisions use the encrypted Life store after opt-in. Task archives, captures, recordings, logs, and editable mindset files are separate; do not assume all are encrypted or share one retention rule. Completed analyses may save captures for replay. Personal records belong in protected conversations, not style prompts.',
   },
   {
     id: 'safety',
@@ -138,9 +138,9 @@ export const knowledgeConcepts: KnowledgeConcept[] = [
     meaning:
       'Permission checks and explicit decisions protect actions and changes when instructions, resources, or saved versions disagree.',
     example:
-      'Two edits to the same personality should trigger a conflict instead of silently replacing each other.',
+      'Two edits to the same mindset should trigger a conflict instead of silently replacing each other.',
     today:
-      'Execution consent, tool restrictions, cancellation, and stale-edit checks exist. Personality saves reject conflicting versions and duplicate category assignments. A universal conflict inbox spanning every domain is planned.',
+      'Execution consent, tool restrictions, cancellation, and stale-edit checks exist. Mindset saves reject conflicting versions and duplicate category assignments. A universal conflict inbox spanning every domain is planned.',
   },
   {
     id: 'analysis',
@@ -216,7 +216,7 @@ export const knowledgeConcepts: KnowledgeConcept[] = [
     example:
       'Agree on a feasible fitness plan, then receive an approved 7 AM jogging reminder and a progress question.',
     today:
-      'Compare ranked routes using an approved goal and its personality, then save a preferred route. Draft up to seven first-week tasks using that route and existing linked work. Edit each task, mode and suggested schedule, then approve creation individually. Drafts need protected storage consent and verified-local inference. First occurrences stay within the draft week; approved recurrence can continue afterward. Reminders require your action. Visual Analysis still needs fresh capture selection and your completion report. Automatic execution and proactive coaching remain future work.',
+      'Compare ranked routes using an approved goal and its mindset, then save a preferred route. Draft up to seven first-week tasks using that route and existing linked work. Edit each task, mode and suggested schedule, then approve creation individually. Drafts need protected storage consent and verified-local inference. First occurrences stay within the draft week; approved recurrence can continue afterward. Reminders require your action. Visual Analysis still needs fresh capture selection and your completion report. Automatic execution and proactive coaching remain future work.',
   },
 ]
 export const knowledgeLinks = [
@@ -225,13 +225,13 @@ export const knowledgeLinks = [
   ['request', 'steps', 'may attach as'],
   ['knowledge', 'goals', 'organizes'],
   ['knowledge', 'tasks', 'organizes'],
-  ['knowledge', 'personalities', 'manages'],
+  ['knowledge', 'mindsets', 'manages'],
   ['goals', 'categories', 'has a topic'],
-  ['goals', 'personalities', 'uses an approved communication style'],
+  ['goals', 'mindsets', 'uses an approved communication style'],
   ['goals', 'models', 'clarified with a verified-local model'],
   ['goals', 'consent', 'requires approval for protected storage'],
   ['goals', 'tasks', 'explicit parent and child links'],
-  ['categories', 'personalities', 'selects an approved style'],
+  ['categories', 'mindsets', 'selects an approved style'],
   ['goals', 'context', 'clarified using'],
   ['context', 'consent', 'stored according to'],
   ['tasks', 'steps', 'contains'],
@@ -241,7 +241,7 @@ export const knowledgeLinks = [
   ['models', 'request', 'interprets'],
   ['kit', 'tasks', 'offers selected tools'],
   ['safety', 'tasks', 'gates execution'],
-  ['safety', 'personalities', 'checks conflicting edits'],
+  ['safety', 'mindsets', 'checks conflicting edits'],
   ['goals', 'pathways', 'compares proposed routes'],
   ['pathways', 'tasks', 'proposes first-week work for approval'],
 ] as const

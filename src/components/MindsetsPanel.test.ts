@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { expect, it, vi } from 'vite-plus/test'
-import PersonalitiesPanel from './PersonalitiesPanel.vue'
+import MindsetsPanel from './MindsetsPanel.vue'
 const invoke = vi.hoisted(() => vi.fn<(command: string, args?: unknown) => Promise<unknown>>())
 vi.mock('@tauri-apps/api/core', () => ({ invoke }))
 it('requires explicit approval to save, sends the expected version, and preserves conflicted edits', async () => {
@@ -20,11 +20,11 @@ it('requires explicit approval to save, sends the expected version, and preserve
       }
     throw new Error('Conflict: reload and review')
   })
-  const wrapper = mount(PersonalitiesPanel)
+  const wrapper = mount(MindsetsPanel)
   await flushPromises()
   await wrapper.get('textarea').setValue('Encourage steady progress')
   expect(invoke.mock.calls.filter(([command]) => command === 'personality_save')).toHaveLength(0)
-  await wrapper.get('[aria-label="Edit personality"]').trigger('submit')
+  await wrapper.get('[aria-label="Edit mindset"]').trigger('submit')
   await flushPromises()
   expect(invoke).toHaveBeenCalledWith('personality_save', {
     expected: base,
@@ -61,17 +61,17 @@ it('shows an unsaved model suggestion and saves it only after explicit approval'
       active: { id: 'base', name: 'Rune', mark: 'companion' },
     }
   })
-  const wrapper = mount(PersonalitiesPanel)
+  const wrapper = mount(MindsetsPanel)
   await flushPromises()
-  await wrapper.get('[aria-label="Suggest a personality"] input').setValue('fitness')
-  await wrapper.get('[aria-label="Suggest a personality"]').trigger('submit')
+  await wrapper.get('[aria-label="Suggest a mindset"] input').setValue('fitness')
+  await wrapper.get('[aria-label="Suggest a mindset"]').trigger('submit')
   await flushPromises()
   expect(invoke).toHaveBeenCalledWith('personality_propose', { category: 'fitness' })
   expect(invoke.mock.calls.filter(([command]) => command === 'personality_save')).toHaveLength(0)
   expect(wrapper.text()).toContain('Unsaved suggestion')
   expect(wrapper.get('button[aria-label="Orb symbol"]').text()).toContain('Fitness')
   await wrapper.get('textarea').setValue('My approved coaching style')
-  await wrapper.get('[aria-label="Edit personality"]').trigger('submit')
+  await wrapper.get('[aria-label="Edit mindset"]').trigger('submit')
   await flushPromises()
   expect(invoke).toHaveBeenCalledWith('personality_save', {
     expected: null,

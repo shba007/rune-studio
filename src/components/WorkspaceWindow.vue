@@ -2,7 +2,7 @@
 import RuneNavItem from './RuneNavItem.vue'
 import RuneButton from './RuneButton.vue'
 import { listen } from '@tauri-apps/api/event'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useAgent } from '@/composables/useAgent'
 import AppIcon from './AppIcon.vue'
 import RuneNotice from './RuneNotice.vue'
@@ -12,36 +12,62 @@ import TitleBar from './TitleBar.vue'
 import FlightPlayer from './FlightPlayer.vue'
 import DecisionInbox from './DecisionInbox.vue'
 import GoalsTable from './GoalsTable.vue'
+import LifeGraph from './LifeGraph.vue'
 import PeekPanel from './PeekPanel.vue'
 import RuneChoice from './RuneChoice.vue'
 import { DOMAINS, domainOf } from '@/config/domains'
 import { useDomainPrefs } from '@/composables/useDomainPrefs'
-import PersonalitiesPanel from './PersonalitiesPanel.vue'
+import MindsetsPanel from './MindsetsPanel.vue'
 import KnowledgeOverview from './KnowledgeOverview.vue'
 import type { KnowledgeSection } from '@/config/knowledge'
 import { useDecisions } from '@/composables/useDecisions'
+import { useMindsetCatalog } from '@/composables/useMindsetCatalog'
 import { useWorkspaceTasks } from '@/composables/useWorkspaceTasks'
 import NewWorkForm from './NewWorkForm.vue'
 import NewGoalForm from './NewGoalForm.vue'
+import type { IntakeEntry } from '@/types/decisions'
 import type { WorkspaceTask } from '@/types/workspace'
 import type { FlightRun } from '@/config/flight'
 
 type Section = Exclude<KnowledgeSection, 'overview'>
 const resolveSection = (value: string | null | undefined): Section | null => {
   if (value === 'overview') return 'goals'
-  return value === 'goals' || value === 'tasks' || value === 'personalities' || value === 'help'
+  if (value === 'personalities') return 'mindsets'
+  return value === 'life' ||
+    value === 'goals' ||
+    value === 'tasks' ||
+    value === 'mindsets' ||
+    value === 'help'
     ? value
     : null
 }
 const agent = useAgent()
-const personalities = ref<InstanceType<typeof PersonalitiesPanel> | null>(null)
+const mindsets = ref<InstanceType<typeof MindsetsPanel> | null>(null)
 const decisions = useDecisions()
 const workspace = useWorkspaceTasks()
 const approvedGoals = computed(() =>
   decisions.entries.value.filter((goal) => goal.kind === 'goal' && goal.approvedGoal),
 )
 const focusGoalId = ref<string | null>(null)
-const { overrides, showSanctuary } = useDomainPrefs()
+const { overrides, showSanctuary, goalMindsets } = useDomainPrefs()
+const catalog = useMindsetCatalog()
+const mindsetOptions = computed(() => [
+  { value: '', label: 'Default · Rune' },
+  ...catalog.entries.value
+    .filter((item) => item.id !== 'base')
+    .map((item) => ({ value: item.id, label: item.name })),
+])
+const mindsetChoice = computed({
+  get: () => (focusGoalId.value && goalMindsets.value[focusGoalId.value]) || '',
+  set: (value: string) => {
+    const id = focusGoalId.value
+    if (!id) return
+    const next = { ...goalMindsets.value }
+    if (value) next[id] = value
+    else delete next[id]
+    goalMindsets.value = next
+  },
+})
 const focusGoal = computed(() =>
   decisions.entries.value.find((item) => item.id === focusGoalId.value),
 )
@@ -86,6 +112,9 @@ function openGoal(id: string) {
   previewTask.value = null
   focusGoalId.value = id
 }
+async function removeGoal(entry: IntakeEntry) {
+  if ((await decisions.remove(entry)) && focusGoalId.value === entry.id) focusGoalId.value = null
+}
 function goalTasks(id: string) {
   section.value = 'tasks'
   previewTask.value = null
@@ -109,7 +138,7 @@ async function created(kind: 'goal' | 'task', id?: string) {
   await Promise.all([decisions.refresh(), workspace.refresh()])
 }
 const initial = new URLSearchParams(location.search).get('section')
-const section = ref<Section>(resolveSection(initial) ?? 'tasks')
+const section = ref<Section>(resolveSection(initial) ?? 'life')
 const previewTask = ref<string | null>(new URLSearchParams(location.search).get('run'))
 const previewParent = computed(() => {
   const task = workspace.tasks.value.find(
@@ -125,14 +154,22 @@ function navigate(next: KnowledgeSection) {
   section.value = resolveSection(next) ?? 'tasks'
 }
 const sections: { id: Section; label: string; icon: IconName }[] = [
-  { id: 'tasks', label: 'Tasks', icon: 'history' },
+  { id: 'life', label: 'Life', icon: 'life' },
+  { id: 'mindsets', label: 'Mindsets', icon: 'mindset' },
   { id: 'goals', label: 'Goals', icon: 'target' },
-  { id: 'personalities', label: 'Personalities', icon: 'personality' },
+  { id: 'tasks', label: 'Tasks', icon: 'history' },
   { id: 'help', label: 'Help', icon: 'help' },
 ]
 const mainSections = sections.filter((item) => item.id !== 'help')
 const helpSection = sections.find((item) => item.id === 'help')!
 const current = computed(() => sections.find((item) => item.id === section.value)!)
+watch(
+  section,
+  (value) => {
+    if (value === 'goals') void catalog.refresh()
+  },
+  { immediate: true },
+)
 let unlisten: (() => void) | undefined
 let disposed = false
 onMounted(async () => {
@@ -194,12 +231,28 @@ onBeforeUnmount(() => {
           <AppIcon :name="helpSection.icon" />{{ helpSection.label }}
         </RuneNavItem>
       </nav>
-      <section class="min-w-0 flex-1 overflow-y-auto px-8 py-8 lg:px-12">
+      <section
+        class="min-w-0 flex-1"
+        :class="
+          section === 'life'
+            ? 'flex flex-col overflow-hidden'
+            : 'overflow-y-auto px-8 py-8 lg:px-12'
+        "
+      >
         <div
           class="mx-auto flex w-full flex-col gap-rune-3"
-          :class="section === 'goals' ? 'max-w-6xl' : 'max-w-4xl'"
+          :class="
+            section === 'life'
+              ? 'min-h-0 max-w-none flex-1'
+              : section === 'goals'
+                ? 'max-w-6xl'
+                : 'max-w-4xl'
+          "
         >
-          <header class="flex flex-wrap items-center justify-between gap-rune-2">
+          <header
+            v-if="section !== 'life'"
+            class="flex flex-wrap items-center justify-between gap-rune-2"
+          >
             <h1 class="m-0 font-sans text-rune-title">{{ current.label }}</h1>
             <RuneButton
               v-if="section === 'goals' || section === 'tasks'"
@@ -208,12 +261,8 @@ onBeforeUnmount(() => {
             >
               + New {{ section === 'goals' ? 'goal' : 'task' }}
             </RuneButton>
-            <RuneButton
-              v-if="section === 'personalities'"
-              variant="primary"
-              @click="personalities?.create()"
-            >
-              + New personality
+            <RuneButton v-if="section === 'mindsets'" variant="primary" @click="mindsets?.create()">
+              + New mindset
             </RuneButton>
           </header>
           <NewGoalForm v-if="creation?.kind === 'goal'" @close="creation = null" @saved="created" />
@@ -252,10 +301,18 @@ onBeforeUnmount(() => {
               :tasks="workspace.tasks.value"
               :selected-id="focusGoalId"
               @open="openGoal"
+              @remove="removeGoal"
             />
           </div>
           <DecisionInbox v-if="section === 'tasks'" quiet :model="decisions" />
-          <PersonalitiesPanel v-if="section === 'personalities'" ref="personalities" />
+          <LifeGraph
+            v-if="section === 'life'"
+            :entries="decisions.entries.value"
+            :tasks="workspace.tasks.value"
+            @open-goal="openGoal"
+            @open-task="openTask"
+          />
+          <MindsetsPanel v-if="section === 'mindsets'" ref="mindsets" />
           <KnowledgeOverview v-if="section === 'help'" @navigate="navigate" />
         </div>
       </section>
@@ -267,12 +324,21 @@ onBeforeUnmount(() => {
         @close="focusGoalId = null"
       >
         <template #header>
-          <span
-            v-if="focusGoal?.domain != null || domainPending"
-            class="text-rune-caption text-rune-text-2"
-            >{{ focusDomain?.name }}</span
-          >
-          <RuneChoice v-else v-model="domainChoice" label="Domain" menu :options="domainOptions" />
+          <div class="flex items-center gap-1">
+            <span
+              v-if="focusGoal?.domain != null || domainPending"
+              class="text-rune-caption text-rune-text-2"
+              >{{ focusDomain?.name }}</span
+            >
+            <RuneChoice
+              v-else
+              v-model="domainChoice"
+              label="Domain"
+              menu
+              :options="domainOptions"
+            />
+            <RuneChoice v-model="mindsetChoice" label="Mindset" menu :options="mindsetOptions" />
+          </div>
         </template>
         <DecisionInbox
           goals-only

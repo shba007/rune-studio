@@ -199,3 +199,16 @@ Prompts live in files, not code. New ones:
 
 Studio UI (new-goal form, Help tab, table sub-domain tags), the Kit MCP
 surface, and changes to the shared `~/.rune` layout.
+
+## Addendum: deleting goals
+
+Studio's Goals table now has a "Delete goal" action with an inline confirm. It
+invokes `decision_delete { id, revision }`, which does not exist yet. Needed
+from the backend:
+
+- Remove the goal entry from the protected Life store, reject a stale
+  `revision`, and emit `decisions_changed`.
+- Decide what happens to tasks whose `parentGoalId` is the deleted goal
+  (proposal: keep them as standalone tasks; owner decision).
+- Studio shows "Deleting goals needs a Rune update." while the command is
+  missing.

@@ -85,6 +85,107 @@ it('offers all twelve domains through versioned freeform and clears stale picker
   wrapper.unmount()
 })
 
+const subdomainQuestion: DecisionQuestion = {
+  ...question,
+  kind: 'subdomains',
+  domain: 'environment',
+  title: 'Which parts matter?',
+  options: [
+    {
+      id: 'workspace-ergonomics',
+      label: 'Workspace Friction',
+      explanation: 'Your workspace may matter.',
+    },
+    {
+      id: 'digital-hygiene',
+      label: 'Digital Hygiene',
+      explanation: 'Your stated distractions may matter.',
+    },
+    { id: 'geographic-fit', label: 'Sensory Fit', explanation: 'Your sensory context may matter.' },
+  ],
+}
+
+it('lets the user select several sub-domains without exposing transport JSON in the form', async () => {
+  const wrapper = mount(DecisionCard, { props: { question: subdomainQuestion } })
+  expect(wrapper.findAll('[role="switch"]')).toHaveLength(6)
+  expect(wrapper.findAll('input[type="radio"]')).toHaveLength(3)
+  expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeDefined()
+  await wrapper.get('[role="switch"][aria-label="Digital Hygiene"]').trigger('click')
+  await wrapper.get('[role="switch"][aria-label="Sensory Fit"]').trigger('click')
+  expect(wrapper.emitted('answer')).toBeUndefined()
+  expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('')
+  await wrapper.get('form').trigger('submit')
+  expect(wrapper.emitted('answer')!.at(-1)).toEqual([
+    { id: question.id, revision: 1, optionId: null, text: '["digital-hygiene","geographic-fit"]' },
+  ])
+  await wrapper.get('textarea').setValue('Noise seems to be the issue, but I am unsure')
+  expect(
+    wrapper.get('[role="switch"][aria-label="Digital Hygiene"]').attributes('aria-checked'),
+  ).toBe('false')
+  await wrapper.get('form').trigger('submit')
+  expect(wrapper.emitted('answer')!.at(-1)).toEqual([
+    {
+      id: question.id,
+      revision: 1,
+      optionId: null,
+      text: 'Noise seems to be the issue, but I am unsure',
+    },
+  ])
+  wrapper.unmount()
+})
+
+it('restores a multi-select draft and clears it on a new revision', async () => {
+  const wrapper = mount(DecisionCard, {
+    props: {
+      question: {
+        ...subdomainQuestion,
+        draft: { optionId: null, text: '["geographic-fit"]' },
+      },
+    },
+  })
+  expect(wrapper.get('[role="switch"][aria-label="Sensory Fit"]').attributes('aria-checked')).toBe(
+    'true',
+  )
+  expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('')
+  await wrapper.setProps({ question: { ...subdomainQuestion, revision: 2 } })
+  expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeDefined()
+  wrapper.unmount()
+})
+
+it('allows explicit skips without an answer and disables them while busy', async () => {
+  const wrapper = mount(DecisionCard, {
+    props: { question: { ...subdomainQuestion, kind: 'subdomain_detail' } },
+  })
+  await wrapper.get('textarea').setValue('An unfinished sensitive draft')
+  await wrapper
+    .findAll('button')
+    .find((b) => b.text() === 'Skip this part')!
+    .trigger('click')
+  expect(wrapper.emitted('answer')!.at(-1)).toEqual([
+    { id: question.id, revision: 1, optionId: 'skip', text: '' },
+  ])
+  await wrapper
+    .findAll('button')
+    .find((b) => b.text() === 'Skip remaining questions')!
+    .trigger('click')
+  expect(wrapper.emitted('answer')!.at(-1)).toEqual([
+    { id: question.id, revision: 1, optionId: 'skip_all', text: '' },
+  ])
+  await wrapper.setProps({ busy: true })
+  expect(
+    wrapper
+      .findAll('button')
+      .find((b) => b.text() === 'Skip this part')!
+      .attributes('disabled'),
+  ).toBeDefined()
+  await wrapper
+    .findAll('button')
+    .find((b) => b.text() === 'Skip this part')!
+    .trigger('click')
+  expect(wrapper.emitted('answer')).toHaveLength(2)
+  wrapper.unmount()
+})
+
 it('requires an explicit answer and includes the record revision when confirming', async () => {
   const wrapper = mount(DecisionCard, { props: { question } })
   expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeDefined()

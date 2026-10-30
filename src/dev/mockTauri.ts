@@ -9,6 +9,7 @@ import {
   flightSteps,
 } from './flightFixture'
 
+const removedGoals = new Set<string>()
 const monitor = () => ({
   id: 1,
   x: 0,
@@ -171,6 +172,10 @@ export function installTauriMock() {
             command:
               'claude mcp add --scope user rune-studio -- "C:/Rune Studio/rune-studio-cli.exe" mcp --agent claude',
           }
+        case 'decision_delete': {
+          removedGoals.add(String(given.id))
+          return null
+        }
         case 'decisions_state':
           return [
             {
@@ -252,7 +257,7 @@ export function installTauriMock() {
               error: null,
               taskId: null,
             },
-          ]
+          ].filter((entry) => !removedGoals.has(entry.id))
         case 'workspace_tasks_state':
           return [
             {

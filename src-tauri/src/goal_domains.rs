@@ -15,6 +15,7 @@ pub struct Domain {
 #[derive(Deserialize)]
 pub struct SubDomain {
     pub id: String,
+    pub name: String,
 }
 
 pub static REGISTRY: LazyLock<Vec<Domain>> = LazyLock::new(|| {

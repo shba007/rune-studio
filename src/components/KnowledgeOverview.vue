@@ -227,8 +227,8 @@ function keyboardPan(event: KeyboardEvent) {
       >
         Open
         {{
-          concept.section === 'personalities'
-            ? 'Personalities'
+          concept.section === 'mindsets'
+            ? 'Mindsets'
             : concept.section === 'goals'
               ? 'Goals'
               : 'Tasks'
@@ -253,10 +253,10 @@ function keyboardPan(event: KeyboardEvent) {
       <div class="rounded-rune-tile p-rune-3 bg-rune-raised">
         <h2 class="m-0 font-sans text-rune-subtitle text-rune-ink">You stay in control</h2>
         <p class="mb-0 text-rune-body leading-relaxed text-rune-text-2">
-          You approve goal definitions and personality edits. Capture and recording have explicit
+          You approve goal definitions and mindset edits. Capture and recording have explicit
           controls. Tools keep their permissions. Private goal storage requires consent; other
-          archives have their own controls. A personality changes communication style, not what Rune
-          is allowed to do.
+          archives have their own controls. A mindset changes communication style, not what Rune is
+          allowed to do.
         </p>
       </div>
       <div class="rounded-rune-tile p-rune-3 bg-rune-raised">

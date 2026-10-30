@@ -7,6 +7,7 @@ import TaskHistory from './TaskHistory.vue'
 import FlightPlayer from './FlightPlayer.vue'
 import DecisionInbox from './DecisionInbox.vue'
 import GoalsTable from './GoalsTable.vue'
+import LifeGraph from './LifeGraph.vue'
 import KnowledgeOverview from './KnowledgeOverview.vue'
 
 const harness = vi.hoisted(() => ({
@@ -35,6 +36,7 @@ afterEach(() => {
 })
 
 it('keeps task history mounted while switching workspace sections', async () => {
+  window.history.replaceState({}, '', '/?view=workspace&section=tasks')
   const wrapper = shallowMount(WorkspaceWindow, { global: { stubs: { RuneNavItem } } })
   await flushPromises()
   const history = wrapper.getComponent(TaskHistory)
@@ -54,7 +56,16 @@ it('keeps task history mounted while switching workspace sections', async () => 
   expect(harness.off).toHaveBeenCalledOnce()
 })
 
+it('opens on the Life graph with no page heading', async () => {
+  const wrapper = shallowMount(WorkspaceWindow, { global: { stubs: { RuneNavItem } } })
+  await flushPromises()
+  expect(wrapper.findComponent(LifeGraph).exists()).toBe(true)
+  expect(wrapper.find('h1').exists()).toBe(false)
+  wrapper.unmount()
+})
+
 it('keeps the goals empty message out of the Tasks section', async () => {
+  window.history.replaceState({}, '', '/?view=workspace&section=tasks')
   const wrapper = shallowMount(WorkspaceWindow, { global: { stubs: { RuneNavItem } } })
   await flushPromises()
   expect(wrapper.get('h1').text()).toBe('Tasks')
@@ -69,9 +80,10 @@ it('opens Goals without a Settings button in Workspace', async () => {
   expect(wrapper.get('h1').text()).toBe('Goals')
   expect(wrapper.findComponent(GoalsTable).exists()).toBe(true)
   expect(wrapper.findAll('nav button').map((item) => item.text())).toEqual([
-    'Tasks',
+    'Life',
+    'Mindsets',
     'Goals',
-    'Personalities',
+    'Tasks',
     'Help',
   ])
   expect(harness.settings).not.toHaveBeenCalled()
@@ -91,9 +103,9 @@ it('opens old Overview links as Goals and follows graph links without remounting
     .find((button) => button.text() === 'Help')!
     .trigger('click')
   expect(wrapper.get('h1').text()).toBe('Help')
-  wrapper.getComponent(KnowledgeOverview).vm.$emit('navigate', 'personalities')
+  wrapper.getComponent(KnowledgeOverview).vm.$emit('navigate', 'mindsets')
   await flushPromises()
-  expect(wrapper.get('h1').text()).toBe('Personalities')
+  expect(wrapper.get('h1').text()).toBe('Mindsets')
   harness.handler!({ payload: { section: 'overview' } })
   await flushPromises()
   expect(wrapper.get('h1').text()).toBe('Goals')

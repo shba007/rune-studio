@@ -64,6 +64,55 @@ it('treats domain inference as busy and domain confirmation as a resumable user 
   wrapper.unmount()
 })
 
+it('treats sub-domain planning as busy and its pending questions as user decisions', async () => {
+  harness.invoke.mockReset()
+  let entry = {
+    id: 'parts',
+    revision: 1,
+    kind: 'goal',
+    status: 'subdomain_planning',
+    question: null,
+  } as IntakeEntry
+  harness.invoke.mockImplementation(async (command) =>
+    command === 'decisions_state' ? [entry] : null,
+  )
+  let decisions!: ReturnType<typeof useDecisions>
+  const wrapper = mount(
+    defineComponent({
+      setup() {
+        decisions = useDecisions()
+        return () => null
+      },
+    }),
+  )
+  await flushPromises()
+  expect(decisions.busy.value).toBe(true)
+  entry = {
+    ...entry,
+    revision: 2,
+    status: 'subdomain_detail',
+    question: {
+      id: entry.id,
+      revision: 2,
+      kind: 'subdomain_detail',
+      domain: 'environment',
+      title: 'What interrupts you?',
+      explanation: '',
+      options: [],
+    },
+  }
+  await decisions.refresh()
+  expect(decisions.busy.value).toBe(false)
+  await decisions.answer({ id: entry.id, revision: 2, optionId: 'skip_all', text: '' })
+  expect(harness.invoke).toHaveBeenCalledWith('decision_answer', {
+    id: entry.id,
+    revision: 2,
+    optionId: 'skip_all',
+    text: '',
+  })
+  wrapper.unmount()
+})
+
 it('versions pathway requests and selection without dispatching executable tasks', async () => {
   harness.invoke.mockReset()
   const entry = {

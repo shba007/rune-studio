@@ -1,4 +1,4 @@
-export const personalitySymbols = [
+export const mindsetSymbols = [
   {
     id: 'companion',
     label: 'Spark · Companion',
@@ -26,6 +26,6 @@ export const personalitySymbols = [
     path: 'M21 12a9 9 0 1 1-9-9M17 12a5 5 0 1 1-5-5M12 12l9-9M17 3h4v4',
   },
 ] as const
-export function personalitySymbol(mark: string) {
-  return personalitySymbols.find((symbol) => symbol.id === mark) ?? personalitySymbols[0]
+export function mindsetSymbol(mark: string) {
+  return mindsetSymbols.find((symbol) => symbol.id === mark) ?? mindsetSymbols[0]
 }

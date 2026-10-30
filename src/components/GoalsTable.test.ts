@@ -127,3 +127,24 @@ it('moves a goal to the domain chosen in overrides', async () => {
   expect(wrapper.get('[data-domain="career"]').find('[data-goal="b"]').exists()).toBe(true)
   wrapper.unmount()
 })
+it('keeps every domain open with its icon, and confirms before removing a goal', async () => {
+  const entries = [goal('a', 'Run 5 km', { class: 'health' })]
+  const wrapper = mount(GoalsTable, { props: { entries, tasks: [] } })
+  expect(wrapper.find('[data-domain] h3 button').exists()).toBe(false)
+  expect(wrapper.get('[data-domain="emotional"]').text()).toContain('No goals in this domain yet.')
+  expect(wrapper.find('[data-domain="physical"] h3 svg').exists()).toBe(true)
+  await wrapper.get('[data-goal="a"] button[aria-haspopup="menu"]').trigger('click')
+  await wrapper
+    .findAll('[role="menuitem"]')
+    .find((item) => item.text() === 'Delete goal')!
+    .trigger('click')
+  expect(wrapper.emitted('remove')).toBeUndefined()
+  await wrapper
+    .get('[role="alertdialog"]')
+    .findAll('button')
+    .find((button) => button.text() === 'Delete')!
+    .trigger('click')
+  expect(wrapper.emitted('remove')).toEqual([[entries[0]]])
+  expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false)
+  wrapper.unmount()
+})

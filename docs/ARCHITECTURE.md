@@ -398,7 +398,7 @@ Nothing risky runs without the user's yes, whoever chose the action. Every actio
 
 Design language: Nothing-phone inspired. Monochrome, a circular dot-matrix glyph, one red accent (needs attention, recording, Stop), **Oxanium as the only typeface** (bundled locally via `@fontsource-variable/oxanium` and `unplugin-fonts`; Tailwind's `font-sans` and `font-mono` both resolve to it). Frameless, transparent, always-on-top, skip-taskbar window **anchored to the bottom-right of the primary monitor's work area** (16 px margin) and draggable. The position is not remembered between runs. Vue devtools are on in development only.
 
-**Logo.** The mark is the orb itself: a 9x9 dot-matrix disc on a dark circle. `scripts/make-logo.mjs` draws `public/logo.svg` and `src/assets/icons/rune-mark.svg`; `bun run tauri icon public/logo.svg` makes the icon set. The same SVG is the favicon and the README logo.
+**Logo.** The mark is the orb itself: a 9x9 dot-matrix disc of dark dots on a white circle. `scripts/make-logo.mjs` draws `public/logo.svg` and `src/assets/icons/rune-mark.svg`; `bun run tauri icon public/logo.svg` makes the icon set. The same SVG is the favicon and the README logo.
 
 A single **bot glyph** (an 11x11 dot orb on a white disc, **64 px** in total) is the whole app at rest. When opened, the card grows to its right while the orb stays at the left, bottom-aligned.
 

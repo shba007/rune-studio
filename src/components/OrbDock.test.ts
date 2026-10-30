@@ -14,7 +14,7 @@ describe('Goals button routing', () => {
     const button = wrapper.get('button[aria-label="Workspace"]')
     expect(button.attributes('disabled')).toBeUndefined()
     await button.trigger('click')
-    expect(openWorkspace).toHaveBeenCalledWith('overview')
+    expect(openWorkspace).toHaveBeenCalledWith('life')
     expect(wrapper.find('button[aria-label="Visual Analysis"]').exists()).toBe(false)
     settings.value.externalAgent = false
     await wrapper.vm.$nextTick()
