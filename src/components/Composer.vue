@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import RuneButton from './RuneButton.vue'
 import { useFocus, useTextareaAutosize } from '@vueuse/core'
+import { invoke } from '@tauri-apps/api/core'
 import { computed, nextTick, ref, useId, watch } from 'vue'
 
 import type { Agent } from '@/composables/useAgent'
@@ -12,8 +13,16 @@ import { screenRequestText } from '@/config/screenRequest'
 import {
   composerCommands,
   exactComposerCommand,
+  isScheduleText,
   type ComposerCommand,
 } from '@/config/composerCommands'
+import {
+  parseReminder,
+  parseSchedule,
+  planFromInterpretation,
+  type Interpretation,
+  type ReminderPlan,
+} from '@/config/reminder'
 
 const props = defineProps<{
   agent: Agent
@@ -59,7 +68,11 @@ const commandPending = ref(false)
 const commandNotice = ref('')
 const slash = computed(() => command.value.trimStart().startsWith('/'))
 const suggestions = computed(() => composerCommands(command.value))
-const showCommands = computed(() => slash.value && !menuDismissed.value && !props.analysisBusy)
+const scheduling = computed(() => isScheduleText(command.value))
+const inlineReminder = computed(() => !slash.value && /^remind\b/i.test(command.value.trim()))
+const showCommands = computed(
+  () => slash.value && !scheduling.value && !menuDismissed.value && !props.analysisBusy,
+)
 watch(command, () => {
   selectedCommand.value = 0
   menuDismissed.value = false
@@ -78,6 +91,12 @@ async function runCommand(item: ComposerCommand) {
     commandNotice.value = offline.value
       ? 'Visual Analysis needs the model server.'
       : 'Finish or stop the current task before starting Visual Analysis.'
+    return
+  }
+  if (item.id === 'schedule') {
+    command.value = '/schedule '
+    await nextTick()
+    field.value?.focus()
     return
   }
   commandPending.value = true
@@ -166,9 +185,77 @@ watch(agent.focusTick, async () => {
   focused.value = true
 })
 
+function whenText(due: Date) {
+  const time = due.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  const days = Math.round(
+    (new Date(due).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86400000,
+  )
+  if (days <= 0) return time
+  if (days === 1) return `tomorrow ${time}`
+  return `${due.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${time}`
+}
+async function createReminder(plan: ReminderPlan) {
+  commandPending.value = true
+  try {
+    const zone = await invoke<string>('workspace_task_zone')
+    await invoke('workspace_task_create', {
+      title: plan.title,
+      parentGoalId: null,
+      class: 'general',
+      schedule: { local: plan.local, zone, repeat: 'once', anchorDay: null },
+      executionMode: 'manual',
+    })
+    command.value = ''
+    menuDismissed.value = true
+    await nextTick()
+    commandNotice.value = `Reminder set for ${whenText(plan.due)}: ${plan.title}`
+  } catch (error) {
+    commandNotice.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    commandPending.value = false
+  }
+}
+async function askModel(text: string): Promise<ReminderPlan | string | null> {
+  commandPending.value = true
+  commandNotice.value = 'Working out the time…'
+  try {
+    const result = await invoke<Interpretation>('schedule_interpret', { text })
+    return planFromInterpretation(result)
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error)
+  } finally {
+    commandPending.value = false
+  }
+}
 async function submit() {
   if (commandPending.value) return
   const text = command.value.trim()
+  if (slash.value && scheduling.value) {
+    const rest = text.replace(/^\/schedule\s+/i, '')
+    let plan = parseSchedule(rest)
+    if (typeof plan === 'string') {
+      plan =
+        (await askModel(rest)) ??
+        'Rune could not tell when or what. Try: /schedule in 10 minutes drink water'
+    }
+    if (typeof plan === 'string') commandNotice.value = plan
+    else await createReminder(plan)
+    return
+  }
+  if (inlineReminder.value) {
+    let plan: ReminderPlan | string | null = parseReminder(text)
+    if (!plan && !offline.value) {
+      plan = await askModel(text.replace(/^remind(?:\s+me)?\s+/i, ''))
+      if (!plan) commandNotice.value = ''
+    }
+    if (typeof plan === 'string') {
+      commandNotice.value = plan
+      return
+    } else if (plan) {
+      await createReminder(plan)
+      return
+    }
+  }
   if (slash.value) {
     const item =
       exactComposerCommand(text) ??
@@ -330,9 +417,9 @@ async function submit() {
             "
             :disabled="
               commandPending ||
-              (external && !slash && action.icon !== 'stop') ||
-              (!slash && !analysisSubmit && board?.pending.value) ||
-              (offline && !slash && action.icon !== 'stop')
+              (external && !slash && !inlineReminder && action.icon !== 'stop') ||
+              (!slash && !inlineReminder && !analysisSubmit && board?.pending.value) ||
+              (offline && !slash && !inlineReminder && action.icon !== 'stop')
             "
             :aria-pressed="action.icon === 'mic' ? isListening : undefined"
             @click="action.run()"

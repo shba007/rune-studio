@@ -316,6 +316,33 @@ impl LifeStore {
         }
     }
 
+    /// Tombstone every numeric revision of one record series without decrypting other classes.
+    pub fn soft_delete_record_series(&self, id: &str, actor: &str) -> Result<usize, LifeError> {
+        let conn = self.conn.lock().unwrap();
+        let tx = conn.unchecked_transaction()?;
+        let now = now_utc();
+        let prefix = format!("{id}-");
+        let count = tx.execute(
+            "UPDATE records SET deleted = ?1 WHERE deleted IS NULL
+             AND substr(id, 1, length(?2)) = ?2
+             AND length(id) > length(?2)
+             AND substr(id, length(?2) + 1) NOT GLOB '*[^0-9]*'",
+            params![now, prefix],
+        )?;
+        if count > 0 {
+            self.log_audit_locked(
+                &tx,
+                &now,
+                actor,
+                "soft_delete_record_series",
+                &format!("record_series:{id}"),
+                Some(&format!("deleted_count={count}")),
+            )?;
+        }
+        tx.commit()?;
+        Ok(count)
+    }
+
     /// Delete records older than cutoff_utc for the given class, and prune related audit entries.
     pub fn purge_retention(
         &self,

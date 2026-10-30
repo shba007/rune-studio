@@ -265,6 +265,39 @@ it('ignores stale refreshes and sends only one answer with the saved revision', 
   wrapper.unmount()
   expect(harness.off).toHaveBeenCalledTimes(2)
 })
+it.each([false, true])(
+  'refreshes deletion and preserves a failure after refresh: %s',
+  async (fails) => {
+    harness.invoke.mockReset()
+    const entry = { id: 'goal-delete', revision: 7, kind: 'goal' } as IntakeEntry
+    let entries = [entry]
+    harness.invoke.mockImplementation(async (command) => {
+      if (command === 'decisions_state') return entries
+      if (command === 'decision_delete') {
+        if (fails) throw new Error('Review the latest goal before deleting it')
+        entries = []
+      }
+      return null
+    })
+    let decisions!: ReturnType<typeof useDecisions>
+    const wrapper = mount(
+      defineComponent({
+        setup() {
+          decisions = useDecisions()
+          return () => null
+        },
+      }),
+    )
+    await flushPromises()
+    expect(await decisions.remove(entry)).toBe(!fails)
+    expect(harness.invoke).toHaveBeenCalledWith('decision_delete', { id: entry.id, revision: 7 })
+    expect(decisions.entries.value).toHaveLength(fails ? 1 : 0)
+    expect(decisions.error.value).toBe(fails ? 'Review the latest goal before deleting it' : '')
+    expect(decisions.pending.value).toBe(false)
+    wrapper.unmount()
+  },
+)
+
 it('versions task proposal approval separately and preserves conflicts after refresh', async () => {
   harness.invoke.mockReset()
   const entry = {

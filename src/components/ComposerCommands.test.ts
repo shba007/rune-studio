@@ -4,6 +4,8 @@ import { expect, it, vi } from 'vite-plus/test'
 import type { Agent } from '@/composables/useAgent'
 import type { TaskBoardModel } from '@/composables/useTaskBoard'
 import Composer from './Composer.vue'
+const invoke = vi.hoisted(() => vi.fn<(command: string, args?: unknown) => Promise<string>>())
+vi.mock('@tauri-apps/api/core', () => ({ invoke }))
 
 function show(externalAgent = false, running = false) {
   const analyzeScreen = vi.fn<() => Promise<void>>(async () => {})
@@ -41,7 +43,7 @@ it('suggests local commands and opens Goals using keyboard selection without pla
   const { wrapper, openWorkspace, submit } = show()
   const field = wrapper.get('textarea')
   await field.setValue('/')
-  expect(wrapper.findAll('[role="option"]')).toHaveLength(4)
+  expect(wrapper.findAll('[role="option"]')).toHaveLength(5)
   await field.trigger('keydown', { key: 'ArrowDown' })
   await field.trigger('keydown', { key: 'Enter' })
   await flushPromises()
@@ -119,5 +121,81 @@ it('supports completion and Escape, keeps unknown commands local, and respects o
   await field.setValue('hello')
   await field.trigger('keydown', { key: 'Enter' })
   expect(submit).not.toHaveBeenCalled()
+  wrapper.unmount()
+})
+const model = vi.hoisted(() => ({ answer: {} as unknown }))
+const creates = () => invoke.mock.calls.filter(([c]) => c === 'workspace_task_create')
+function mockModel() {
+  invoke.mockReset().mockImplementation((command) => {
+    if (command === 'workspace_task_zone') return Promise.resolve('UTC')
+    if (command === 'schedule_interpret') return Promise.resolve(model.answer as string)
+    return Promise.resolve('id')
+  })
+  model.answer = { kind: 'unclear', title: '', delaySeconds: 0, local: '' }
+}
+
+it('creates a manual reminder from /schedule and from an inline remind phrase', async () => {
+  mockModel()
+  const { wrapper, submit } = show()
+  const field = wrapper.get('textarea')
+  await field.setValue('/schedule')
+  await field.trigger('keydown', { key: 'Enter' })
+  await flushPromises()
+  expect(field.element.value).toBe('/schedule ')
+  await field.setValue('/schedule in 1 min drink water')
+  expect(wrapper.find('[role="listbox"]').exists()).toBe(false)
+  await field.trigger('keydown', { key: 'Enter' })
+  await flushPromises()
+  expect(creates()[0]![1]).toMatchObject({
+    title: 'Drink water',
+    class: 'general',
+    executionMode: 'manual',
+    schedule: { repeat: 'once', zone: 'UTC' },
+  })
+  expect(field.element.value).toBe('')
+  expect(wrapper.get('[role="alert"]').text()).toContain('Reminder set for')
+  await field.setValue('remind in 1 min that i have to drink water')
+  await field.trigger('keydown', { key: 'Enter' })
+  await flushPromises()
+  expect(creates()).toHaveLength(2)
+  expect(invoke.mock.calls.some(([c]) => c === 'schedule_interpret')).toBe(false)
+  expect(submit).not.toHaveBeenCalled()
+  wrapper.unmount()
+})
+
+it('asks the model when the local parser cannot read the time', async () => {
+  mockModel()
+  model.answer = { kind: 'after', title: 'Drink water again', delaySeconds: 50, local: '' }
+  const { wrapper, submit } = show()
+  const field = wrapper.get('textarea')
+  await field.setValue('/schedule after 30 + 20 s remind me to drink water again')
+  await field.trigger('keydown', { key: 'Enter' })
+  await flushPromises()
+  expect(invoke).toHaveBeenCalledWith('schedule_interpret', {
+    text: 'after 30 + 20 s remind me to drink water again',
+  })
+  expect(creates()[0]![1]).toMatchObject({ title: 'Drink water again' })
+  expect(field.element.value).toBe('')
+  model.answer = { kind: 'unclear', title: '', delaySeconds: 0, local: '' }
+  await field.setValue('/schedule drink water')
+  await field.trigger('keydown', { key: 'Enter' })
+  await flushPromises()
+  expect(wrapper.get('[role="alert"]').text()).toContain('could not tell')
+  expect(creates()).toHaveLength(1)
+  await field.setValue('remind me to buy milk')
+  await field.trigger('keydown', { key: 'Enter' })
+  await flushPromises()
+  expect(creates()).toHaveLength(1)
+  expect(submit).toHaveBeenCalledWith('remind me to buy milk')
+  invoke.mockImplementation((command) =>
+    command === 'schedule_interpret'
+      ? Promise.reject(new Error('That time has already passed.'))
+      : Promise.resolve('UTC'),
+  )
+  await field.setValue('remind me a week ago to nap')
+  await field.trigger('keydown', { key: 'Enter' })
+  await flushPromises()
+  expect(wrapper.get('[role="alert"]').text()).toContain('already passed')
+  expect(creates()).toHaveLength(1)
   wrapper.unmount()
 })

@@ -48,3 +48,44 @@ it('saves a monthly Visual Analysis reminder with its original monthly day', asy
     }),
   )
 })
+it('requires explicit confirmation before a scheduled Rune task runs automatically', async () => {
+  const wrapper = mount(NewWorkForm, { props: { goals: [] } })
+  await flushPromises()
+  await wrapper.get('textarea').setValue('Configure app alarms')
+  await wrapper.get('button[aria-label="Who will do this task?"]').trigger('click')
+  await wrapper
+    .findAll('[role="option"]')
+    .find((option) => option.text().startsWith('Rune'))!
+    .trigger('click')
+  expect(wrapper.text()).not.toContain('When due')
+  await wrapper.get('[role="switch"]').trigger('click')
+  await wrapper.get('input[type="datetime-local"]').setValue('2027-01-31T07:00')
+  expect(wrapper.text()).toContain('When due')
+  await wrapper
+    .findAll('[role="radio"]')
+    .find((button) => button.text() === 'Run automatically')!
+    .trigger('click')
+  expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeDefined()
+  await wrapper.get('[role="switch"][aria-label="Confirm automatic running"]').trigger('click')
+  expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeUndefined()
+  await wrapper.get('form').trigger('submit')
+  await flushPromises()
+  expect(invoke).toHaveBeenCalledWith(
+    'workspace_task_create',
+    expect.objectContaining({ executionMode: 'agent', dueAction: 'run' }),
+  )
+})
+it('never offers automatic running for manual work', async () => {
+  const wrapper = mount(NewWorkForm, { props: { goals: [] } })
+  await flushPromises()
+  await wrapper.get('textarea').setValue('Go jogging')
+  await wrapper.get('[role="switch"]').trigger('click')
+  await wrapper.get('input[type="datetime-local"]').setValue('2027-01-31T07:00')
+  expect(wrapper.text()).not.toContain('Run automatically')
+  await wrapper.get('form').trigger('submit')
+  await flushPromises()
+  expect(invoke).toHaveBeenCalledWith(
+    'workspace_task_create',
+    expect.objectContaining({ dueAction: 'remind' }),
+  )
+})

@@ -145,16 +145,17 @@ export function useDecisions() {
       if (pending.value) return false
       pending.value = true
       error.value = ''
+      let failure = ''
       try {
         await invoke('decision_delete', { id: entry.id, revision: entry.revision })
         return true
       } catch (err) {
-        const text = problemText(err)
-        error.value = /not found/i.test(text) ? 'Deleting goals needs a Rune update.' : text
+        failure = problemText(err)
         return false
       } finally {
         pending.value = false
         await refresh()
+        if (failure) error.value = failure
       }
     },
     defer: (id: string) => {

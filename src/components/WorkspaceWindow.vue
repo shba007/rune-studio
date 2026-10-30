@@ -3,12 +3,13 @@ import RuneNavItem from './RuneNavItem.vue'
 import RuneButton from './RuneButton.vue'
 import { listen } from '@tauri-apps/api/event'
 import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
-import { useNativeBlur } from '@/composables/useNativeBlur'
 import { useAgent } from '@/composables/useAgent'
 import AppIcon from './AppIcon.vue'
 import RuneNotice from './RuneNotice.vue'
 import type { IconName } from '@/icons'
 import TaskHistory from './TaskHistory.vue'
+import { useNativeBlur } from '@/composables/useNativeBlur'
+import { useSectionHistory } from '@/composables/useSectionHistory'
 import TitleBar from './TitleBar.vue'
 import FlightPlayer from './FlightPlayer.vue'
 import DecisionInbox from './DecisionInbox.vue'
@@ -84,7 +85,10 @@ const focusDomain = computed(() => {
   return entry ? domainOf(entry, overrides.value) : null
 })
 const domainOptions = computed(() => [
-  { value: '', label: `Automatic · ${focusDomain.value?.name ?? 'Unassigned'}` },
+  {
+    value: '',
+    label: `Automatic · ${focusDomain.value?.name ?? 'Unassigned'}`,
+  },
   ...DOMAINS.filter((domain) => showSanctuary.value || domain.zone === 'engine').map((domain) => ({
     value: domain.id,
     label: domain.name,
@@ -146,6 +150,10 @@ async function created(kind: 'goal' | 'task', id?: string) {
 }
 const initial = new URLSearchParams(location.search).get('section')
 const section = ref<Section>(resolveSection(initial) ?? 'life')
+const sidebarOpen = ref(true)
+const history = useSectionHistory(section)
+const windowRoot = useTemplateRef<HTMLElement>('windowRoot')
+useNativeBlur(windowRoot, true)
 const previewTask = ref<string | null>(new URLSearchParams(location.search).get('run'))
 const previewParent = computed(() => {
   const task = workspace.tasks.value.find(
@@ -203,8 +211,6 @@ onBeforeUnmount(() => {
   disposed = true
   unlisten?.()
 })
-const windowRoot = useTemplateRef<HTMLElement>('windowRoot')
-useNativeBlur(windowRoot, true)
 </script>
 
 <template>
@@ -213,7 +219,18 @@ useNativeBlur(windowRoot, true)
     class="flex h-screen flex-col overflow-hidden font-rune-reading text-rune-ink"
     data-testid="workspace"
   >
-    <TitleBar title="Workspace" />
+    <TitleBar
+      sidebar
+      title="Workspace"
+      :collapsed="!sidebarOpen"
+      :menu="sections"
+      :can-back="history.canBack.value"
+      :can-forward="history.canForward.value"
+      @toggle="sidebarOpen = !sidebarOpen"
+      @back="((previewTask = null), history.back())"
+      @forward="((previewTask = null), history.forward())"
+      @select="navigate($event as KnowledgeSection)"
+    />
     <FlightPlayer
       v-if="previewTask"
       :key="previewTask"
@@ -225,7 +242,8 @@ useNativeBlur(windowRoot, true)
     />
     <div v-show="!previewTask" class="flex min-h-0 flex-1">
       <nav
-        class="glass flex w-64 shrink-0 flex-col gap-1 bg-rune-sunken p-4 pt-6"
+        v-show="sidebarOpen"
+        class="glass flex w-64 shrink-0 flex-col gap-1 bg-rune-sunken p-4 pt-2"
         aria-label="Workspace sections"
       >
         <RuneNavItem

@@ -31,6 +31,7 @@ import DecisionInbox from './DecisionInbox.vue'
 import MindsetSymbol from './MindsetSymbol.vue'
 import { useMindset } from '@/composables/useMindset'
 import TaskReminder from './TaskReminder.vue'
+import { useWorkspaceTasks } from '@/composables/useWorkspaceTasks'
 import ModelIcon from './ModelIcon.vue'
 import { useModelActivity } from '@/composables/useModelActivity'
 import { requestProgress, visibleGoal } from '@/config/taskProgress'
@@ -181,6 +182,7 @@ const plan = computed(() =>
     update: !!promptVisible.value && !!updater.latest.value,
   }),
 )
+const dueTasks = useWorkspaceTasks().due
 const shows = (card: PillCard) => plan.value.cards.includes(card)
 
 if (import.meta.env.DEV) Object.assign(window, { __demoAgent: agent })
@@ -311,6 +313,13 @@ function onOrb() {
         :title="orbTitle"
         @click="onOrb"
       >
+        <span
+          v-if="dueTasks.length"
+          role="status"
+          :aria-label="`${dueTasks.length} reminder${dueTasks.length > 1 ? 's' : ''} due`"
+          class="pointer-events-none absolute top-0 left-1/2 z-10 grid size-5 -translate-x-1/2 place-items-center rounded-full bg-error text-[11px] font-bold text-black motion-safe:animate-pulse"
+          >{{ dueTasks.length }}</span
+        >
         <GlyphOrb
           :state="updating || analysis.busy.value ? 'planning' : workState"
           :level="agent.level.value"

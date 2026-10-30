@@ -14,19 +14,18 @@ beforeEach(() => {
     )
 })
 
-it('keeps Manual as the default and starts Auto only for the displayed, explicitly confirmed domain', async () => {
+it('defaults to Auto on the left and starts only for the displayed, explicitly confirmed domain', async () => {
   const wrapper = mount(LifeSetup)
   await flushPromises()
-  expect(wrapper.find('textarea').exists()).toBe(true)
+  const choices = wrapper.findAll('[role="radio"]')
+  expect(choices.map((button) => button.text())).toEqual(['Auto', 'Manual'])
+  expect(choices[0]!.attributes('aria-checked')).toBe('true')
+  expect(wrapper.find('textarea').exists()).toBe(false)
   await wrapper
     .findAll('button')
     .find((button) => button.text() === 'Skip')!
     .trigger('click')
   expect(wrapper.get('h2').text()).toBe('Mental & Emotional Regulation')
-  await wrapper
-    .findAll('[role="radio"]')
-    .find((button) => button.text() === 'Auto')!
-    .trigger('click')
   expect(wrapper.find('textarea').exists()).toBe(false)
   expect(wrapper.get('button[type="submit"]').text()).toBe(
     'Start Mental & Emotional Regulation discovery',
@@ -40,6 +39,8 @@ it('keeps Manual as the default and starts Auto only for the displayed, explicit
     mode: 'auto',
     subDomains: [],
   })
+  await choices[1]!.trigger('click')
+  expect(wrapper.find('textarea').exists()).toBe(true)
   wrapper.unmount()
 })
 

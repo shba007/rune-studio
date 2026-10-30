@@ -42,16 +42,14 @@ it('sends the confirmed domain and sub-domains without writing local overrides',
   wrapper.unmount()
 })
 
-it('requires an explicit domain when Auto is offered, without switching modes on mount', async () => {
+it('defaults to Auto on the left and requires an explicit domain when supported', async () => {
   modes.value = ['manual', 'auto']
   const wrapper = mount(NewGoalForm)
   await flushPromises()
   expect(wrapper.find('[data-testid="auto-note"]').exists()).toBe(false)
-  expect(wrapper.find('textarea').exists()).toBe(true)
-  await wrapper
-    .findAll('[role="radio"]')
-    .find((node) => node.text() === 'Auto')!
-    .trigger('click')
+  const choices = wrapper.findAll('[role="radio"]')
+  expect(choices.map((node) => node.text())).toEqual(['Auto', 'Manual'])
+  expect(choices[0]!.attributes('aria-checked')).toBe('true')
   expect(wrapper.find('textarea').exists()).toBe(false)
   expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeDefined()
   await wrapper.get('form').trigger('submit')
@@ -70,6 +68,8 @@ it('requires an explicit domain when Auto is offered, without switching modes on
     mode: 'auto',
     subDomains: [],
   })
+  await choices[1]!.trigger('click')
+  expect(wrapper.find('textarea').exists()).toBe(true)
   wrapper.unmount()
 })
 

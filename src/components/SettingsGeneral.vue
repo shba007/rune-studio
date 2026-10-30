@@ -12,6 +12,7 @@ import HubRow from './HubRow.vue'
 import SettingsReview from './SettingsReview.vue'
 import RecordingControls from './RecordingControls.vue'
 import SettingsGoalContext from './SettingsGoalContext.vue'
+import SettingsAlarms from './SettingsAlarms.vue'
 import { useDomainPrefs } from '@/composables/useDomainPrefs'
 
 withDefaults(
@@ -103,6 +104,8 @@ const PREVIEW_STATES = DEBUG_STATES.map((value) => ({ value, label: value.replac
         hint="Reveal cognitive, romance, social, family, play, purpose and legacy goals, including their numeric progress and outcome measurement controls. Off by default."
       />
     </HubGroup>
+
+    <SettingsAlarms v-if="view === 'all' || view === 'general'" />
 
     <HubGroup v-if="view === 'all' || view === 'general'" title="Safety &amp; behavior">
       <HubToggle

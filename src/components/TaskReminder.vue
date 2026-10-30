@@ -5,9 +5,17 @@ import { computed, ref, watch } from 'vue'
 import type { Agent } from '@/composables/useAgent'
 import { useWorkspaceTasks } from '@/composables/useWorkspaceTasks'
 import WhenText from './WhenText.vue'
+import {
+  playReminderSound,
+  SNOOZE_CHOICES,
+  snoozeMinutes,
+  useReminderSound,
+} from '@/config/alarmSound'
 const props = defineProps<{ agent: Agent }>()
 const workspace = useWorkspaceTasks()
 const deferred = ref(new Set<string>())
+const snoozing = ref(false)
+const sound = useReminderSound()
 const task = computed(() =>
   workspace.due.value.find(
     (t) =>
@@ -18,9 +26,17 @@ const task = computed(() =>
 watch(
   () => task.value?.occurrences.at(-1)?.id,
   (id) => {
-    if (id && props.agent.mode.value === 'ambient') void props.agent.setMode('open')
+    snoozing.value = false
+    if (!id) return
+    if (props.agent.mode.value === 'ambient') void props.agent.setMode('open')
+    if (sound.value) playReminderSound()
   },
 )
+async function snooze(choice: string) {
+  if (!task.value) return
+  await workspace.snooze(task.value, snoozeMinutes(choice))
+  snoozing.value = false
+}
 </script>
 <template>
   <section
@@ -75,6 +91,15 @@ watch(
       >
         Already done</RuneButton
       ><RuneButton
+        v-if="task.occurrences.at(-1)?.state === 'pending'"
+        variant="ghost"
+        size="sm"
+        :disabled="workspace.pending.value"
+        :aria-expanded="snoozing"
+        @click="snoozing = !snoozing"
+      >
+        Snooze</RuneButton
+      ><RuneButton
         variant="ghost"
         size="sm"
         :disabled="workspace.pending.value"
@@ -83,6 +108,18 @@ watch(
         Skip</RuneButton
       ><RuneButton variant="ghost" size="sm" @click="agent.openWorkspace('tasks')">
         Open tasks
+      </RuneButton>
+    </div>
+    <div v-if="snoozing" role="group" aria-label="Snooze for" class="flex flex-wrap gap-2">
+      <RuneButton
+        v-for="choice in SNOOZE_CHOICES"
+        :key="choice.id"
+        variant="ghost"
+        size="sm"
+        :disabled="workspace.pending.value"
+        @click="snooze(choice.id)"
+      >
+        {{ choice.label }}
       </RuneButton>
     </div>
     <p v-if="workspace.error.value" role="alert" class="m-0 text-error">

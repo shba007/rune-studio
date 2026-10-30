@@ -1,4 +1,5 @@
 mod agent;
+mod alarms;
 pub const VERSION: &str = env!("RUNE_VERSION");
 
 mod analysis;
@@ -36,6 +37,7 @@ mod recording;
 mod reflect;
 mod review;
 mod safety;
+mod schedule;
 mod settings;
 mod sync;
 mod task_calendar;
@@ -88,6 +90,11 @@ pub fn run() {
 
     builder
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
@@ -205,7 +212,7 @@ pub fn run() {
             let stop = MenuItem::with_id(app, "stop", "Stop", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &settings, &flight, &stop, &quit])?;
-            let mut tray = TrayIconBuilder::new()
+            let mut tray = TrayIconBuilder::with_id("main")
                 .menu(&menu)
                 .tooltip("Rune Studio")
                 .on_menu_event(|app, event| match event.id().as_ref() {
@@ -284,6 +291,7 @@ pub fn run() {
             commands::open_workspace,
             crate::intake::decisions_state,
             crate::intake::decision_answer,
+            crate::intake::decision_delete,
             crate::intake::decision_refine,
             crate::intake::decision_pathways,
             crate::intake::decision_select_pathway,
@@ -295,6 +303,11 @@ pub fn run() {
             workspace_tasks::workspace_tasks_state,
             workspace_tasks::workspace_task_create,
             workspace_tasks::workspace_task_zone,
+            workspace_tasks::workspace_task_snooze,
+            workspace_tasks::workspace_task_due_action,
+            alarms::alarms_autostart,
+            alarms::alarms_set_autostart,
+            schedule::schedule_interpret,
             workspace_tasks::workspace_task_action,
             workspace_tasks::workspace_task_link,
             workspace_tasks::workspace_task_import,

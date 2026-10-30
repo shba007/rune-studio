@@ -10,5 +10,6 @@ Every piece of text sent to a model lives here, one Markdown file per prompt, an
 | `verify/`   | the independent check of a finished task |
 | `voice/`    | transcription and intent                 |
 | `analysis/` | screen analysis                          |
+| `schedule/` | reading reminder requests from the composer |
 
 `{name}` marks a slot filled by `prompts::fill`. Files are trimmed, so a trailing newline is fine. The outside-agent guide is `docs/AGENT-GUIDE.md`.

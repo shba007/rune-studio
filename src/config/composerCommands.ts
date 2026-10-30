@@ -15,6 +15,12 @@ export const COMPOSER_COMMANDS = [
     icon: 'history',
   },
   { id: 'settings', command: '/settings', description: 'Open Rune settings', icon: 'tune' },
+  {
+    id: 'schedule',
+    command: '/schedule',
+    description: 'Remind me later, e.g. /schedule in 10 minutes drink water',
+    icon: 'wait',
+  },
 ] as const satisfies readonly { id: string; command: string; description: string; icon: IconName }[]
 
 export type ComposerCommand = (typeof COMPOSER_COMMANDS)[number]
@@ -23,8 +29,9 @@ const normalized = (text: string) =>
     .trim()
     .toLowerCase()
     .replace(/[-_\s]+/g, ' ')
+export const isScheduleText = (text: string) => /^\/schedule\s+\S/i.test(text.trimStart())
 export function composerCommands(text: string): ComposerCommand[] {
-  if (!text.trimStart().startsWith('/')) return []
+  if (!text.trimStart().startsWith('/') || isScheduleText(text)) return []
   const query = normalized(text)
   return COMPOSER_COMMANDS.filter((item) => item.command.startsWith(query))
 }

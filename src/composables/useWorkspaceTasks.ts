@@ -2,7 +2,8 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { useIntervalFn } from '@vueuse/core'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import type { WorkspaceTask } from '@/types/workspace'
+import type { TaskOccurrence, WorkspaceTask } from '@/types/workspace'
+export const effectiveDueMs = (o: TaskOccurrence) => o.snoozedUntilMs ?? o.dueMs
 export function useWorkspaceTasks() {
   const tasks = ref<WorkspaceTask[]>([])
   const pending = ref(false)
@@ -59,14 +60,19 @@ export function useWorkspaceTasks() {
     disposed = true
     off.forEach((stop) => stop())
   })
+  const clock = ref(Date.now())
+  useIntervalFn(() => (clock.value = Date.now()), 1000)
   const due = computed(() =>
-    tasks.value.filter(
-      (t) =>
+    tasks.value.filter((t) => {
+      const current = t.occurrences.at(-1)
+      const at = current ? effectiveDueMs(current) : null
+      return (
         !t.paused &&
-        ['pending', 'in_progress'].includes(t.occurrences.at(-1)?.state ?? '') &&
-        t.occurrences.at(-1)?.dueMs != null &&
-        t.occurrences.at(-1)!.dueMs! <= Date.now(),
-    ),
+        ['pending', 'in_progress'].includes(current?.state ?? '') &&
+        at != null &&
+        at <= clock.value
+      )
+    }),
   )
   return {
     tasks,
@@ -76,6 +82,8 @@ export function useWorkspaceTasks() {
     due,
     refresh,
     call,
+    snooze: (task: WorkspaceTask, minutes: number) =>
+      call('workspace_task_snooze', { id: task.id, revision: task.revision, minutes }),
     action: (task: WorkspaceTask, action: string) =>
       call('workspace_task_action', { id: task.id, revision: task.revision, action }),
     link: (task: WorkspaceTask, parentGoalId: string | null) =>

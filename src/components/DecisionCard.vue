@@ -36,6 +36,19 @@ const domainOptions = computed(() => [
     label: `${domain.name}${domain.zone === 'sanctuary' && !showSanctuary.value ? ' · Sanctuary (hidden)' : ''}`,
   })),
 ])
+const retrying = computed(() => props.question.kind === 'retry')
+const visibleOptions = computed(() =>
+  retrying.value ? props.question.options.filter((o) => o.id !== 'cancel') : props.question.options,
+)
+const problem = computed(() => {
+  const text = props.error?.trim() ?? ''
+  return /swap_refused|not resident/i.test(text)
+    ? 'The local model is not loaded, and Rune never loads a model on its own for this step. Load it in Infer, then retry.'
+    : text
+})
+const submitLabel = computed(() =>
+  retrying.value ? (optionId.value === 'settings' ? 'Open settings' : 'Retry') : 'Continue',
+)
 const allowsFreeform = computed(() =>
   [
     'domain',
@@ -52,7 +65,7 @@ const allowsFreeform = computed(() =>
 watch(
   () => [props.question.id, props.question.revision],
   () => {
-    optionId.value = props.question.draft?.optionId ?? null
+    optionId.value = props.question.draft?.optionId ?? (retrying.value ? 'retry' : null)
     text.value = props.question.draft?.text ?? ''
     pickedSubdomains.value = []
     if (props.question.kind === 'subdomains' && text.value.startsWith('[')) {
@@ -129,12 +142,12 @@ function chooseDomain(value: string) {
     <p v-if="question.explanation" class="m-0 text-rune-caption text-rune-text-3">
       {{ question.explanation }}
     </p>
-    <fieldset :disabled="busy" class="m-0 flex min-w-0 flex-col gap-0.5 p-0">
+    <fieldset :disabled="busy" class="m-0 flex min-w-0 flex-col gap-1 p-0">
       <legend class="sr-only">Choose an answer or write your own</legend>
       <label
-        v-for="(option, index) in question.options"
+        v-for="(option, index) in visibleOptions"
         :key="option.id"
-        class="flex cursor-pointer items-start gap-rune-2 px-rune-2 py-rune-1 text-rune-body transition-colors first:rounded-t-rune-tile has-[input:focus-visible]:ring-1 has-[input:focus-visible]:ring-white/40"
+        class="flex cursor-pointer items-start gap-rune-2 rounded-rune-tile p-rune-2 text-rune-body transition-colors has-[input:focus-visible]:ring-1 has-[input:focus-visible]:ring-white/40"
         :class="
           optionId === option.id ? 'bg-rune-ink text-black' : 'bg-rune-raised hover:bg-white/8'
         "
@@ -148,7 +161,7 @@ function chooseDomain(value: string) {
           @change="choose(option.id)"
         />
         <span class="min-w-0"
-          ><span class="block"
+          ><span class="flex flex-wrap items-baseline gap-x-2"
             >{{ option.label
             }}<span
               v-if="
@@ -162,11 +175,11 @@ function chooseDomain(value: string) {
                   'clarification',
                 ].includes(question.kind)
               "
-              class="ml-2 text-rune-heading uppercase opacity-60"
+              class="text-rune-heading uppercase opacity-60"
               >Recommended</span
             ></span
           ><span
-            class="block text-rune-caption"
+            class="mt-1 block text-rune-caption"
             :class="optionId === option.id ? 'opacity-70' : 'text-rune-text-3'"
             >{{ option.explanation }}</span
           ><span
@@ -180,7 +193,10 @@ function chooseDomain(value: string) {
           ></span
         >
       </label>
-      <fieldset v-if="question.kind === 'subdomains'" class="flex flex-col gap-1 p-rune-2">
+      <fieldset
+        v-if="question.kind === 'subdomains'"
+        class="flex flex-col gap-rune-1 rounded-rune-tile bg-rune-raised p-rune-2"
+      >
         <legend class="text-rune-caption text-rune-text-3">Or choose any combination</legend>
         <div
           v-for="sub in subdomainOptions"
@@ -198,14 +214,14 @@ function chooseDomain(value: string) {
       </fieldset>
       <label
         v-if="allowsFreeform"
-        class="flex flex-col gap-1 rounded-b-rune-tile bg-rune-raised px-rune-2 py-rune-1 text-rune-caption text-rune-text-3"
+        class="flex flex-col gap-rune-1 rounded-rune-tile bg-rune-raised p-rune-2 text-rune-caption text-rune-text-3"
       >
         <span>{{ question.kind === 'discovery_review' ? 'Your changes' : 'Your own answer' }}</span>
         <textarea
           :value="text"
           rows="2"
           maxlength="4000"
-          class="w-full resize-y rounded-rune-tile bg-rune-sunken p-rune-1 font-rune-reading text-rune-body text-rune-ink placeholder:text-rune-text-3"
+          class="w-full resize-y rounded-rune-tile bg-rune-sunken p-rune-2 font-rune-reading text-rune-body text-rune-ink placeholder:text-rune-text-3"
           :placeholder="
             question.kind === 'discovery_review'
               ? 'Describe edits to the draft'
@@ -229,7 +245,7 @@ function chooseDomain(value: string) {
         Settings to display its goal and numeric tracking. Confirmation does not change Settings.
       </p>
     </template>
-    <p v-if="error" role="alert" class="m-0 text-rune-caption text-error">{{ error }}</p>
+    <p v-if="problem" role="alert" class="m-0 text-rune-caption text-error">{{ problem }}</p>
     <div class="flex flex-wrap items-center gap-rune-1">
       <RuneButton
         v-if="['subdomain_detail', 'discovery'].includes(question.kind)"
@@ -263,7 +279,7 @@ function chooseDomain(value: string) {
       </RuneButton>
       <RuneButton
         variant="ghost"
-        v-if="deferable"
+        v-if="deferable && !retrying"
         :disabled="busy"
         class="whitespace-nowrap"
         @click="emit('defer', question.id)"
@@ -284,7 +300,7 @@ function chooseDomain(value: string) {
         :disabled="!valid || busy"
         class="ml-auto whitespace-nowrap"
       >
-        {{ busy ? 'Saving…' : 'Continue' }}
+        {{ busy ? 'Saving…' : submitLabel }}
       </RuneButton>
     </div>
   </form>

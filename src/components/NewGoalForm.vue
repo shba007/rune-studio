@@ -43,8 +43,8 @@ const domainOptions = computed(() => [
   ...visible.value.map((item) => ({ value: item.id, label: item.name })),
 ])
 const modes = computed(() => [
-  { value: 'manual' as const, label: 'Manual' },
   { value: 'auto' as const, label: 'Auto', disabled: !autoReady.value },
+  { value: 'manual' as const, label: 'Manual' },
 ])
 const ready = computed(() =>
   mode.value === 'manual' ? !!text.value.trim() : !!domain.value && autoReady.value,
@@ -70,6 +70,7 @@ function changeMode(value: 'manual' | 'auto') {
 onMounted(async () => {
   try {
     autoReady.value = (await invoke<string[]>('workspace_goal_modes')).includes('auto')
+    if (autoReady.value) mode.value = 'auto'
   } catch {
     autoReady.value = false
   }

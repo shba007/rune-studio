@@ -6,6 +6,7 @@ import type { WorkspaceTask } from '@/types/workspace'
 import TaskReminder from './TaskReminder.vue'
 const harness = vi.hoisted(() => ({
   action: vi.fn<() => Promise<void>>(),
+  snooze: vi.fn<(task: WorkspaceTask, minutes: number) => Promise<void>>(),
   open: vi.fn<() => void>(),
 }))
 const due = ref<WorkspaceTask[]>([])
@@ -15,6 +16,7 @@ vi.mock('@/composables/useWorkspaceTasks', () => ({
     pending: ref(false),
     error: ref(''),
     action: harness.action,
+    snooze: harness.snooze,
   }),
 }))
 function reminder(executionMode: WorkspaceTask['executionMode']): WorkspaceTask {
@@ -68,5 +70,23 @@ it('asks for a new analysis capture and separately accepts reported completion',
     .find((b) => b.text() === 'Already done')!
     .trigger('click')
   expect(harness.action).toHaveBeenLastCalledWith(due.value[0], 'done')
+  wrapper.unmount()
+})
+it('snoozes a pending reminder without acting on it', async () => {
+  due.value = [reminder('manual')]
+  const wrapper = mount(TaskReminder, { props: { agent: agent() } })
+  expect(wrapper.text()).not.toContain('10 min')
+  await wrapper
+    .findAll('button')
+    .find((b) => b.text() === 'Snooze')!
+    .trigger('click')
+  await wrapper
+    .findAll('button')
+    .find((b) => b.text() === '10 min')!
+    .trigger('click')
+  await flushPromises()
+  expect(harness.snooze).toHaveBeenCalledWith(due.value[0], 10)
+  expect(harness.action).not.toHaveBeenCalled()
+  expect(wrapper.text()).not.toContain('1 hour')
   wrapper.unmount()
 })

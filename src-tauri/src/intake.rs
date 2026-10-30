@@ -610,6 +610,10 @@ fn apply_discovery(
     Ok(())
 }
 
+fn cold_start_discovery(e: &Entry) -> bool {
+    e.answers.is_empty() && e.goal.is_none()
+}
+
 async fn discover(app: &AppHandle, e: &mut Entry) -> Result<(), String> {
     use crate::intake_discovery::Phase;
     if e.token.is_cancelled() {
@@ -657,12 +661,13 @@ async fn discover(app: &AppHandle, e: &mut Entry) -> Result<(), String> {
     e.question = None;
     commit(app, e)?;
     e.persistable = false;
+    let first = cold_start_discovery(e);
     let value = tokio::time::timeout(std::time::Duration::from_secs(90), infer(
         app, e, include_str!("../prompts/intake/discovery.md"),
         &json!({"stage":if draft_only { "draft" } else { "question" },"requireQuestion":require_question,
             "domain":crate::intake_subdomains::context(domain),"availableSubDomains":available,
             "subDomains":subdomain_context(e),"answers":e.answers,"previousClass":e.class,"existingDraft":e.goal}),
-        &crate::intake_discovery::schema(&available, require_question, draft_only), false,
+        &crate::intake_discovery::schema(&available, require_question, draft_only), first,
     )).await.map_err(|_| "Auto discovery timed out".to_string())??;
     if e.token.is_cancelled() {
         return Err("Discovery stopped".into());
@@ -1373,6 +1378,10 @@ fn submit_intent(
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let _serial = SERIAL.lock().await;
+        // A goal can be deleted while its first inference is still queued.
+        if !ENTRIES.locked().contains_key(&e.id) {
+            return;
+        }
         let mut e = e;
         let result = if auto {
             discover(&app, &mut e).await
@@ -1944,6 +1953,17 @@ mod tests {
         )
     }
 
+    #[test]
+    fn only_the_first_discovery_call_may_cold_load_the_model() {
+        let mut e = auto_entry(vec![]);
+        assert!(cold_start_discovery(&e));
+        e.answers.push(json!({"answer":"Usually rested"}));
+        assert!(!cold_start_discovery(&e));
+        let mut e = auto_entry(vec![]);
+        e.goal = Some(Default::default());
+        assert!(!cold_start_discovery(&e));
+    }
+
     fn discovery_question_response(e: &Entry) -> crate::intake_discovery::Response {
         let available = crate::intake_discovery::available(&e.sub_domains);
         crate::intake_discovery::parse(json!({"class":"health","ready":false,"subDomain":available[0],
@@ -2248,6 +2268,80 @@ mod tests {
         }
     }
     #[test]
+    fn deleting_a_goal_removes_all_saved_revisions_without_deleting_related_records() {
+        let store = LifeStore::in_memory_random().unwrap();
+        store.set_consent(DataClass::General, true, "test").unwrap();
+        store.set_consent(DataClass::Health, true, "test").unwrap();
+        let mut e = sample(DataClass::General);
+        store_entry(&store, &e).unwrap();
+        e.class = DataClass::Health;
+        e.revision = 2;
+        store_entry(&store, &e).unwrap();
+        for id in [
+            "intake-test-other",
+            "worktask-linked",
+            "intake-test-2-other",
+        ] {
+            let mut other = sample(DataClass::General);
+            other.id = id.into();
+            store_entry(&store, &other).unwrap();
+        }
+        // Older revisions must stay deleted even if their class consent is later enabled again.
+        store
+            .set_consent(DataClass::General, false, "test")
+            .unwrap();
+        let token = e.token.clone();
+        let mut entries = HashMap::from([(e.id.clone(), e)]);
+        delete_goal(&mut entries, Some(&store), "intake-test", 2).unwrap();
+        assert!(entries.is_empty());
+        assert!(token.is_cancelled());
+        store.set_consent(DataClass::General, true, "test").unwrap();
+        let remaining = store.list_records(None, false).unwrap();
+        assert_eq!(remaining.len(), 3);
+        assert!(
+            remaining
+                .iter()
+                .all(|r| r.id != "intake-test-1" && r.id != "intake-test-2")
+        );
+        assert!(
+            store
+                .get_record("intake-test-1")
+                .unwrap()
+                .unwrap()
+                .deleted
+                .is_some()
+        );
+        assert!(
+            store
+                .get_record("intake-test-2")
+                .unwrap()
+                .unwrap()
+                .deleted
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn deleting_requires_the_current_goal_revision_and_supports_unsaved_discovery() {
+        let e = sample(DataClass::General);
+        let token = e.token.clone();
+        let mut entries = HashMap::from([(e.id.clone(), e)]);
+        assert!(delete_goal(&mut entries, None, "intake-test", 0).is_err());
+        assert!(!token.is_cancelled());
+        entries.get_mut("intake-test").unwrap().kind = "task".into();
+        assert!(delete_goal(&mut entries, None, "intake-test", 1).is_err());
+        assert_eq!(entries.len(), 1);
+        let e = auto_entry(vec![]);
+        let token = e.token.clone();
+        entries.insert(e.id.clone(), e);
+        delete_goal(&mut entries, None, "intake-auto", 0).unwrap();
+        assert!(token.is_cancelled());
+        assert!(!entries.contains_key("intake-auto"));
+        assert!(entries.contains_key("intake-test"));
+        assert!(delete_goal(&mut entries, None, "intake-auto", 0).is_err());
+    }
+
+    #[test]
     fn stale_duplicate_and_fabricated_answers_are_rejected_before_dispatch() {
         let mut e = sample(DataClass::General);
         assert!(validate_answer(&e, 0, Some("baseline"), "").is_err());
@@ -2257,6 +2351,37 @@ mod tests {
         e.question = None;
         assert!(validate_answer(&e, 1, Some("baseline"), "").is_err());
     }
+}
+
+fn delete_goal(
+    entries: &mut HashMap<String, Entry>,
+    store: Option<&LifeStore>,
+    id: &str,
+    revision: u64,
+) -> Result<(), String> {
+    let entry = entries.get(id).ok_or("This goal no longer exists")?;
+    if entry.kind != "goal" || entry.revision != revision {
+        return Err("Review the latest goal before deleting it".into());
+    }
+    if let Some(store) = store {
+        store
+            .soft_delete_record_series(id, "studio-intake")
+            .map_err(|e| e.to_string())?;
+    }
+    entry.token.cancel();
+    entries.remove(id);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn decision_delete(app: AppHandle, id: String, revision: u64) -> Result<(), String> {
+    let _serial = SERIAL.lock().await;
+    load(&app)?;
+    let path = crate::life::db_path(&app.path().app_config_dir().map_err(|e| e.to_string())?);
+    let store = path.exists().then(|| store(&app)).transpose()?;
+    delete_goal(&mut ENTRIES.locked(), store.as_ref(), &id, revision)?;
+    let _ = app.emit("decisions_changed", ());
+    Ok(())
 }
 
 #[tauri::command]

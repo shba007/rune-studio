@@ -87,6 +87,13 @@ pub struct Occurrence {
     pub completed_ms: Option<u64>,
     #[serde(default)]
     pub work_id: Option<String>,
+    #[serde(default)]
+    pub snoozed_until_ms: Option<u64>,
+}
+impl Occurrence {
+    pub fn effective_due_ms(&self) -> Option<u64> {
+        self.snoozed_until_ms.or(self.due_ms)
+    }
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -107,9 +114,22 @@ pub struct WorkspaceTask {
     pub legacy_task_id: Option<String>,
     #[serde(default)]
     pub instructions: Option<String>,
+    #[serde(default = "remind_action")]
+    pub due_action: String,
 }
 fn agent_mode() -> String {
     "agent".into()
+}
+fn remind_action() -> String {
+    "remind".into()
+}
+fn check_due_action(action: &str, mode: &str, scheduled: bool) -> Result<(), String> {
+    match action {
+        "remind" => Ok(()),
+        "run" if mode == "agent" && scheduled => Ok(()),
+        "run" => Err("Only scheduled tasks that Rune executes can run automatically".into()),
+        _ => Err("Choose to be reminded or to run automatically".into()),
+    }
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -226,6 +246,7 @@ fn occurrence(due_ms: Option<u64>) -> Result<Occurrence, String> {
         reported: false,
         completed_ms: None,
         work_id: None,
+        snoozed_until_ms: None,
     })
 }
 #[tauri::command]
@@ -310,10 +331,12 @@ pub fn workspace_task_import(
             reported: false,
             completed_ms: read_time(header.ended_utc.as_deref()),
             work_id: None,
+            snoozed_until_ms: None,
         }],
         error: None,
         legacy_task_id: Some(root),
         instructions,
+        due_action: remind_action(),
     };
     save(&app, &mut task)?;
     Ok(task.id)
@@ -348,6 +371,9 @@ pub fn workspace_task_schedule(
         current.completed_ms = Some(now());
     }
     task.schedule = next;
+    if task.schedule.is_none() {
+        task.due_action = remind_action();
+    }
     task.paused = false;
     task.error = None;
     if task.schedule.is_none() {
@@ -363,6 +389,7 @@ pub fn workspace_task_create(
     class: DataClass,
     schedule: Option<ScheduleInput>,
     execution_mode: Option<String>,
+    due_action: Option<String>,
 ) -> Result<String, String> {
     let _guard = MUTATION.locked();
     if title.trim().is_empty() || title.chars().count() > 4000 {
@@ -374,7 +401,10 @@ pub fn workspace_task_create(
         return Err("Choose manual activity, Rune execution, or Visual Analysis".into());
     }
     let schedule = schedule.map(make_schedule).transpose()?;
+    let due_action = due_action.unwrap_or_else(remind_action);
+    check_due_action(&due_action, &mode, schedule.is_some())?;
     let mut task = WorkspaceTask {
+        due_action,
         execution_mode: mode,
         id: format!("worktask-{}", intake::uid()?),
         revision: 0,
@@ -422,6 +452,7 @@ pub(crate) fn create_proposed(
     let class = parent(app, Some(goal_id), class)?;
     let schedule = approval.schedule.map(make_schedule).transpose()?;
     let mut task = WorkspaceTask {
+        due_action: remind_action(),
         id,
         revision: 0,
         title: approval.title.trim().into(),
@@ -577,6 +608,43 @@ pub fn workspace_tasks_state(app: AppHandle) -> Result<Vec<TaskView>, String> {
             }
         })
         .collect())
+}
+fn snooze_occurrence(task: &mut WorkspaceTask, minutes: u64, at: u64) -> Result<(), String> {
+    if !(1..=7 * 1440).contains(&minutes) {
+        return Err("Choose a snooze of up to 7 days".into());
+    }
+    let current = task
+        .occurrences
+        .last_mut()
+        .filter(|o| o.state == "pending" && o.effective_due_ms().is_some())
+        .ok_or("Only a pending scheduled reminder can be snoozed")?;
+    current.snoozed_until_ms = Some(at + minutes * 60_000);
+    Ok(())
+}
+#[tauri::command]
+pub fn workspace_task_snooze(
+    app: AppHandle,
+    id: String,
+    revision: u64,
+    minutes: u64,
+) -> Result<(), String> {
+    let _guard = MUTATION.locked();
+    let mut task = checked(&app, &id, revision)?;
+    snooze_occurrence(&mut task, minutes, now())?;
+    save(&app, &mut task)
+}
+#[tauri::command]
+pub fn workspace_task_due_action(
+    app: AppHandle,
+    id: String,
+    revision: u64,
+    action: String,
+) -> Result<(), String> {
+    let _guard = MUTATION.locked();
+    let mut task = checked(&app, &id, revision)?;
+    check_due_action(&action, &task.execution_mode, task.schedule.is_some())?;
+    task.due_action = action;
+    save(&app, &mut task)
 }
 #[tauri::command]
 pub fn workspace_task_zone() -> Result<String, String> {
@@ -745,8 +813,9 @@ pub fn start(app: &AppHandle) {
     tauri::async_runtime::spawn(async move {
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-            if let Err(error) = tick(&app) {
-                log::debug!("Workspace scheduler unavailable: {error}");
+            match tick(&app) {
+                Ok(all) => crate::alarms::refresh(&app, &all, now()),
+                Err(error) => log::debug!("Workspace scheduler unavailable: {error}"),
             }
         }
     });
@@ -787,10 +856,11 @@ fn materialize_due(task: &mut WorkspaceTask, at: u64) -> Result<bool, String> {
     task.occurrences.push(occurrence(Some(due))?);
     Ok(true)
 }
-fn tick(app: &AppHandle) -> Result<(), String> {
+fn tick(app: &AppHandle) -> Result<Vec<WorkspaceTask>, String> {
     let _guard = MUTATION.locked();
     let state = app.state::<AppState>();
     let snapshot = crate::tasks::tasks_state();
+    let mut all = Vec::new();
     for mut task in load(app)? {
         let mut changed = false;
         if let Some(o) = task.occurrences.last_mut().filter(|o| {
@@ -846,13 +916,41 @@ fn tick(app: &AppHandle) -> Result<(), String> {
             save(app, &mut task)?;
             let _ = app.emit("workspace_tasks_due", ());
         }
+        all.push(task);
     }
-    Ok(())
+    Ok(all)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn automatic_running_is_limited_to_scheduled_rune_tasks() {
+        assert!(check_due_action("remind", "manual", false).is_ok());
+        assert!(check_due_action("run", "agent", true).is_ok());
+        assert!(check_due_action("run", "agent", false).is_err());
+        assert!(check_due_action("run", "manual", true).is_err());
+        assert!(check_due_action("run", "analysis", true).is_err());
+        assert!(check_due_action("later", "agent", true).is_err());
+    }
+    #[test]
+    fn older_tasks_without_the_field_default_to_remind() {
+        let task = scheduled();
+        assert_eq!(task.due_action, "remind");
+    }
+    #[test]
+    fn snoozing_moves_the_effective_due_time_without_losing_the_original() {
+        let mut task = scheduled();
+        task.occurrences.push(occurrence(Some(1_000)).unwrap());
+        snooze_occurrence(&mut task, 10, 5_000).unwrap();
+        let o = task.occurrences.last().unwrap();
+        assert_eq!(o.due_ms, Some(1_000));
+        assert_eq!(o.effective_due_ms(), Some(5_000 + 600_000));
+        assert!(snooze_occurrence(&mut task, 0, 0).is_err());
+        assert!(snooze_occurrence(&mut task, 7 * 1440 + 1, 0).is_err());
+        task.occurrences.last_mut().unwrap().state = "completed".into();
+        assert!(snooze_occurrence(&mut task, 10, 0).is_err());
+    }
     fn scheduled() -> WorkspaceTask {
         serde_json::from_value(serde_json::json!({
             "id":"worktask-test", "revision":1, "title":"Walk", "parentGoalId":null,

@@ -19,6 +19,8 @@ const props = defineProps<{
 const emit = defineEmits<{ close: []; saved: [kind: 'goal' | 'task', id?: string] }>()
 const title = ref(props.task?.title ?? props.initialTitle ?? '')
 const executionMode = ref<'manual' | 'agent' | 'analysis'>('manual')
+const dueAction = ref<'remind' | 'run'>(props.task?.dueAction ?? 'remind')
+const confirmedRun = ref(props.task?.dueAction === 'run')
 const parent = ref(props.parentGoalId ?? null)
 const privacy = ref<IntakeEntry['class']>('general')
 const scheduled = ref(!!props.task?.schedule)
@@ -32,6 +34,17 @@ watch(local, (value) => {
   if (!monthlyDay.value && value) monthlyDay.value = Number(value.slice(8, 10))
 })
 const zone = ref(props.task?.schedule?.zone ?? '')
+const rune = computed(
+  () => (props.task ? props.task.executionMode : executionMode.value) === 'agent',
+)
+const runsAutomatically = computed(() => scheduled.value && rune.value && dueAction.value === 'run')
+const dueActions: { value: 'remind' | 'run'; label: string }[] = [
+  { value: 'remind', label: 'Remind me' },
+  { value: 'run', label: 'Run automatically' },
+]
+watch(dueAction, (value) => {
+  if (value === 'remind') confirmedRun.value = false
+})
 const pending = ref(false)
 const error = ref('')
 const parentGoal = computed(() => props.goals.find((g) => g.id === parent.value))
@@ -87,12 +100,22 @@ async function submit() {
           anchorDay: repeat.value === 'monthly' ? monthlyDay.value : null,
         }
       : null
+    const action = runsAutomatically.value ? 'run' : 'remind'
     if (props.task) {
       await invoke('workspace_task_schedule', {
         id: props.task.id,
         revision: props.task.revision,
         schedule,
       })
+      if (
+        action !== (props.task.dueAction ?? 'remind') ||
+        (!schedule && props.task.dueAction === 'run')
+      )
+        await invoke('workspace_task_due_action', {
+          id: props.task.id,
+          revision: props.task.revision + 1,
+          action,
+        })
       id = props.task.id
     } else if (props.legacyRunId)
       id = await invoke<string>('workspace_task_import', {
@@ -108,6 +131,7 @@ async function submit() {
         parentGoalId: parent.value,
         class: parentGoal.value?.class ?? privacy.value,
         schedule,
+        dueAction: action,
       })
     emit('saved', 'task', id)
   } catch (e) {
@@ -207,18 +231,32 @@ async function submit() {
               :class="[field, 'h-10 w-24']"
             />
           </HubRow>
+          <HubRow v-if="rune" label="When due">
+            <RuneChoice v-model="dueAction" label="When due" :options="dueActions" segments />
+          </HubRow>
+          <HubRow
+            v-if="runsAutomatically"
+            label="Rune starts this without asking"
+            hint="High-risk actions still ask you first. A run missed by more than 15 minutes becomes a reminder."
+          >
+            <RuneSwitch v-model="confirmedRun" label="Confirm automatic running" />
+          </HubRow>
           <p
             class="m-0 rounded-b-rune-tile bg-rune-surface px-rune-2 py-rune-1 text-rune-caption text-rune-text-3"
           >
-            Timezone: {{ zone || 'Reading device timezone…' }}. Rune asks before running every
-            occurrence.{{ repeat === 'monthly' ? ' Shorter months use their last day.' : '' }}
+            Timezone: {{ zone || 'Reading device timezone…' }}.
+            {{
+              runsAutomatically
+                ? 'Rune runs each occurrence at its due time.'
+                : 'Rune asks before running every occurrence.'
+            }}{{ repeat === 'monthly' ? ' Shorter months use their last day.' : '' }}
           </p>
         </template>
       </div>
       <RuneButton
         variant="primary"
         type="submit"
-        :disabled="pending || (scheduled && !zone)"
+        :disabled="pending || (scheduled && !zone) || (runsAutomatically && !confirmedRun)"
         class="self-start"
       >
         {{ pending ? 'Saving…' : task ? 'Save schedule' : 'Save task' }}

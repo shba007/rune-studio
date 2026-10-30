@@ -241,7 +241,9 @@ const who = (row: Row) =>
       ? 'You'
       : row.task.executionMode === 'analysis'
         ? 'Visual Analysis'
-        : 'Rune'
+        : row.task.dueAction === 'run'
+          ? 'Rune · auto'
+          : 'Rune'
     : (row.run?.source ?? '') || 'Rune'
 
 function primary(row: Row): { label: string; run: () => void } | null {

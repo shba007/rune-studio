@@ -15,9 +15,11 @@ export interface TaskOccurrence {
   reported: boolean
   completedMs: number | null
   workId?: string | null
+  snoozedUntilMs?: number | null
 }
 export interface WorkspaceTask {
   executionMode?: 'manual' | 'agent' | 'analysis'
+  dueAction?: 'remind' | 'run'
   id: string
   revision: number
   title: string

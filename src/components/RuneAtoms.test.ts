@@ -13,14 +13,14 @@ describe('Rune atoms', () => {
     const wrapper = mount(RuneButton, { slots: { default: 'Update' } })
     expect(wrapper.attributes('type')).toBe('button')
     expect(wrapper.classes()).toContain('rounded-full')
-    expect(wrapper.classes()).toContain('h-10')
+    expect(wrapper.classes()).toContain('min-h-10')
     expect(wrapper.text()).toBe('Update')
   })
 
   it('maps button variants and sizes to tone classes', () => {
     const danger = mount(RuneButton, { props: { variant: 'danger', size: 'sm' } })
     expect(danger.classes()).toContain('bg-attention')
-    expect(danger.classes()).toContain('h-8')
+    expect(danger.classes()).toContain('min-h-8')
     expect(mount(RuneButton, { props: { variant: 'primary' } }).classes()).toContain('bg-rune-ink')
   })
 

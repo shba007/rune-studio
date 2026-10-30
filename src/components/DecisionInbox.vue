@@ -94,7 +94,11 @@ const rowMeta = (entry: IntakeEntry) => {
         >
           Category: {{ entry.category }}
         </p>
-        <p v-if="entry.error" role="alert" class="m-0 text-rune-caption text-error">
+        <p
+          v-if="entry.error && entry.question?.kind !== 'retry'"
+          role="alert"
+          class="m-0 text-rune-caption text-error"
+        >
           {{ entry.error }}
         </p>
         <div
@@ -120,7 +124,7 @@ const rowMeta = (entry: IntakeEntry) => {
         </dl>
       </template>
       <p
-        v-if="!brief && entry.kind === 'goal' && entry.error"
+        v-if="!brief && entry.kind === 'goal' && entry.error && entry.question?.kind !== 'retry'"
         role="alert"
         class="m-0 text-rune-caption text-error"
       >
@@ -129,6 +133,7 @@ const rowMeta = (entry: IntakeEntry) => {
       <DecisionCard
         v-if="entry.question"
         :question="entry.question"
+        :error="entry.question.kind === 'retry' ? (entry.error ?? undefined) : undefined"
         :busy="decisions.pending.value"
         :deferable="compact"
         :cancel-label="entry.approvedGoal ? 'Cancel changes' : 'Cancel request'"

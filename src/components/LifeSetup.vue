@@ -24,14 +24,15 @@ const error = ref('')
 const domain = computed(() => domains.value[index.value]!)
 const last = computed(() => index.value === domains.value.length - 1)
 const modes = computed(() => [
-  { value: 'manual' as const, label: 'Manual' },
   { value: 'auto' as const, label: 'Auto', disabled: !autoReady.value },
+  { value: 'manual' as const, label: 'Manual' },
 ])
 const ready = computed(() => (mode.value === 'auto' ? autoReady.value : !!text.value.trim()))
 
 onMounted(async () => {
   try {
     autoReady.value = (await invoke<string[]>('workspace_goal_modes')).includes('auto')
+    if (autoReady.value) mode.value = 'auto'
   } catch {
     autoReady.value = false
   }
@@ -117,7 +118,7 @@ async function add() {
         <p v-else class="m-0 text-rune-body text-rune-text-2">
           Rune will ask a few questions about {{ domain.name }} and suggest a first goal.
         </p>
-        <div class="flex items-center justify-between gap-rune-1">
+        <div class="flex flex-wrap items-center justify-between gap-rune-1">
           <RuneButton type="button" variant="ghost" @click="next">
             {{ last ? 'Finish' : 'Skip' }}
           </RuneButton>

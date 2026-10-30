@@ -280,3 +280,36 @@ it('restores a saved draft and clears a stale selection after the question chang
   expect(wrapper.emitted('answer')).toBeUndefined()
   wrapper.unmount()
 })
+const retryQuestion: DecisionQuestion = {
+  ...question,
+  kind: 'retry',
+  title: 'This request needs attention',
+  options: [
+    { id: 'retry', label: 'Retry this decision', explanation: 'Use the saved input and answers.' },
+    { id: 'settings', label: 'Review settings', explanation: 'Check the local model.' },
+    { id: 'cancel', label: 'Cancel request', explanation: 'Do not continue.' },
+  ],
+}
+
+it('shows the failure inside the retry card, preselects Retry and offers one cancel', async () => {
+  const wrapper = mount(DecisionCard, {
+    props: {
+      question: retryQuestion,
+      error: 'skipped: model is not resident (swap_refused)',
+      deferable: true,
+    },
+  })
+  expect(wrapper.findAll('input[type="radio"]')).toHaveLength(2)
+  expect(wrapper.text()).toContain('The local model is not loaded')
+  expect(wrapper.text().match(/Cancel request/g)).toHaveLength(1)
+  expect(wrapper.text()).not.toContain('Decide later')
+  const submit = wrapper.get('button[type="submit"]')
+  expect(submit.text()).toBe('Retry')
+  expect(submit.attributes('disabled')).toBeUndefined()
+  await wrapper.get('input[value="settings"]').setValue(true)
+  expect(submit.text()).toBe('Open settings')
+  await wrapper.get('form').trigger('submit')
+  expect(wrapper.emitted('answer')!.at(-1)).toEqual([
+    { id: question.id, revision: 1, optionId: 'settings', text: '' },
+  ])
+})

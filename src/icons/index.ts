@@ -1,5 +1,7 @@
 import IconArrowClockwise from '~icons/ph/arrow-clockwise-bold'
 import IconArrowLeft from '~icons/ph/arrow-left-bold'
+import IconArrowRight from '~icons/ph/arrow-right-bold'
+import IconList from '~icons/ph/list-bold'
 import IconAppWindow from '~icons/ph/app-window-fill'
 import IconArrowUp from '~icons/ph/arrow-up-bold'
 import IconBrain from '~icons/ph/brain-fill'
@@ -74,6 +76,8 @@ export const icons = {
   target: IconTarget,
   app: IconAppWindow,
   back: IconArrowLeft,
+  forward: IconArrowRight,
+  menu: IconList,
   chevron: IconCaretDown,
   close: IconX,
   history: IconHistory,
