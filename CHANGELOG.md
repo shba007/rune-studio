@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.6.0
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.5.0...v0.6.0)
+
+### 🚀 Enhancements
+
+- Implement text-free auto discovery for goal setting ([4e87f7e](https://github.com/shba007/rune-studio/commit/4e87f7e))
+- Add settings for alarms and reminder functionality ([267f729](https://github.com/shba007/rune-studio/commit/267f729))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+
 ## v0.5.0
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.4.0...v0.5.0)
