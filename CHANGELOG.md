@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.6.0
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.5.0...v0.6.0)
+
+### 🚀 Enhancements
+
+- Implement text-free auto discovery for goal setting ([4e87f7e](https://github.com/shba007/rune-studio/commit/4e87f7e))
+- Add settings for alarms and reminder functionality ([267f729](https://github.com/shba007/rune-studio/commit/267f729))
+- Add playgroundwindow component for image analysis and question handling ([e94ec2e](https://github.com/shba007/rune-studio/commit/e94ec2e))
+- Add upscale and create functionalities to Playground ([33f9a80](https://github.com/shba007/rune-studio/commit/33f9a80))
+- Enhance image size handling with resolution and aspect ratio options ([a0fa7ed](https://github.com/shba007/rune-studio/commit/a0fa7ed))
+
+### ✅ Tests
+
+- Enhance image size validation tests and add resolution checks ([2c7fec6](https://github.com/shba007/rune-studio/commit/2c7fec6))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+
 ## v0.5.0
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.4.0...v0.5.0)
