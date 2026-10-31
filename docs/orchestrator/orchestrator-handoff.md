@@ -37,12 +37,14 @@ Long-term goal (the owner's): a **life harness** built on a universal, self-refl
 ## 5. Where everything is
 
 **In the Studio repo (`develop`)**
+
 - `docs/ROADMAP.md` (plan and the current milestone status table), `docs/ARCHITECTURE.md`, `docs/AGENT-GUIDE.md`, `docs/models.md`, `docs/wire-audit.md`, `docs/evals/README.md`.
 - `docs/use-cases/README.md` and pages 01 to 12 (one self-contained page per use case, numbered "How to use").
 - Reports in `docs/handoff/`: `M1-report.md`, `R6b-report.md`, `C1-report.md`. Earlier reports (R0 to R6a, F1, the 2026-10-19 field test report) were removed and are in git history (for example the field test at `0531bec^:docs/field-test-report-2026-10-19.md`).
 - Reports in the other repos, on their `develop` branches: `rune-kit` `docs/handoff/studio-handoff-report.md`, `rune-infer` `docs/handoff/studio-handoff-report.md`, `rune-tools` `docs/handoff/rune-tools-report.md`.
 
 **In `docs/orchestrator/` (pushed 2026-10-21; this folder, flat, filenames as referenced below and in the documents themselves). `README.md` there is the index.**
+
 - Plan and context: `00-ecosystem-plan.md`, `rune-life-harness-milestones.md` (L0 to L10), `rune-design-language.md`, `rune-infer-tui-spec.md`, `milestone-status-2026-10-21.md` (the audit), `field-test-R0-R4.md` (the earlier tester guide).
 - Handoffs to the other projects: `rune-infer-handoff.md`, `rune-kit-handoff.md`, `rune-tools-handoff.md` (the v5 versions), and the follow-ups `rune-infer-followup-handoff.md`, `rune-kit-followup-handoff.md`, `rune-tools-followup-handoff.md`.
 - Handoffs to Studio agents: `rune-studio-M1-model-profiles.md`, `rune-studio-L0-life-foundations.md`, `rune-studio-K1-kit-client.md`, `rune-studio-C1-closeout.md`, and the shared `rune-studio-contract-addendum.md` (the real field and header names from the three projects).

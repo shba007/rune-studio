@@ -125,7 +125,8 @@ export function readSnapshot(raw: unknown): AnalysisSnapshot {
   const value = raw as Record<string, unknown>
   return {
     screenshot:
-      typeof value.screenshot === 'string' && value.screenshot.startsWith('data:image/jpeg;base64,')
+      typeof value.screenshot === 'string' &&
+      /^data:image\/(jpeg|png);base64,/.test(value.screenshot)
         ? value.screenshot
         : null,
     visibleGroups: readVisibility(value.visibleGroups),

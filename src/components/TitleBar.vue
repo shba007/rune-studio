@@ -12,6 +12,7 @@ withDefaults(
     title: string
     controls?: 'all' | 'close'
     sidebar?: boolean
+    bare?: boolean
     collapsed?: boolean
     canBack?: boolean
     canForward?: boolean
@@ -20,6 +21,7 @@ withDefaults(
   {
     controls: 'all',
     sidebar: false,
+    bare: false,
     collapsed: false,
     canBack: false,
     canForward: false,
@@ -132,11 +134,15 @@ const button =
         <AppIcon name="forward" />
       </RuneIconButton>
     </div>
-    <div v-else data-tauri-drag-region class="pointer-events-none flex items-center gap-2 pl-4">
+    <div
+      v-else-if="!bare"
+      data-tauri-drag-region
+      class="pointer-events-none flex items-center gap-2 pl-4"
+    >
       <img :src="LOGO" alt="" class="size-5" />
       <span class="text-rune-heading text-rune-text-2 uppercase">{{ title }}</span>
     </div>
-    <div class="flex h-full">
+    <div class="ml-auto flex h-full">
       <button
         v-if="controls === 'all'"
         type="button"

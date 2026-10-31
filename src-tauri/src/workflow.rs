@@ -47,9 +47,31 @@ static WORKFLOWS: &[&dyn Workflow] = &[&SCREEN_INSIGHT];
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct ScreenInput {
-    target: CaptureTarget,
+    #[serde(default)]
+    target: Option<CaptureTarget>,
+    #[serde(default)]
+    image: Option<String>,
     #[serde(default)]
     question: String,
+    #[serde(default)]
+    model: Option<String>,
+    #[serde(default)]
+    resolution: Option<crate::settings::ImageResolution>,
+}
+const IMAGE_PREFIX: &str = "data:image/png;base64,";
+const MAX_IMAGE_CHARS: usize = 40_000_000;
+
+fn image_bytes(data: &str) -> Result<Vec<u8>, String> {
+    use base64::Engine;
+    let body = data
+        .strip_prefix(IMAGE_PREFIX)
+        .ok_or("Choose a PNG image")?;
+    if body.len() > MAX_IMAGE_CHARS {
+        return Err("The image is too large".into());
+    }
+    base64::engine::general_purpose::STANDARD
+        .decode(body)
+        .map_err(|_| "The image data is not valid".into())
 }
 pub fn vision_model(
     settings: &crate::settings::Settings,
@@ -84,7 +106,16 @@ impl Workflow for ScreenInsight {
     }
     fn validate(&self, input: &Value) -> Result<(), String> {
         let input: ScreenInput = serde_json::from_value(input.clone())
-            .map_err(|e| format!("Choose a screen/window and a question: {e}"))?;
+            .map_err(|e| format!("Choose a screen, window or image and a question: {e}"))?;
+        match (&input.target, &input.image) {
+            (Some(_), None) => {}
+            (None, Some(data)) => {
+                if !data.starts_with(IMAGE_PREFIX) || data.len() > MAX_IMAGE_CHARS {
+                    return Err("Choose a PNG image".into());
+                }
+            }
+            _ => return Err("Choose either a screen or window, or an image".into()),
+        }
         if input.question.chars().count() > 500 {
             return Err("Question exceeds 500 characters".into());
         }
@@ -100,7 +131,18 @@ impl Workflow for ScreenInsight {
         Box::pin(async move {
             let input: ScreenInput = serde_json::from_value(input).map_err(|e| e.to_string())?;
             let state = app.state::<AppState>();
-            let (settings, key) = crate::settings::snapshot_with_api_key(&state.settings);
+            let (mut settings, key) = crate::settings::snapshot_with_api_key(&state.settings);
+            if let Some(model) = input
+                .model
+                .as_deref()
+                .map(str::trim)
+                .filter(|m| !m.is_empty())
+            {
+                settings.models.analysis = model.into();
+            }
+            if let Some(resolution) = input.resolution {
+                settings.model_image_resolution = resolution;
+            }
             let status = crate::backend::check(&state.http, &settings, key.as_deref()).await;
             if !status.reachable || !status.auth_ok {
                 return Err(status
@@ -121,16 +163,31 @@ impl Workflow for ScreenInsight {
             let captured_utc = crate::trace::now_utc();
             let max_edge = settings.model_image_resolution.max_edge();
             let capture_edge = settings.recording_resolution.max_edge();
+            let from_image = input.image.is_some();
             let frame = tokio::time::timeout(
                 Duration::from_secs(10),
-                tauri::async_runtime::spawn_blocking(move || {
-                    screenshot::insight_capture(input.target, max_edge, capture_edge)
+                tauri::async_runtime::spawn_blocking(move || match (input.target, input.image) {
+                    (Some(target), _) => {
+                        screenshot::insight_capture(target, max_edge, capture_edge).map_err(|e| {
+                            format!("Capture permission denied or target unavailable: {e}")
+                        })
+                    }
+                    (None, Some(data)) => image_bytes(&data).and_then(|bytes| {
+                        screenshot::insight_image(&bytes, max_edge, capture_edge)
+                            .map_err(|e| e.to_string())
+                    }),
+                    (None, None) => Err("Choose a screen, window or image".into()),
                 }),
             )
             .await
-            .map_err(|_| "Screen/window capture timed out")?
-            .map_err(|e| e.to_string())?
-            .map_err(|e| format!("Capture permission denied or target unavailable: {e}"))?;
+            .map_err(|_| {
+                if from_image {
+                    "Reading the image timed out"
+                } else {
+                    "Screen/window capture timed out"
+                }
+            })?
+            .map_err(|e| e.to_string())??;
             let image = frame.data_uri();
             let signature = frame.signature();
             let stored = StoredFrame {
@@ -279,6 +336,33 @@ mod tests {
                 .validate(&serde_json::json!({"target":{"kind":"video","id":1}}))
                 .is_err()
         );
+        assert!(
+            SCREEN_INSIGHT
+                .validate(&serde_json::json!({"target":{"kind":"screen","id":1},"model":"m","resolution":"1280"}))
+                .is_ok()
+        );
+        assert!(
+            SCREEN_INSIGHT
+                .validate(
+                    &serde_json::json!({"target":{"kind":"screen","id":1},"resolution":"huge"})
+                )
+                .is_err()
+        );
+        let png = format!("{IMAGE_PREFIX}AA==");
+        assert!(
+            SCREEN_INSIGHT
+                .validate(&serde_json::json!({"image": png, "question": "x"}))
+                .is_ok()
+        );
+        for bad in [
+            serde_json::json!({}),
+            serde_json::json!({"image": "data:image/jpeg;base64,AA=="}),
+            serde_json::json!({"image": png, "target": {"kind":"screen","id":1}}),
+        ] {
+            assert!(SCREEN_INSIGHT.validate(&bad).is_err());
+        }
+        assert_eq!(image_bytes(&png).unwrap(), vec![0]);
+        assert!(image_bytes("data:image/png;base64,***").is_err());
         let mut settings = crate::settings::Settings::default();
         assert!(vision_model(&settings, &[]).is_err());
         settings.models.analysis = "vision".into();

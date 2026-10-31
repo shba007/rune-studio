@@ -26,13 +26,22 @@ export function useAnalysis() {
     }
   }
 
-  const capture = (question?: string, target?: { kind: string; id: number }) =>
+  const capture = (
+    question?: string,
+    target?: { kind: string; id: number },
+    options?: { model?: string; resolution?: string },
+  ) =>
     target
       ? run('run_workflow', {
           workflowId: 'screen-insight',
-          input: { target, question: question || '' },
+          input: { target, question: question || '', ...options },
         })
       : run('analyze_screen', { question: question || null })
+  const captureImage = (
+    question: string,
+    image: string,
+    options?: { model?: string; resolution?: string },
+  ) => run('run_workflow', { workflowId: 'screen-insight', input: { image, question, ...options } })
   const ask = (question: string) => run('analyze_again', { question })
   const cancel = () => run('cancel_analysis')
   const close = () => run('close_analysis')
@@ -50,5 +59,5 @@ export function useAnalysis() {
   })
   onBeforeUnmount(() => unlisten?.())
 
-  return { snapshot, notice, busy, capture, ask, cancel, close, select }
+  return { snapshot, notice, busy, capture, captureImage, ask, cancel, close, select }
 }

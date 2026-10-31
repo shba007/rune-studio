@@ -33,6 +33,7 @@ Studio's long-term goal is a **life harness**: it works from **evidence** (what 
 ## 5. Work packages
 
 ### WP1: module, store and migrations
+
 - `life/` with its own database file in the app data folder (not the trace database), opened with the same care as the trace (WAL, busy timeout, a version number, a newer file is left untouched).
 - Tables (names are suggestions; keep what is needed, nothing more):
   - `meta` (version, created, key id).
@@ -45,6 +46,7 @@ Studio's long-term goal is a **life harness**: it works from **evidence** (what 
 - Migrations are additive and tested (v1 creates; a test opens a fixture of v1 with the current code).
 
 ### WP2: consent, retention, export, delete (the user's control)
+
 - Settings fields: `lifeEnabled` (false), per-class consent (false), per-class `retentionDays` (0 means keep).
 - Writing a record of a class whose consent is off is **refused** with a clear error (tested for every class). Turning consent off does not delete; it stops collection.
 - Retention sweeps expired records of that class (tested with a fake clock); it never touches other classes.
@@ -53,9 +55,11 @@ Studio's long-term goal is a **life harness**: it works from **evidence** (what 
 - A small **Settings section "Life data"** in the existing settings window, in the Rune style: the master switch, one row per class (consent, retention), Export and Delete buttons (Delete asks for confirmation with the class name typed or the existing confirm pattern). Plain text explaining what is stored, that it never leaves the machine for health, mind and finance, and that Rune is not a clinician. The text is placeholder copy marked `OWNER TO REVIEW`.
 
 ### WP3: encryption at rest
+
 Implement the option chosen by the spike (section 4). Requirements: no plaintext of a sensitive class on disk (check the file bytes with a canary after a write, a checkpoint and a close); the key is not in the database file, the settings file or the logs; losing the key gives a clear error and offers "start fresh" only after an explicit confirmation; a backup copy of the database file is useless without the key (state this in the user text). Report the cost (write and read times for 10,000 records) and the dependency added, if any.
 
 ### WP4: local-only enforcement (the central rule)
+
 - One function `may_send(class, endpoint) -> Allow | Deny(reason)` in `life/`, the **only** place that decides. Rules: `general` may go to any endpoint the user has configured; `health`, `mind` and `finance` may go **only** to an endpoint that is local.
 - "Local" is decided in this order: (1) the model's `locality` from rune-infer or Studio's model profile (M1), when present: `local` allows, `cloud` and `lan` deny, `unknown` denies; (2) otherwise, a **fallback by address**: the base URL's host is a loopback address (`127.0.0.0/8`, `::1`, `localhost`); anything else denies. Never decide by model name. Resolve the host properly (no substring tricks: `http://127.0.0.1.evil.com`, `http://localhost@evil.com`, userinfo, ports and IPv6 forms must all be handled; tests for each).
 - The model client gets a way to tag a request with a data class (a field on the request); if tagged and `may_send` denies, the client returns an error **before** sending anything. Untagged requests behave as today. A test with a fake server proves that no byte reaches a non-local server for a tagged request.
@@ -63,14 +67,17 @@ Implement the option chosen by the spike (section 4). Requirements: no plaintext
 - Document that this protects data going to the model **server**, and that rune-infer's own cloud adapters are rune-infer's side of the same rule (INF-15).
 
 ### WP5: redaction in logs and the existing record
+
 - A redaction function for life content used by every log call in `life/`; the application log, the trace and the flight recorder never contain life record bodies (test with a canary through the whole path). Errors from the module carry codes and ids, not content.
 
 ### WP6: wellbeing basics (small, honest)
+
 - A static module with the text a user sees when a conversation touches distress: fixed, human-written, never model-generated. Ship **placeholder text marked `OWNER TO REVIEW`** and a place to put region-specific resources; do not invent hotline numbers.
 - A conservative phrase matcher (a plain list in a data file, easy to extend) and a function `wellbeing_check(text) -> None | Pause`. It is **not wired to any conversation yet** (L1 does that). Tests with a fixed phrase set, including negatives.
 - State in the code comment and in the user text that this is **not a safety guarantee**, that a small local model is not trusted to detect distress, and that Rune is not a clinician.
 
 ### WP7: docs and tests
+
 - `docs/ARCHITECTURE.md` (the life module and its rules), `README.md` (Privacy: what the life module stores, the local-only rule), a user-facing `docs/life-data.md` in plain language (what is stored, where, how to export and delete, what is never collected), and the privacy note you can finish only with the owner's text.
 - Final numbers; clippy and fmt clean.
 

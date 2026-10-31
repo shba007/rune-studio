@@ -43,7 +43,7 @@ it('suggests local commands and opens Goals using keyboard selection without pla
   const { wrapper, openWorkspace, submit } = show()
   const field = wrapper.get('textarea')
   await field.setValue('/')
-  expect(wrapper.findAll('[role="option"]')).toHaveLength(5)
+  expect(wrapper.findAll('[role="option"]')).toHaveLength(6)
   await field.trigger('keydown', { key: 'ArrowDown' })
   await field.trigger('keydown', { key: 'Enter' })
   await flushPromises()

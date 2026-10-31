@@ -5,6 +5,7 @@
 You are an AI coding agent working **inside the rune-tools repository**. The owner gave you this document. It was written by the Rune Studio orchestrator **from outside your repository**: what it says about rune-tools comes from Studio's observation (a field test and earlier reading) and **may be wrong or out of date**. Your first job is to check every statement about rune-tools against your code and say where it is wrong.
 
 How to work:
+
 1. Read this whole document and your repository's own contributing rules, branch rules and test commands. **Follow your repository's rules**, not any in this document. Do not push to a protected or release branch, and do not cut a release.
 2. For every request below, find the current state in your code (exists, partly, missing) and write it down before you change anything.
 3. **Build** the items in the build list (TOOL-1 (first for filesystem, git and time) and TOOL-6; TOOL-2, TOOL-4, TOOL-5 and TOOL-10 as written statements; the rest are Questions or Process). For the others, report feasibility, and implement one only if it is small and clearly safe; otherwise leave it for the owner. Items marked Question or Process are answered in your report, not built.
@@ -22,14 +23,15 @@ You answer each request with one of: **Accept** (with an owner and a target rele
 
 ## 1. The ecosystem in one page
 
-| Project | Role | Who uses it |
-| --- | --- | --- |
-| **rune-infer** | The manager of all **models and engines**, local and cloud. Everything that needs a model is done here: chat, audio and speech, vision, OCR, grounding, decisions, embeddings. If the model fits in VRAM it stays loaded, otherwise models swap | Rune Studio, other clients. Has a library and a TUI (to be redesigned, see `rune-infer-tui-spec.md`) |
-| **rune-kit** (`rune` CLI) | The manager of all **non-model tools**, the way rune-infer is the manager of models: installs and runs plugins and skills, runs them as one MCP gateway over stdio, and owns the **generic rules** that apply to any tool | Rune Studio (planned MCP client, milestone K1), other agents. Has a library; no TUI yet |
-| **rune-tools** | The individual tools (plugins): filesystem, fetch, memory, git, browser, email, audio, video, image, slides, figma, time, sequential-thinking, and others. Each tool owns its **tool-specific rules** and its own **UI blueprint** (see A2UI below) | Through rune-kit |
-| **Rune Studio** | The harness: a Windows desktop agent that sees the screen, acts, records everything, checks its own work and (planned) reflects on it, and renders tool UI | End users |
+| Project                   | Role                                                                                                                                                                                                                                                | Who uses it                                                                                          |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| **rune-infer**            | The manager of all **models and engines**, local and cloud. Everything that needs a model is done here: chat, audio and speech, vision, OCR, grounding, decisions, embeddings. If the model fits in VRAM it stays loaded, otherwise models swap     | Rune Studio, other clients. Has a library and a TUI (to be redesigned, see `rune-infer-tui-spec.md`) |
+| **rune-kit** (`rune` CLI) | The manager of all **non-model tools**, the way rune-infer is the manager of models: installs and runs plugins and skills, runs them as one MCP gateway over stdio, and owns the **generic rules** that apply to any tool                           | Rune Studio (planned MCP client, milestone K1), other agents. Has a library; no TUI yet              |
+| **rune-tools**            | The individual tools (plugins): filesystem, fetch, memory, git, browser, email, audio, video, image, slides, figma, time, sequential-thinking, and others. Each tool owns its **tool-specific rules** and its own **UI blueprint** (see A2UI below) | Through rune-kit                                                                                     |
+| **Rune Studio**           | The harness: a Windows desktop agent that sees the screen, acts, records everything, checks its own work and (planned) reflects on it, and renders tool UI                                                                                          | End users                                                                                            |
 
 **Ownership rule (decided by the owner):**
+
 - Anything that needs a **model** (OCR, vision, speech, grounding, decisions) is rune-infer's. rune-kit and rune-tools do not host models.
 - Anything that is **not a model** (files, web, git, mail, browser, time, memory, UI blueprints) is rune-kit's to manage and rune-tools' to implement.
 - **Rules:** a rule that is specific to one tool lives with that tool in rune-tools. A rule that applies to tools in general (defaults, the vocabulary tools declare in, what happens when a tool declares nothing, sandbox and permission enforcement) lives in rune-kit. Rune Studio applies its own safety gate on top of both and never relies on a tool being safe because it says so.
@@ -40,7 +42,7 @@ You answer each request with one of: **Accept** (with an owner and a target rele
 
 Goal of the whole ecosystem (set by the owner, updated 2026-10-21): a **life harness**, built on a universal, self-reflecting AI harness. Rune does not assume: it works from **evidence** (what you say is stored as what you said, and checked against what tools can observe), it expects that a user can be mistaken and that it can be too, it can **change the trajectory mid-session** when the evidence says the current plan will not work, and it **collaborates** instead of taking over: it improves the user and itself, and automates what is automatable only after asking. Studio's life track (L0 to L10) is in `rune-life-harness-milestones.md` (sent separately).
 
-**Interchangeable models (decided by the owner, 2026-10-21).** Models will be swapped freely, for example **MiniCPM-o 4.5**, **Bonsai 2 27B** and others, and rune-infer supports hot swap. So **nothing in Studio, kit or tools may assume one model.** Studio will keep per-model profiles and per-role model choices (milestone M1) and will ask rune-infer what a model can do instead of guessing. Facts found on 2026-10-21 (secondary and vendor sources, **not verified by running anything**): *MiniCPM-o 4.5* is an open 9B omni model from OpenBMB (vision, speech in and out, full-duplex live streaming; built from SigLip2, Whisper-medium, CosyVoice2 and Qwen3-8B; Apache 2.0; a GGUF for llama.cpp exists). *Bonsai 2 27B* is a ternary-weight 27B model from PrismML (reported as based on Qwen3.8-27B, a file of about 5.95 GB, a 262,144-token context, Apache 2.0, reported to need PrismML's fork or its MLX loader rather than stock llama.cpp or Ollama). Sources: huggingface.co/openbmb/MiniCPM-o-4_5, huggingface.co/OpenBMB/MiniCPM-o-4_5-gguf, modemguides.com/blogs/modemguides-blog/run-bonsai-2-27b-locally, cloudprice.net/models/prism-ml-bonsai-2-27b.
+**Interchangeable models (decided by the owner, 2026-10-21).** Models will be swapped freely, for example **MiniCPM-o 4.5**, **Bonsai 2 27B** and others, and rune-infer supports hot swap. So **nothing in Studio, kit or tools may assume one model.** Studio will keep per-model profiles and per-role model choices (milestone M1) and will ask rune-infer what a model can do instead of guessing. Facts found on 2026-10-21 (secondary and vendor sources, **not verified by running anything**): _MiniCPM-o 4.5_ is an open 9B omni model from OpenBMB (vision, speech in and out, full-duplex live streaming; built from SigLip2, Whisper-medium, CosyVoice2 and Qwen3-8B; Apache 2.0; a GGUF for llama.cpp exists). _Bonsai 2 27B_ is a ternary-weight 27B model from PrismML (reported as based on Qwen3.8-27B, a file of about 5.95 GB, a 262,144-token context, Apache 2.0, reported to need PrismML's fork or its MLX loader rather than stock llama.cpp or Ollama). Sources: huggingface.co/openbmb/MiniCPM-o-4_5, huggingface.co/OpenBMB/MiniCPM-o-4_5-gguf, modemguides.com/blogs/modemguides-blog/run-bonsai-2-27b-locally, cloudprice.net/models/prism-ml-bonsai-2-27b.
 
 Studio's own plan, in order (dates are not committed): R5 agent identity, demo mode, idle reflection shell (done). R6a screen analysis as an overlay (done). R6b session video and Flight Player (done). **M1 model profiles and roles** (next). R6c post-mortems and notes. R7 notes in the prompt, proved by an A/B. R8 trust (redaction, retention). R9 universal abstractions. **K1** the rune-kit MCP client, with every kit tool call going through Studio's safety gate (a risky call waits for the user's Yes; an unknown tool defaults to ask). **K2** A2UI surfaces. **L0 to L10** the life track, starting with L0 foundations (consent, store, trust slice).
 
@@ -58,13 +60,13 @@ Studio's own plan, in order (dates are not committed): R5 agent identity, demo m
 
 ## 3. Phases and where this project is needed
 
-| Phase | Studio work | Needed from the other projects |
-| --- | --- | --- |
+| Phase   | Studio work                                      | Needed from the other projects                                                                                         |
+| ------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
 | A (now) | M1 model profiles and roles; L0 life foundations | rune-infer: structured capabilities and locality, cancel, honest `usage`, residency visibility, a model support matrix |
-| B | R6c post-mortems, R7 notes | rune-infer: a way for background calls to yield without causing a model swap |
-| C | K1: kit client | rune-kit and rune-tools: JSON output, risk facts, cancel and timeouts, a curated starter set |
-| D | K2: A2UI surfaces | rune-kit: carry blueprints. rune-tools: a blueprint for a pilot tool. Studio: renderer and catalog |
-| E | R8, R9 universal | Stable contracts, conformance tests, a second surface (browser through kit) |
+| B       | R6c post-mortems, R7 notes                       | rune-infer: a way for background calls to yield without causing a model swap                                           |
+| C       | K1: kit client                                   | rune-kit and rune-tools: JSON output, risk facts, cancel and timeouts, a curated starter set                           |
+| D       | K2: A2UI surfaces                                | rune-kit: carry blueprints. rune-tools: a blueprint for a pilot tool. Studio: renderer and catalog                     |
+| E       | R8, R9 universal                                 | Stable contracts, conformance tests, a second surface (browser through kit)                                            |
 
 Studio's need-by points are stated per request below. Studio does not impose a date; tell Studio what is realistic and Studio will adjust order.
 
@@ -79,6 +81,7 @@ Studio never talks to a plugin directly. Through rune-kit (planned milestone K1)
 ## 6. Requests
 
 ### TOOL-1 (Must, now buildable) Each tool declares what it can do, in rune-kit's form
+
 - **Division of rules (decided by the owner):** a rule specific to one tool belongs to that tool in rune-tools. Generic rules (the vocabulary, the defaults, enforcement) belong to rune-kit, which has now **built** its side (rune-kit report, 2026-10-21; verify against your copy of rune-kit before relying on it).
 - **What rune-kit now provides (as reported, check it):** a plugin declares per-tool facts in its `plugin.toml` under `[tools.<tool_name>]` with optional booleans `read_only`, `destructive`, `idempotent`, `open_world` and an optional `description`. kit merges them into the tool's definition and returns them as `annotations` in MCP `tools/list`. A tool that declares nothing has **no annotations**, and Studio then asks the user every time. `rune run --read-only` (and `--allow-tool <name>`) show and allow **only tools declared `read_only = true`**: an undeclared tool is invisible in read-only mode and a forced call to it is refused. kit also serves a rules resource `rune://<namespace>/rules` with the plugin's declared capabilities and tool rules.
 - **Meaning to use (state it in your docs):** `read_only = true`: no side effects anywhere. `destructive = true`: can delete, overwrite or irreversibly change something. `open_world = true`: reaches outside the machine or outside the plugin's own data (network, other accounts, other people). `idempotent = true`: repeating the call with the same arguments has no further effect. If unsure, **leave it undeclared or set the safer value**; never set `read_only = true` for a tool that can write.
@@ -87,32 +90,41 @@ Studio never talks to a plugin directly. Through rune-kit (planned milestone K1)
 - **Not asked:** UI blueprints now (TOOL-9 waits for rune-kit 0.4.0 and Studio's catalog).
 
 ### TOOL-2 (Should) Stability statement for the starter set
+
 - **Ask:** tell Studio which plugins you consider stable on **Windows** today and tested. Studio'"'"'s proposed first read-only set (Studio decides, you advise): filesystem reads, time, and possibly fetch and sequential-thinking. Which of these have tests, and which have known problems on Windows (paths, line endings, long paths, permissions)?
 
 ### TOOL-10 (Question) Evidence sources for the life track
+
 Studio's life track will, with the user's consent, read **files changed in chosen folders, git history and time** as evidence of what the user did (read-only, through kit). Please confirm for the filesystem, git and time plugins: which of their tools are strictly read-only and declared so (TOOL-1), whether git history can be read without a working-tree write, and any Windows caveats. Also tell Studio whether a **calendar** plugin or a **tabular/CSV read** helper exists or is planned (Studio does not know of one; it can parse CSV itself, so neither is required).
 
 ### TOOL-3 (Resolved) OCR and vision
+
 - **Decided (owner):** OCR and vision are model work and are done by rune-infer. rune-tools will not host a screen OCR or vision plugin, and Studio will not look for one here. No action; the question is closed. (If a **non-model** desktop utility is ever wanted as a tool, such as listing windows, that would be rune-tools' to decide; Studio does not need one now, it has its own.)
 
 ### TOOL-4 (Should) Output contracts
+
 - **Why:** Studio puts tool results into the model'"'"'s prompt and its record, so size and shape matter.
 - **Ask:** per tool (or per plugin), documented limits: maximum result size and what happens past it (truncation? error?), how binary data such as images is returned, the shape of errors, and typical and maximum run time.
 
 ### TOOL-5 (Should) The browser plugin as a second surface
+
 - **Why:** it is Studio'"'"'s candidate for a DOM-level browser surface (clicking by page element instead of by pixel), which would fix Studio'"'"'s weakest case, small targets on web pages.
 - **Ask:** readiness on Windows (install steps for `agent-browser`, how the plugin reports a missing dependency), what a screenshot result looks like, and the tools you consider stable.
 
 ### TOOL-6 (Should) Accurate documentation
+
 Remove or mark the plugins listed in the README and AGENTS file that do not exist, so Studio and users do not plan around them.
 
 ### TOOL-7 (Question) The memory plugin
+
 Studio may later offer to copy accepted notes about apps into `rune-memory` so other agents can share them. Studio is **not** committing to this (**NOT CERTAIN** it is wanted). Question: is the knowledge-graph format meant for this kind of data, and is there a stable way to write to it?
 
 ### TOOL-8 (Process) Versioning
+
 Plugin versions Studio can pin, and release notes that call out changes to tool names, arguments and results (the `<ns>__<tool>` names are part of what the model sees).
 
 ### TOOL-9 (Must for K2) A UI blueprint per tool
+
 - **Decided (owner):** each tool holds its own JSONL blueprint for UI widgets; Rune Studio renders it with its own design system. It is data, not code.
 - **What a blueprint is (Studio's proposal, for the PM to react to):** a small JSONL file shipped with the plugin that describes how to show a tool's result (and, if useful, a tool's input form) using only components from a **catalog that Studio publishes** (text, heading, list, table, key-value, image, progress, button, text field, chips, and similar; the final list and version are Studio's, to be published before K2 starts). Fields are bound to the tool's result by path. It contains no scripts, no markup, no styles, no colours (Studio's design system supplies the look) and no URLs except those the plugin already declares.
 - **Format basis:** Studio follows the open A2UI protocol (Apache 2.0, created by Google; v0.8 stable and v0.9 current as found on 2026-10-20; JSON/JSONL, component catalog). **NOT CERTAIN** which version Studio will pin and which parts it will support; the first version of the catalog will be small. The PM may read the spec at a2ui.org.
@@ -121,12 +133,10 @@ Plugin versions Studio can pin, and release notes that call out changes to tool 
 - **Not asked:** no UI code, no framework, no styling.
 - **Check:** Studio renders a pilot blueprint against a real tool result.
 
-
 ## Response table (fill in and return)
 
-| ID | Accept / Counter / Decline / Question | Owner | Target release | Notes or answer |
-| --- | --- | --- | --- | --- |
-|  |  |  |  |  |
+| ID  | Accept / Counter / Decline / Question | Owner | Target release | Notes or answer |
+| --- | ------------------------------------- | ----- | -------------- | --------------- |
+|     |                                       |       |                |                 |
 
 Also tell Studio: (a) the one contact for Studio-facing questions, (b) how you announce breaking changes, (c) anything in section 1 or 2 that is wrong about your project.
-

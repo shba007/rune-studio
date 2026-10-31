@@ -14,6 +14,12 @@ export const COMPOSER_COMMANDS = [
     description: 'Open task history and recordings',
     icon: 'history',
   },
+  {
+    id: 'playground',
+    command: '/playground',
+    description: 'Open the Playground to test pipelines',
+    icon: 'image',
+  },
   { id: 'settings', command: '/settings', description: 'Open Rune settings', icon: 'tune' },
   {
     id: 'schedule',

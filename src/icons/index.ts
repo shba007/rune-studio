@@ -63,6 +63,23 @@ import IconTree from '~icons/ph/tree-fill'
 import IconTag from '~icons/ph/tag-fill'
 import IconPulse from '~icons/ph/pulse-fill'
 
+import IconImage from '~icons/ph/image-fill'
+import IconPencil from '~icons/ph/pencil-simple-fill'
+import IconMagicWand from '~icons/ph/magic-wand-fill'
+import IconPaintBrush from '~icons/ph/paint-brush-fill'
+import IconZoomIn from '~icons/ph/magnifying-glass-plus-fill'
+import IconImages from '~icons/ph/images-fill'
+import IconSpeaker from '~icons/ph/speaker-high-fill'
+import IconSwap from '~icons/ph/swap-fill'
+import IconMusic from '~icons/ph/music-notes-fill'
+import IconScissors from '~icons/ph/scissors-fill'
+import IconCaptions from '~icons/ph/closed-captioning-fill'
+import IconFilm from '~icons/ph/film-strip-fill'
+import IconPerson from '~icons/ph/person-simple-fill'
+import IconCube from '~icons/ph/cube-fill'
+import IconChat from '~icons/ph/chat-circle-text-fill'
+import IconCornersOut from '~icons/ph/corners-out-fill'
+
 export const icons = {
   info: IconInfo,
   help: IconQuestion,
@@ -129,6 +146,22 @@ export const icons = {
   'domain-purpose': IconCompass,
   'domain-legacy': IconTree,
   'domain-unassigned': IconTag,
+  image: IconImage,
+  edit: IconPencil,
+  transform: IconMagicWand,
+  inpaint: IconPaintBrush,
+  upscale: IconZoomIn,
+  reference: IconImages,
+  speaker: IconSpeaker,
+  convert: IconSwap,
+  music: IconMusic,
+  separate: IconScissors,
+  captions: IconCaptions,
+  film: IconFilm,
+  pose: IconPerson,
+  depth: IconCube,
+  ask: IconChat,
+  extend: IconCornersOut,
 } as const
 
 export type IconName = keyof typeof icons

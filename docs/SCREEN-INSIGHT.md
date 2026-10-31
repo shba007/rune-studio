@@ -28,3 +28,12 @@ Windows is locally validated. macOS/Linux capture permissions and window-capture
 backend support require owner platform tests. Minimized/closed windows fail
 rather than silently capturing another target. Linux builds need PipeWire/SPA,
 Clang, WebKit/GTK, GBM/EGL, XCB, libxdo and ALSA development packages.
+
+## Playground
+
+`/playground` opens a separate window for testing pipelines one at a time. Ask, Point and Pose run the single Screen Insight workflow; every other listed pipeline is a disabled placeholder.
+
+- The Analysis model and image resolution chosen there apply to that run only and never change settings. The model must still advertise image input and tool calling.
+- Sources are Screen, Window and File. A File is re-encoded to PNG by the window and sent as an in-memory image. It is never written to disk or archived, and it never draws the on-screen overlay (its frame uses monitor id `u32::MAX`). Importing a file goes beyond the screen/window capture contract and is an owner-approved exception.
+- History is the current session only, held in memory.
+- The window is not always-on-top and is hidden from capture.

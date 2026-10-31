@@ -103,6 +103,7 @@ async function runCommand(item: ComposerCommand) {
   try {
     if (item.id === 'analysis') await agent.analyzeScreen()
     else if (item.id === 'settings') await agent.openSettings()
+    else if (item.id === 'playground') await agent.openPlayground()
     else await agent.openWorkspace(item.id)
     command.value = ''
     menuDismissed.value = true

@@ -9,6 +9,7 @@ For AI coding agents working in the **rune-studio** repository. Give this file t
 **Response headers** on chat (other routes: **not yet**, requested): `x-model-served` (the canonical model id that actually answered), `x-model-locality` (`local` or `cloud`), `x-model-resident` (`true` or `false`), `x-model-load-duration-ms` (when a cold load happened), `x-model-evicted` (the model that was evicted). The body's `model` is also the canonical id.
 
 **Request headers**
+
 - `x-no-swap: true`: if the model is not resident, the server answers `409 Conflict` with error type and code `swap_refused` and does not load it.
 - `x-rune-priority: background` (also `x-priority: background` or `low`): while a foreground request is active, a **new** background request gets `429` with `Retry-After: 1` and error code `server_busy` (type `server_busy`, code `busy`). **A background request already running is NOT pre-empted today** (asked of rune-infer, item IF-1 in its follow-up): Studio must keep background calls short and one at a time until that is fixed.
 
@@ -19,6 +20,7 @@ For AI coding agents working in the **rune-studio** repository. Give this file t
 **Other:** `/livez` and `/readyz` need no auth (`/readyz` returns `{"status":"ready","active_requests":N,"busy":bool}`); `/health` reports a real GPU backend (`cuda`, `metal`, `cpu`). `/v1/audio/transcriptions` follows the OpenAI multipart form (`file`, `model`, `language`, `prompt`, `temperature`, `response_format`); the model that serves it, its latency and whether it swaps the chat model are **unknown** (asked). Grounding boxes are `[ymin, xmin, ymax, xmax]` on 0..1000: **Studio's own convention is `[x0, y0, x1, y1]`**, so a conversion function with tests is required wherever grounding output is used. Constrained (grammar or JSON schema) tool-call output is reported for `llama-server` models.
 
 **What to do in the milestones**
+
 - **M1 WP1 (capability client):** replace the guessed field names in your fixtures and parser with the ones above; keep the tolerant parsing. **WP2:** `thinking_control` of `"none"` means do not send thinking switches; `"thinking"` means send the thinking switch. **WP3:** show `locality`, and `resident` in the role picker. **WP4:** the swap signals are the headers above and the refusal `409 swap_refused`; use `x-no-swap: true` for the optional roles (decision, verifier) when the user chose "do not swap for optional roles"; show the loading state when `x-model-resident: false`; read `x-model-served` as the served model for the record. Background calls (reflection, later life jobs) send `x-rune-priority: background`, handle `429 server_busy` by waiting `Retry-After` and trying later (not as an error), and stay short.
 - **L0 WP4 (local-only):** the authoritative locality is, in order: the `x-model-locality` response header (check it **after** the call and drop the response on `cloud`), then the model's `/v1/models` `locality`, then the address fallback. A model with `locality: "cloud"` or unknown never receives a tagged request. Because the header is chat-only today, a tagged request to any other route (transcription, decisions, OCR) is **refused** unless the address fallback says local, until rune-infer adds the header there.
 
@@ -33,6 +35,7 @@ Each tool declares `rules`: `read_only` (bool), `risk` (`low`, `medium`, `high`)
 **Known gap (under repair):** rune-tools did not emit `annotations`, and kit builds annotations only from `plugin.toml` or the plugin's `annotations`. So today `rune run --read-only` lists **nothing** from rune-tools, and Studio would see no annotations. Both projects have follow-up handoffs. Until they land, test against fixtures only, and write the real-kit check as steps for the maintainer.
 
 **What to do in K1:** the tool's facts come from, in order: kit's `annotations` (both spellings) and `inputSchema["x-rune-rules"]` (`read_only`, `risk`, `effects`, `limits`). Use both when both exist:
+
 - `risk` from the rules sets the gate level directly (`low`, `medium`, `high`); `effects` containing `delete`, `exec` or `write` is at least medium; `network` makes it open-world; `delete` or `exec` is high.
 - Where the two sources **disagree**, take the **higher** risk and log the mismatch.
 - No facts from either source: unknown, ask every time.

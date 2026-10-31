@@ -157,6 +157,7 @@ export function useAgent() {
 
   let noticeHandle: ReturnType<typeof setTimeout> | undefined
   let wantedHeight = 0
+  let measureHeight: (() => number) | undefined
   let fitting: Promise<void> | undefined
   let fittedHeight = 0
   const silenceTimer = useTimeoutFn(
@@ -200,14 +201,17 @@ export function useAgent() {
       await sleep(COLLAPSE_MS)
       if (token === modeToken) await call('set_mode', { mode: next })
     }
-    if (token === modeToken && wantedHeight >= 48) await fitHeight(wantedHeight)
+    const wanted = measureHeight?.() || wantedHeight
+    if (token === modeToken && wanted >= 48) await fitHeight(wanted)
     if (next === 'open') focusTick.value += 1
   }
 
+  const setHeightProbe = (probe: (() => number) | undefined) => (measureHeight = probe)
+
   async function fitHeight(height: number) {
     if (!Number.isFinite(height)) return
+    wantedHeight = Math.max(64, Math.ceil(height))
     if (mode.value === 'open' || mode.value === 'task' || mode.value === 'analysis') {
-      wantedHeight = Math.max(64, Math.ceil(height))
       if (!fitting) {
         fitting = (async () => {
           // Collect measurements from the same render before crossing IPC.
@@ -374,6 +378,7 @@ export function useAgent() {
   }, 1000)
   const openSettings = (section = 'general') => call('open_settings_window', { section })
   const openWorkspace = (section = 'life') => call('open_workspace', { section })
+  const openPlayground = () => call('open_playground')
   const toggleListening = () => call('toggle_listening')
   async function answer(approved: boolean) {
     const waiting = question.value
@@ -531,6 +536,7 @@ export function useAgent() {
     bridge,
     health,
     fitHeight,
+    setHeightProbe,
     mode,
     plan,
     timing,
@@ -568,6 +574,7 @@ export function useAgent() {
     analyzeScreen,
     openSettings,
     openWorkspace,
+    openPlayground,
     toggleListening,
     confirm,
     debugSetState,

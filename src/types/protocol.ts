@@ -31,6 +31,7 @@ export interface ModelCapabilities {
   loadMsEstimate: number | null
   status: string | null
   rawCapabilities: string[]
+  tasks?: string[]
 }
 
 export interface ModelRoles {

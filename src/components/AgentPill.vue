@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import RuneButton from './RuneButton.vue'
 import { onKeyStroke, useElementSize } from '@vueuse/core'
-import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 
 import { useAgent } from '@/composables/useAgent'
 import { useUpdater } from '@/composables/useUpdater'
@@ -189,6 +189,9 @@ if (import.meta.env.DEV) Object.assign(window, { __demoAgent: agent })
 
 const content = useTemplateRef<HTMLElement>('content')
 const { height: contentHeight } = useElementSize(content)
+const measuredHeight = () => content.value?.getBoundingClientRect().height ?? contentHeight.value
+agent.setHeightProbe(measuredHeight)
+onBeforeUnmount(() => agent.setHeightProbe(undefined))
 watch(contentHeight, (height) => {
   const available = Math.min(1200, Math.max(200, window.screen.availHeight * 0.9))
   if (height > available && decisionKey.value && !decisionInKnowledge.value) {
@@ -202,7 +205,8 @@ watch(contentHeight, (height) => {
 watch(isAmbient, async (ambient) => {
   if (ambient) return
   await nextTick()
-  if (contentHeight.value >= 48) void agent.fitHeight(Math.ceil(contentHeight.value))
+  const height = measuredHeight()
+  if (height >= 48) void agent.fitHeight(Math.ceil(height))
 })
 
 onKeyStroke('Escape', () => {

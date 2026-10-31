@@ -226,3 +226,13 @@ it('hides only unchecked groups from highlights and restores them without losing
   expect(drawable(snapshot).map((f) => f.n)).toEqual([1, 2])
   expect(snapshot.findings).toHaveLength(3)
 })
+
+describe('screenshot frames', () => {
+  it('accepts png and jpeg data uris and rejects anything else', () => {
+    for (const ok of ['data:image/png;base64,AA==', 'data:image/jpeg;base64,AA==']) {
+      expect(readSnapshot({ screenshot: ok }).screenshot).toBe(ok)
+    }
+    expect(readSnapshot({ screenshot: 'data:text/html;base64,AA==' }).screenshot).toBeNull()
+    expect(readSnapshot({ screenshot: 'https://x/y.png' }).screenshot).toBeNull()
+  })
+})

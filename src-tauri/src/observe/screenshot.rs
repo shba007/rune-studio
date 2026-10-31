@@ -435,19 +435,34 @@ fn capture_target(
     if mask_for_model && screen_capture {
         super::mask::apply(&mut rgba, &super::mask::current(), monitor.x, monitor.y);
     }
-    let png = if mask_for_model {
-        capture_png(
-            &DynamicImage::ImageRgba8(rgba.clone()).into_rgb8(),
-            capture_edge,
-        )?
-    } else {
-        Vec::new()
-    };
-    let prepared = if mask_for_model {
-        prepare(rgba, max_edge, MODEL_JPEG_QUALITY)?
-    } else {
-        prepare_recording(rgba)
-    };
+    if mask_for_model {
+        return insight_frame(rgba, monitor, max_edge, capture_edge, started);
+    }
+    let prepared = prepare_recording(rgba);
+    Ok(Frame {
+        monitor,
+        width: prepared.width,
+        height: prepared.height,
+        jpeg: prepared.jpeg,
+        png: Vec::new(),
+        path: Default::default(),
+        elapsed_ms: started.elapsed().as_millis() as u64,
+        image: prepared.image,
+    })
+}
+
+fn insight_frame(
+    rgba: image::RgbaImage,
+    monitor: Monitor,
+    max_edge: u32,
+    capture_edge: u32,
+    started: Instant,
+) -> Result<Frame, ObserveError> {
+    let png = capture_png(
+        &DynamicImage::ImageRgba8(rgba.clone()).into_rgb8(),
+        capture_edge,
+    )?;
+    let prepared = prepare(rgba, max_edge, MODEL_JPEG_QUALITY)?;
     Ok(Frame {
         monitor,
         width: prepared.width,
@@ -458,6 +473,36 @@ fn capture_target(
         elapsed_ms: started.elapsed().as_millis() as u64,
         image: prepared.image,
     })
+}
+
+pub const IMAGE_MONITOR: u32 = u32::MAX;
+const MAX_IMAGE_PIXELS: u64 = 64_000_000;
+
+pub fn insight_image(
+    bytes: &[u8],
+    max_edge: u32,
+    capture_edge: u32,
+) -> Result<Frame, ObserveError> {
+    let started = Instant::now();
+    let rgba = image::load_from_memory(bytes)
+        .map_err(|e| ObserveError::Capture(format!("Could not read the image: {e}")))?
+        .into_rgba8();
+    if rgba.width() == 0
+        || rgba.height() == 0
+        || u64::from(rgba.width()) * u64::from(rgba.height()) > MAX_IMAGE_PIXELS
+    {
+        return Err(ObserveError::Capture("The image is too large".into()));
+    }
+    let monitor = Monitor {
+        id: IMAGE_MONITOR,
+        x: 0,
+        y: 0,
+        width: rgba.width(),
+        height: rgba.height(),
+        scale_factor: 1.0,
+        primary: false,
+    };
+    insight_frame(rgba, monitor, max_edge, capture_edge, started)
 }
 
 #[cfg(test)]
@@ -479,6 +524,18 @@ mod tests {
         let detailed_model = prepare(source, u32::MAX, MODEL_JPEG_QUALITY).unwrap();
         assert_eq!((detailed_model.width, detailed_model.height), (1600, 900));
         assert_eq!(image::load_from_memory(&saved).unwrap().width(), 1280);
+    }
+
+    #[test]
+    fn an_imported_image_becomes_an_insight_frame_without_a_screen() {
+        let source = image::RgbaImage::from_pixel(1600, 900, image::Rgba([10, 20, 30, 255]));
+        let png = encode_png(&DynamicImage::ImageRgba8(source).into_rgb8()).unwrap();
+        let frame = insight_image(&png, 720, u32::MAX).unwrap();
+        assert_eq!((frame.width, frame.height), (720, 405));
+        assert_eq!(frame.monitor.id, IMAGE_MONITOR);
+        assert_eq!((frame.monitor.width, frame.monitor.height), (1600, 900));
+        assert!(!frame.png.is_empty() && !frame.jpeg.is_empty());
+        assert!(insight_image(b"not an image", 720, u32::MAX).is_err());
     }
 
     #[test]

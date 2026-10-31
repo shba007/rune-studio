@@ -26,6 +26,12 @@ use crate::{
 const CALL_TIMEOUT: Duration = Duration::from_secs(60);
 
 fn overlay_wanted(snapshot: &super::state::Snapshot) -> bool {
+    if snapshot
+        .monitor
+        .is_some_and(|monitor| monitor.id == crate::observe::screenshot::IMAGE_MONITOR)
+    {
+        return false;
+    }
     let visible_geometry = snapshot
         .findings
         .iter()

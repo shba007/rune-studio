@@ -70,6 +70,8 @@ pub struct ModelCapabilities {
     #[serde(default)]
     pub raw_capabilities: Vec<String>,
     #[serde(default)]
+    pub tasks: Vec<String>,
+    #[serde(default)]
     pub roles: Vec<String>,
     #[serde(default)]
     pub aliases: Vec<String>,
@@ -95,6 +97,7 @@ impl ModelCapabilities {
             load_ms_estimate: None,
             status: None,
             raw_capabilities: Vec::new(),
+            tasks: Vec::new(),
             roles: Vec::new(),
             aliases: Vec::new(),
         }
@@ -320,6 +323,7 @@ pub fn parse_model_entry(entry: &Value) -> Option<ModelCapabilities> {
         roles: string_list(entry, "roles"),
         aliases: string_list(entry, "aliases"),
         raw_capabilities,
+        tasks: string_list(entry, "tasks"),
     })
 }
 

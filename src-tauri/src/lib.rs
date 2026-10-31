@@ -32,6 +32,7 @@ mod model;
 mod observe;
 mod overlay;
 mod personalities;
+mod playground;
 mod prompts;
 mod recording;
 mod reflect;
@@ -289,6 +290,8 @@ pub fn run() {
             commands::session_feedback,
             commands::open_settings_window,
             commands::open_workspace,
+            playground::open_playground,
+            playground::playground_depth,
             crate::intake::decisions_state,
             crate::intake::decision_answer,
             crate::intake::decision_delete,

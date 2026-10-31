@@ -4,6 +4,7 @@ import 'unfonts.css'
 
 import App from './App.vue'
 import ControlOverlay from './components/ControlOverlay.vue'
+import PlaygroundWindow from './components/PlaygroundWindow.vue'
 import SettingsWindow from './components/SettingsWindow.vue'
 import WorkspaceWindow from './components/WorkspaceWindow.vue'
 import './style.css'
@@ -17,7 +18,7 @@ const view = new URLSearchParams(location.search).get('view')
 const overlay = view === 'overlay'
 if (overlay) document.documentElement.classList.add('overlay-view')
 
-if (['flight', 'settings', 'workspace'].includes(view ?? ''))
+if (['flight', 'settings', 'workspace', 'playground'].includes(view ?? ''))
   document.documentElement.classList.add('flight-view')
 
 const root =
@@ -29,5 +30,7 @@ const root =
         ? SettingsWindow
         : view === 'workspace'
           ? WorkspaceWindow
-          : App
+          : view === 'playground'
+            ? PlaygroundWindow
+            : App
 createApp(root).mount('#app')

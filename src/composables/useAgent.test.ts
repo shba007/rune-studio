@@ -181,3 +181,51 @@ it('serializes window resizing and skips superseded and duplicate measurements',
   expect(heights).toEqual([100, 300])
   wrapper.unmount()
 })
+it('opens at the height measured now, not the last height requested', async () => {
+  const heights: number[] = []
+  harness.invoke.mockImplementation((command, ...args: unknown[]) => {
+    if (command === 'fit_height') heights.push((args[0] as { height: number }).height)
+    return Promise.resolve(null)
+  })
+  let agent!: Agent
+  const wrapper = mount(
+    defineComponent({
+      setup() {
+        agent = useAgent()
+        return () => null
+      },
+    }),
+  )
+  await flushPromises()
+  await agent.fitHeight(600)
+  expect(heights).toEqual([])
+  await agent.fitHeight(152)
+  agent.setHeightProbe(() => 152)
+  await agent.setMode('open')
+  await flushPromises()
+  expect(heights).toEqual([152])
+  wrapper.unmount()
+})
+it('remembers the latest height reported while closed when nothing can be measured', async () => {
+  const heights: number[] = []
+  harness.invoke.mockImplementation((command, ...args: unknown[]) => {
+    if (command === 'fit_height') heights.push((args[0] as { height: number }).height)
+    return Promise.resolve(null)
+  })
+  let agent!: Agent
+  const wrapper = mount(
+    defineComponent({
+      setup() {
+        agent = useAgent()
+        return () => null
+      },
+    }),
+  )
+  await flushPromises()
+  await agent.fitHeight(600)
+  await agent.fitHeight(152)
+  await agent.setMode('open')
+  await flushPromises()
+  expect(heights).toEqual([152])
+  wrapper.unmount()
+})
