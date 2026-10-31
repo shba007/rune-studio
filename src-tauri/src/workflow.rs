@@ -105,6 +105,14 @@ impl Workflow for ScreenInsight {
         }
     }
     fn validate(&self, input: &Value) -> Result<(), String> {
+        if let Some(resolution) = input.get("resolution").filter(|v| !v.is_null())
+            && !matches!(
+                resolution.as_str(),
+                Some("720" | "1280" | "1920" | "2560" | "native")
+            )
+        {
+            return Err("Choose a supported image resolution".into());
+        }
         let input: ScreenInput = serde_json::from_value(input.clone())
             .map_err(|e| format!("Choose a screen, window or image and a question: {e}"))?;
         match (&input.target, &input.image) {
@@ -341,13 +349,35 @@ mod tests {
                 .validate(&serde_json::json!({"target":{"kind":"screen","id":1},"model":"m","resolution":"1280"}))
                 .is_ok()
         );
+        for resolution in ["720", "1280", "1920", "2560", "native"] {
+            assert!(
+                SCREEN_INSIGHT
+                    .validate(&serde_json::json!({
+                        "target":{"kind":"screen","id":1},"resolution":resolution
+                    }))
+                    .is_ok()
+            );
+        }
         assert!(
             SCREEN_INSIGHT
-                .validate(
-                    &serde_json::json!({"target":{"kind":"screen","id":1},"resolution":"huge"})
-                )
-                .is_err()
+                .validate(&serde_json::json!({
+                    "target":{"kind":"screen","id":1},"resolution":null
+                }))
+                .is_ok()
         );
+        for resolution in [
+            serde_json::json!("huge"),
+            serde_json::json!(""),
+            serde_json::json!(1920),
+        ] {
+            assert!(
+                SCREEN_INSIGHT
+                    .validate(&serde_json::json!({
+                        "target":{"kind":"screen","id":1},"resolution":resolution
+                    }))
+                    .is_err()
+            );
+        }
         let png = format!("{IMAGE_PREFIX}AA==");
         assert!(
             SCREEN_INSIGHT

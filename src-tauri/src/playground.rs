@@ -522,11 +522,21 @@ mod tests {
 
     #[test]
     fn checks_image_sizes() {
-        assert!(valid_size("720x720"));
-        assert!(valid_size("1920x1080"));
-        assert!(!valid_size("1000x1000"));
-        assert!(!valid_size("4096x4096"));
-        assert!(!valid_size("big"));
+        for size in ["256x256", "720x720", "1920x1080", "1000x1000", "2048x2048"] {
+            assert!(valid_size(size), "expected valid image size: {size}");
+        }
+        for size in [
+            "248x720",
+            "720x2056",
+            "4096x4096",
+            "1001x1000",
+            "1000x1001",
+            "big",
+            "720x720x720",
+            "0x720",
+        ] {
+            assert!(!valid_size(size), "expected invalid image size: {size}");
+        }
     }
 
     #[test]
