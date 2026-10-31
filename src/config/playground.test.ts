@@ -4,6 +4,7 @@ import { EMPTY_SNAPSHOT } from './analysis'
 import { checkImageFile, fitEdge } from './imageFile'
 import {
   PLAYGROUND_GROUPS,
+  createSize,
   taskModelIds,
   filterFindings,
   questionLimit,
@@ -82,6 +83,16 @@ describe('result filtering', () => {
   })
   it('keeps structure findings for Pose', () => {
     expect(filterFindings('pose', snapshot).findings.map((f) => f.n)).toEqual([3])
+  })
+})
+
+describe('create size', () => {
+  it('combines resolution and aspect ratio into WxH', () => {
+    expect(createSize('720', '1:1')).toBe('720x720')
+    expect(createSize('720', '16:9')).toBe('1280x720')
+    expect(createSize('1080', '9:16')).toBe('1080x1920')
+    expect(createSize('720', '4:3')).toBe('960x720')
+    expect(createSize('512', '3:4')).toBe('512x680')
   })
 })
 

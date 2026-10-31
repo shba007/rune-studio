@@ -12,13 +12,15 @@ import { friendly } from '@/config/errors'
 import { readImageAsPng } from '@/config/imageFile'
 import {
   DEFAULT_PIPELINE,
-  CREATE_SIZE_OPTIONS,
+  CREATE_ASPECTS,
+  CREATE_RESOLUTIONS,
   MODEL_PIPELINES,
   PLAYGROUND_GROUPS,
   SCALE_OPTIONS,
   QUESTION_HINTS,
   RESOLUTION_OPTIONS,
   SOURCE_OPTIONS,
+  createSize,
   filterFindings,
   findPipeline,
   idleRun,
@@ -98,7 +100,9 @@ const hints = computed(() => QUESTION_HINTS[selected.value.id] ?? [])
 const modelPipeline = computed(() => MODEL_PIPELINES[selectedId.value])
 const isModelRun = computed(() => !!modelPipeline.value)
 const isCreate = computed(() => selectedId.value === 'create')
-const createSize = ref('1024x1024')
+const createResolution = ref('720')
+const createAspect = ref('1:1')
+const imageSize = computed(() => createSize(createResolution.value, createAspect.value))
 const taskOptions = computed(() => {
   const pipeline = modelPipeline.value
   if (!pipeline) return []
@@ -215,7 +219,7 @@ async function runModel(id: string, pipeline: ModelPipeline) {
   const option = options.value.find((item) => JSON.stringify(item.target) === target.value)
   const input =
     id === 'create'
-      ? { prompt: question.value, size: createSize.value }
+      ? { prompt: question.value, size: imageSize.value }
       : source.value === 'file'
         ? file.value && { image: file.value.data }
         : option && { target: option.target }
@@ -434,8 +438,22 @@ onKeyStroke('Escape', () => {
             </div>
 
             <div v-if="isCreate" class="flex flex-col gap-2">
-              <span class="text-rune-heading text-rune-text-3 uppercase">Size</span>
-              <RuneChoice v-model="createSize" label="Size" menu :options="CREATE_SIZE_OPTIONS" />
+              <span class="text-rune-heading text-rune-text-3 uppercase">Resolution</span>
+              <RuneChoice
+                v-model="createResolution"
+                label="Resolution"
+                menu
+                :options="CREATE_RESOLUTIONS"
+              />
+            </div>
+            <div v-if="isCreate" class="flex flex-col gap-2">
+              <span class="text-rune-heading text-rune-text-3 uppercase">Aspect ratio</span>
+              <RuneChoice
+                v-model="createAspect"
+                label="Aspect ratio"
+                menu
+                :options="CREATE_ASPECTS"
+              />
             </div>
 
             <div v-if="selectedId === 'upscale'" class="flex flex-col gap-2">

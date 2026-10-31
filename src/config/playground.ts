@@ -155,12 +155,31 @@ export interface CreateResult {
   elapsedMs: number
 }
 
-export const CREATE_SIZE_OPTIONS = [
-  { value: '512x512', label: '512 × 512' },
-  { value: '768x768', label: '768 × 768' },
-  { value: '1024x1024', label: '1024 × 1024' },
-  { value: '1024x768', label: '1024 × 768' },
+export const CREATE_RESOLUTIONS: { value: string; label: string; icon: IconName }[] = [
+  { value: '512', label: 'SD (512p)', icon: 'quality-low' },
+  { value: '720', label: 'HD (720p)', icon: 'quality-medium' },
+  { value: '1080', label: 'Full HD (1080p)', icon: 'quality-high' },
 ]
+
+export const CREATE_ASPECTS: {
+  value: string
+  label: string
+  icon: IconName
+  iconClass?: string
+}[] = [
+  { value: '1:1', label: 'Square (1:1)', icon: 'square' },
+  { value: '4:3', label: 'Landscape (4:3)', icon: 'rectangle' },
+  { value: '16:9', label: 'Widescreen (16:9)', icon: 'monitor' },
+  { value: '3:4', label: 'Portrait (3:4)', icon: 'rectangle', iconClass: 'rotate-90' },
+  { value: '9:16', label: 'Tall (9:16)', icon: 'phone' },
+]
+
+export function createSize(resolution: string, aspect: string) {
+  const [w = 1, h = 1] = aspect.split(':').map(Number)
+  const short = Number(resolution)
+  const long = Math.round((short * Math.max(w, h)) / Math.min(w, h) / 8) * 8
+  return w >= h ? `${long}x${short}` : `${short}x${long}`
+}
 
 export interface RunState<T> {
   status: 'idle' | 'running' | 'done' | 'error'

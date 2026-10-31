@@ -9,7 +9,7 @@ import RuneSegment from './RuneSegment.vue'
 
 const props = defineProps<{
   label: string
-  options: { value: T; label: string; disabled?: boolean }[]
+  options: { value: T; label: string; disabled?: boolean; icon?: IconName; iconClass?: string }[]
   disabled?: boolean
   menu?: boolean
   segments?: boolean
@@ -23,7 +23,8 @@ const root = useTemplateRef<HTMLElement>('root')
 onClickOutside(root, () => (open.value = false))
 
 const asSegments = () => !props.menu && (props.segments || props.options.length <= 3)
-const selectedLabel = () => props.options.find((o) => o.value === model.value)?.label ?? ''
+const selectedOption = () => props.options.find((o) => o.value === model.value)
+const selectedLabel = () => selectedOption()?.label ?? ''
 
 function pick(value: T) {
   model.value = value
@@ -68,7 +69,12 @@ function step(delta: number) {
       @keydown.down.prevent="step(1)"
       @keydown.up.prevent="step(-1)"
     >
-      <AppIcon v-if="icon" :name="icon" size="sm" class="text-rune-text-3" />
+      <AppIcon
+        v-if="selectedOption()?.icon ?? icon"
+        :name="(selectedOption()?.icon ?? icon)!"
+        size="sm"
+        :class="selectedOption()?.iconClass ?? 'text-rune-text-3'"
+      />
       {{ selectedLabel() }}
       <AppIcon name="chevron" size="sm" class="text-rune-text-3" />
     </button>
@@ -88,7 +94,15 @@ function step(delta: number) {
           :class="option.value === model ? 'text-rune-ink' : 'text-rune-text-2'"
           @click="pick(option.value)"
         >
-          {{ option.label }}
+          <span class="flex items-center gap-2">
+            <AppIcon
+              v-if="option.icon"
+              :name="option.icon"
+              size="sm"
+              :class="option.iconClass ?? 'text-rune-text-3'"
+            />
+            {{ option.label }}
+          </span>
           <AppIcon v-if="option.value === model" name="check" size="sm" />
         </button>
       </li>

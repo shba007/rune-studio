@@ -203,7 +203,7 @@ describe('playground window', () => {
     await wrapper.get('[data-testid="playground-run"]').trigger('click')
     await flushPromises()
     expect(invoked).toHaveBeenCalledWith('playground_create', {
-      input: { prompt: 'a red fox', size: '1024x1024', model: 'img-m' },
+      input: { prompt: 'a red fox', size: '720x720', model: 'img-m' },
     })
     expect(wrapper.findAll('[data-testid="create-image"]')).toHaveLength(1)
     wrapper.unmount()

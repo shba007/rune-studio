@@ -365,7 +365,17 @@ pub async fn playground_upscale(
     )
 }
 
-const CREATE_SIZES: [&str; 4] = ["512x512", "768x768", "1024x1024", "1024x768"];
+const CREATE_EDGE: std::ops::RangeInclusive<u32> = 256..=2048;
+
+fn valid_size(size: &str) -> bool {
+    let Some((width, height)) = size.split_once('x') else {
+        return false;
+    };
+    [width, height].iter().all(|edge| {
+        edge.parse::<u32>()
+            .is_ok_and(|edge| CREATE_EDGE.contains(&edge) && edge % 8 == 0)
+    })
+}
 const MAX_PROMPT_CHARS: usize = 1000;
 
 #[derive(Deserialize)]
@@ -432,8 +442,8 @@ pub async fn playground_create(app: AppHandle, input: CreateInput) -> Result<Cre
     if prompt.chars().count() > MAX_PROMPT_CHARS {
         return Err(format!("Prompt exceeds {MAX_PROMPT_CHARS} characters"));
     }
-    if !CREATE_SIZES.contains(&input.size.as_str()) {
-        return Err("Choose one of the listed image sizes".into());
+    if !valid_size(&input.size) {
+        return Err("Choose an image size between 256 and 2048 pixels".into());
     }
     let (settings, key, model) = session(&app, &input.model, CREATE_TASK).await?;
     let started = Instant::now();
@@ -508,6 +518,15 @@ mod tests {
                 .starts_with("data:image/png;")
         );
         assert!(upscale_result(r#"{"data":[{}],"usage":{"input_width":1,"input_height":1,"output_width":1,"output_height":1,"scale":2}}"#, String::new(), String::new(), 0).is_err());
+    }
+
+    #[test]
+    fn checks_image_sizes() {
+        assert!(valid_size("720x720"));
+        assert!(valid_size("1920x1080"));
+        assert!(!valid_size("1000x1000"));
+        assert!(!valid_size("4096x4096"));
+        assert!(!valid_size("big"));
     }
 
     #[test]

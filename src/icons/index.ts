@@ -78,6 +78,12 @@ import IconFilm from '~icons/ph/film-strip-fill'
 import IconPerson from '~icons/ph/person-simple-fill'
 import IconCube from '~icons/ph/cube-fill'
 import IconCpu from '~icons/ph/cpu-fill'
+import IconSquare from '~icons/ph/square-fill'
+import IconRectangle from '~icons/ph/rectangle-fill'
+import IconPhone from '~icons/ph/device-mobile-fill'
+import IconSignalLow from '~icons/ph/cell-signal-low-fill'
+import IconSignalMedium from '~icons/ph/cell-signal-medium-fill'
+import IconSignalHigh from '~icons/ph/cell-signal-high-fill'
 import IconChat from '~icons/ph/chat-circle-text-fill'
 import IconCornersOut from '~icons/ph/corners-out-fill'
 
@@ -162,6 +168,12 @@ export const icons = {
   pose: IconPerson,
   depth: IconCube,
   model: IconCpu,
+  square: IconSquare,
+  rectangle: IconRectangle,
+  phone: IconPhone,
+  'quality-low': IconSignalLow,
+  'quality-medium': IconSignalMedium,
+  'quality-high': IconSignalHigh,
   ask: IconChat,
   extend: IconCornersOut,
 } as const
