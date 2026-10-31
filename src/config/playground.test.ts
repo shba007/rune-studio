@@ -4,7 +4,7 @@ import { EMPTY_SNAPSHOT } from './analysis'
 import { checkImageFile, fitEdge } from './imageFile'
 import {
   PLAYGROUND_GROUPS,
-  depthModelIds,
+  taskModelIds,
   filterFindings,
   questionLimit,
   shapeQuestion,
@@ -25,9 +25,9 @@ const finding = (n: number, extra: Partial<Finding>): Finding => ({
 })
 
 describe('playground registry', () => {
-  it('has exactly three runnable pipelines, all in Images', () => {
+  it('has the runnable pipelines, all in Images', () => {
     const ready = PLAYGROUND_GROUPS.flatMap((g) => g.pipelines).filter((p) => p.ready)
-    expect(ready.map((p) => p.id)).toEqual(['ask', 'point', 'pose', 'depth'])
+    expect(ready.map((p) => p.id)).toEqual(['ask', 'point', 'pose', 'depth', 'create', 'upscale'])
     expect(PLAYGROUND_GROUPS[0]!.pipelines.slice(0, 4).map((p) => p.id)).toEqual([
       'ask',
       'point',
@@ -88,11 +88,14 @@ describe('result filtering', () => {
 describe('depth models', () => {
   it('lists only models with the image-to-depth task', () => {
     expect(
-      depthModelIds([
-        { id: 'chat', tasks: ['chat'] },
-        { id: 'depth-small', tasks: ['image-to-depth'] },
-        { id: 'legacy' },
-      ]),
+      taskModelIds(
+        [
+          { id: 'chat', tasks: ['chat'] },
+          { id: 'depth-small', tasks: ['image-to-depth'] },
+          { id: 'legacy' },
+        ],
+        'image-to-depth',
+      ),
     ).toEqual(['depth-small'])
   })
 })
@@ -104,7 +107,7 @@ describe('image files', () => {
     expect(checkImageFile({ type: 'image/png', size: 26 * 1024 * 1024 })).not.toBeNull()
   })
   it('shrinks the long edge to the limit and keeps the ratio', () => {
-    expect(fitEdge(8192, 4096)).toEqual({ width: 4096, height: 2048 })
+    expect(fitEdge(8192, 4096)).toEqual({ width: 2560, height: 1280 })
     expect(fitEdge(800, 600)).toEqual({ width: 800, height: 600 })
   })
 })

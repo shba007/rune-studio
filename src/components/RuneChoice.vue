@@ -2,6 +2,8 @@
 import { onClickOutside } from '@vueuse/core'
 import { ref, useTemplateRef } from 'vue'
 
+import type { IconName } from '@/icons'
+
 import AppIcon from './AppIcon.vue'
 import RuneSegment from './RuneSegment.vue'
 
@@ -11,6 +13,7 @@ const props = defineProps<{
   disabled?: boolean
   menu?: boolean
   segments?: boolean
+  icon?: IconName
 }>()
 
 const model = defineModel<T>({ required: true })
@@ -65,6 +68,7 @@ function step(delta: number) {
       @keydown.down.prevent="step(1)"
       @keydown.up.prevent="step(-1)"
     >
+      <AppIcon v-if="icon" :name="icon" size="sm" class="text-rune-text-3" />
       {{ selectedLabel() }}
       <AppIcon name="chevron" size="sm" class="text-rune-text-3" />
     </button>

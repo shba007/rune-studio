@@ -73,7 +73,11 @@ const pct = (value: number) => `${value / 10}%`
       </RuneButton>
     </header>
 
-    <p v-if="failed" role="alert" class="m-0 text-rune-body text-error">
+    <p
+      v-if="failed"
+      role="alert"
+      class="m-0 max-w-prose self-center text-center text-rune-body text-error"
+    >
       {{ friendly(snapshot.error ?? 'The analysis failed.') }}
     </p>
 

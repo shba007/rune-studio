@@ -292,6 +292,8 @@ pub fn run() {
             commands::open_workspace,
             playground::open_playground,
             playground::playground_depth,
+            playground::playground_upscale,
+            playground::playground_create,
             crate::intake::decisions_state,
             crate::intake::decision_answer,
             crate::intake::decision_delete,

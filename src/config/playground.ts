@@ -56,12 +56,24 @@ export const PLAYGROUND_GROUPS: PlaygroundGroup[] = [
         ready: true,
         summary: 'Estimate relative depth with a dedicated depth model.',
       },
-      later('create', 'Create', 'image', 'Generate a new image from a prompt.'),
+      {
+        id: 'create',
+        label: 'Create',
+        icon: 'image',
+        ready: true,
+        summary: 'Generate a new image from a prompt.',
+      },
       later('edit', 'Edit', 'edit', 'Change an image with an instruction.'),
       later('transform', 'Transform', 'transform', 'Redraw an image from your prompt.'),
       later('inpaint', 'Inpaint', 'inpaint', 'Regenerate a painted region.'),
       later('extend', 'Extend', 'extend', 'Grow the canvas and fill the edges.'),
-      later('upscale', 'Upscale', 'upscale', 'Enlarge and re-detail an image.'),
+      {
+        id: 'upscale',
+        label: 'Upscale',
+        icon: 'upscale',
+        ready: true,
+        summary: 'Enlarge an image 2× or 4× with an upscale model.',
+      },
       later('reference', 'Reference', 'reference', 'Generate guided by a reference image.'),
     ],
   },
@@ -102,6 +114,11 @@ export const QUESTION_HINTS: Record<string, string[]> = {
   ask: ['Summarise what is on screen', 'List the buttons you can see', 'Read the error message'],
   point: ['Where is the Save button?', 'Find the search field', 'Locate the close icon'],
   pose: ['Show the pose of the person', 'Mark the hands and elbows', 'Mark the face landmarks'],
+  create: [
+    'A lighthouse on a cliff at sunset, oil painting',
+    'A small robot watering plants, soft studio light',
+    'A quiet street in the rain, neon reflections',
+  ],
 }
 
 export const DEPTH_PIPELINE = 'depth'
@@ -118,16 +135,84 @@ export interface DepthResult {
   elapsedMs: number
 }
 
-export interface DepthState {
+export interface UpscaleResult {
+  original: string
+  output: string
+  inputWidth: number
+  inputHeight: number
+  outputWidth: number
+  outputHeight: number
+  scale: number
+  model: string
+  elapsedMs: number
+}
+
+export interface CreateResult {
+  image: string
+  prompt: string
+  size: string
+  model: string
+  elapsedMs: number
+}
+
+export const CREATE_SIZE_OPTIONS = [
+  { value: '512x512', label: '512 × 512' },
+  { value: '768x768', label: '768 × 768' },
+  { value: '1024x1024', label: '1024 × 1024' },
+  { value: '1024x768', label: '1024 × 768' },
+]
+
+export interface RunState<T> {
   status: 'idle' | 'running' | 'done' | 'error'
-  result: DepthResult | null
+  result: T | null
   error: string
 }
 
-export const IDLE_DEPTH: DepthState = { status: 'idle', result: null, error: '' }
+export type DepthState = RunState<DepthResult>
+export type UpscaleState = RunState<UpscaleResult>
+export type CreateState = RunState<CreateResult>
 
-export const depthModelIds = (models: { id: string; tasks?: string[] }[]) =>
-  models.filter((model) => model.tasks?.includes(DEPTH_TASK)).map((model) => model.id)
+export const idleRun = <T>(): RunState<T> => ({ status: 'idle', result: null, error: '' })
+
+export interface ModelPipeline {
+  task: string
+  command: string
+  modelLabel: string
+  none: string
+  idle: string
+}
+
+export const MODEL_PIPELINES: Record<string, ModelPipeline> = {
+  depth: {
+    task: DEPTH_TASK,
+    command: 'playground_depth',
+    modelLabel: 'Depth model',
+    none: 'No depth model',
+    idle: 'Pick a source and a depth model, then press Run to see the depth map.',
+  },
+  create: {
+    task: 'text-to-image',
+    command: 'playground_create',
+    modelLabel: 'Image model',
+    none: 'No image model',
+    idle: 'Describe an image, pick a size and press Run to create it.',
+  },
+  upscale: {
+    task: 'image-upscale',
+    command: 'playground_upscale',
+    modelLabel: 'Upscale model',
+    none: 'No upscale model',
+    idle: 'Pick a source, a model and a scale, then press Run to see the upscaled image.',
+  },
+}
+
+export const SCALE_OPTIONS = [
+  { value: 2, label: '2×' },
+  { value: 4, label: '4×' },
+]
+
+export const taskModelIds = (models: { id: string; tasks?: string[] }[], task: string) =>
+  models.filter((model) => model.tasks?.includes(task)).map((model) => model.id)
 
 export const RESOLUTION_OPTIONS = [
   { value: '720', label: '720 px' },

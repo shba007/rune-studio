@@ -77,6 +77,7 @@ import IconCaptions from '~icons/ph/closed-captioning-fill'
 import IconFilm from '~icons/ph/film-strip-fill'
 import IconPerson from '~icons/ph/person-simple-fill'
 import IconCube from '~icons/ph/cube-fill'
+import IconCpu from '~icons/ph/cpu-fill'
 import IconChat from '~icons/ph/chat-circle-text-fill'
 import IconCornersOut from '~icons/ph/corners-out-fill'
 
@@ -160,6 +161,7 @@ export const icons = {
   film: IconFilm,
   pose: IconPerson,
   depth: IconCube,
+  model: IconCpu,
   ask: IconChat,
   extend: IconCornersOut,
 } as const

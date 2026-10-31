@@ -16,6 +16,26 @@ const invoked = vi.fn<(command: string, args?: unknown) => Promise<unknown>>()
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: async (command: string, args?: unknown) => {
     void invoked(command, args)
+    if (command === 'playground_create')
+      return {
+        image: 'data:image/png;base64,AA==',
+        prompt: 'a red fox',
+        size: '512x512',
+        model: 'img-m',
+        elapsedMs: 4000,
+      }
+    if (command === 'playground_upscale')
+      return {
+        original: 'data:image/jpeg;base64,AA==',
+        output: 'data:image/png;base64,AA==',
+        inputWidth: 2,
+        inputHeight: 2,
+        outputWidth: 8,
+        outputHeight: 8,
+        scale: 4,
+        model: 'up-x',
+        elapsedMs: 900,
+      }
     if (command === 'playground_depth')
       return {
         original: 'data:image/jpeg;base64,AA==',
@@ -56,6 +76,8 @@ vi.mock('@/composables/useAgent', () => ({
         { id: 'vision-a', imageIn: 'yes', toolCalls: 'yes' },
         { id: 'text-only', imageIn: 'no', toolCalls: 'yes' },
         { id: 'depth-s', imageIn: 'no', toolCalls: 'no', tasks: ['image-to-depth'] },
+        { id: 'up-x', imageIn: 'no', toolCalls: 'no', tasks: ['image-upscale'] },
+        { id: 'img-m', imageIn: 'no', toolCalls: 'no', tasks: ['text-to-image'] },
       ],
     }),
   }),
@@ -86,7 +108,7 @@ describe('playground window', () => {
 
   it('shows a placeholder for pipelines that are not ready', async () => {
     const wrapper = mount(PlaygroundWindow)
-    await wrapper.get('[data-testid="pipeline-create"]').trigger('click')
+    await wrapper.get('[data-testid="pipeline-edit"]').trigger('click')
     expect(wrapper.find('[data-testid="playground-run"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="playground-params"]').text()).toContain('Coming later')
     wrapper.unmount()
@@ -165,8 +187,41 @@ describe('playground window', () => {
       input: { target: { kind: 'screen', id: 1 }, model: 'depth-s' },
     })
     expect(capture).not.toHaveBeenCalled()
-    expect(wrapper.findAll('[data-testid="depth-preview"]')).toHaveLength(1)
+    expect(wrapper.findAll('[data-testid="compare-output"]')).toHaveLength(1)
     expect(wrapper.get('[data-testid="depth-result"]').text()).toContain('not meters')
+    wrapper.unmount()
+  })
+
+  it('creates an image from a prompt without a source', async () => {
+    const wrapper = mount(PlaygroundWindow)
+    await flushPromises()
+    await wrapper.get('[data-testid="pipeline-create"]').trigger('click')
+    expect(wrapper.text()).toContain('img-m')
+    expect(wrapper.find('[aria-label="Source"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="playground-run"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('textarea').setValue('a red fox')
+    await wrapper.get('[data-testid="playground-run"]').trigger('click')
+    await flushPromises()
+    expect(invoked).toHaveBeenCalledWith('playground_create', {
+      input: { prompt: 'a red fox', size: '1024x1024', model: 'img-m' },
+    })
+    expect(wrapper.findAll('[data-testid="create-image"]')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('runs Upscale with the upscale model and chosen scale', async () => {
+    const wrapper = mount(PlaygroundWindow)
+    await flushPromises()
+    await wrapper.get('[data-testid="pipeline-upscale"]').trigger('click')
+    expect(wrapper.text()).toContain('up-x')
+    expect(wrapper.text()).not.toContain('depth-s')
+    await wrapper.get('[aria-label="Scale"] [role="radio"]:nth-child(2)').trigger('click')
+    await wrapper.get('[data-testid="playground-run"]').trigger('click')
+    await flushPromises()
+    expect(invoked).toHaveBeenCalledWith('playground_upscale', {
+      input: { target: { kind: 'screen', id: 1 }, model: 'up-x', scale: 4 },
+    })
+    expect(wrapper.get('[data-testid="upscale-result"]').text()).toContain('2×2 to 8×8')
     wrapper.unmount()
   })
 
