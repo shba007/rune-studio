@@ -299,6 +299,7 @@ pub fn run() {
             playground::playground_upscale,
             playground::playground_create,
             playground::playground_edit,
+            playground::playground_variation,
             playground::playground_speech,
             playground::playground_transcribe,
             playground::playground_translate_speech,

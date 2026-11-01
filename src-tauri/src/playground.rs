@@ -97,6 +97,7 @@ cancellable_command!(playground_caption, caption, CaptionInput, CaptionResult);
 cancellable_command!(playground_upscale, upscale, UpscaleInput, UpscaleResult);
 cancellable_command!(playground_create, create, CreateInput, CreateResult);
 cancellable_command!(playground_edit, edit, EditInput, EditResult);
+cancellable_command!(playground_variation, variation, VariationInput, EditResult);
 
 pub fn open(app: &AppHandle) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window(WINDOW) {
@@ -922,6 +923,16 @@ pub struct EditInput {
     prompt: String,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct VariationInput {
+    #[serde(default)]
+    target: Option<CaptureTarget>,
+    #[serde(default)]
+    image: Option<String>,
+    model: String,
+}
+
 #[derive(Serialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct EditResult {
@@ -960,13 +971,17 @@ async fn send_edit(
     url: reqwest::Url,
     key: Option<&str>,
     model: String,
-    prompt: String,
+    prompt: Option<String>,
     jpeg: Vec<u8>,
     original: String,
 ) -> Result<EditResult, String> {
+    let label = if prompt.is_some() {
+        "image edit"
+    } else {
+        "image variation"
+    };
     let form = reqwest::multipart::Form::new()
         .text("model", model.clone())
-        .text("prompt", prompt.clone())
         .text("response_format", "b64_json")
         .part(
             "image",
@@ -975,6 +990,11 @@ async fn send_edit(
                 .mime_str("image/jpeg")
                 .map_err(|e| e.to_string())?,
         );
+    let form = if let Some(prompt) = &prompt {
+        form.text("prompt", prompt.clone())
+    } else {
+        form
+    };
     let started = Instant::now();
     let mut request = http.post(url).timeout(REQUEST_TIMEOUT).multipart(form);
     if let Some(key) = key {
@@ -983,22 +1003,22 @@ async fn send_edit(
     let response = request
         .send()
         .await
-        .map_err(|e| format!("Image edit request failed: {e}"))?;
+        .map_err(|e| format!("{label} request failed: {e}"))?;
     let status = response.status();
     let body = response
         .text()
         .await
-        .map_err(|e| format!("Image edit response failed: {e}"))?;
+        .map_err(|e| format!("{label} response failed: {e}"))?;
     if !status.is_success() {
         return Err(format!(
-            "Infer refused the image edit request ({status}): {}",
+            "Infer refused the {label} request ({status}): {}",
             infer_error_detail(&body)
         ));
     }
     edit_result(
         &body,
         original,
-        prompt,
+        prompt.unwrap_or_default(),
         model,
         started.elapsed().as_millis() as u64,
     )
@@ -1020,7 +1040,23 @@ async fn edit(app: AppHandle, input: EditInput) -> Result<EditResult, String> {
         url,
         prepared.key.as_deref(),
         prepared.model,
-        prompt,
+        Some(prompt),
+        prepared.frame.jpeg,
+        original,
+    )
+    .await
+}
+
+async fn variation(app: AppHandle, input: VariationInput) -> Result<EditResult, String> {
+    let prepared = prepare(&app, input.target, input.image, &input.model, EDIT_TASK).await?;
+    let original = prepared.frame.data_uri();
+    let url = infer_url(&prepared.settings, "/v1/images/variations")?;
+    send_edit(
+        &app.state::<AppState>().http,
+        url,
+        prepared.key.as_deref(),
+        prepared.model,
+        None,
         prepared.frame.jpeg,
         original,
     )
@@ -1115,77 +1151,86 @@ mod tests {
     #[tokio::test]
     async fn sends_edit_as_authenticated_multipart() {
         use std::io::{Read, Write};
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
-        let server = std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            stream
-                .set_read_timeout(Some(Duration::from_secs(5)))
-                .unwrap();
-            let mut request = Vec::new();
-            let mut buffer = [0u8; 4096];
-            loop {
-                let n = stream.read(&mut buffer).unwrap();
-                if n == 0 {
-                    break;
-                }
-                request.extend_from_slice(&buffer[..n]);
-                if let Some(end) = request.windows(4).position(|v| v == b"\r\n\r\n") {
-                    let headers = String::from_utf8_lossy(&request[..end]);
-                    let length = headers
-                        .lines()
-                        .find_map(|line| {
-                            line.to_lowercase()
-                                .strip_prefix("content-length:")
-                                .and_then(|n| n.trim().parse::<usize>().ok())
-                        })
-                        .unwrap();
-                    if request.len() >= end + 4 + length {
+        for variation in [false, true] {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = listener.local_addr().unwrap();
+            let server = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut request = Vec::new();
+                let mut buffer = [0u8; 4096];
+                loop {
+                    let n = stream.read(&mut buffer).unwrap();
+                    if n == 0 {
                         break;
                     }
+                    request.extend_from_slice(&buffer[..n]);
+                    if let Some(end) = request.windows(4).position(|v| v == b"\r\n\r\n") {
+                        let headers = String::from_utf8_lossy(&request[..end]);
+                        let length = headers
+                            .lines()
+                            .find_map(|line| {
+                                line.to_lowercase()
+                                    .strip_prefix("content-length:")
+                                    .and_then(|n| n.trim().parse::<usize>().ok())
+                            })
+                            .unwrap();
+                        if request.len() >= end + 4 + length {
+                            break;
+                        }
+                    }
                 }
-            }
-            let response = br#"{"data":[{"b64_json":"iVBORw=="}]}"#;
-            write!(
-                stream,
-                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n",
-                response.len()
+                let response = br#"{"data":[{"b64_json":"iVBORw=="}]}"#;
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n",
+                    response.len()
+                )
+                .unwrap();
+                stream.write_all(response).unwrap();
+                String::from_utf8_lossy(&request).into_owned()
+            });
+            let result = send_edit(
+                &reqwest::Client::builder().no_proxy().build().unwrap(),
+                format!(
+                    "http://{address}/v1/images/{}",
+                    if variation { "variations" } else { "edits" }
+                )
+                .parse()
+                .unwrap(),
+                Some("test-key"),
+                "edit-model".into(),
+                (!variation).then(|| "Make blue".into()),
+                b"jpeg bytes".to_vec(),
+                "source".into(),
             )
+            .await
             .unwrap();
-            stream.write_all(response).unwrap();
-            String::from_utf8_lossy(&request).into_owned()
-        });
-        let result = send_edit(
-            &reqwest::Client::builder().no_proxy().build().unwrap(),
-            format!("http://{address}/v1/images/edits").parse().unwrap(),
-            Some("test-key"),
-            "edit-model".into(),
-            "Make blue".into(),
-            b"jpeg bytes".to_vec(),
-            "source".into(),
-        )
-        .await
-        .unwrap();
-        assert_eq!(result.prompt, "Make blue");
-        let request = server.join().unwrap();
-        assert!(request.starts_with("POST /v1/images/edits "));
-        assert!(
-            request
-                .to_lowercase()
-                .contains("authorization: bearer test-key")
-        );
-        for expected in [
-            "name=\"model\"",
-            "edit-model",
-            "name=\"prompt\"",
-            "Make blue",
-            "name=\"response_format\"",
-            "b64_json",
-            "name=\"image\"",
-            "image/jpeg",
-            "jpeg bytes",
-        ] {
-            assert!(request.contains(expected), "missing {expected}");
+            assert_eq!(result.prompt, if variation { "" } else { "Make blue" });
+            let request = server.join().unwrap();
+            assert!(request.starts_with(&format!(
+                "POST /v1/images/{} ",
+                if variation { "variations" } else { "edits" }
+            )));
+            assert!(
+                request
+                    .to_lowercase()
+                    .contains("authorization: bearer test-key")
+            );
+            for expected in [
+                "name=\"model\"",
+                "edit-model",
+                "name=\"response_format\"",
+                "b64_json",
+                "name=\"image\"",
+                "image/jpeg",
+                "jpeg bytes",
+            ] {
+                assert!(request.contains(expected), "missing {expected}");
+            }
+            assert_eq!(request.contains("name=\"prompt\""), !variation);
         }
     }
 

@@ -49,6 +49,7 @@ describe('playground registry', () => {
       'depth',
       'create',
       'edit',
+      'variation',
       'upscale',
       'tts',
       'transcribe',

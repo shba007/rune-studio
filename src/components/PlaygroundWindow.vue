@@ -115,6 +115,7 @@ const modelPipeline = computed(() => MODEL_PIPELINES[selectedId.value])
 const isModelRun = computed(() => !!modelPipeline.value)
 const isCreate = computed(() => selectedId.value === 'create')
 const isEdit = computed(() => selectedId.value === 'edit')
+const isVariation = computed(() => selectedId.value === 'variation')
 const isSpeech = computed(() => selectedId.value === 'tts')
 const isCaption = computed(() => selectedId.value === 'caption')
 const captionDetail = ref('concise')
@@ -160,6 +161,7 @@ const caption = ref<CaptionState>(idleRun())
 const upscale = ref<UpscaleState>(idleRun())
 const create = ref<CreateState>(idleRun())
 const edit = ref<EditState>(idleRun())
+const variation = ref<EditState>(idleRun())
 const speech = ref<SpeechState>(idleRun())
 const transcript = ref<TranscribeState>(idleRun())
 const translation = ref<TranscribeState>(idleRun())
@@ -169,6 +171,7 @@ const modelRuns: Record<string, Ref<RunState<unknown>>> = {
   upscale: upscale as Ref<RunState<unknown>>,
   create: create as Ref<RunState<unknown>>,
   edit: edit as Ref<RunState<unknown>>,
+  variation: variation as Ref<RunState<unknown>>,
   tts: speech as Ref<RunState<unknown>>,
   transcribe: transcript as Ref<RunState<unknown>>,
   'translate-speech': translation as Ref<RunState<unknown>>,
@@ -186,6 +189,7 @@ const shownCaption = shownState('caption', caption)
 const shownUpscale = shownState('upscale', upscale)
 const shownCreate = shownState('create', create)
 const shownEdit = shownState('edit', edit)
+const shownVariation = shownState('variation', variation)
 const shownSpeech = shownState('tts', speech)
 const shownTranscript = shownState('transcribe', transcript)
 const shownTranslation = shownState('translate-speech', translation)
@@ -232,6 +236,7 @@ const loadingLabel = computed(
       tts: 'Creating voice',
       create: 'Creating image',
       edit: 'Editing image',
+      variation: 'Creating variation',
       depth: 'Estimating depth',
       caption: 'Creating caption',
       upscale: 'Upscaling image',
@@ -841,6 +846,11 @@ onKeyStroke('Escape', () => {
             :state="shownCreate"
           />
           <PlaygroundEdit v-else-if="isEdit && shownEdit.status !== 'idle'" :state="shownEdit" />
+          <PlaygroundEdit
+            v-else-if="isVariation && shownVariation.status !== 'idle'"
+            :state="shownVariation"
+            variation
+          />
           <PlaygroundSpeech
             v-else-if="isSpeech && shownSpeech.status !== 'idle'"
             :state="shownSpeech"

@@ -78,6 +78,13 @@ export const PLAYGROUND_GROUPS: PlaygroundGroup[] = [
         ready: true,
         summary: 'Change an image with an instruction.',
       },
+      {
+        id: 'variation',
+        label: 'Variations',
+        icon: 'image',
+        ready: true,
+        summary: 'Create a related variation of an image.',
+      },
       later('transform', 'Transform', 'transform', 'Redraw an image from your prompt.'),
       later('inpaint', 'Inpaint', 'inpaint', 'Regenerate a painted region.'),
       later('extend', 'Extend', 'extend', 'Grow the canvas and fill the edges.'),
@@ -274,6 +281,13 @@ export interface ModelPipeline {
 }
 
 export const MODEL_PIPELINES: Record<string, ModelPipeline> = {
+  variation: {
+    task: 'text-image-to-image',
+    command: 'playground_variation',
+    modelLabel: 'Variation model',
+    none: 'No image variation model',
+    idle: 'Choose an image and a model, then press Run.',
+  },
   edit: {
     task: 'text-image-to-image',
     command: 'playground_edit',

@@ -2,7 +2,7 @@
 import { friendly } from '@/config/errors'
 import type { EditState } from '@/config/playground'
 
-defineProps<{ state: EditState }>()
+defineProps<{ state: EditState; variation?: boolean }>()
 </script>
 
 <template>
@@ -19,16 +19,16 @@ defineProps<{ state: EditState }>()
       </p>
       <img
         :src="state.result.image"
-        :alt="state.result.prompt"
+        :alt="variation ? 'Image variation' : state.result.prompt"
         class="max-h-[60vh] max-w-full rounded-rune-tile object-contain"
         data-testid="edit-image"
       />
-      <p class="m-0 text-center text-rune-caption text-rune-text-3">{{ state.result.prompt }}</p>
+      <p v-if="state.result.prompt" class="m-0 text-center text-rune-caption text-rune-text-3">
+        {{ state.result.prompt }}
+      </p>
       <a
         :href="state.result.image"
-        :download="
-          state.result.image.startsWith('data:image/jpeg') ? 'rune-edit.jpg' : 'rune-edit.png'
-        "
+        :download="`rune-${variation ? 'variation' : 'edit'}.${state.result.image.startsWith('data:image/jpeg') ? 'jpg' : 'png'}`"
         class="text-rune-body text-rune-ink underline"
         data-testid="edit-download"
         >Download image</a

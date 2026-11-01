@@ -16,6 +16,8 @@ const invoked = vi.fn<(command: string, args?: unknown) => Promise<unknown>>()
 let pendingSpeech: Promise<unknown> | null = null
 let pendingCaption: Promise<unknown> | null = null
 let pendingEdit: Promise<unknown> | null = null
+let pendingVariation: Promise<unknown> | null = null
+let variationError = ''
 let pendingStart: Promise<number> | null = null
 let translationReply: Promise<unknown> | null = null
 let translationError = ''
@@ -55,6 +57,16 @@ vi.mock('@tauri-apps/api/core', () => ({
         elapsedMs: 4000,
       }
     if (command === 'playground_edit' && pendingEdit) return pendingEdit
+    if (command === 'playground_variation' && variationError) throw new Error(variationError)
+    if (command === 'playground_variation' && pendingVariation) return pendingVariation
+    if (command === 'playground_variation')
+      return {
+        original: 'data:image/jpeg;base64,AA==',
+        image: 'data:image/png;base64,AA==',
+        prompt: '',
+        model: 'edit-m',
+        elapsedMs: 2000,
+      }
     if (command === 'playground_edit')
       return {
         original: 'data:image/jpeg;base64,AA==',
@@ -147,6 +159,8 @@ beforeEach(() => {
   pendingSpeech = null
   pendingCaption = null
   pendingEdit = null
+  pendingVariation = null
+  variationError = ''
   pendingStart = null
   translationReply = null
   translationError = ''
@@ -436,7 +450,7 @@ describe('playground window', () => {
     const wrapper = mount(PlaygroundWindow)
     const labels = wrapper.findAll('[data-testid="playground-nav"] button').map((b) => b.text())
     expect(labels.slice(0, 5)).toEqual(['Ask', 'Point', 'Pose', 'Caption', 'Depth'])
-    expect(labels).toHaveLength(21)
+    expect(labels).toHaveLength(22)
     expect(wrapper.findAll('[data-testid="playground-nav"] h2').map((h) => h.text())).toEqual([
       'Images',
       'Audio',
@@ -470,6 +484,55 @@ describe('playground window', () => {
     )
     await wrapper.get('[data-testid="history-run"]').trigger('click')
     expect(wrapper.get('[data-testid="history-details"]').text()).toContain('Prompt: Make it blue')
+    wrapper.unmount()
+  })
+
+  it('creates a variation without a prompt and restores it from history', async () => {
+    const wrapper = mount(PlaygroundWindow)
+    await flushPromises()
+    await wrapper.get('[data-testid="pipeline-variation"]').trigger('click')
+    expect(wrapper.find('textarea').exists()).toBe(false)
+    await wrapper.get('[data-testid="playground-run"]').trigger('click')
+    await flushPromises()
+    expect(invoked).toHaveBeenCalledWith('playground_variation', {
+      runId: 42,
+      input: { target: { kind: 'screen', id: 1 }, model: 'edit-m' },
+    })
+    expect(wrapper.get('[data-testid="edit-download"]').attributes('download')).toBe(
+      'rune-variation.png',
+    )
+    await wrapper.get('[data-testid="history-run"]').trigger('click')
+    expect(wrapper.get('[data-testid="history-details"]').text()).toContain('Variations')
+    wrapper.unmount()
+  })
+
+  it('cancels a variation without saving a late result', async () => {
+    let finish!: (value: unknown) => void
+    pendingVariation = new Promise((resolve) => {
+      finish = resolve
+    })
+    const wrapper = mount(PlaygroundWindow)
+    await flushPromises()
+    await wrapper.get('[data-testid="pipeline-variation"]').trigger('click')
+    await wrapper.get('[data-testid="playground-run"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="result-cancel"]').trigger('click')
+    finish({ original: 'source', image: 'late', prompt: '', model: 'edit-m', elapsedMs: 10 })
+    await flushPromises()
+    expect(invoked).toHaveBeenCalledWith('playground_cancel_run', { runId: 42 })
+    expect(usePlaygroundHistory().runs.value).toHaveLength(0)
+    wrapper.unmount()
+  })
+
+  it('shows an Infer variation error without saving it', async () => {
+    variationError = 'Infer refused the image variation request: model unavailable'
+    const wrapper = mount(PlaygroundWindow)
+    await flushPromises()
+    await wrapper.get('[data-testid="pipeline-variation"]').trigger('click')
+    await wrapper.get('[data-testid="playground-run"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('model unavailable')
+    expect(usePlaygroundHistory().runs.value).toHaveLength(0)
     wrapper.unmount()
   })
 
