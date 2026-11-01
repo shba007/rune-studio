@@ -14,6 +14,7 @@ const captureImage = vi.fn<(...args: unknown[]) => Promise<boolean>>(async () =>
 
 const invoked = vi.fn<(command: string, args?: unknown) => Promise<unknown>>()
 let pendingSpeech: Promise<unknown> | null = null
+let pendingCaption: Promise<unknown> | null = null
 let pendingStart: Promise<number> | null = null
 let translationReply: Promise<unknown> | null = null
 let translationError = ''
@@ -29,6 +30,14 @@ vi.mock('@tauri-apps/api/core', () => ({
     }
     if (command === 'playground_transcribe')
       return { text: 'Hello from audio', model: 'asr-a', elapsedMs: 1000 }
+    if (command === 'playground_caption' && pendingCaption) return pendingCaption
+    if (command === 'playground_caption')
+      return {
+        image: 'data:image/jpeg;base64,AA==',
+        caption: 'A red square.',
+        model: 'vision-a',
+        elapsedMs: 500,
+      }
     if (command === 'playground_speech')
       return {
         audio: 'data:audio/wav;base64,UklGRjAwMDBXQVZF',
@@ -95,7 +104,8 @@ vi.mock('@/composables/useAgent', () => ({
       models: noVerifiedAudio
         ? [{ id: 'unverified-asr', imageIn: 'no', toolCalls: 'no', tasks: ['audio-to-text'] }]
         : [
-            { id: 'vision-a', imageIn: 'yes', toolCalls: 'yes' },
+            { id: 'vision-a', imageIn: 'yes', toolCalls: 'yes', tasks: ['text-image-to-text'] },
+            { id: 'vision-no-tools', imageIn: 'yes', toolCalls: 'no', tasks: ['image-to-text'] },
             { id: 'text-only', imageIn: 'no', toolCalls: 'yes' },
             { id: 'depth-s', imageIn: 'no', toolCalls: 'no', tasks: ['image-to-depth'] },
             { id: 'up-x', imageIn: 'no', toolCalls: 'no', tasks: ['image-upscale'] },
@@ -124,6 +134,7 @@ vi.mock('@/composables/useAgent', () => ({
 
 beforeEach(() => {
   pendingSpeech = null
+  pendingCaption = null
   pendingStart = null
   translationReply = null
   translationError = ''
@@ -133,11 +144,125 @@ beforeEach(() => {
   capture.mockClear()
   cancel.mockClear()
   captureImage.mockClear()
-  usePlaygroundHistory().runs.value = []
-  usePlaygroundHistory().clearView()
+  usePlaygroundHistory().clear()
 })
 
 describe('playground window', () => {
+  it('restores a voice result and its input after switching pipelines', async () => {
+    const wrapper = mount(PlaygroundWindow)
+    await flushPromises()
+    await wrapper.get('[data-testid="pipeline-tts"]').trigger('click')
+    await wrapper.get('#speech-text').setValue('Hello there')
+    await wrapper.get('[data-testid="playground-run"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="pipeline-caption"]').trigger('click')
+    await wrapper.get('[data-testid="history-run"]').trigger('click')
+    expect(wrapper.get('[data-testid="speech-player"]').attributes('src')).toContain(
+      'data:audio/wav',
+    )
+    expect(wrapper.get('[data-testid="history-details"]').text()).toContain('Text: Hello there')
+    wrapper.unmount()
+  })
+  it('reopens a prior caption without replacing the live result', async () => {
+    const wrapper = mount(PlaygroundWindow)
+    await flushPromises()
+    await wrapper.get('[data-testid="pipeline-caption"]').trigger('click')
+    await wrapper.get('[data-testid="playground-run"]').trigger('click')
+    await flushPromises()
+    pendingCaption = Promise.resolve({
+      image: 'data:image/jpeg;base64,BB==',
+      caption: 'A blue circle.',
+      model: 'vision-a',
+      elapsedMs: 700,
+    })
+    await wrapper.get('[aria-label="Detail"] [role="radio"]:nth-child(2)').trigger('click')
+    await wrapper.get('[data-testid="playground-run"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('[data-testid="history-run"]')).toHaveLength(2)
+    await wrapper.findAll('[data-testid="history-run"]')[1]!.trigger('click')
+    expect(wrapper.get('[data-testid="caption-result"]').text()).toContain('A red square.')
+    expect(wrapper.get('[data-testid="history-details"]').text()).toContain('Detail: concise')
+    await wrapper.get('[data-testid="history-details"] button').trigger('click')
+    expect(wrapper.get('[data-testid="caption-result"]').text()).toContain('A blue circle.')
+    wrapper.unmount()
+    expect(usePlaygroundHistory().runs.value).toHaveLength(0)
+  })
+
+  it('records Insight under the pipeline that started it after switching tabs', async () => {
+    const wrapper = mount(PlaygroundWindow)
+    await flushPromises()
+    await wrapper.get('[data-testid="pipeline-point"]').trigger('click')
+    await wrapper.get('textarea').setValue('Save')
+    await wrapper.get('[data-testid="playground-run"]').trigger('click')
+    await wrapper.get('[data-testid="pipeline-caption"]').trigger('click')
+    snapshot.value = {
+      ...EMPTY_SNAPSHOT,
+      status: 'done',
+      id: 'point-result',
+      question: 'Locate: Save. Give a box and a point at the centre for each match.',
+      answer: 'Found',
+    }
+    await flushPromises()
+    expect(usePlaygroundHistory().runs.value[0]?.pipeline).toBe('point')
+    await wrapper.get('[data-testid="history-run"]').trigger('click')
+    expect(wrapper.get('[data-testid="history-details"]').text()).toContain('Point')
+    expect(wrapper.get('[data-testid="playground-canvas"]').text()).toContain('Found')
+    wrapper.unmount()
+  })
+  it('cancels captioning and discards late results', async () => {
+    let finish!: (value: unknown) => void
+    pendingCaption = new Promise((resolve) => {
+      finish = resolve
+    })
+    const wrapper = mount(PlaygroundWindow)
+    await flushPromises()
+    await wrapper.get('[data-testid="pipeline-caption"]').trigger('click')
+    await wrapper.get('[data-testid="playground-run"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="result-cancel"]').trigger('click')
+    finish({ image: '', caption: 'late result', model: 'vision-a', elapsedMs: 5 })
+    await flushPromises()
+    expect(invoked).toHaveBeenCalledWith('playground_cancel_run', { runId: 42 })
+    expect(wrapper.text()).not.toContain('late result')
+    expect(usePlaygroundHistory().runs.value).toHaveLength(0)
+    wrapper.unmount()
+  })
+
+  it('sends an imported image for captioning', async () => {
+    const wrapper = mount(PlaygroundWindow)
+    await flushPromises()
+    await wrapper.get('[data-testid="pipeline-caption"]').trigger('click')
+    await wrapper.get('[aria-label="Source"] [role="radio"]:nth-child(3)').trigger('click')
+    const input = wrapper.get('input[aria-label="Image file"]')
+    Object.defineProperty(input.element, 'files', {
+      configurable: true,
+      value: [new File(['image'], 'image.png', { type: 'image/png' })],
+    })
+    await input.trigger('change')
+    await flushPromises()
+    await wrapper.get('[data-testid="playground-run"]').trigger('click')
+    await flushPromises()
+    expect(invoked).toHaveBeenCalledWith('playground_caption', {
+      runId: 42,
+      input: { image: 'data:image/png;base64,AA==', model: 'vision-a', detail: 'concise' },
+    })
+    wrapper.unmount()
+  })
+  it('captions a selected screen with a vision model and chosen detail', async () => {
+    const wrapper = mount(PlaygroundWindow)
+    await flushPromises()
+    await wrapper.get('[data-testid="pipeline-caption"]').trigger('click')
+    expect(wrapper.findAll('textarea')).toHaveLength(0)
+    await wrapper.get('[aria-label="Detail"] [role="radio"]:nth-child(2)').trigger('click')
+    await wrapper.get('[data-testid="playground-run"]').trigger('click')
+    await flushPromises()
+    expect(invoked).toHaveBeenCalledWith('playground_caption', {
+      runId: 42,
+      input: { target: { kind: 'screen', id: 1 }, model: 'vision-a', detail: 'detailed' },
+    })
+    expect(wrapper.get('[data-testid="caption-result"]').text()).toContain('A red square.')
+    wrapper.unmount()
+  })
   it('does not offer unverified translation models', async () => {
     noVerifiedAudio = true
     const wrapper = mount(PlaygroundWindow)
@@ -167,6 +292,7 @@ describe('playground window', () => {
         'Engine does not implement translation',
       ),
     )
+    expect(usePlaygroundHistory().runs.value).toHaveLength(0)
     wrapper.unmount()
   })
   it('translates WAV audio with a separate result and supports cancellation', async () => {
@@ -272,8 +398,8 @@ describe('playground window', () => {
   it('lists every pipeline group in one full-height sidebar', () => {
     const wrapper = mount(PlaygroundWindow)
     const labels = wrapper.findAll('[data-testid="playground-nav"] button').map((b) => b.text())
-    expect(labels.slice(0, 4)).toEqual(['Ask', 'Point', 'Pose', 'Depth'])
-    expect(labels).toHaveLength(20)
+    expect(labels.slice(0, 5)).toEqual(['Ask', 'Point', 'Pose', 'Caption', 'Depth'])
+    expect(labels).toHaveLength(21)
     expect(wrapper.findAll('[data-testid="playground-nav"] h2').map((h) => h.text())).toEqual([
       'Images',
       'Audio',
@@ -313,6 +439,7 @@ describe('playground window', () => {
   it('records finished runs and restores one from the history strip', async () => {
     const wrapper = mount(PlaygroundWindow)
     await flushPromises()
+    await wrapper.get('[data-testid="playground-run"]').trigger('click')
     snapshot.value = {
       ...EMPTY_SNAPSHOT,
       status: 'done',

@@ -295,6 +295,7 @@ pub fn run() {
             playground::playground_start_run,
             playground::playground_cancel_run,
             playground::playground_depth,
+            playground::playground_caption,
             playground::playground_upscale,
             playground::playground_create,
             playground::playground_speech,

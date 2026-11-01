@@ -7,7 +7,11 @@ import { useAgent } from '@/composables/useAgent'
 import { useAnalysis } from '@/composables/useAnalysis'
 import { useNativeBlur } from '@/composables/useNativeBlur'
 import { useSectionHistory } from '@/composables/useSectionHistory'
-import { usePlaygroundHistory } from '@/composables/usePlaygroundHistory'
+import {
+  usePlaygroundHistory,
+  type ModelHistoryResult,
+  type PlaygroundRun,
+} from '@/composables/usePlaygroundHistory'
 import { friendly } from '@/config/errors'
 import { readImageAsPng } from '@/config/imageFile'
 import {
@@ -31,6 +35,7 @@ import {
   unshapeQuestion,
   type CreateState,
   type DepthState,
+  type CaptionState,
   type ModelPipeline,
   type RunState,
   type UpscaleState,
@@ -48,6 +53,7 @@ import PlaygroundUpscale from './PlaygroundUpscale.vue'
 import PlaygroundSpeech from './PlaygroundSpeech.vue'
 import PlaygroundLoading from './PlaygroundLoading.vue'
 import PlaygroundTranscript from './PlaygroundTranscript.vue'
+import PlaygroundCaption from './PlaygroundCaption.vue'
 import RuneButton from './RuneButton.vue'
 import RuneChip from './RuneChip.vue'
 import RuneChoice from './RuneChoice.vue'
@@ -107,6 +113,12 @@ const modelPipeline = computed(() => MODEL_PIPELINES[selectedId.value])
 const isModelRun = computed(() => !!modelPipeline.value)
 const isCreate = computed(() => selectedId.value === 'create')
 const isSpeech = computed(() => selectedId.value === 'tts')
+const isCaption = computed(() => selectedId.value === 'caption')
+const captionDetail = ref('concise')
+const captionDetailOptions = [
+  { value: 'concise', label: 'Concise' },
+  { value: 'detailed', label: 'Detailed' },
+]
 const isTranscribe = computed(() => selectedId.value === 'transcribe')
 const isTranslate = computed(() => selectedId.value === 'translate-speech')
 const isAudioText = computed(() => isTranscribe.value || isTranslate.value)
@@ -141,6 +153,7 @@ const activeTaskModel = computed({
   set: (value: string) => (taskChoice.value = { ...taskChoice.value, [selectedId.value]: value }),
 })
 const depth = ref<DepthState>(idleRun())
+const caption = ref<CaptionState>(idleRun())
 const upscale = ref<UpscaleState>(idleRun())
 const create = ref<CreateState>(idleRun())
 const speech = ref<SpeechState>(idleRun())
@@ -148,12 +161,28 @@ const transcript = ref<TranscribeState>(idleRun())
 const translation = ref<TranscribeState>(idleRun())
 const modelRuns: Record<string, Ref<RunState<unknown>>> = {
   depth: depth as Ref<RunState<unknown>>,
+  caption: caption as Ref<RunState<unknown>>,
   upscale: upscale as Ref<RunState<unknown>>,
   create: create as Ref<RunState<unknown>>,
   tts: speech as Ref<RunState<unknown>>,
   transcribe: transcript as Ref<RunState<unknown>>,
   'translate-speech': translation as Ref<RunState<unknown>>,
 }
+function shownState<T>(id: string, state: Ref<RunState<T>>) {
+  return computed<RunState<T>>(() => {
+    const viewed = history.viewed.value
+    return viewed?.kind === 'model' && viewed.pipeline === id
+      ? { status: 'done', result: viewed.result as T, error: '' }
+      : state.value
+  })
+}
+const shownDepth = shownState('depth', depth)
+const shownCaption = shownState('caption', caption)
+const shownUpscale = shownState('upscale', upscale)
+const shownCreate = shownState('create', create)
+const shownSpeech = shownState('tts', speech)
+const shownTranscript = shownState('transcribe', transcript)
+const shownTranslation = shownState('translate-speech', translation)
 const startedAt = ref<Record<string, number>>({})
 const activeRuns: Record<string, { runId?: number; cancelled: boolean }> = {}
 
@@ -181,10 +210,11 @@ function cancelModel(id: string) {
 
 onUnmounted(() => {
   for (const id of Object.keys(activeRuns)) cancelModel(id)
+  history.clear()
 })
 const loading = computed(() =>
   isModelRun.value
-    ? modelRuns[selectedId.value]?.value.status === 'running'
+    ? live.value && modelRuns[selectedId.value]?.value.status === 'running'
     : selected.value.ready && live.value && analysis.busy.value,
 )
 const loadingStartedAt = computed(
@@ -196,6 +226,7 @@ const loadingLabel = computed(
       tts: 'Creating voice',
       create: 'Creating image',
       depth: 'Estimating depth',
+      caption: 'Creating caption',
       upscale: 'Upscaling image',
       transcribe: 'Transcribing audio',
       'translate-speech': 'Translating speech',
@@ -216,9 +247,13 @@ const file = ref<{ name: string; data: string } | null>(null)
 const fileNotice = ref('')
 const dragging = ref(false)
 const fileInput = useTemplateRef<HTMLInputElement>('fileInput')
-const display = computed(() =>
-  filterFindings(selectedId.value, history.viewed.value?.snapshot ?? analysis.snapshot.value),
-)
+const display = computed(() => {
+  const viewed = history.viewed.value
+  return filterFindings(
+    selectedId.value,
+    viewed?.kind === 'insight' ? viewed.snapshot : analysis.snapshot.value,
+  )
+})
 const live = computed(() => !history.viewed.value)
 const hasResult = computed(() => display.value.status !== 'idle')
 const canRun = computed(
@@ -311,9 +346,31 @@ watch(
   { immediate: true },
 )
 
+let insightRun: {
+  pipeline: string
+  previousId: string
+  id: string | null
+  details: string[]
+} | null = null
 watch(
   () => analysis.snapshot.value,
-  (snapshot) => history.record(selectedId.value, snapshot),
+  (snapshot) => {
+    const run = insightRun
+    if (!run || !snapshot.id || snapshot.id === run.previousId) return
+    if (!run.id && ['capturing', 'asking', 'done'].includes(snapshot.status)) run.id = snapshot.id
+    if (run.id !== snapshot.id) return
+    if (snapshot.status === 'done') {
+      history.record(run.pipeline, snapshot, run.details)
+      insightRun = null
+    } else if (snapshot.status === 'error' || snapshot.status === 'idle') insightRun = null
+  },
+)
+watch(
+  selectedId,
+  (id) => {
+    if (history.viewed.value && history.viewed.value.pipeline !== id) history.clearView()
+  },
+  { flush: 'sync' },
 )
 
 async function runModel(id: string, pipeline: ModelPipeline) {
@@ -330,13 +387,34 @@ async function runModel(id: string, pipeline: ModelPipeline) {
             : option && { target: option.target }
   const state = modelRuns[id]
   if (!input || !state) return
+  history.clearView()
   const run: { runId?: number; cancelled: boolean } = { cancelled: false }
   activeRuns[id] = run
   startedAt.value = { ...startedAt.value, [id]: Date.now() }
   state.value = { status: 'running', result: null, error: '' }
   try {
-    const extra = id === 'upscale' ? { scale: scale.value } : {}
+    const extra =
+      id === 'upscale'
+        ? { scale: scale.value }
+        : id === 'caption'
+          ? { detail: captionDetail.value }
+          : {}
     const model = activeTaskModel.value
+    const sourceLabel =
+      source.value === 'file'
+        ? (file.value?.name ?? 'Image file')
+        : (option?.label ?? 'Selected target')
+    const details =
+      id === 'tts'
+        ? [`Text: ${speechText.value}`]
+        : id === 'create'
+          ? [`Prompt: ${question.value}`, `Size: ${imageSize.value}`]
+          : id === 'transcribe' || id === 'translate-speech'
+            ? [`File: ${audioFile.value?.name ?? 'WAV file'}`]
+            : [`Source: ${sourceLabel}`]
+    if (id === 'caption') details.push(`Detail: ${captionDetail.value}`)
+    if (id === 'upscale') details.push(`Scale: ${scale.value}×`)
+    details.unshift(`Model: ${model}`)
     const payload = 'file' in input ? { audio: await readAudio(input.file!) } : input
     if (run.cancelled) return
     run.runId = await invoke<number>('playground_start_run')
@@ -348,7 +426,10 @@ async function runModel(id: string, pipeline: ModelPipeline) {
       runId: run.runId,
       input: { ...payload, model, ...extra },
     })
-    if (!run.cancelled) state.value = { status: 'done', result, error: '' }
+    if (!run.cancelled) {
+      state.value = { status: 'done', result, error: '' }
+      history.recordModel(id, result as ModelHistoryResult, details)
+    }
   } catch (error) {
     if (!run.cancelled) state.value = { status: 'error', result: null, error: String(error) }
   } finally {
@@ -367,24 +448,53 @@ function run() {
   const shaped = shapeQuestion(selectedId.value, question.value)
   startedAt.value = { ...startedAt.value, insight: Date.now() }
   const overrides = { model: activeModel.value, resolution: activeResolution.value }
+  const sourceLabel =
+    source.value === 'file'
+      ? (file.value?.name ?? 'Image file')
+      : (options.value.find((item) => JSON.stringify(item.target) === target.value)?.label ??
+        'Selected target')
+  const pending = {
+    pipeline: selectedId.value,
+    previousId: analysis.snapshot.value.id,
+    id: null,
+    details: [
+      `Source: ${sourceLabel}`,
+      `Model: ${overrides.model}`,
+      `Resolution: ${overrides.resolution}`,
+      `Question: ${question.value || '(default)'}`,
+    ],
+  }
   if (source.value === 'file') {
     if (!file.value) return
     history.clearView()
-    void analysis.captureImage(shaped, file.value.data, overrides)
+    insightRun = pending
+    void analysis.captureImage(shaped, file.value.data, overrides).then((ok) => {
+      if (!ok && insightRun === pending) insightRun = null
+    })
     return
   }
   const option = options.value.find((item) => JSON.stringify(item.target) === target.value)
   if (!option) return
   history.clearView()
-  void analysis.capture(shaped, option.target, overrides)
+  insightRun = pending
+  void analysis.capture(shaped, option.target, overrides).then((ok) => {
+    if (!ok && insightRun === pending) insightRun = null
+  })
 }
 
 function openRun(id: string) {
   const run = history.runs.value.find((item) => item.id === id)
   if (!run) return
-  history.view(id)
   selectedId.value = run.pipeline
-  question.value = unshapeQuestion(run.pipeline, run.snapshot.question)
+  history.view(id)
+  if (run.kind === 'insight') question.value = unshapeQuestion(run.pipeline, run.snapshot.question)
+}
+
+function runImage(run: PlaygroundRun): string | null {
+  if (run.kind === 'insight') return run.snapshot.screenshot ?? null
+  if ('image' in run.result) return run.result.image
+  if ('original' in run.result) return run.result.original
+  return null
 }
 
 onKeyStroke('Enter', (event) => {
@@ -647,6 +757,10 @@ onKeyStroke('Escape', () => {
               <span class="text-rune-heading text-rune-text-3 uppercase">Scale</span>
               <RuneChoice v-model="scale" label="Scale" :options="SCALE_OPTIONS" />
             </div>
+            <div v-if="isCaption" class="flex flex-col gap-2">
+              <span class="text-rune-heading text-rune-text-3 uppercase">Detail</span>
+              <RuneChoice v-model="captionDetail" label="Detail" :options="captionDetailOptions" />
+            </div>
           </template>
           <RuneChip v-else class="self-start">Coming later</RuneChip>
         </div>
@@ -664,6 +778,25 @@ onKeyStroke('Escape', () => {
       </section>
 
       <div class="relative flex min-w-0 flex-1 flex-col">
+        <div
+          v-if="history.viewed.value"
+          class="flex max-h-28 shrink-0 items-start gap-4 overflow-auto bg-rune-sunken px-5 py-3"
+          data-testid="history-details"
+        >
+          <div class="min-w-0 flex-1 text-rune-caption text-rune-text-2">
+            <p class="m-0 font-semibold">
+              {{ findPipeline(history.viewed.value.pipeline)?.label ?? 'Run' }} · Saved run
+            </p>
+            <p
+              v-for="detail in history.viewed.value.details"
+              :key="detail"
+              class="m-0 whitespace-pre-wrap break-words"
+            >
+              {{ detail }}
+            </p>
+          </div>
+          <RuneButton size="sm" @click="history.clearView()">Back to live</RuneButton>
+        </div>
         <section
           class="m-0 flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-rune-surface bg-[radial-gradient(circle,rgb(255_255_255/0.22)_1px,transparent_1.5px)] bg-size-[24px_24px]"
           aria-label="Result"
@@ -677,22 +810,32 @@ onKeyStroke('Escape', () => {
             @cancel="isModelRun ? cancelModel(selectedId) : analysis.cancel()"
           />
           <PlaygroundDepth
-            v-else-if="selectedId === 'depth' && depth.status !== 'idle'"
-            :state="depth"
+            v-else-if="selectedId === 'depth' && shownDepth.status !== 'idle'"
+            :state="shownDepth"
+          />
+          <PlaygroundCaption
+            v-else-if="isCaption && shownCaption.status !== 'idle'"
+            :state="shownCaption"
           />
           <PlaygroundUpscale
-            v-else-if="selectedId === 'upscale' && upscale.status !== 'idle'"
-            :state="upscale"
+            v-else-if="selectedId === 'upscale' && shownUpscale.status !== 'idle'"
+            :state="shownUpscale"
           />
-          <PlaygroundCreate v-else-if="isCreate && create.status !== 'idle'" :state="create" />
-          <PlaygroundSpeech v-else-if="isSpeech && speech.status !== 'idle'" :state="speech" />
-          <PlaygroundTranscript
-            v-else-if="isTranscribe && transcript.status !== 'idle'"
-            :state="transcript"
+          <PlaygroundCreate
+            v-else-if="isCreate && shownCreate.status !== 'idle'"
+            :state="shownCreate"
+          />
+          <PlaygroundSpeech
+            v-else-if="isSpeech && shownSpeech.status !== 'idle'"
+            :state="shownSpeech"
           />
           <PlaygroundTranscript
-            v-else-if="isTranslate && translation.status !== 'idle'"
-            :state="translation"
+            v-else-if="isTranscribe && shownTranscript.status !== 'idle'"
+            :state="shownTranscript"
+          />
+          <PlaygroundTranscript
+            v-else-if="isTranslate && shownTranslation.status !== 'idle'"
+            :state="shownTranslation"
           />
           <PlaygroundResult
             v-else-if="!isModelRun && hasResult && selected.ready"
@@ -714,35 +857,39 @@ onKeyStroke('Escape', () => {
           </div>
         </section>
 
+        <p
+          v-if="history.notice.value"
+          role="status"
+          class="m-0 shrink-0 bg-rune-sunken px-6 py-2 text-rune-caption text-rune-text-3"
+        >
+          {{ history.notice.value }}
+        </p>
         <footer
           class="flex h-24 shrink-0 items-center gap-2 overflow-x-auto bg-rune-sunken px-6"
           aria-label="History"
           data-testid="playground-history"
         >
-          <span v-if="isSpeech || isAudioText" class="text-rune-caption text-rune-text-3">
-            Audio runs are not saved in history.
-          </span>
-          <span v-else-if="!history.runs.value.length" class="text-rune-caption text-rune-text-3">
+          <span v-if="!history.runs.value.length" class="text-rune-caption text-rune-text-3">
             This session's runs appear here.
           </span>
           <RuneButton
             v-for="item in history.runs.value"
-            v-show="!isSpeech && !isAudioText"
             :key="item.id"
             variant="ghost"
             class="size-16 min-h-0 overflow-hidden rounded-rune-tile! p-0!"
-            :aria-label="`Open run: ${item.snapshot.question || 'Describe the screen'}`"
+            :aria-label="`Open ${findPipeline(item.pipeline)?.label ?? 'Playground'} run`"
+            :title="findPipeline(item.pipeline)?.label ?? 'Playground run'"
             :class="history.viewed.value?.id === item.id && 'outline-2 outline-accent'"
             data-testid="history-run"
             @click="openRun(item.id)"
           >
             <img
-              v-if="item.snapshot.screenshot"
-              :src="item.snapshot.screenshot"
+              v-if="runImage(item)"
+              :src="runImage(item)!"
               alt=""
               class="size-full object-cover"
             />
-            <AppIcon v-else name="image" />
+            <AppIcon v-else :name="findPipeline(item.pipeline)?.icon ?? 'image'" />
           </RuneButton>
         </footer>
       </div>

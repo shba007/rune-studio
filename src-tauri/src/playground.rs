@@ -93,6 +93,7 @@ cancellable_command!(
 );
 cancellable_command!(playground_speech, speech, SpeechInput, SpeechResult);
 cancellable_command!(playground_depth, depth, DepthInput, DepthResult);
+cancellable_command!(playground_caption, caption, CaptionInput, CaptionResult);
 cancellable_command!(playground_upscale, upscale, UpscaleInput, UpscaleResult);
 cancellable_command!(playground_create, create, CreateInput, CreateResult);
 
@@ -126,6 +127,7 @@ pub async fn open_playground(app: AppHandle) -> Result<(), String> {
 }
 
 const DEPTH_TASK: &str = "image-to-depth";
+const CAPTION_TASK: &str = "image-to-text";
 const UPSCALE_TASK: &str = "image-upscale";
 const CREATE_TASK: &str = "text-to-image";
 const SPEECH_TASK: &str = "text-to-audio";
@@ -173,9 +175,93 @@ struct DepthBody {
 pub fn task_models(models: &[ModelCapabilities], task: &str) -> Vec<String> {
     models
         .iter()
-        .filter(|m| m.tasks.iter().any(|t| t == task))
+        .filter(|m| m.tasks.iter().any(|t| task_matches(t, task)))
         .map(|m| m.id.clone())
         .collect()
+}
+
+fn task_matches(advertised: &str, requested: &str) -> bool {
+    if requested != CAPTION_TASK {
+        return advertised == requested;
+    }
+    advertised
+        .split_once("-to-")
+        .is_some_and(|(inputs, output)| {
+            output == "text" && inputs.split('-').any(|input| input == "image")
+        })
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct CaptionInput {
+    #[serde(default)]
+    target: Option<CaptureTarget>,
+    #[serde(default)]
+    image: Option<String>,
+    model: String,
+    detail: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptionResult {
+    image: String,
+    caption: String,
+    model: String,
+    elapsed_ms: u64,
+}
+
+#[derive(Deserialize)]
+struct CaptionEnvelope {
+    caption: String,
+    model: String,
+}
+
+fn caption_result(body: &str, image: String, elapsed_ms: u64) -> Result<CaptionResult, String> {
+    let result: CaptionEnvelope =
+        serde_json::from_str(body).map_err(|_| "Infer returned an unreadable caption")?;
+    if result.caption.trim().is_empty() || result.model.trim().is_empty() {
+        return Err("Infer returned an empty caption or model".into());
+    }
+    Ok(CaptionResult {
+        image,
+        caption: result.caption,
+        model: result.model,
+        elapsed_ms,
+    })
+}
+
+async fn caption(app: AppHandle, input: CaptionInput) -> Result<CaptionResult, String> {
+    if !matches!(input.detail.as_str(), "concise" | "detailed") {
+        return Err("Choose concise or detailed captioning".into());
+    }
+    let prepared = prepare(&app, input.target, input.image, &input.model, CAPTION_TASK).await?;
+    let image = prepared.frame.data_uri();
+    let url = infer_url(&prepared.settings, "/v1/images/captions")?;
+    let state = app.state::<AppState>();
+    send_caption(
+        &state.http,
+        prepared.key.as_deref(),
+        url,
+        prepared.model,
+        image,
+        input.detail,
+    )
+    .await
+}
+
+async fn send_caption(
+    http: &reqwest::Client,
+    key: Option<&str>,
+    url: reqwest::Url,
+    model: String,
+    image: String,
+    detail: String,
+) -> Result<CaptionResult, String> {
+    let started = Instant::now();
+    let body = serde_json::json!({"model": model, "image": image, "detail": detail});
+    let response = post_json(http, key, url, body, "caption").await?;
+    caption_result(&response, image, started.elapsed().as_millis() as u64)
 }
 
 fn depth_result(
@@ -338,7 +424,17 @@ async fn post(
     what: &str,
 ) -> Result<String, String> {
     let state = app.state::<AppState>();
-    let mut request = state.http.post(url).timeout(REQUEST_TIMEOUT).json(&body);
+    post_json(&state.http, key, url, body, what).await
+}
+
+async fn post_json(
+    http: &reqwest::Client,
+    key: Option<&str>,
+    url: reqwest::Url,
+    body: serde_json::Value,
+    what: &str,
+) -> Result<String, String> {
+    let mut request = http.post(url).timeout(REQUEST_TIMEOUT).json(&body);
     if let Some(key) = key {
         request = request.bearer_auth(key);
     }
@@ -879,6 +975,101 @@ async fn create(app: AppHandle, input: CreateInput) -> Result<CreateResult, Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn sends_caption_request_to_infer_and_keeps_frame() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut request = Vec::new();
+            let mut buffer = [0; 4096];
+            loop {
+                let count = stream.read(&mut buffer).unwrap();
+                assert!(count > 0);
+                request.extend_from_slice(&buffer[..count]);
+                if let Some(end) = request.windows(4).position(|part| part == b"\r\n\r\n") {
+                    let headers = String::from_utf8_lossy(&request[..end]);
+                    let length = headers
+                        .lines()
+                        .find_map(|line| {
+                            line.to_lowercase()
+                                .strip_prefix("content-length:")
+                                .and_then(|value| value.trim().parse::<usize>().ok())
+                        })
+                        .unwrap();
+                    if request.len() >= end + 4 + length {
+                        break;
+                    }
+                }
+            }
+            let response = br#"{"model":"vision","caption":"A red square."}"#;
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+                response.len()
+            )
+            .unwrap();
+            stream.write_all(response).unwrap();
+            String::from_utf8(request).unwrap()
+        });
+        let url = format!("http://{address}/v1/images/captions")
+            .parse()
+            .unwrap();
+        let result = send_caption(
+            &reqwest::Client::builder().no_proxy().build().unwrap(),
+            Some("test-key"),
+            url,
+            "vision".into(),
+            "data:image/jpeg;base64,AA==".into(),
+            "detailed".into(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.caption, "A red square.");
+        assert_eq!(result.image, "data:image/jpeg;base64,AA==");
+        let request = server.join().unwrap();
+        assert!(request.starts_with("POST /v1/images/captions "));
+        assert!(
+            request
+                .to_lowercase()
+                .contains("authorization: bearer test-key")
+        );
+        let body: serde_json::Value =
+            serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap();
+        assert_eq!(
+            body,
+            serde_json::json!({"model":"vision","image":"data:image/jpeg;base64,AA==","detail":"detailed"})
+        );
+    }
+
+    #[test]
+    fn captions_accept_compatible_tasks_and_validate_results() {
+        assert!(task_matches("image-to-text", CAPTION_TASK));
+        assert!(task_matches("text-image-to-text", CAPTION_TASK));
+        assert!(!task_matches("text-to-text", CAPTION_TASK));
+        assert!(!task_matches("image-to-image", CAPTION_TASK));
+        let result = caption_result(
+            r#"{"model":"vision","caption":"A red square."}"#,
+            "frame".into(),
+            12,
+        )
+        .unwrap();
+        assert_eq!(
+            (
+                result.model.as_str(),
+                result.caption.as_str(),
+                result.image.as_str()
+            ),
+            ("vision", "A red square.", "frame")
+        );
+        assert!(caption_result(r#"{"model":"vision","caption":"  "}"#, "frame".into(), 0).is_err());
+        assert!(caption_result("invalid", "frame".into(), 0).is_err());
+    }
 
     #[test]
     fn audio_operations_require_specific_verified_support() {

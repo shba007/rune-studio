@@ -33,6 +33,7 @@ describe('playground registry', () => {
       'ask',
       'point',
       'pose',
+      'caption',
       'depth',
       'create',
       'upscale',
@@ -40,10 +41,11 @@ describe('playground registry', () => {
       'transcribe',
       'translate-speech',
     ])
-    expect(PLAYGROUND_GROUPS[0]!.pipelines.slice(0, 4).map((p) => p.id)).toEqual([
+    expect(PLAYGROUND_GROUPS[0]!.pipelines.slice(0, 5).map((p) => p.id)).toEqual([
       'ask',
       'point',
       'pose',
+      'caption',
       'depth',
     ])
   })
@@ -119,6 +121,22 @@ describe('depth models', () => {
         'image-to-depth',
       ),
     ).toEqual(['depth-small'])
+  })
+})
+
+describe('caption models', () => {
+  it('matches image input and text output including multimodal input', () => {
+    expect(
+      taskModelIds(
+        [
+          { id: 'vision', tasks: ['text-image-to-text'] },
+          { id: 'caption', tasks: ['image-to-text'] },
+          { id: 'text', tasks: ['text-to-text'] },
+          { id: 'image', tasks: ['image-to-image'] },
+        ],
+        'image-to-text',
+      ),
+    ).toEqual(['vision', 'caption'])
   })
 })
 

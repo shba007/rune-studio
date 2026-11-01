@@ -51,6 +51,13 @@ export const PLAYGROUND_GROUPS: PlaygroundGroup[] = [
         summary: 'Mark joints and landmarks for pose questions.',
       },
       {
+        id: 'caption',
+        label: 'Caption',
+        icon: 'captions',
+        ready: true,
+        summary: 'Describe a screen, window or image.',
+      },
+      {
         id: 'depth',
         label: 'Depth',
         icon: 'depth',
@@ -160,6 +167,13 @@ export interface DepthResult {
   elapsedMs: number
 }
 
+export interface CaptionResult {
+  image: string
+  caption: string
+  model: string
+  elapsedMs: number
+}
+
 export interface UpscaleResult {
   original: string
   output: string
@@ -222,6 +236,7 @@ export interface RunState<T> {
 }
 
 export type DepthState = RunState<DepthResult>
+export type CaptionState = RunState<CaptionResult>
 export type UpscaleState = RunState<UpscaleResult>
 export type CreateState = RunState<CreateResult>
 export type SpeechState = RunState<SpeechResult>
@@ -239,6 +254,13 @@ export interface ModelPipeline {
 }
 
 export const MODEL_PIPELINES: Record<string, ModelPipeline> = {
+  caption: {
+    task: 'image-to-text',
+    command: 'playground_caption',
+    modelLabel: 'Caption model',
+    none: 'No image-to-text model',
+    idle: 'Choose a source and a vision model, then press Run.',
+  },
   'translate-speech': {
     task: 'audio-to-text',
     audioOperation: 'speechTranslation',
@@ -291,6 +313,12 @@ export const SCALE_OPTIONS = [
   { value: 4, label: '4×' },
 ]
 
+function matchesTask(candidate: string, task: string): boolean {
+  if (task !== 'image-to-text') return candidate === task
+  const parts = candidate.split('-to-')
+  return parts.length === 2 && parts[1] === 'text' && !!parts[0]?.split('-').includes('image')
+}
+
 export const taskModelIds = (
   models: {
     id: string
@@ -303,7 +331,7 @@ export const taskModelIds = (
   models
     .filter(
       (model) =>
-        model.tasks?.includes(task) &&
+        model.tasks?.some((candidate) => matchesTask(candidate, task)) &&
         (!operation || model.audioOperations?.[operation]?.status === 'supported'),
     )
     .map((model) => model.id)
