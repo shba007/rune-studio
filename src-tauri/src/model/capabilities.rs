@@ -106,8 +106,20 @@ pub struct ModelCapabilities {
     pub aliases: Vec<String>,
 }
 
-#[cfg(test)]
 impl ModelCapabilities {
+    pub fn supports_structured_output(&self) -> bool {
+        self.raw_capabilities.iter().any(|item| {
+            [
+                "Structured Output",
+                "Structured JSON",
+                "Structured Output Mode",
+                "Structured Extraction",
+            ]
+            .iter()
+            .any(|name| item.eq_ignore_ascii_case(name))
+        })
+    }
+    #[cfg(test)]
     pub fn unknown(id: impl Into<String>) -> Self {
         Self {
             id: id.into(),

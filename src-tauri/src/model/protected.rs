@@ -80,6 +80,11 @@ fn resolve_classification(
     if caps.locality != Locality::Local {
         return Err("Classification requires a model advertised as local".into());
     }
+    if !caps.supports_structured_output() {
+        return Err(format!(
+            "Agent model '{model}' does not advertise structured output, which is required to process requests. In Settings > Models, select a local Agent model with structured output; you can keep this model as the Voice model."
+        ));
+    }
     resolve(model, models)
 }
 
@@ -105,6 +110,17 @@ pub async fn discover(
     key: Option<&str>,
     model: &str,
 ) -> Result<ModelProfile, String> {
+    discover_with_capabilities(http, base, key, model)
+        .await
+        .map(|(profile, _)| profile)
+}
+
+pub async fn discover_with_capabilities(
+    http: &reqwest::Client,
+    base: &str,
+    key: Option<&str>,
+    model: &str,
+) -> Result<(ModelProfile, ModelCapabilities), String> {
     let mut request = http
         .get(format!("{}/v1/models", base.trim_end_matches('/')))
         .timeout(std::time::Duration::from_secs(4));
@@ -118,7 +134,13 @@ pub async fn discover(
         .error_for_status()
         .map_err(|e| e.to_string())?;
     let body = response.text().await.map_err(|e| e.to_string())?;
-    resolve(model, &parse_models_response(&body))
+    let models = parse_models_response(&body);
+    let profile = resolve(model, &models)?;
+    let caps = models
+        .into_iter()
+        .find(|item| item.id == model || item.aliases.iter().any(|alias| alias == model))
+        .ok_or("The selected model was not advertised by Infer")?;
+    Ok((profile, caps))
 }
 
 #[cfg(test)]
@@ -143,7 +165,25 @@ mod tests {
         assert!(resolve_classification("gemma-4-12b-it", &[model.clone()]).is_err());
         model.locality = Locality::Local;
         assert!(resolve_classification("alias", &[model.clone()]).is_err());
+        let error = resolve_classification("gemma-4-12b-it", &[model.clone()]).unwrap_err();
+        assert!(error.contains("Settings > Models"));
+        assert!(error.contains("structured output"));
+        model.raw_capabilities.push("structured json".into());
         assert!(resolve_classification("gemma-4-12b-it", &[model]).is_ok());
+    }
+    #[test]
+    fn classification_accepts_infer_structured_capability_names() {
+        for capability in [
+            "Structured Output",
+            "Structured JSON",
+            "Structured Output Mode",
+            "Structured Extraction",
+        ] {
+            let mut model = ModelCapabilities::unknown("agent");
+            model.locality = Locality::Local;
+            model.raw_capabilities.push(capability.into());
+            assert!(resolve_classification("agent", &[model]).is_ok());
+        }
     }
     #[test]
     fn local_unbundled_models_work_and_explicit_cloud_cannot_inherit_bundled_trust() {

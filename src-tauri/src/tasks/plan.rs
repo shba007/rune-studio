@@ -257,6 +257,17 @@ pub(super) mod tests {
         value.as_object_mut().unwrap().remove("depends_on_requests");
         assert!(Plan::parse(value).is_err());
     }
+
+    #[test]
+    fn observed_browser_request_response_with_notepad_id_is_rejected() {
+        let response = json!({"depends_on_requests":[1,3],"goals":[{
+            "id":"Open Notepad.","title":"Open Notepad.","depends_on":[],"tasks":[{
+                "id":"1","title":"Open Notepad.","kind":"desktop",
+                "depends_on":[],"steps":["Open Notepad."]
+            }]
+        }]});
+        assert!(Plan::parse(response).is_err());
+    }
     #[test]
     fn malformed_or_unbounded_plans_never_become_executable_tasks() {
         assert!(Plan::parse(json!({"depends_on_requests":[],"goals":[]})).is_err());

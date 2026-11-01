@@ -83,12 +83,35 @@ pub fn ignore_reason(arguments: &Value) -> Option<&'static str> {
         None => Some("the reply had no kind"),
         Some("noise") => Some("the model said it was noise"),
         Some("task") if text.is_empty() => Some("a task with no words"),
+        Some("task") if is_state_echo(text) => Some("the model repeated the assistant state"),
         Some("task") if repeats_a_word(text) => {
             Some("the words repeat one word, so the model was looping")
         }
         Some("stop" | "stop_listening" | "yes" | "no" | "task") => None,
         Some(_) => Some("an unknown kind"),
     }
+}
+
+fn is_state_echo(text: &str) -> bool {
+    fn normalized(value: &str) -> String {
+        value
+            .split_whitespace()
+            .map(|word| {
+                word.trim_matches(|c: char| !c.is_alphanumeric())
+                    .to_lowercase()
+            })
+            .filter(|word| !word.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+    let text = normalized(text);
+    [
+        AgentState::Listening,
+        AgentState::Planning,
+        AgentState::AwaitingConfirm,
+    ]
+    .iter()
+    .any(|state| text == normalized(describe(*state)))
 }
 
 pub fn parse(arguments: &Value) -> Option<Listened> {
@@ -246,5 +269,27 @@ mod tests {
         assert!(parse(&json!({ "kind": "noise" })).is_none());
         assert!(parse(&json!({ "kind": "task", "text": "  " })).is_none());
         assert!(parse(&json!({ "kind": "nonsense" })).is_none());
+    }
+
+    #[test]
+    fn assistant_state_echoes_never_become_voice_tasks() {
+        for text in [
+            "The assistant is idle.",
+            " THE assistant is idle! ",
+            "The assistant is busy carrying out a task.",
+            "The assistant is waiting for the user to answer a yes/no question.",
+        ] {
+            let response = json!({"kind":"task", "text":text, "goals":["Open Notepad"]});
+            assert_eq!(
+                ignore_reason(&response),
+                Some("the model repeated the assistant state")
+            );
+            assert!(parse(&response).is_none());
+        }
+        let request = json!({"kind":"task", "text":"Open the browser."});
+        assert_eq!(
+            parse(&request).unwrap().intent,
+            Intent::Say("Open the browser.".into())
+        );
     }
 }

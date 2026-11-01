@@ -65,6 +65,7 @@ pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
     if state.settings.locked().external_agent {
         return;
     }
+    let stop_generation = STOPS.load(std::sync::atomic::Ordering::SeqCst);
     let (base_url, voice_model, api_key, output_limit) = {
         let settings = state.settings.locked();
         (
@@ -77,7 +78,7 @@ pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
         )
     };
     let wav = direct::wav(&utterance);
-    let profile = match crate::model::protected::discover(
+    let (profile, capabilities) = match crate::model::protected::discover_with_capabilities(
         &state.http,
         &base_url,
         api_key.as_deref(),
@@ -111,17 +112,34 @@ pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
         on_loading: None,
     };
     use seam::Transcriber;
-    let transcriber = seam::ChatModelAudio { client: &client };
     let mode = events::agent_state(app);
     let mode = if crate::intake::busy() && !mode.is_running() {
         AgentState::Planning
     } else {
         mode
     };
-    match transcriber.transcribe(&wav, mode).await {
+    let result = if seam::use_verified_transcription(&capabilities) {
+        seam::VerifiedTranscriber {
+            base_url: &base_url,
+            api_key: api_key.as_deref(),
+            model: &voice_model,
+            profile: &profile,
+        }
+        .transcribe(&wav, mode)
+        .await
+    } else {
+        seam::ChatModelAudio { client: &client }
+            .transcribe(&wav, mode)
+            .await
+    };
+    if STOPS.load(std::sync::atomic::Ordering::SeqCst) != stop_generation {
+        return;
+    }
+    match result {
         Ok(Some(listened)) => {
             if let Intent::Say(said) = &listened.intent
                 && !events::agent_state(app).is_running()
+                && events::agent_state(app) != AgentState::AwaitingConfirm
             {
                 let (app, said) = (app.clone(), said.clone());
                 heard(&app, &said, "Submitting in 2 s. Press Stop to cancel");
@@ -162,7 +180,10 @@ pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
             heard(
                 app,
                 "",
-                "Could not understand that: the model is not answering",
+                format!(
+                    "Could not understand that: {}",
+                    seam::voice_error_message(&err)
+                ),
             );
         }
     }
