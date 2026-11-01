@@ -81,7 +81,13 @@ export const PLAYGROUND_GROUPS: PlaygroundGroup[] = [
     id: 'audio',
     label: 'Audio',
     pipelines: [
-      later('tts', 'Text to Speech', 'speaker', 'Turn text into speech with a built-in voice.'),
+      {
+        id: 'tts',
+        label: 'Create Voice',
+        icon: 'speaker',
+        ready: true,
+        summary: 'Turn text into speech using the model’s default voice.',
+      },
       later('clone', 'Clone', 'copy', 'Speak in the voice from a short recording.'),
       later('audio-edit', 'Edit', 'edit', 'Change words in a recording, same voice.'),
       later('convert', 'Convert', 'convert', 'Make a recording sound like another voice.'),
@@ -111,6 +117,11 @@ export const SOURCE_OPTIONS: { value: PlaygroundSource; label: string }[] = [
 ]
 
 export const QUESTION_HINTS: Record<string, string[]> = {
+  tts: [
+    'Hello! Welcome to Rune Studio.',
+    'Every great idea starts with a little curiosity.',
+    'Take a deep breath and enjoy this moment.',
+  ],
   ask: ['Summarise what is on screen', 'List the buttons you can see', 'Read the error message'],
   point: ['Where is the Save button?', 'Find the search field', 'Locate the close icon'],
   pose: ['Show the pose of the person', 'Mark the hands and elbows', 'Mark the face landmarks'],
@@ -155,6 +166,15 @@ export interface CreateResult {
   elapsedMs: number
 }
 
+export interface SpeechResult {
+  audio: string
+  text: string
+  model: string
+  elapsedMs: number
+}
+
+export const speechTextBytes = (text: string) => new TextEncoder().encode(text).length
+
 export const CREATE_RESOLUTIONS: { value: string; label: string; icon: IconName }[] = [
   { value: '512', label: 'SD (512p)', icon: 'quality-low' },
   { value: '720', label: 'HD (720p)', icon: 'quality-medium' },
@@ -190,6 +210,7 @@ export interface RunState<T> {
 export type DepthState = RunState<DepthResult>
 export type UpscaleState = RunState<UpscaleResult>
 export type CreateState = RunState<CreateResult>
+export type SpeechState = RunState<SpeechResult>
 
 export const idleRun = <T>(): RunState<T> => ({ status: 'idle', result: null, error: '' })
 
@@ -202,6 +223,13 @@ export interface ModelPipeline {
 }
 
 export const MODEL_PIPELINES: Record<string, ModelPipeline> = {
+  tts: {
+    task: 'text-to-audio',
+    command: 'playground_speech',
+    modelLabel: 'Voice model',
+    none: 'No text-to-speech model',
+    idle: 'Enter text and choose a voice model, then press Run.',
+  },
   depth: {
     task: DEPTH_TASK,
     command: 'playground_depth',

@@ -4,6 +4,7 @@ import { EMPTY_SNAPSHOT } from './analysis'
 import { checkImageFile, fitEdge } from './imageFile'
 import {
   PLAYGROUND_GROUPS,
+  MODEL_PIPELINES,
   createSize,
   taskModelIds,
   filterFindings,
@@ -26,9 +27,17 @@ const finding = (n: number, extra: Partial<Finding>): Finding => ({
 })
 
 describe('playground registry', () => {
-  it('has the runnable pipelines, all in Images', () => {
+  it('has the runnable image and voice pipelines', () => {
     const ready = PLAYGROUND_GROUPS.flatMap((g) => g.pipelines).filter((p) => p.ready)
-    expect(ready.map((p) => p.id)).toEqual(['ask', 'point', 'pose', 'depth', 'create', 'upscale'])
+    expect(ready.map((p) => p.id)).toEqual([
+      'ask',
+      'point',
+      'pose',
+      'depth',
+      'create',
+      'upscale',
+      'tts',
+    ])
     expect(PLAYGROUND_GROUPS[0]!.pipelines.slice(0, 4).map((p) => p.id)).toEqual([
       'ask',
       'point',
@@ -108,6 +117,20 @@ describe('depth models', () => {
         'image-to-depth',
       ),
     ).toEqual(['depth-small'])
+  })
+})
+
+describe('speech models', () => {
+  it('filters by Infer’s text-to-audio task', () => {
+    expect(
+      taskModelIds(
+        [
+          { id: 'audio', tasks: ['text-to-audio'] },
+          { id: 'legacy', tasks: ['text-to-speech'] },
+        ],
+        MODEL_PIPELINES.tts!.task,
+      ),
+    ).toEqual(['audio'])
   })
 })
 

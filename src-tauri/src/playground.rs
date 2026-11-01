@@ -43,6 +43,7 @@ pub async fn open_playground(app: AppHandle) -> Result<(), String> {
 const DEPTH_TASK: &str = "image-to-depth";
 const UPSCALE_TASK: &str = "image-upscale";
 const CREATE_TASK: &str = "text-to-image";
+const SPEECH_TASK: &str = "text-to-audio";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
 const MAX_IMAGE_CHARS: usize = 40_000_000;
 
@@ -223,12 +224,24 @@ async fn post(
         .await
         .map_err(|e| format!("{what} response failed: {e}"))?;
     if !code.is_success() {
-        let detail: String = text.chars().take(300).collect();
+        let detail = infer_error_detail(&text);
         return Err(format!(
             "Infer refused the {what} request ({code}): {detail}"
         ));
     }
     Ok(text)
+}
+
+fn infer_error_detail(body: &str) -> String {
+    let parsed: Result<serde_json::Value, _> = serde_json::from_str(body);
+    let message = parsed
+        .as_ref()
+        .ok()
+        .and_then(|value| value.pointer("/error/message"))
+        .and_then(serde_json::Value::as_str)
+        .filter(|message| !message.trim().is_empty())
+        .unwrap_or(body);
+    message.chars().take(300).collect()
 }
 
 fn infer_url(settings: &Settings, path: &str) -> Result<reqwest::Url, String> {
@@ -237,6 +250,92 @@ fn infer_url(settings: &Settings, path: &str) -> Result<reqwest::Url, String> {
         settings.base_url.trim_end_matches('/')
     ))
     .map_err(|_| "The Infer address is not valid".into())
+}
+
+const MAX_SPEECH_BYTES: usize = 4096;
+const MAX_AUDIO_BYTES: usize = 25 * 1024 * 1024;
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct SpeechInput {
+    text: String,
+    model: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpeechResult {
+    audio: String,
+    text: String,
+    model: String,
+    elapsed_ms: u64,
+}
+
+fn validate_speech_text(text: &str) -> Result<(), &'static str> {
+    if text.trim().is_empty() {
+        return Err("Enter text to speak");
+    }
+    if text.len() > MAX_SPEECH_BYTES {
+        return Err("Text exceeds 4096 UTF-8 bytes");
+    }
+    Ok(())
+}
+
+fn speech_audio(bytes: &[u8]) -> Result<String, &'static str> {
+    if bytes.len() < 12 || &bytes[..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
+        return Err("Infer returned invalid WAV audio");
+    }
+    Ok(format!(
+        "data:audio/wav;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    ))
+}
+
+#[tauri::command]
+pub async fn playground_speech(app: AppHandle, input: SpeechInput) -> Result<SpeechResult, String> {
+    validate_speech_text(&input.text)?;
+    let (settings, key, model) = session(&app, &input.model, SPEECH_TASK).await?;
+    let url = infer_url(&settings, "/v1/audio/speech")?;
+    let state = app.state::<AppState>();
+    let started = Instant::now();
+    let mut request = state
+        .http
+        .post(url)
+        .timeout(REQUEST_TIMEOUT)
+        .json(&serde_json::json!({
+            "model": model, "input": input.text, "response_format": "wav"
+        }));
+    if let Some(key) = key.as_deref() {
+        request = request.bearer_auth(key);
+    }
+    let mut response = request
+        .send()
+        .await
+        .map_err(|e| format!("Speech request failed: {e}"))?;
+    let status = response.status();
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|e| format!("Speech response failed: {e}"))?
+    {
+        if bytes.len().saturating_add(chunk.len()) > MAX_AUDIO_BYTES {
+            return Err("Infer returned audio exceeding 25 MB".into());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    if !status.is_success() {
+        return Err(format!(
+            "Infer refused the speech request ({status}): {}",
+            infer_error_detail(&String::from_utf8_lossy(&bytes))
+        ));
+    }
+    Ok(SpeechResult {
+        audio: speech_audio(&bytes)?.into(),
+        text: input.text,
+        model,
+        elapsed_ms: started.elapsed().as_millis() as u64,
+    })
 }
 
 #[tauri::command]
@@ -468,6 +567,44 @@ pub async fn playground_create(app: AppHandle, input: CreateInput) -> Result<Cre
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn validates_speech_text_and_wav() {
+        assert!(validate_speech_text("  ").is_err());
+        assert!(validate_speech_text(&"é".repeat(2048)).is_ok());
+        assert!(validate_speech_text(&"é".repeat(2049)).is_err());
+        assert!(
+            speech_audio(b"RIFF0000WAVE")
+                .unwrap()
+                .starts_with("data:audio/wav;base64,")
+        );
+        assert!(speech_audio(b"not audio").is_err());
+    }
+
+    #[test]
+    fn selects_models_advertising_text_to_audio() {
+        let mut speech = ModelCapabilities::unknown("audio-model");
+        speech.tasks = vec!["text-to-audio".into()];
+        let mut legacy = ModelCapabilities::unknown("legacy-model");
+        legacy.tasks = vec!["text-to-speech".into()];
+        assert_eq!(
+            task_models(&[speech, legacy], SPEECH_TASK),
+            vec!["audio-model"]
+        );
+    }
+
+    #[test]
+    fn extracts_infer_error_messages_and_preserves_other_bodies() {
+        assert_eq!(
+            infer_error_detail(r#"{"error":{"message":"Unsupported size","code":"invalid"}}"#),
+            "Unsupported size"
+        );
+        assert_eq!(
+            infer_error_detail("Service unavailable"),
+            "Service unavailable"
+        );
+        assert_eq!(infer_error_detail(&"x".repeat(301)).chars().count(), 300);
+    }
 
     #[test]
     fn lists_only_models_with_the_depth_task() {

@@ -27,12 +27,14 @@ import {
   questionLimit,
   shapeQuestion,
   taskModelIds,
+  speechTextBytes,
   unshapeQuestion,
   type CreateState,
   type DepthState,
   type ModelPipeline,
   type RunState,
   type UpscaleState,
+  type SpeechState,
   type PlaygroundSource,
 } from '@/config/playground'
 
@@ -42,6 +44,8 @@ import PlaygroundCreate from './PlaygroundCreate.vue'
 import PlaygroundDepth from './PlaygroundDepth.vue'
 import PlaygroundResult from './PlaygroundResult.vue'
 import PlaygroundUpscale from './PlaygroundUpscale.vue'
+import PlaygroundSpeech from './PlaygroundSpeech.vue'
+import PlaygroundLoading from './PlaygroundLoading.vue'
 import RuneButton from './RuneButton.vue'
 import RuneChip from './RuneChip.vue'
 import RuneChoice from './RuneChoice.vue'
@@ -100,6 +104,9 @@ const hints = computed(() => QUESTION_HINTS[selected.value.id] ?? [])
 const modelPipeline = computed(() => MODEL_PIPELINES[selectedId.value])
 const isModelRun = computed(() => !!modelPipeline.value)
 const isCreate = computed(() => selectedId.value === 'create')
+const isSpeech = computed(() => selectedId.value === 'tts')
+const speechText = ref('')
+const speechBytes = computed(() => speechTextBytes(speechText.value))
 const createResolution = ref('720')
 const createAspect = ref('1:1')
 const imageSize = computed(() => createSize(createResolution.value, createAspect.value))
@@ -124,11 +131,31 @@ const activeTaskModel = computed({
 const depth = ref<DepthState>(idleRun())
 const upscale = ref<UpscaleState>(idleRun())
 const create = ref<CreateState>(idleRun())
+const speech = ref<SpeechState>(idleRun())
 const modelRuns: Record<string, Ref<RunState<unknown>>> = {
   depth: depth as Ref<RunState<unknown>>,
   upscale: upscale as Ref<RunState<unknown>>,
   create: create as Ref<RunState<unknown>>,
+  tts: speech as Ref<RunState<unknown>>,
 }
+const startedAt = ref<Record<string, number>>({})
+const loading = computed(() =>
+  isModelRun.value
+    ? modelRuns[selectedId.value]?.value.status === 'running'
+    : selected.value.ready && live.value && analysis.busy.value,
+)
+const loadingStartedAt = computed(
+  () => startedAt.value[isModelRun.value ? selectedId.value : 'insight'] ?? Date.now(),
+)
+const loadingLabel = computed(
+  () =>
+    ({
+      tts: 'Creating voice',
+      create: 'Creating image',
+      depth: 'Estimating depth',
+      upscale: 'Upscaling image',
+    })[selectedId.value] ?? 'Analyzing image',
+)
 const scale = ref(2)
 const headerModel = computed({
   get: () => (isModelRun.value ? activeTaskModel.value : activeModel.value),
@@ -152,11 +179,13 @@ const hasResult = computed(() => display.value.status !== 'idle')
 const canRun = computed(
   () =>
     selected.value.ready &&
-    (isCreate.value
-      ? !!question.value.trim()
-      : source.value === 'file'
-        ? !!file.value
-        : !!target.value) &&
+    (isSpeech.value
+      ? !!speechText.value.trim() && speechBytes.value <= 4096
+      : isCreate.value
+        ? !!question.value.trim()
+        : source.value === 'file'
+          ? !!file.value
+          : !!target.value) &&
     (isModelRun.value
       ? !!activeTaskModel.value && modelRuns[selectedId.value]?.value.status !== 'running'
       : !analysis.busy.value),
@@ -218,13 +247,16 @@ watch(
 async function runModel(id: string, pipeline: ModelPipeline) {
   const option = options.value.find((item) => JSON.stringify(item.target) === target.value)
   const input =
-    id === 'create'
-      ? { prompt: question.value, size: imageSize.value }
-      : source.value === 'file'
-        ? file.value && { image: file.value.data }
-        : option && { target: option.target }
+    id === 'tts'
+      ? { text: speechText.value }
+      : id === 'create'
+        ? { prompt: question.value, size: imageSize.value }
+        : source.value === 'file'
+          ? file.value && { image: file.value.data }
+          : option && { target: option.target }
   const state = modelRuns[id]
   if (!input || !state) return
+  startedAt.value = { ...startedAt.value, [id]: Date.now() }
   state.value = { status: 'running', result: null, error: '' }
   try {
     const extra = id === 'upscale' ? { scale: scale.value } : {}
@@ -244,6 +276,7 @@ function run() {
     return
   }
   const shaped = shapeQuestion(selectedId.value, question.value)
+  startedAt.value = { ...startedAt.value, insight: Date.now() }
   const overrides = { model: activeModel.value, resolution: activeResolution.value }
   if (source.value === 'file') {
     if (!file.value) return
@@ -343,7 +376,7 @@ onKeyStroke('Escape', () => {
           <p class="m-0 text-rune-body text-rune-text-2">{{ selected.summary }}</p>
 
           <template v-if="selected.ready">
-            <div v-if="!isCreate" class="flex flex-col gap-2">
+            <div v-if="!isCreate && !isSpeech" class="flex flex-col gap-2">
               <span class="text-rune-heading text-rune-text-3 uppercase">Source</span>
               <RuneChoice v-model="source" label="Source" :options="SOURCE_OPTIONS" />
               <div
@@ -400,6 +433,36 @@ onKeyStroke('Escape', () => {
               </template>
             </div>
 
+            <div v-if="isSpeech" class="flex flex-col gap-2">
+              <label for="speech-text" class="text-rune-heading text-rune-text-3 uppercase"
+                >Text</label
+              >
+              <textarea
+                id="speech-text"
+                v-model="speechText"
+                rows="6"
+                placeholder="Type the text to speak…"
+                class="w-full resize-none rounded-rune-tile bg-rune-surface p-4 text-rune-body text-rune-ink outline-none placeholder:text-rune-text-3 focus-visible:outline-2 focus-visible:outline-accent"
+              />
+              <p
+                :class="speechBytes > 4096 ? 'text-error' : 'text-rune-text-3'"
+                class="m-0 text-rune-caption"
+                aria-live="polite"
+              >
+                {{ speechBytes }} / 4096 bytes
+              </p>
+              <div class="flex flex-wrap gap-2">
+                <RuneButton
+                  v-for="hint in hints"
+                  :key="hint"
+                  size="sm"
+                  class="normal-case!"
+                  @click="speechText = hint"
+                >
+                  {{ hint }}
+                </RuneButton>
+              </div>
+            </div>
             <div v-if="!isModelRun || isCreate" class="flex flex-col gap-2">
               <span class="text-rune-heading text-rune-text-3 uppercase">{{
                 isCreate ? 'Prompt' : 'Question'
@@ -482,8 +545,15 @@ onKeyStroke('Escape', () => {
           aria-label="Result"
           data-testid="playground-canvas"
         >
+          <PlaygroundLoading
+            v-if="loading"
+            :started-at="loadingStartedAt"
+            :label="loadingLabel"
+            :cancellable="!isModelRun"
+            @cancel="analysis.cancel()"
+          />
           <PlaygroundDepth
-            v-if="selectedId === 'depth' && depth.status !== 'idle'"
+            v-else-if="selectedId === 'depth' && depth.status !== 'idle'"
             :state="depth"
           />
           <PlaygroundUpscale
@@ -491,6 +561,7 @@ onKeyStroke('Escape', () => {
             :state="upscale"
           />
           <PlaygroundCreate v-else-if="isCreate && create.status !== 'idle'" :state="create" />
+          <PlaygroundSpeech v-else-if="isSpeech && speech.status !== 'idle'" :state="speech" />
           <PlaygroundResult
             v-else-if="!isModelRun && hasResult && selected.ready"
             :snapshot="display"
@@ -516,11 +587,15 @@ onKeyStroke('Escape', () => {
           aria-label="History"
           data-testid="playground-history"
         >
-          <span v-if="!history.runs.value.length" class="text-rune-caption text-rune-text-3">
+          <span v-if="isSpeech" class="text-rune-caption text-rune-text-3">
+            Voice runs are not saved in history.
+          </span>
+          <span v-else-if="!history.runs.value.length" class="text-rune-caption text-rune-text-3">
             This session's runs appear here.
           </span>
           <RuneButton
             v-for="item in history.runs.value"
+            v-show="!isSpeech"
             :key="item.id"
             variant="ghost"
             class="size-16 min-h-0 overflow-hidden rounded-rune-tile! p-0!"

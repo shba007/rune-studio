@@ -16,6 +16,13 @@ const invoked = vi.fn<(command: string, args?: unknown) => Promise<unknown>>()
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: async (command: string, args?: unknown) => {
     void invoked(command, args)
+    if (command === 'playground_speech')
+      return {
+        audio: 'data:audio/wav;base64,UklGRjAwMDBXQVZF',
+        text: 'Hello there',
+        model: 'voice-a',
+        elapsedMs: 1200,
+      }
     if (command === 'playground_create')
       return {
         image: 'data:image/png;base64,AA==',
@@ -78,6 +85,7 @@ vi.mock('@/composables/useAgent', () => ({
         { id: 'depth-s', imageIn: 'no', toolCalls: 'no', tasks: ['image-to-depth'] },
         { id: 'up-x', imageIn: 'no', toolCalls: 'no', tasks: ['image-upscale'] },
         { id: 'img-m', imageIn: 'no', toolCalls: 'no', tasks: ['text-to-image'] },
+        { id: 'voice-a', imageIn: 'no', toolCalls: 'no', tasks: ['text-to-audio'] },
       ],
     }),
   }),
@@ -206,6 +214,40 @@ describe('playground window', () => {
       input: { prompt: 'a red fox', size: '720x720', model: 'img-m' },
     })
     expect(wrapper.findAll('[data-testid="create-image"]')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('creates playable, downloadable speech with a speech model', async () => {
+    const wrapper = mount(PlaygroundWindow)
+    await flushPromises()
+    await wrapper.get('[data-testid="pipeline-tts"]').trigger('click')
+    expect(wrapper.text()).toContain('Create Voice')
+    expect(wrapper.text()).toContain('voice-a')
+    expect(wrapper.find('[aria-label="Source"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="playground-run"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('#speech-text').setValue('')
+    const hint = wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Hello! Welcome to Rune Studio.')
+    expect(hint).toBeDefined()
+    await hint!.trigger('click')
+    expect((wrapper.get('#speech-text').element as HTMLTextAreaElement).value).toBe(
+      'Hello! Welcome to Rune Studio.',
+    )
+    await wrapper.get('#speech-text').setValue('é'.repeat(2049))
+    expect(wrapper.get('[data-testid="playground-run"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('#speech-text').setValue('Hello there')
+    await wrapper.get('[data-testid="playground-run"]').trigger('click')
+    await flushPromises()
+    expect(invoked).toHaveBeenCalledWith('playground_speech', {
+      input: { text: 'Hello there', model: 'voice-a' },
+    })
+    expect(wrapper.get('[data-testid="speech-player"]').attributes('src')).toContain(
+      'data:audio/wav',
+    )
+    expect(wrapper.get('[data-testid="speech-download"]').attributes('download')).toBe(
+      'rune-voice.wav',
+    )
     wrapper.unmount()
   })
 
