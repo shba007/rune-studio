@@ -298,6 +298,7 @@ pub fn run() {
             playground::playground_caption,
             playground::playground_upscale,
             playground::playground_create,
+            playground::playground_edit,
             playground::playground_speech,
             playground::playground_transcribe,
             playground::playground_translate_speech,

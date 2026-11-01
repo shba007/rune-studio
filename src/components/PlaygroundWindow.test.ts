@@ -15,6 +15,7 @@ const captureImage = vi.fn<(...args: unknown[]) => Promise<boolean>>(async () =>
 const invoked = vi.fn<(command: string, args?: unknown) => Promise<unknown>>()
 let pendingSpeech: Promise<unknown> | null = null
 let pendingCaption: Promise<unknown> | null = null
+let pendingEdit: Promise<unknown> | null = null
 let pendingStart: Promise<number> | null = null
 let translationReply: Promise<unknown> | null = null
 let translationError = ''
@@ -52,6 +53,15 @@ vi.mock('@tauri-apps/api/core', () => ({
         size: '512x512',
         model: 'img-m',
         elapsedMs: 4000,
+      }
+    if (command === 'playground_edit' && pendingEdit) return pendingEdit
+    if (command === 'playground_edit')
+      return {
+        original: 'data:image/jpeg;base64,AA==',
+        image: 'data:image/png;base64,AA==',
+        prompt: 'Make it blue',
+        model: 'edit-m',
+        elapsedMs: 2000,
       }
     if (command === 'playground_upscale')
       return {
@@ -110,6 +120,7 @@ vi.mock('@/composables/useAgent', () => ({
             { id: 'depth-s', imageIn: 'no', toolCalls: 'no', tasks: ['image-to-depth'] },
             { id: 'up-x', imageIn: 'no', toolCalls: 'no', tasks: ['image-upscale'] },
             { id: 'img-m', imageIn: 'no', toolCalls: 'no', tasks: ['text-to-image'] },
+            { id: 'edit-m', imageIn: 'no', toolCalls: 'no', tasks: ['text-image-to-image'] },
             {
               id: 'voice-a',
               imageIn: 'no',
@@ -135,6 +146,7 @@ vi.mock('@/composables/useAgent', () => ({
 beforeEach(() => {
   pendingSpeech = null
   pendingCaption = null
+  pendingEdit = null
   pendingStart = null
   translationReply = null
   translationError = ''
@@ -224,6 +236,31 @@ describe('playground window', () => {
     await flushPromises()
     expect(invoked).toHaveBeenCalledWith('playground_cancel_run', { runId: 42 })
     expect(wrapper.text()).not.toContain('late result')
+    expect(usePlaygroundHistory().runs.value).toHaveLength(0)
+    wrapper.unmount()
+  })
+
+  it('cancels an edit without adding a late result to history', async () => {
+    let finish!: (value: unknown) => void
+    pendingEdit = new Promise((resolve) => {
+      finish = resolve
+    })
+    const wrapper = mount(PlaygroundWindow)
+    await flushPromises()
+    await wrapper.get('[data-testid="pipeline-edit"]').trigger('click')
+    await wrapper.get('textarea').setValue('Make it blue')
+    await wrapper.get('[data-testid="playground-run"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="result-cancel"]').trigger('click')
+    finish({
+      original: 'source',
+      image: 'late',
+      prompt: 'Make it blue',
+      model: 'edit-m',
+      elapsedMs: 10,
+    })
+    await flushPromises()
+    expect(invoked).toHaveBeenCalledWith('playground_cancel_run', { runId: 42 })
     expect(usePlaygroundHistory().runs.value).toHaveLength(0)
     wrapper.unmount()
   })
@@ -410,9 +447,29 @@ describe('playground window', () => {
 
   it('shows a placeholder for pipelines that are not ready', async () => {
     const wrapper = mount(PlaygroundWindow)
-    await wrapper.get('[data-testid="pipeline-edit"]').trigger('click')
+    await wrapper.get('[data-testid="pipeline-transform"]').trigger('click')
     expect(wrapper.find('[data-testid="playground-run"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="playground-params"]').text()).toContain('Coming later')
+    wrapper.unmount()
+  })
+
+  it('edits a selected image and saves a downloadable result in history', async () => {
+    const wrapper = mount(PlaygroundWindow)
+    await flushPromises()
+    await wrapper.get('[data-testid="pipeline-edit"]').trigger('click')
+    expect(wrapper.get('[data-testid="playground-run"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('textarea').setValue('Make it blue')
+    await wrapper.get('[data-testid="playground-run"]').trigger('click')
+    await flushPromises()
+    expect(invoked).toHaveBeenCalledWith('playground_edit', {
+      runId: 42,
+      input: { target: { kind: 'screen', id: 1 }, model: 'edit-m', prompt: 'Make it blue' },
+    })
+    expect(wrapper.get('[data-testid="edit-download"]').attributes('download')).toBe(
+      'rune-edit.png',
+    )
+    await wrapper.get('[data-testid="history-run"]').trigger('click')
+    expect(wrapper.get('[data-testid="history-details"]').text()).toContain('Prompt: Make it blue')
     wrapper.unmount()
   })
 

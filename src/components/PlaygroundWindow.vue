@@ -34,6 +34,7 @@ import {
   speechTextBytes,
   unshapeQuestion,
   type CreateState,
+  type EditState,
   type DepthState,
   type CaptionState,
   type ModelPipeline,
@@ -47,6 +48,7 @@ import {
 import AppIcon from './AppIcon.vue'
 import CaptureTargetPicker from './CaptureTargetPicker.vue'
 import PlaygroundCreate from './PlaygroundCreate.vue'
+import PlaygroundEdit from './PlaygroundEdit.vue'
 import PlaygroundDepth from './PlaygroundDepth.vue'
 import PlaygroundResult from './PlaygroundResult.vue'
 import PlaygroundUpscale from './PlaygroundUpscale.vue'
@@ -112,6 +114,7 @@ const hints = computed(() => QUESTION_HINTS[selected.value.id] ?? [])
 const modelPipeline = computed(() => MODEL_PIPELINES[selectedId.value])
 const isModelRun = computed(() => !!modelPipeline.value)
 const isCreate = computed(() => selectedId.value === 'create')
+const isEdit = computed(() => selectedId.value === 'edit')
 const isSpeech = computed(() => selectedId.value === 'tts')
 const isCaption = computed(() => selectedId.value === 'caption')
 const captionDetail = ref('concise')
@@ -156,6 +159,7 @@ const depth = ref<DepthState>(idleRun())
 const caption = ref<CaptionState>(idleRun())
 const upscale = ref<UpscaleState>(idleRun())
 const create = ref<CreateState>(idleRun())
+const edit = ref<EditState>(idleRun())
 const speech = ref<SpeechState>(idleRun())
 const transcript = ref<TranscribeState>(idleRun())
 const translation = ref<TranscribeState>(idleRun())
@@ -164,6 +168,7 @@ const modelRuns: Record<string, Ref<RunState<unknown>>> = {
   caption: caption as Ref<RunState<unknown>>,
   upscale: upscale as Ref<RunState<unknown>>,
   create: create as Ref<RunState<unknown>>,
+  edit: edit as Ref<RunState<unknown>>,
   tts: speech as Ref<RunState<unknown>>,
   transcribe: transcript as Ref<RunState<unknown>>,
   'translate-speech': translation as Ref<RunState<unknown>>,
@@ -180,6 +185,7 @@ const shownDepth = shownState('depth', depth)
 const shownCaption = shownState('caption', caption)
 const shownUpscale = shownState('upscale', upscale)
 const shownCreate = shownState('create', create)
+const shownEdit = shownState('edit', edit)
 const shownSpeech = shownState('tts', speech)
 const shownTranscript = shownState('transcribe', transcript)
 const shownTranslation = shownState('translate-speech', translation)
@@ -225,6 +231,7 @@ const loadingLabel = computed(
     ({
       tts: 'Creating voice',
       create: 'Creating image',
+      edit: 'Editing image',
       depth: 'Estimating depth',
       caption: 'Creating caption',
       upscale: 'Upscaling image',
@@ -259,6 +266,7 @@ const hasResult = computed(() => display.value.status !== 'idle')
 const canRun = computed(
   () =>
     selected.value.ready &&
+    (!isEdit.value || !!question.value.trim()) &&
     (isAudioText.value
       ? !!audioFile.value
       : isSpeech.value
@@ -398,7 +406,9 @@ async function runModel(id: string, pipeline: ModelPipeline) {
         ? { scale: scale.value }
         : id === 'caption'
           ? { detail: captionDetail.value }
-          : {}
+          : id === 'edit'
+            ? { prompt: question.value }
+            : {}
     const model = activeTaskModel.value
     const sourceLabel =
       source.value === 'file'
@@ -414,6 +424,7 @@ async function runModel(id: string, pipeline: ModelPipeline) {
             : [`Source: ${sourceLabel}`]
     if (id === 'caption') details.push(`Detail: ${captionDetail.value}`)
     if (id === 'upscale') details.push(`Scale: ${scale.value}×`)
+    if (id === 'edit') details.push(`Prompt: ${question.value}`)
     details.unshift(`Model: ${model}`)
     const payload = 'file' in input ? { audio: await readAudio(input.file!) } : input
     if (run.cancelled) return
@@ -697,9 +708,9 @@ onKeyStroke('Escape', () => {
                 </RuneButton>
               </div>
             </div>
-            <div v-if="!isModelRun || isCreate" class="flex flex-col gap-2">
+            <div v-if="!isModelRun || isCreate || isEdit" class="flex flex-col gap-2">
               <span class="text-rune-heading text-rune-text-3 uppercase">{{
-                isCreate ? 'Prompt' : 'Question'
+                isCreate || isEdit ? 'Prompt' : 'Question'
               }}</span>
               <textarea
                 v-model="question"
@@ -707,7 +718,11 @@ onKeyStroke('Escape', () => {
                 :maxlength="questionLimit(selectedId)"
                 aria-label="Question"
                 :placeholder="
-                  isCreate ? 'Describe the image to create' : 'What do you want to know?'
+                  isEdit
+                    ? 'Describe the change to make'
+                    : isCreate
+                      ? 'Describe the image to create'
+                      : 'What do you want to know?'
                 "
                 class="w-full resize-none rounded-rune-tile bg-rune-surface p-4 text-rune-body text-rune-ink outline-none placeholder:text-rune-text-3 focus-visible:outline-2 focus-visible:outline-accent"
               />
@@ -825,6 +840,7 @@ onKeyStroke('Escape', () => {
             v-else-if="isCreate && shownCreate.status !== 'idle'"
             :state="shownCreate"
           />
+          <PlaygroundEdit v-else-if="isEdit && shownEdit.status !== 'idle'" :state="shownEdit" />
           <PlaygroundSpeech
             v-else-if="isSpeech && shownSpeech.status !== 'idle'"
             :state="shownSpeech"

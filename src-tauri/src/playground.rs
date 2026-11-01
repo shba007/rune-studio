@@ -96,6 +96,7 @@ cancellable_command!(playground_depth, depth, DepthInput, DepthResult);
 cancellable_command!(playground_caption, caption, CaptionInput, CaptionResult);
 cancellable_command!(playground_upscale, upscale, UpscaleInput, UpscaleResult);
 cancellable_command!(playground_create, create, CreateInput, CreateResult);
+cancellable_command!(playground_edit, edit, EditInput, EditResult);
 
 pub fn open(app: &AppHandle) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window(WINDOW) {
@@ -130,6 +131,7 @@ const DEPTH_TASK: &str = "image-to-depth";
 const CAPTION_TASK: &str = "image-to-text";
 const UPSCALE_TASK: &str = "image-upscale";
 const CREATE_TASK: &str = "text-to-image";
+const EDIT_TASK: &str = "text-image-to-image";
 const SPEECH_TASK: &str = "text-to-audio";
 const TRANSCRIBE_TASK: &str = "audio-to-text";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
@@ -909,6 +911,122 @@ struct CreateEnvelope {
     data: Vec<UpscaleImage>,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct EditInput {
+    #[serde(default)]
+    target: Option<CaptureTarget>,
+    #[serde(default)]
+    image: Option<String>,
+    model: String,
+    prompt: String,
+}
+
+#[derive(Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct EditResult {
+    original: String,
+    image: String,
+    prompt: String,
+    model: String,
+    elapsed_ms: u64,
+}
+
+fn edit_result(
+    body: &str,
+    original: String,
+    prompt: String,
+    model: String,
+    elapsed_ms: u64,
+) -> Result<EditResult, String> {
+    let envelope: CreateEnvelope =
+        serde_json::from_str(body).map_err(|_| "Infer returned an unreadable edited image")?;
+    let encoded = envelope
+        .data
+        .into_iter()
+        .find_map(|item| item.b64_json.filter(|s| !s.is_empty()))
+        .ok_or("Infer returned no edited image")?;
+    Ok(EditResult {
+        original,
+        image: image_uri(&encoded),
+        prompt,
+        model,
+        elapsed_ms,
+    })
+}
+
+async fn send_edit(
+    http: &reqwest::Client,
+    url: reqwest::Url,
+    key: Option<&str>,
+    model: String,
+    prompt: String,
+    jpeg: Vec<u8>,
+    original: String,
+) -> Result<EditResult, String> {
+    let form = reqwest::multipart::Form::new()
+        .text("model", model.clone())
+        .text("prompt", prompt.clone())
+        .text("response_format", "b64_json")
+        .part(
+            "image",
+            reqwest::multipart::Part::bytes(jpeg)
+                .file_name("image.jpg")
+                .mime_str("image/jpeg")
+                .map_err(|e| e.to_string())?,
+        );
+    let started = Instant::now();
+    let mut request = http.post(url).timeout(REQUEST_TIMEOUT).multipart(form);
+    if let Some(key) = key {
+        request = request.bearer_auth(key);
+    }
+    let response = request
+        .send()
+        .await
+        .map_err(|e| format!("Image edit request failed: {e}"))?;
+    let status = response.status();
+    let body = response
+        .text()
+        .await
+        .map_err(|e| format!("Image edit response failed: {e}"))?;
+    if !status.is_success() {
+        return Err(format!(
+            "Infer refused the image edit request ({status}): {}",
+            infer_error_detail(&body)
+        ));
+    }
+    edit_result(
+        &body,
+        original,
+        prompt,
+        model,
+        started.elapsed().as_millis() as u64,
+    )
+}
+
+async fn edit(app: AppHandle, input: EditInput) -> Result<EditResult, String> {
+    let prompt = input.prompt.trim().to_string();
+    if prompt.is_empty() {
+        return Err("Describe the change to make".into());
+    }
+    if prompt.chars().count() > MAX_PROMPT_CHARS {
+        return Err(format!("Prompt exceeds {MAX_PROMPT_CHARS} characters"));
+    }
+    let prepared = prepare(&app, input.target, input.image, &input.model, EDIT_TASK).await?;
+    let original = prepared.frame.data_uri();
+    let url = infer_url(&prepared.settings, "/v1/images/edits")?;
+    send_edit(
+        &app.state::<AppState>().http,
+        url,
+        prepared.key.as_deref(),
+        prepared.model,
+        prompt,
+        prepared.frame.jpeg,
+        original,
+    )
+    .await
+}
+
 fn image_uri(encoded: &str) -> String {
     let mime = if encoded.starts_with("/9j/") {
         "image/jpeg"
@@ -975,6 +1093,101 @@ async fn create(app: AppHandle, input: CreateInput) -> Result<CreateResult, Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn edit_requires_text_and_image_task_and_valid_output() {
+        assert!(task_matches("text-image-to-image", EDIT_TASK));
+        assert!(!task_matches("image-to-image", EDIT_TASK));
+        assert!(!task_matches("text-to-image", EDIT_TASK));
+        let result = edit_result(
+            r#"{"data":[{"b64_json":"iVBORw=="}]}"#,
+            "source".into(),
+            "blue".into(),
+            "edit".into(),
+            10,
+        )
+        .unwrap();
+        assert_eq!(result.image, "data:image/png;base64,iVBORw==");
+        assert_eq!(result.original, "source");
+        assert!(edit_result(r#"{"data":[{}]}"#, "".into(), "".into(), "".into(), 0).is_err());
+    }
+
+    #[tokio::test]
+    async fn sends_edit_as_authenticated_multipart() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut request = Vec::new();
+            let mut buffer = [0u8; 4096];
+            loop {
+                let n = stream.read(&mut buffer).unwrap();
+                if n == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buffer[..n]);
+                if let Some(end) = request.windows(4).position(|v| v == b"\r\n\r\n") {
+                    let headers = String::from_utf8_lossy(&request[..end]);
+                    let length = headers
+                        .lines()
+                        .find_map(|line| {
+                            line.to_lowercase()
+                                .strip_prefix("content-length:")
+                                .and_then(|n| n.trim().parse::<usize>().ok())
+                        })
+                        .unwrap();
+                    if request.len() >= end + 4 + length {
+                        break;
+                    }
+                }
+            }
+            let response = br#"{"data":[{"b64_json":"iVBORw=="}]}"#;
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n",
+                response.len()
+            )
+            .unwrap();
+            stream.write_all(response).unwrap();
+            String::from_utf8_lossy(&request).into_owned()
+        });
+        let result = send_edit(
+            &reqwest::Client::builder().no_proxy().build().unwrap(),
+            format!("http://{address}/v1/images/edits").parse().unwrap(),
+            Some("test-key"),
+            "edit-model".into(),
+            "Make blue".into(),
+            b"jpeg bytes".to_vec(),
+            "source".into(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.prompt, "Make blue");
+        let request = server.join().unwrap();
+        assert!(request.starts_with("POST /v1/images/edits "));
+        assert!(
+            request
+                .to_lowercase()
+                .contains("authorization: bearer test-key")
+        );
+        for expected in [
+            "name=\"model\"",
+            "edit-model",
+            "name=\"prompt\"",
+            "Make blue",
+            "name=\"response_format\"",
+            "b64_json",
+            "name=\"image\"",
+            "image/jpeg",
+            "jpeg bytes",
+        ] {
+            assert!(request.contains(expected), "missing {expected}");
+        }
+    }
 
     #[tokio::test]
     async fn sends_caption_request_to_infer_and_keeps_frame() {

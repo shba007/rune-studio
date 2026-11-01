@@ -27,6 +27,18 @@ const finding = (n: number, extra: Partial<Finding>): Finding => ({
 })
 
 describe('playground registry', () => {
+  it('only offers text-guided image edit models', () => {
+    expect(
+      taskModelIds(
+        [
+          { id: 'edit', tasks: ['text-image-to-image'] },
+          { id: 'image-only', tasks: ['image-to-image'] },
+          { id: 'create', tasks: ['text-to-image'] },
+        ],
+        MODEL_PIPELINES.edit!.task,
+      ),
+    ).toEqual(['edit'])
+  })
   it('has the runnable image and voice pipelines', () => {
     const ready = PLAYGROUND_GROUPS.flatMap((g) => g.pipelines).filter((p) => p.ready)
     expect(ready.map((p) => p.id)).toEqual([
@@ -36,6 +48,7 @@ describe('playground registry', () => {
       'caption',
       'depth',
       'create',
+      'edit',
       'upscale',
       'tts',
       'transcribe',

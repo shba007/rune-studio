@@ -71,7 +71,13 @@ export const PLAYGROUND_GROUPS: PlaygroundGroup[] = [
         ready: true,
         summary: 'Generate a new image from a prompt.',
       },
-      later('edit', 'Edit', 'edit', 'Change an image with an instruction.'),
+      {
+        id: 'edit',
+        label: 'Edit',
+        icon: 'edit',
+        ready: true,
+        summary: 'Change an image with an instruction.',
+      },
       later('transform', 'Transform', 'transform', 'Redraw an image from your prompt.'),
       later('inpaint', 'Inpaint', 'inpaint', 'Regenerate a painted region.'),
       later('extend', 'Extend', 'extend', 'Grow the canvas and fill the edges.'),
@@ -151,6 +157,11 @@ export const QUESTION_HINTS: Record<string, string[]> = {
     'A small robot watering plants, soft studio light',
     'A quiet street in the rain, neon reflections',
   ],
+  edit: [
+    'Change the background to a sunny beach',
+    'Make the lighting warmer',
+    'Turn this into a watercolor painting',
+  ],
 }
 
 export const DEPTH_PIPELINE = 'depth'
@@ -190,6 +201,14 @@ export interface CreateResult {
   image: string
   prompt: string
   size: string
+  model: string
+  elapsedMs: number
+}
+
+export interface EditResult {
+  original: string
+  image: string
+  prompt: string
   model: string
   elapsedMs: number
 }
@@ -239,6 +258,7 @@ export type DepthState = RunState<DepthResult>
 export type CaptionState = RunState<CaptionResult>
 export type UpscaleState = RunState<UpscaleResult>
 export type CreateState = RunState<CreateResult>
+export type EditState = RunState<EditResult>
 export type SpeechState = RunState<SpeechResult>
 export type TranscribeState = RunState<{ text: string; model: string; elapsedMs: number }>
 
@@ -254,6 +274,13 @@ export interface ModelPipeline {
 }
 
 export const MODEL_PIPELINES: Record<string, ModelPipeline> = {
+  edit: {
+    task: 'text-image-to-image',
+    command: 'playground_edit',
+    modelLabel: 'Edit model',
+    none: 'No image edit model',
+    idle: 'Choose an image, describe a change and press Run.',
+  },
   caption: {
     task: 'image-to-text',
     command: 'playground_caption',

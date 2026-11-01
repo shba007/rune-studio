@@ -5,6 +5,7 @@ import type {
   CaptionResult,
   CreateResult,
   DepthResult,
+  EditResult,
   SpeechResult,
   UpscaleResult,
 } from '@/config/playground'
@@ -13,6 +14,7 @@ export type ModelHistoryResult =
   | CaptionResult
   | CreateResult
   | DepthResult
+  | EditResult
   | SpeechResult
   | UpscaleResult
   | { text: string; model: string; elapsedMs: number }
