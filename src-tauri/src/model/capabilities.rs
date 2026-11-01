@@ -37,6 +37,33 @@ pub enum Locality {
     Unknown,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum OperationStatus {
+    Supported,
+    Unsupported,
+    #[default]
+    #[serde(other)]
+    Unverified,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OperationSupport {
+    #[serde(default)]
+    pub status: OperationStatus,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioOperations {
+    pub transcription: OperationSupport,
+    pub speech_translation: OperationSupport,
+    pub speech_generation: OperationSupport,
+}
+
 impl Locality {
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -72,6 +99,8 @@ pub struct ModelCapabilities {
     #[serde(default)]
     pub tasks: Vec<String>,
     #[serde(default)]
+    pub audio_operations: AudioOperations,
+    #[serde(default)]
     pub roles: Vec<String>,
     #[serde(default)]
     pub aliases: Vec<String>,
@@ -98,6 +127,7 @@ impl ModelCapabilities {
             status: None,
             raw_capabilities: Vec::new(),
             tasks: Vec::new(),
+            audio_operations: AudioOperations::default(),
             roles: Vec::new(),
             aliases: Vec::new(),
         }
@@ -324,7 +354,20 @@ pub fn parse_model_entry(entry: &Value) -> Option<ModelCapabilities> {
         aliases: string_list(entry, "aliases"),
         raw_capabilities,
         tasks: string_list(entry, "tasks"),
+        audio_operations: AudioOperations {
+            transcription: operation_support(entry, "transcription"),
+            speech_translation: operation_support(entry, "speech_translation"),
+            speech_generation: operation_support(entry, "speech_generation"),
+        },
     })
+}
+
+fn operation_support(entry: &Value, name: &str) -> OperationSupport {
+    entry
+        .get("audio_operations")
+        .and_then(|value| value.get(name))
+        .and_then(|value| serde_json::from_value(value.clone()).ok())
+        .unwrap_or_default()
 }
 
 pub fn parse_models_response(body: &str) -> Vec<ModelCapabilities> {
@@ -395,6 +438,43 @@ pub type SharedCapabilityCache = Arc<CapabilityCache>;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_audio_operations_and_defaults_missing_or_future_statuses_to_unverified() {
+        let entry = serde_json::json!({"id":"asr","tasks":["audio-to-text"],"audio_operations":{
+            "transcription":{"status":"supported","verified_with":[{"engine":"whisper-cpp","version":"1"}]},
+            "speech_translation":{"status":"unsupported","reason":"Not available"},
+            "speech_generation":{"status":"future"}
+        }});
+        let model = parse_model_entry(&entry).unwrap();
+        assert_eq!(
+            model.audio_operations.transcription.status,
+            OperationStatus::Supported
+        );
+        assert_eq!(
+            model.audio_operations.speech_translation.status,
+            OperationStatus::Unsupported
+        );
+        assert_eq!(
+            model.audio_operations.speech_translation.reason.as_deref(),
+            Some("Not available")
+        );
+        assert_eq!(
+            model.audio_operations.speech_generation.status,
+            OperationStatus::Unverified
+        );
+        assert_eq!(
+            parse_model_entry(&serde_json::json!({"id":"old"}))
+                .unwrap()
+                .audio_operations,
+            AudioOperations::default()
+        );
+        let serialized = serde_json::to_value(model).unwrap();
+        assert_eq!(
+            serialized["audioOperations"]["speechTranslation"]["status"],
+            "unsupported"
+        );
+    }
 
     #[test]
     fn parses_todays_legacy_shape() {

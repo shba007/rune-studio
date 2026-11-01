@@ -1,6 +1,6 @@
 use crate::{
     events::AppState,
-    model::capabilities::ModelCapabilities,
+    model::capabilities::{ModelCapabilities, OperationStatus, OperationSupport},
     observe::screenshot::{self, CaptureTarget},
     settings::Settings,
 };
@@ -82,6 +82,12 @@ macro_rules! cancellable_command {
 cancellable_command!(
     playground_transcribe,
     transcribe,
+    TranscribeInput,
+    TranscribeResult
+);
+cancellable_command!(
+    playground_translate_speech,
+    translate_speech,
     TranscribeInput,
     TranscribeResult
 );
@@ -229,6 +235,7 @@ async fn session(
     app: &AppHandle,
     model: &str,
     task: &str,
+    operation: Option<AudioOperation>,
 ) -> Result<(Settings, Option<String>, String), String> {
     let state = app.state::<AppState>();
     let (settings, key) = crate::settings::snapshot_with_api_key(&state.settings);
@@ -244,7 +251,48 @@ async fn session(
             "Choose a model that Infer lists with {task} support"
         ));
     }
+    if let Some(operation) = operation {
+        let capabilities = status
+            .models
+            .iter()
+            .find(|item| item.id == model)
+            .ok_or("Model is unavailable")?;
+        validate_audio_operation(capabilities, operation)?;
+    }
     Ok((settings, key, model))
+}
+
+#[derive(Clone, Copy)]
+enum AudioOperation {
+    Transcription,
+    Translation,
+    Speech,
+}
+
+fn validate_audio_operation(
+    model: &ModelCapabilities,
+    operation: AudioOperation,
+) -> Result<(), String> {
+    let (name, support): (&str, &OperationSupport) = match operation {
+        AudioOperation::Transcription => ("transcription", &model.audio_operations.transcription),
+        AudioOperation::Translation => (
+            "speech translation",
+            &model.audio_operations.speech_translation,
+        ),
+        AudioOperation::Speech => (
+            "speech generation",
+            &model.audio_operations.speech_generation,
+        ),
+    };
+    if support.status == OperationStatus::Supported {
+        return Ok(());
+    }
+    let reason = support
+        .reason
+        .as_deref()
+        .filter(|reason| !reason.trim().is_empty())
+        .unwrap_or("Support has not been verified by Infer");
+    Err(format!("Model '{}' cannot run {name}: {reason}", model.id))
 }
 
 async fn prepare(
@@ -257,7 +305,7 @@ async fn prepare(
     if target.is_some() == image.is_some() {
         return Err("Choose either a screen or window, or an image".into());
     }
-    let (settings, key, model) = session(app, model, task).await?;
+    let (settings, key, model) = session(app, model, task, None).await?;
     let max_edge = settings.model_image_resolution.max_edge();
     let capture_edge = settings.recording_resolution.max_edge();
     let frame = tokio::time::timeout(
@@ -321,7 +369,22 @@ fn infer_error_detail(body: &str) -> String {
         .and_then(serde_json::Value::as_str)
         .filter(|message| !message.trim().is_empty())
         .unwrap_or(body);
-    message.chars().take(300).collect()
+    let detail = message
+        .find('{')
+        .and_then(|at| {
+            let nested: serde_json::Value = serde_json::from_str(&message[at..]).ok()?;
+            let inner = nested
+                .pointer("/error/message")
+                .or_else(|| nested.get("message"))?
+                .as_str()?
+                .trim();
+            if inner.is_empty() {
+                return None;
+            }
+            Some(format!("{}{}", &message[..at], inner))
+        })
+        .unwrap_or_else(|| message.to_string());
+    detail.chars().take(300).collect()
 }
 
 fn infer_url(settings: &Settings, path: &str) -> Result<reqwest::Url, String> {
@@ -405,19 +468,61 @@ fn is_transcription_wav(bytes: &[u8]) -> bool {
 }
 
 async fn transcribe(app: AppHandle, input: TranscribeInput) -> Result<TranscribeResult, String> {
-    let audio = transcribe_audio(&input.audio)?;
-    let (settings, key, model) = session(&app, &input.model, TRANSCRIBE_TASK).await?;
-    let url = infer_url(&settings, "/v1/audio/transcriptions")?;
-    let state = app.state::<AppState>();
-    send_transcription(&state.http, url, key.as_deref(), model, audio).await
+    audio_to_text(app, input, AudioTextOperation::Transcribe).await
 }
 
-async fn send_transcription(
+async fn translate_speech(
+    app: AppHandle,
+    input: TranscribeInput,
+) -> Result<TranscribeResult, String> {
+    audio_to_text(app, input, AudioTextOperation::Translate).await
+}
+
+#[derive(Clone, Copy)]
+enum AudioTextOperation {
+    Transcribe,
+    Translate,
+}
+
+impl AudioTextOperation {
+    fn path(self) -> &'static str {
+        match self {
+            Self::Transcribe => "/v1/audio/transcriptions",
+            Self::Translate => "/v1/audio/translations",
+        }
+    }
+    fn label(self) -> &'static str {
+        match self {
+            Self::Transcribe => "Transcription",
+            Self::Translate => "Translation",
+        }
+    }
+}
+
+async fn audio_to_text(
+    app: AppHandle,
+    input: TranscribeInput,
+    operation: AudioTextOperation,
+) -> Result<TranscribeResult, String> {
+    let audio = transcribe_audio(&input.audio)?;
+    let required = match operation {
+        AudioTextOperation::Transcribe => AudioOperation::Transcription,
+        AudioTextOperation::Translate => AudioOperation::Translation,
+    };
+    let (settings, key, model) =
+        session(&app, &input.model, TRANSCRIBE_TASK, Some(required)).await?;
+    let url = infer_url(&settings, operation.path())?;
+    let state = app.state::<AppState>();
+    send_audio_text(&state.http, url, key.as_deref(), model, audio, operation).await
+}
+
+async fn send_audio_text(
     http: &reqwest::Client,
     url: reqwest::Url,
     key: Option<&str>,
     model: String,
     audio: Vec<u8>,
+    operation: AudioTextOperation,
 ) -> Result<TranscribeResult, String> {
     let form = reqwest::multipart::Form::new()
         .text("model", model.clone())
@@ -437,24 +542,25 @@ async fn send_transcription(
     let response = request
         .send()
         .await
-        .map_err(|e| format!("Transcription request failed: {e}"))?;
+        .map_err(|e| format!("{} request failed: {e}", operation.label()))?;
     let status = response.status();
     let text = response
         .text()
         .await
-        .map_err(|e| format!("Transcription response failed: {e}"))?;
+        .map_err(|e| format!("{} response failed: {e}", operation.label()))?;
     if !status.is_success() {
         return Err(format!(
-            "Infer refused the transcription request ({status}): {}",
+            "Infer refused the {} request ({status}): {}",
+            operation.label().to_lowercase(),
             infer_error_detail(&text)
         ));
     }
     let body: serde_json::Value =
-        serde_json::from_str(&text).map_err(|_| "Infer returned an unreadable transcript")?;
+        serde_json::from_str(&text).map_err(|_| "Infer returned unreadable text")?;
     let transcript = body
         .get("text")
         .and_then(serde_json::Value::as_str)
-        .ok_or("Infer returned no transcript")?;
+        .ok_or("Infer returned no text")?;
     Ok(TranscribeResult {
         text: transcript.into(),
         model,
@@ -500,7 +606,13 @@ fn speech_audio(bytes: &[u8]) -> Result<String, &'static str> {
 
 async fn speech(app: AppHandle, input: SpeechInput) -> Result<SpeechResult, String> {
     validate_speech_text(&input.text)?;
-    let (settings, key, model) = session(&app, &input.model, SPEECH_TASK).await?;
+    let (settings, key, model) = session(
+        &app,
+        &input.model,
+        SPEECH_TASK,
+        Some(AudioOperation::Speech),
+    )
+    .await?;
     let url = infer_url(&settings, "/v1/audio/speech")?;
     let state = app.state::<AppState>();
     let started = Instant::now();
@@ -744,7 +856,7 @@ async fn create(app: AppHandle, input: CreateInput) -> Result<CreateResult, Stri
     if !valid_size(&input.size) {
         return Err("Choose an image size between 256 and 2048 pixels".into());
     }
-    let (settings, key, model) = session(&app, &input.model, CREATE_TASK).await?;
+    let (settings, key, model) = session(&app, &input.model, CREATE_TASK, None).await?;
     let started = Instant::now();
     let url = infer_url(&settings, "/v1/images/generations")?;
     let body = serde_json::json!({
@@ -767,6 +879,26 @@ async fn create(app: AppHandle, input: CreateInput) -> Result<CreateResult, Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn audio_operations_require_specific_verified_support() {
+        let mut model = ModelCapabilities::unknown("asr");
+        model.audio_operations.transcription.status = OperationStatus::Supported;
+        model.audio_operations.speech_translation.status = OperationStatus::Unsupported;
+        model.audio_operations.speech_translation.reason =
+            Some("Translation is not supported".into());
+        assert!(validate_audio_operation(&model, AudioOperation::Transcription).is_ok());
+        assert!(
+            validate_audio_operation(&model, AudioOperation::Translation)
+                .unwrap_err()
+                .contains("Translation is not supported")
+        );
+        assert!(
+            validate_audio_operation(&model, AudioOperation::Speech)
+                .unwrap_err()
+                .contains("not been verified")
+        );
+    }
 
     #[tokio::test]
     async fn cancelling_a_run_is_isolated_and_drops_its_future() {
@@ -794,7 +926,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn sends_multipart_audio_and_reads_transcript() {
+    async fn sends_multipart_audio_and_reads_translation() {
         use std::io::{Read, Write};
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
@@ -836,20 +968,21 @@ mod tests {
             stream.write_all(response).unwrap();
             String::from_utf8_lossy(&request).into_owned()
         });
-        let result = send_transcription(
+        let result = send_audio_text(
             &reqwest::Client::builder().no_proxy().build().unwrap(),
-            format!("http://{address}/v1/audio/transcriptions")
+            format!("http://{address}{}", AudioTextOperation::Translate.path())
                 .parse()
                 .unwrap(),
             Some("test-key"),
             "asr-model".into(),
             b"audio bytes".to_vec(),
+            AudioTextOperation::Translate,
         )
         .await
         .unwrap();
         assert_eq!(result.text, "hello");
         let request = server.join().unwrap();
-        assert!(request.starts_with("POST /v1/audio/transcriptions "));
+        assert!(request.starts_with("POST /v1/audio/translations "));
         assert!(
             request
                 .to_lowercase()
@@ -921,6 +1054,11 @@ mod tests {
 
     #[test]
     fn extracts_infer_error_messages_and_preserves_other_bodies() {
+        let nested = serde_json::json!({"error":{"message": "nemo-speech translation failed: {\"error\":{\"message\":\"translation unsupported\"}}"}}).to_string();
+        assert_eq!(
+            infer_error_detail(&nested),
+            "nemo-speech translation failed: translation unsupported"
+        );
         assert_eq!(
             infer_error_detail(r#"{"error":{"message":"Unsupported size","code":"invalid"}}"#),
             "Unsupported size"

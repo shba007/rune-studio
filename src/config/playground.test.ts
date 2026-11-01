@@ -38,6 +38,7 @@ describe('playground registry', () => {
       'upscale',
       'tts',
       'transcribe',
+      'translate-speech',
     ])
     expect(PLAYGROUND_GROUPS[0]!.pipelines.slice(0, 4).map((p) => p.id)).toEqual([
       'ask',
@@ -132,6 +133,30 @@ describe('speech models', () => {
         MODEL_PIPELINES.tts!.task,
       ),
     ).toEqual(['audio'])
+  })
+  it('requires the specific verified operation as well as the task', () => {
+    const supported = { status: 'supported' as const, reason: null }
+    const unsupported = { status: 'unsupported' as const, reason: 'not supported' }
+    const models = [
+      {
+        id: 'translator',
+        tasks: ['audio-to-text'],
+        audioOperations: { speechTranslation: supported },
+      },
+      {
+        id: 'asr-only',
+        tasks: ['audio-to-text'],
+        audioOperations: { speechTranslation: unsupported, transcription: supported },
+      },
+      { id: 'legacy', tasks: ['audio-to-text'] },
+      {
+        id: 'wrong-task',
+        tasks: ['text-to-audio'],
+        audioOperations: { speechTranslation: supported },
+      },
+    ]
+    expect(taskModelIds(models, 'audio-to-text', 'speechTranslation')).toEqual(['translator'])
+    expect(taskModelIds(models, 'audio-to-text', 'transcription')).toEqual(['asr-only'])
   })
 })
 

@@ -1,5 +1,6 @@
 import type { IconName } from '@/icons'
 import type { AnalysisSnapshot } from '@/types/protocol'
+import type { AudioOperation, AudioOperationSupport } from '@/types/protocol'
 
 export interface PlaygroundPipeline {
   id: string
@@ -99,6 +100,13 @@ export const PLAYGROUND_GROUPS: PlaygroundGroup[] = [
         icon: 'captions',
         ready: true,
         summary: 'Turn speech from a WAV file into text.',
+      },
+      {
+        id: 'translate-speech',
+        label: 'Translate speech',
+        icon: 'captions',
+        ready: true,
+        summary: 'Translate speech from a WAV file into text.',
       },
     ],
   },
@@ -223,6 +231,7 @@ export const idleRun = <T>(): RunState<T> => ({ status: 'idle', result: null, er
 
 export interface ModelPipeline {
   task: string
+  audioOperation?: AudioOperation
   command: string
   modelLabel: string
   none: string
@@ -230,18 +239,28 @@ export interface ModelPipeline {
 }
 
 export const MODEL_PIPELINES: Record<string, ModelPipeline> = {
+  'translate-speech': {
+    task: 'audio-to-text',
+    audioOperation: 'speechTranslation',
+    command: 'playground_translate_speech',
+    modelLabel: 'Translation model',
+    none: 'No verified translation model',
+    idle: 'Choose a WAV file and a translation-capable model, then press Run.',
+  },
   transcribe: {
     task: 'audio-to-text',
+    audioOperation: 'transcription',
     command: 'playground_transcribe',
     modelLabel: 'Transcription model',
-    none: 'No audio-to-text model',
+    none: 'No verified transcription model',
     idle: 'Choose a WAV file and a transcription model, then press Run.',
   },
   tts: {
     task: 'text-to-audio',
+    audioOperation: 'speechGeneration',
     command: 'playground_speech',
     modelLabel: 'Voice model',
-    none: 'No text-to-speech model',
+    none: 'No verified voice model',
     idle: 'Enter text and choose a voice model, then press Run.',
   },
   depth: {
@@ -272,8 +291,22 @@ export const SCALE_OPTIONS = [
   { value: 4, label: '4×' },
 ]
 
-export const taskModelIds = (models: { id: string; tasks?: string[] }[], task: string) =>
-  models.filter((model) => model.tasks?.includes(task)).map((model) => model.id)
+export const taskModelIds = (
+  models: {
+    id: string
+    tasks?: string[]
+    audioOperations?: Partial<Record<AudioOperation, AudioOperationSupport>>
+  }[],
+  task: string,
+  operation?: AudioOperation,
+) =>
+  models
+    .filter(
+      (model) =>
+        model.tasks?.includes(task) &&
+        (!operation || model.audioOperations?.[operation]?.status === 'supported'),
+    )
+    .map((model) => model.id)
 
 export const RESOLUTION_OPTIONS = [
   { value: '720', label: '720 px' },

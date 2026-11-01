@@ -108,6 +108,8 @@ const isModelRun = computed(() => !!modelPipeline.value)
 const isCreate = computed(() => selectedId.value === 'create')
 const isSpeech = computed(() => selectedId.value === 'tts')
 const isTranscribe = computed(() => selectedId.value === 'transcribe')
+const isTranslate = computed(() => selectedId.value === 'translate-speech')
+const isAudioText = computed(() => isTranscribe.value || isTranslate.value)
 const audioFile = ref<File | null>(null)
 const audioNotice = ref('')
 const audioInput = useTemplateRef<HTMLInputElement>('audioInput')
@@ -119,7 +121,11 @@ const imageSize = computed(() => createSize(createResolution.value, createAspect
 const taskOptions = computed(() => {
   const pipeline = modelPipeline.value
   if (!pipeline) return []
-  const ids = taskModelIds(agent.backend.value?.models ?? [], pipeline.task)
+  const ids = taskModelIds(
+    agent.backend.value?.models ?? [],
+    pipeline.task,
+    pipeline.audioOperation,
+  )
   return ids.length
     ? ids.map((id) => ({ value: id, label: id }))
     : [{ value: '', label: pipeline.none }]
@@ -139,12 +145,14 @@ const upscale = ref<UpscaleState>(idleRun())
 const create = ref<CreateState>(idleRun())
 const speech = ref<SpeechState>(idleRun())
 const transcript = ref<TranscribeState>(idleRun())
+const translation = ref<TranscribeState>(idleRun())
 const modelRuns: Record<string, Ref<RunState<unknown>>> = {
   depth: depth as Ref<RunState<unknown>>,
   upscale: upscale as Ref<RunState<unknown>>,
   create: create as Ref<RunState<unknown>>,
   tts: speech as Ref<RunState<unknown>>,
   transcribe: transcript as Ref<RunState<unknown>>,
+  'translate-speech': translation as Ref<RunState<unknown>>,
 }
 const startedAt = ref<Record<string, number>>({})
 const activeRuns: Record<string, { runId?: number; cancelled: boolean }> = {}
@@ -190,6 +198,7 @@ const loadingLabel = computed(
       depth: 'Estimating depth',
       upscale: 'Upscaling image',
       transcribe: 'Transcribing audio',
+      'translate-speech': 'Translating speech',
     })[selectedId.value] ?? 'Analyzing image',
 )
 const scale = ref(2)
@@ -215,7 +224,7 @@ const hasResult = computed(() => display.value.status !== 'idle')
 const canRun = computed(
   () =>
     selected.value.ready &&
-    (isTranscribe.value
+    (isAudioText.value
       ? !!audioFile.value
       : isSpeech.value
         ? !!speechText.value.trim() && speechBytes.value <= 4096
@@ -310,7 +319,7 @@ watch(
 async function runModel(id: string, pipeline: ModelPipeline) {
   const option = options.value.find((item) => JSON.stringify(item.target) === target.value)
   const input =
-    id === 'transcribe'
+    id === 'transcribe' || id === 'translate-speech'
       ? audioFile.value && { file: audioFile.value }
       : id === 'tts'
         ? { text: speechText.value }
@@ -455,9 +464,16 @@ onKeyStroke('Escape', () => {
             <h1 class="m-0 font-sans text-rune-title">{{ selected.label }}</h1>
           </header>
           <p class="m-0 text-rune-body text-rune-text-2">{{ selected.summary }}</p>
+          <p
+            v-if="modelPipeline?.audioOperation && !activeTaskModel"
+            class="m-0 text-rune-caption text-rune-text-3"
+          >
+            Infer has not reported a model verified for this operation. Check the model's setup and
+            verification in Infer.
+          </p>
 
           <template v-if="selected.ready">
-            <div v-if="isTranscribe" class="flex flex-col gap-2">
+            <div v-if="isAudioText" class="flex flex-col gap-2">
               <span class="text-rune-heading text-rune-text-3 uppercase">Audio file</span>
               <input
                 ref="audioInput"
@@ -476,11 +492,15 @@ onKeyStroke('Escape', () => {
               <p class="m-0 text-rune-caption text-rune-text-3">
                 16 kHz, mono, 16-bit PCM WAV, up to 25 MB.
               </p>
+              <p v-if="isTranslate" class="m-0 text-rune-caption text-rune-text-3">
+                Only models verified by Infer for speech translation are listed. Output language
+                depends on the model.
+              </p>
               <p v-if="audioNotice" role="alert" class="m-0 text-rune-caption text-error">
                 {{ audioNotice }}
               </p>
             </div>
-            <div v-if="!isCreate && !isSpeech && !isTranscribe" class="flex flex-col gap-2">
+            <div v-if="!isCreate && !isSpeech && !isAudioText" class="flex flex-col gap-2">
               <span class="text-rune-heading text-rune-text-3 uppercase">Source</span>
               <RuneChoice v-model="source" label="Source" :options="SOURCE_OPTIONS" />
               <div
@@ -670,6 +690,10 @@ onKeyStroke('Escape', () => {
             v-else-if="isTranscribe && transcript.status !== 'idle'"
             :state="transcript"
           />
+          <PlaygroundTranscript
+            v-else-if="isTranslate && translation.status !== 'idle'"
+            :state="translation"
+          />
           <PlaygroundResult
             v-else-if="!isModelRun && hasResult && selected.ready"
             :snapshot="display"
@@ -695,7 +719,7 @@ onKeyStroke('Escape', () => {
           aria-label="History"
           data-testid="playground-history"
         >
-          <span v-if="isSpeech || isTranscribe" class="text-rune-caption text-rune-text-3">
+          <span v-if="isSpeech || isAudioText" class="text-rune-caption text-rune-text-3">
             Audio runs are not saved in history.
           </span>
           <span v-else-if="!history.runs.value.length" class="text-rune-caption text-rune-text-3">
@@ -703,7 +727,7 @@ onKeyStroke('Escape', () => {
           </span>
           <RuneButton
             v-for="item in history.runs.value"
-            v-show="!isSpeech && !isTranscribe"
+            v-show="!isSpeech && !isAudioText"
             :key="item.id"
             variant="ghost"
             class="size-16 min-h-0 overflow-hidden rounded-rune-tile! p-0!"

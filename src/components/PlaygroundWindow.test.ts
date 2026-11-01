@@ -15,11 +15,18 @@ const captureImage = vi.fn<(...args: unknown[]) => Promise<boolean>>(async () =>
 const invoked = vi.fn<(command: string, args?: unknown) => Promise<unknown>>()
 let pendingSpeech: Promise<unknown> | null = null
 let pendingStart: Promise<number> | null = null
+let translationReply: Promise<unknown> | null = null
+let translationError = ''
+let noVerifiedAudio = false
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: async (command: string, args?: unknown) => {
     void invoked(command, args)
     if (command === 'playground_start_run') return pendingStart ?? 42
     if (command === 'playground_speech' && pendingSpeech) return pendingSpeech
+    if (command === 'playground_translate_speech') {
+      if (translationError) throw new Error(translationError)
+      return translationReply ?? { text: 'Translated words', model: 'asr-a', elapsedMs: 700 }
+    }
     if (command === 'playground_transcribe')
       return { text: 'Hello from audio', model: 'asr-a', elapsedMs: 1000 }
     if (command === 'playground_speech')
@@ -85,15 +92,32 @@ vi.mock('@/composables/useAgent', () => ({
   useAgent: () => ({
     settings: ref({ models: { analysis: 'vision-a' }, modelImageResolution: '1280' }),
     backend: ref({
-      models: [
-        { id: 'vision-a', imageIn: 'yes', toolCalls: 'yes' },
-        { id: 'text-only', imageIn: 'no', toolCalls: 'yes' },
-        { id: 'depth-s', imageIn: 'no', toolCalls: 'no', tasks: ['image-to-depth'] },
-        { id: 'up-x', imageIn: 'no', toolCalls: 'no', tasks: ['image-upscale'] },
-        { id: 'img-m', imageIn: 'no', toolCalls: 'no', tasks: ['text-to-image'] },
-        { id: 'voice-a', imageIn: 'no', toolCalls: 'no', tasks: ['text-to-audio'] },
-        { id: 'asr-a', imageIn: 'no', toolCalls: 'no', tasks: ['audio-to-text'] },
-      ],
+      models: noVerifiedAudio
+        ? [{ id: 'unverified-asr', imageIn: 'no', toolCalls: 'no', tasks: ['audio-to-text'] }]
+        : [
+            { id: 'vision-a', imageIn: 'yes', toolCalls: 'yes' },
+            { id: 'text-only', imageIn: 'no', toolCalls: 'yes' },
+            { id: 'depth-s', imageIn: 'no', toolCalls: 'no', tasks: ['image-to-depth'] },
+            { id: 'up-x', imageIn: 'no', toolCalls: 'no', tasks: ['image-upscale'] },
+            { id: 'img-m', imageIn: 'no', toolCalls: 'no', tasks: ['text-to-image'] },
+            {
+              id: 'voice-a',
+              imageIn: 'no',
+              toolCalls: 'no',
+              tasks: ['text-to-audio'],
+              audioOperations: { speechGeneration: { status: 'supported' } },
+            },
+            {
+              id: 'asr-a',
+              imageIn: 'no',
+              toolCalls: 'no',
+              tasks: ['audio-to-text'],
+              audioOperations: {
+                transcription: { status: 'supported' },
+                speechTranslation: { status: 'supported' },
+              },
+            },
+          ],
     }),
   }),
 }))
@@ -101,6 +125,9 @@ vi.mock('@/composables/useAgent', () => ({
 beforeEach(() => {
   pendingSpeech = null
   pendingStart = null
+  translationReply = null
+  translationError = ''
+  noVerifiedAudio = false
   invoked.mockClear()
   snapshot.value = { ...EMPTY_SNAPSHOT }
   capture.mockClear()
@@ -111,6 +138,75 @@ beforeEach(() => {
 })
 
 describe('playground window', () => {
+  it('does not offer unverified translation models', async () => {
+    noVerifiedAudio = true
+    const wrapper = mount(PlaygroundWindow)
+    await flushPromises()
+    await wrapper.get('[data-testid="pipeline-translate-speech"]').trigger('click')
+    expect(wrapper.text()).toContain('No verified translation model')
+    expect(wrapper.text()).toContain('Infer has not reported a model verified for this operation')
+    expect(wrapper.text()).not.toContain('unverified-asr')
+    expect(wrapper.get('[data-testid="playground-run"]').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+  it('shows Infer errors when the model does not support translation', async () => {
+    translationError =
+      'Infer refused the translation request (400 Bad Request): Engine does not implement translation'
+    const wrapper = mount(PlaygroundWindow)
+    await flushPromises()
+    await wrapper.get('[data-testid="pipeline-translate-speech"]').trigger('click')
+    const input = wrapper.get('input[aria-label="WAV file"]')
+    Object.defineProperty(input.element, 'files', {
+      configurable: true,
+      value: [new File(['audio'], 'sample.wav', { type: 'audio/wav' })],
+    })
+    await input.trigger('change')
+    await wrapper.get('[data-testid="playground-run"]').trigger('click')
+    await vi.waitFor(() =>
+      expect(wrapper.get('[role="alert"]').text()).toContain(
+        'Engine does not implement translation',
+      ),
+    )
+    wrapper.unmount()
+  })
+  it('translates WAV audio with a separate result and supports cancellation', async () => {
+    let finish!: (value: unknown) => void
+    translationReply = new Promise((resolve) => {
+      finish = resolve
+    })
+    const wrapper = mount(PlaygroundWindow)
+    await flushPromises()
+    await wrapper.get('[data-testid="pipeline-translate-speech"]').trigger('click')
+    expect(wrapper.text()).toContain(
+      'Only models verified by Infer for speech translation are listed',
+    )
+    const input = wrapper.get('input[aria-label="WAV file"]')
+    Object.defineProperty(input.element, 'files', {
+      configurable: true,
+      value: [new File(['audio'], 'sample.wav', { type: 'audio/wav' })],
+    })
+    await input.trigger('change')
+    await wrapper.get('[data-testid="playground-run"]').trigger('click')
+    await vi.waitFor(() =>
+      expect(invoked).toHaveBeenCalledWith('playground_translate_speech', {
+        runId: 42,
+        input: { audio: expect.stringContaining('data:audio/wav;base64,'), model: 'asr-a' },
+      }),
+    )
+    await wrapper.get('[data-testid="result-cancel"]').trigger('click')
+    expect(invoked).toHaveBeenCalledWith('playground_cancel_run', { runId: 42 })
+    translationReply = null
+    await wrapper.get('[data-testid="playground-run"]').trigger('click')
+    await vi.waitFor(() =>
+      expect(wrapper.get('[data-testid="transcript-result"]').text()).toContain('Translated words'),
+    )
+    finish({ text: 'Old translation', model: 'asr-a', elapsedMs: 3 })
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('Old translation')
+    await wrapper.get('[data-testid="pipeline-transcribe"]').trigger('click')
+    expect(wrapper.find('[data-testid="transcript-result"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
   it('cancels a run even while registration is pending', async () => {
     let finish!: (id: number) => void
     pendingStart = new Promise((resolve) => {
@@ -177,7 +273,7 @@ describe('playground window', () => {
     const wrapper = mount(PlaygroundWindow)
     const labels = wrapper.findAll('[data-testid="playground-nav"] button').map((b) => b.text())
     expect(labels.slice(0, 4)).toEqual(['Ask', 'Point', 'Pose', 'Depth'])
-    expect(labels).toHaveLength(19)
+    expect(labels).toHaveLength(20)
     expect(wrapper.findAll('[data-testid="playground-nav"] h2').map((h) => h.text())).toEqual([
       'Images',
       'Audio',

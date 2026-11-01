@@ -299,6 +299,7 @@ pub fn run() {
             playground::playground_create,
             playground::playground_speech,
             playground::playground_transcribe,
+            playground::playground_translate_speech,
             crate::intake::decisions_state,
             crate::intake::decision_answer,
             crate::intake::decision_delete,

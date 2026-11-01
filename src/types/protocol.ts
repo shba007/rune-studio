@@ -13,6 +13,11 @@ export type AgentState =
 
 export type TriState = 'yes' | 'no' | 'unknown'
 export type Locality = 'local' | 'cloud' | 'unknown'
+export type AudioOperation = 'transcription' | 'speechTranslation' | 'speechGeneration'
+export interface AudioOperationSupport {
+  status: 'supported' | 'unsupported' | 'unverified'
+  reason: string | null
+}
 
 export interface ModelCapabilities {
   id: string
@@ -32,6 +37,7 @@ export interface ModelCapabilities {
   status: string | null
   rawCapabilities: string[]
   tasks?: string[]
+  audioOperations?: Partial<Record<AudioOperation, AudioOperationSupport>>
 }
 
 export interface ModelRoles {
