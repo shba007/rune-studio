@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { invoke } from '@tauri-apps/api/core'
 import { onKeyStroke } from '@vueuse/core'
-import { computed, onMounted, ref, useTemplateRef, watch, type Ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, useTemplateRef, watch, type Ref } from 'vue'
 
 import { useAgent } from '@/composables/useAgent'
 import { useAnalysis } from '@/composables/useAnalysis'
@@ -147,6 +147,33 @@ const modelRuns: Record<string, Ref<RunState<unknown>>> = {
   transcribe: transcript as Ref<RunState<unknown>>,
 }
 const startedAt = ref<Record<string, number>>({})
+const activeRuns: Record<string, { runId?: number; cancelled: boolean }> = {}
+
+function requestCancel(id: string, runId: number) {
+  void invoke('playground_cancel_run', { runId }).catch(() => {
+    const state = modelRuns[id]
+    if (!activeRuns[id] && state?.value.status === 'idle')
+      state.value = {
+        status: 'error',
+        result: null,
+        error: 'Could not stop the request; Infer may still be processing it.',
+      }
+  })
+}
+
+function cancelModel(id: string) {
+  const run = activeRuns[id]
+  const state = modelRuns[id]
+  if (!run || !state) return
+  run.cancelled = true
+  delete activeRuns[id]
+  state.value = idleRun()
+  if (run.runId !== undefined) requestCancel(id, run.runId)
+}
+
+onUnmounted(() => {
+  for (const id of Object.keys(activeRuns)) cancelModel(id)
+})
 const loading = computed(() =>
   isModelRun.value
     ? modelRuns[selectedId.value]?.value.status === 'running'
@@ -294,18 +321,31 @@ async function runModel(id: string, pipeline: ModelPipeline) {
             : option && { target: option.target }
   const state = modelRuns[id]
   if (!input || !state) return
+  const run: { runId?: number; cancelled: boolean } = { cancelled: false }
+  activeRuns[id] = run
   startedAt.value = { ...startedAt.value, [id]: Date.now() }
   state.value = { status: 'running', result: null, error: '' }
   try {
     const extra = id === 'upscale' ? { scale: scale.value } : {}
     const model = activeTaskModel.value
     const payload = 'file' in input ? { audio: await readAudio(input.file!) } : input
+    if (run.cancelled) return
+    run.runId = await invoke<number>('playground_start_run')
+    if (run.cancelled) {
+      requestCancel(id, run.runId)
+      return
+    }
     const result = await invoke<unknown>(pipeline.command, {
+      runId: run.runId,
       input: { ...payload, model, ...extra },
     })
-    state.value = { status: 'done', result, error: '' }
+    if (!run.cancelled) state.value = { status: 'done', result, error: '' }
   } catch (error) {
-    state.value = { status: 'error', result: null, error: String(error) }
+    if (!run.cancelled) state.value = { status: 'error', result: null, error: String(error) }
+  } finally {
+    if (!run.cancelled && run.runId !== undefined)
+      void invoke('playground_cancel_run', { runId: run.runId }).catch(() => {})
+    if (activeRuns[id] === run) delete activeRuns[id]
   }
 }
 
@@ -344,7 +384,8 @@ onKeyStroke('Enter', (event) => {
   run()
 })
 onKeyStroke('Escape', () => {
-  if (analysis.busy.value) void analysis.cancel()
+  if (isModelRun.value && loading.value) cancelModel(selectedId.value)
+  else if (!isModelRun.value && analysis.busy.value) void analysis.cancel()
   else history.clearView()
 })
 </script>
@@ -612,8 +653,8 @@ onKeyStroke('Escape', () => {
             v-if="loading"
             :started-at="loadingStartedAt"
             :label="loadingLabel"
-            :cancellable="!isModelRun"
-            @cancel="analysis.cancel()"
+            :cancellable="true"
+            @cancel="isModelRun ? cancelModel(selectedId) : analysis.cancel()"
           />
           <PlaygroundDepth
             v-else-if="selectedId === 'depth' && depth.status !== 'idle'"

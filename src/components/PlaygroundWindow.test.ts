@@ -13,9 +13,13 @@ const cancel = vi.fn<() => Promise<boolean>>(async () => true)
 const captureImage = vi.fn<(...args: unknown[]) => Promise<boolean>>(async () => true)
 
 const invoked = vi.fn<(command: string, args?: unknown) => Promise<unknown>>()
+let pendingSpeech: Promise<unknown> | null = null
+let pendingStart: Promise<number> | null = null
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: async (command: string, args?: unknown) => {
     void invoked(command, args)
+    if (command === 'playground_start_run') return pendingStart ?? 42
+    if (command === 'playground_speech' && pendingSpeech) return pendingSpeech
     if (command === 'playground_transcribe')
       return { text: 'Hello from audio', model: 'asr-a', elapsedMs: 1000 }
     if (command === 'playground_speech')
@@ -95,6 +99,9 @@ vi.mock('@/composables/useAgent', () => ({
 }))
 
 beforeEach(() => {
+  pendingSpeech = null
+  pendingStart = null
+  invoked.mockClear()
   snapshot.value = { ...EMPTY_SNAPSHOT }
   capture.mockClear()
   cancel.mockClear()
@@ -104,6 +111,45 @@ beforeEach(() => {
 })
 
 describe('playground window', () => {
+  it('cancels a run even while registration is pending', async () => {
+    let finish!: (id: number) => void
+    pendingStart = new Promise((resolve) => {
+      finish = resolve
+    })
+    const wrapper = mount(PlaygroundWindow)
+    await flushPromises()
+    await wrapper.get('[data-testid="pipeline-tts"]').trigger('click')
+    await wrapper.get('#speech-text').setValue('Hello there')
+    await wrapper.get('[data-testid="playground-run"]').trigger('click')
+    await wrapper.get('[data-testid="result-cancel"]').trigger('click')
+    finish(45)
+    await flushPromises()
+    expect(invoked).toHaveBeenCalledWith('playground_cancel_run', { runId: 45 })
+    expect(invoked).not.toHaveBeenCalledWith('playground_speech', expect.anything())
+    wrapper.unmount()
+  })
+  it('cancels a model run and ignores its late result after a retry', async () => {
+    let finish!: (result: unknown) => void
+    pendingSpeech = new Promise((resolve) => {
+      finish = resolve
+    })
+    const wrapper = mount(PlaygroundWindow)
+    await flushPromises()
+    await wrapper.get('[data-testid="pipeline-tts"]').trigger('click')
+    await wrapper.get('#speech-text').setValue('Hello there')
+    await wrapper.get('[data-testid="playground-run"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="result-cancel"]').trigger('click')
+    expect(invoked).toHaveBeenCalledWith('playground_cancel_run', { runId: 42 })
+    pendingSpeech = null
+    await wrapper.get('[data-testid="playground-run"]').trigger('click')
+    await flushPromises()
+    finish({ audio: 'old', text: 'stale', model: 'old', elapsedMs: 1 })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="speech-result"]').text()).toContain('Hello there')
+    expect(wrapper.get('[data-testid="speech-result"]').text()).not.toContain('stale')
+    wrapper.unmount()
+  })
   it('uploads an audio file and displays the transcript', async () => {
     const wrapper = mount(PlaygroundWindow)
     await flushPromises()
@@ -119,6 +165,7 @@ describe('playground window', () => {
     await wrapper.get('[data-testid="playground-run"]').trigger('click')
     await vi.waitFor(() =>
       expect(invoked).toHaveBeenCalledWith('playground_transcribe', {
+        runId: 42,
         input: { audio: expect.stringContaining('data:audio/wav;base64,'), model: 'asr-a' },
       }),
     )
@@ -217,6 +264,7 @@ describe('playground window', () => {
     await wrapper.get('[data-testid="playground-run"]').trigger('click')
     await flushPromises()
     expect(invoked).toHaveBeenCalledWith('playground_depth', {
+      runId: 42,
       input: { target: { kind: 'screen', id: 1 }, model: 'depth-s' },
     })
     expect(capture).not.toHaveBeenCalled()
@@ -236,6 +284,7 @@ describe('playground window', () => {
     await wrapper.get('[data-testid="playground-run"]').trigger('click')
     await flushPromises()
     expect(invoked).toHaveBeenCalledWith('playground_create', {
+      runId: 42,
       input: { prompt: 'a red fox', size: '720x720', model: 'img-m' },
     })
     expect(wrapper.findAll('[data-testid="create-image"]')).toHaveLength(1)
@@ -265,6 +314,7 @@ describe('playground window', () => {
     await wrapper.get('[data-testid="playground-run"]').trigger('click')
     await flushPromises()
     expect(invoked).toHaveBeenCalledWith('playground_speech', {
+      runId: 42,
       input: { text: 'Hello there', model: 'voice-a' },
     })
     expect(wrapper.get('[data-testid="speech-player"]').attributes('src')).toContain(
@@ -286,6 +336,7 @@ describe('playground window', () => {
     await wrapper.get('[data-testid="playground-run"]').trigger('click')
     await flushPromises()
     expect(invoked).toHaveBeenCalledWith('playground_upscale', {
+      runId: 42,
       input: { target: { kind: 'screen', id: 1 }, model: 'up-x', scale: 4 },
     })
     expect(wrapper.get('[data-testid="upscale-result"]').text()).toContain('2×2 to 8×8')

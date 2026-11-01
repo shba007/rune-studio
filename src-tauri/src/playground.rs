@@ -4,12 +4,91 @@ use crate::{
     observe::screenshot::{self, CaptureTarget},
     settings::Settings,
 };
+use crate::{exec::CancelToken, sync::LockExt};
 use base64::Engine;
 use serde::{Deserialize, Serialize};
-use std::time::{Duration, Instant};
+use std::{
+    collections::HashMap,
+    future::Future,
+    sync::{
+        Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::{Duration, Instant},
+};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 pub const WINDOW: &str = "playground";
+
+#[derive(Default)]
+pub struct PlaygroundRuns {
+    next: AtomicU64,
+    runs: Mutex<HashMap<u64, CancelToken>>,
+}
+
+impl PlaygroundRuns {
+    fn start(&self) -> u64 {
+        let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
+        self.runs.locked().insert(id, CancelToken::default());
+        id
+    }
+    fn cancel(&self, id: u64) {
+        if let Some(token) = self.runs.locked().remove(&id) {
+            token.cancel();
+        }
+    }
+    async fn run<T>(
+        &self,
+        id: u64,
+        work: impl Future<Output = Result<T, String>>,
+    ) -> Result<T, String> {
+        let token = self
+            .runs
+            .locked()
+            .get(&id)
+            .cloned()
+            .ok_or("Playground run was cancelled")?;
+        let result = tokio::select! {
+            biased;
+            () = async { while !token.is_cancelled() { tokio::time::sleep(Duration::from_millis(25)).await; } } => Err("Playground run was cancelled".into()),
+            result = work => if token.is_cancelled() { Err("Playground run was cancelled".into()) } else { result },
+        };
+        self.runs.locked().remove(&id);
+        result
+    }
+}
+
+#[tauri::command]
+pub fn playground_start_run(app: AppHandle) -> u64 {
+    app.state::<PlaygroundRuns>().start()
+}
+
+#[tauri::command]
+pub fn playground_cancel_run(app: AppHandle, run_id: u64) {
+    app.state::<PlaygroundRuns>().cancel(run_id);
+}
+
+macro_rules! cancellable_command {
+    ($name:ident, $inner:ident, $input:ty, $output:ty) => {
+        #[tauri::command]
+        pub async fn $name(app: AppHandle, run_id: u64, input: $input) -> Result<$output, String> {
+            app.state::<PlaygroundRuns>()
+                .run(run_id, $inner(app.clone(), input))
+                .await
+        }
+    };
+}
+
+cancellable_command!(
+    playground_transcribe,
+    transcribe,
+    TranscribeInput,
+    TranscribeResult
+);
+cancellable_command!(playground_speech, speech, SpeechInput, SpeechResult);
+cancellable_command!(playground_depth, depth, DepthInput, DepthResult);
+cancellable_command!(playground_upscale, upscale, UpscaleInput, UpscaleResult);
+cancellable_command!(playground_create, create, CreateInput, CreateResult);
 
 pub fn open(app: &AppHandle) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window(WINDOW) {
@@ -325,11 +404,7 @@ fn is_transcription_wav(bytes: &[u8]) -> bool {
     pos == bytes.len() && valid_format && has_audio
 }
 
-#[tauri::command]
-pub async fn playground_transcribe(
-    app: AppHandle,
-    input: TranscribeInput,
-) -> Result<TranscribeResult, String> {
+async fn transcribe(app: AppHandle, input: TranscribeInput) -> Result<TranscribeResult, String> {
     let audio = transcribe_audio(&input.audio)?;
     let (settings, key, model) = session(&app, &input.model, TRANSCRIBE_TASK).await?;
     let url = infer_url(&settings, "/v1/audio/transcriptions")?;
@@ -423,8 +498,7 @@ fn speech_audio(bytes: &[u8]) -> Result<String, &'static str> {
     ))
 }
 
-#[tauri::command]
-pub async fn playground_speech(app: AppHandle, input: SpeechInput) -> Result<SpeechResult, String> {
+async fn speech(app: AppHandle, input: SpeechInput) -> Result<SpeechResult, String> {
     validate_speech_text(&input.text)?;
     let (settings, key, model) = session(&app, &input.model, SPEECH_TASK).await?;
     let url = infer_url(&settings, "/v1/audio/speech")?;
@@ -470,8 +544,7 @@ pub async fn playground_speech(app: AppHandle, input: SpeechInput) -> Result<Spe
     })
 }
 
-#[tauri::command]
-pub async fn playground_depth(app: AppHandle, input: DepthInput) -> Result<DepthResult, String> {
+async fn depth(app: AppHandle, input: DepthInput) -> Result<DepthResult, String> {
     let prepared = prepare(&app, input.target, input.image, &input.model, DEPTH_TASK).await?;
     let original = prepared.frame.data_uri();
     let started = Instant::now();
@@ -569,11 +642,7 @@ fn upscale_result(
     })
 }
 
-#[tauri::command]
-pub async fn playground_upscale(
-    app: AppHandle,
-    input: UpscaleInput,
-) -> Result<UpscaleResult, String> {
+async fn upscale(app: AppHandle, input: UpscaleInput) -> Result<UpscaleResult, String> {
     if !matches!(input.scale, 2 | 4) {
         return Err("Choose a 2x or 4x scale".into());
     }
@@ -664,8 +733,7 @@ fn create_result(
     })
 }
 
-#[tauri::command]
-pub async fn playground_create(app: AppHandle, input: CreateInput) -> Result<CreateResult, String> {
+async fn create(app: AppHandle, input: CreateInput) -> Result<CreateResult, String> {
     let prompt = input.prompt.trim().to_string();
     if prompt.is_empty() {
         return Err("Describe the image to create".into());
@@ -699,6 +767,31 @@ pub async fn playground_create(app: AppHandle, input: CreateInput) -> Result<Cre
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn cancelling_a_run_is_isolated_and_drops_its_future() {
+        let runs = std::sync::Arc::new(PlaygroundRuns::default());
+        let first = runs.start();
+        let second = runs.start();
+        let active = runs.clone();
+        let task = tokio::spawn(async move {
+            active
+                .run(first, std::future::pending::<Result<(), String>>())
+                .await
+        });
+        tokio::task::yield_now().await;
+        runs.cancel(first);
+        assert!(
+            tokio::time::timeout(Duration::from_secs(1), task)
+                .await
+                .unwrap()
+                .unwrap()
+                .is_err()
+        );
+        assert!(runs.run(first, async { Ok(()) }).await.is_err());
+        assert_eq!(runs.run(second, async { Ok(7) }).await.unwrap(), 7);
+        assert!(runs.runs.locked().is_empty());
+    }
 
     #[tokio::test]
     async fn sends_multipart_audio_and_reads_transcript() {

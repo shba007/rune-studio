@@ -184,6 +184,7 @@ pub fn run() {
                     crate::model::capabilities::CapabilityCache::default(),
                 ),
             });
+            app.manage(playground::PlaygroundRuns::default());
 
             {
                 let handle = app.handle().clone();
@@ -291,6 +292,8 @@ pub fn run() {
             commands::open_settings_window,
             commands::open_workspace,
             playground::open_playground,
+            playground::playground_start_run,
+            playground::playground_cancel_run,
             playground::playground_depth,
             playground::playground_upscale,
             playground::playground_create,
