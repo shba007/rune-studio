@@ -295,6 +295,7 @@ pub fn run() {
             playground::playground_upscale,
             playground::playground_create,
             playground::playground_speech,
+            playground::playground_transcribe,
             crate::intake::decisions_state,
             crate::intake::decision_answer,
             crate::intake::decision_delete,

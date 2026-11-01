@@ -35,6 +35,7 @@ import {
   type RunState,
   type UpscaleState,
   type SpeechState,
+  type TranscribeState,
   type PlaygroundSource,
 } from '@/config/playground'
 
@@ -46,6 +47,7 @@ import PlaygroundResult from './PlaygroundResult.vue'
 import PlaygroundUpscale from './PlaygroundUpscale.vue'
 import PlaygroundSpeech from './PlaygroundSpeech.vue'
 import PlaygroundLoading from './PlaygroundLoading.vue'
+import PlaygroundTranscript from './PlaygroundTranscript.vue'
 import RuneButton from './RuneButton.vue'
 import RuneChip from './RuneChip.vue'
 import RuneChoice from './RuneChoice.vue'
@@ -105,6 +107,10 @@ const modelPipeline = computed(() => MODEL_PIPELINES[selectedId.value])
 const isModelRun = computed(() => !!modelPipeline.value)
 const isCreate = computed(() => selectedId.value === 'create')
 const isSpeech = computed(() => selectedId.value === 'tts')
+const isTranscribe = computed(() => selectedId.value === 'transcribe')
+const audioFile = ref<File | null>(null)
+const audioNotice = ref('')
+const audioInput = useTemplateRef<HTMLInputElement>('audioInput')
 const speechText = ref('')
 const speechBytes = computed(() => speechTextBytes(speechText.value))
 const createResolution = ref('720')
@@ -132,11 +138,13 @@ const depth = ref<DepthState>(idleRun())
 const upscale = ref<UpscaleState>(idleRun())
 const create = ref<CreateState>(idleRun())
 const speech = ref<SpeechState>(idleRun())
+const transcript = ref<TranscribeState>(idleRun())
 const modelRuns: Record<string, Ref<RunState<unknown>>> = {
   depth: depth as Ref<RunState<unknown>>,
   upscale: upscale as Ref<RunState<unknown>>,
   create: create as Ref<RunState<unknown>>,
   tts: speech as Ref<RunState<unknown>>,
+  transcribe: transcript as Ref<RunState<unknown>>,
 }
 const startedAt = ref<Record<string, number>>({})
 const loading = computed(() =>
@@ -154,6 +162,7 @@ const loadingLabel = computed(
       create: 'Creating image',
       depth: 'Estimating depth',
       upscale: 'Upscaling image',
+      transcribe: 'Transcribing audio',
     })[selectedId.value] ?? 'Analyzing image',
 )
 const scale = ref(2)
@@ -179,17 +188,44 @@ const hasResult = computed(() => display.value.status !== 'idle')
 const canRun = computed(
   () =>
     selected.value.ready &&
-    (isSpeech.value
-      ? !!speechText.value.trim() && speechBytes.value <= 4096
-      : isCreate.value
-        ? !!question.value.trim()
-        : source.value === 'file'
-          ? !!file.value
-          : !!target.value) &&
+    (isTranscribe.value
+      ? !!audioFile.value
+      : isSpeech.value
+        ? !!speechText.value.trim() && speechBytes.value <= 4096
+        : isCreate.value
+          ? !!question.value.trim()
+          : source.value === 'file'
+            ? !!file.value
+            : !!target.value) &&
     (isModelRun.value
       ? !!activeTaskModel.value && modelRuns[selectedId.value]?.value.status !== 'running'
       : !analysis.busy.value),
 )
+
+function pickAudio(event: Event) {
+  const input = event.target as HTMLInputElement
+  const picked = input.files?.[0]
+  input.value = ''
+  if (!picked) return
+  audioFile.value = null
+  audioNotice.value = ''
+  if (!picked.name.toLowerCase().endsWith('.wav')) audioNotice.value = 'Choose a WAV file.'
+  else if (!picked.size || picked.size > 25 * 1024 * 1024)
+    audioNotice.value = 'Choose a non-empty WAV file no larger than 25 MB.'
+  else audioFile.value = picked
+}
+
+function readAudio(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () =>
+      typeof reader.result === 'string'
+        ? resolve(reader.result)
+        : reject(new Error('Could not read the WAV file'))
+    reader.onerror = () => reject(new Error('Could not read the WAV file'))
+    reader.readAsDataURL(file)
+  })
+}
 
 async function takeFile(picked: File | undefined) {
   fileNotice.value = ''
@@ -247,21 +283,25 @@ watch(
 async function runModel(id: string, pipeline: ModelPipeline) {
   const option = options.value.find((item) => JSON.stringify(item.target) === target.value)
   const input =
-    id === 'tts'
-      ? { text: speechText.value }
-      : id === 'create'
-        ? { prompt: question.value, size: imageSize.value }
-        : source.value === 'file'
-          ? file.value && { image: file.value.data }
-          : option && { target: option.target }
+    id === 'transcribe'
+      ? audioFile.value && { file: audioFile.value }
+      : id === 'tts'
+        ? { text: speechText.value }
+        : id === 'create'
+          ? { prompt: question.value, size: imageSize.value }
+          : source.value === 'file'
+            ? file.value && { image: file.value.data }
+            : option && { target: option.target }
   const state = modelRuns[id]
   if (!input || !state) return
   startedAt.value = { ...startedAt.value, [id]: Date.now() }
   state.value = { status: 'running', result: null, error: '' }
   try {
     const extra = id === 'upscale' ? { scale: scale.value } : {}
+    const model = activeTaskModel.value
+    const payload = 'file' in input ? { audio: await readAudio(input.file!) } : input
     const result = await invoke<unknown>(pipeline.command, {
-      input: { ...input, model: activeTaskModel.value, ...extra },
+      input: { ...payload, model, ...extra },
     })
     state.value = { status: 'done', result, error: '' }
   } catch (error) {
@@ -376,7 +416,30 @@ onKeyStroke('Escape', () => {
           <p class="m-0 text-rune-body text-rune-text-2">{{ selected.summary }}</p>
 
           <template v-if="selected.ready">
-            <div v-if="!isCreate && !isSpeech" class="flex flex-col gap-2">
+            <div v-if="isTranscribe" class="flex flex-col gap-2">
+              <span class="text-rune-heading text-rune-text-3 uppercase">Audio file</span>
+              <input
+                ref="audioInput"
+                type="file"
+                accept=".wav,audio/wav"
+                class="hidden"
+                aria-label="WAV file"
+                @change="pickAudio"
+              />
+              <RuneButton size="sm" class="self-start" @click="audioInput?.click()"
+                >Choose WAV file</RuneButton
+              >
+              <span v-if="audioFile" class="break-all text-rune-caption text-rune-text-2">{{
+                audioFile.name
+              }}</span>
+              <p class="m-0 text-rune-caption text-rune-text-3">
+                16 kHz, mono, 16-bit PCM WAV, up to 25 MB.
+              </p>
+              <p v-if="audioNotice" role="alert" class="m-0 text-rune-caption text-error">
+                {{ audioNotice }}
+              </p>
+            </div>
+            <div v-if="!isCreate && !isSpeech && !isTranscribe" class="flex flex-col gap-2">
               <span class="text-rune-heading text-rune-text-3 uppercase">Source</span>
               <RuneChoice v-model="source" label="Source" :options="SOURCE_OPTIONS" />
               <div
@@ -562,6 +625,10 @@ onKeyStroke('Escape', () => {
           />
           <PlaygroundCreate v-else-if="isCreate && create.status !== 'idle'" :state="create" />
           <PlaygroundSpeech v-else-if="isSpeech && speech.status !== 'idle'" :state="speech" />
+          <PlaygroundTranscript
+            v-else-if="isTranscribe && transcript.status !== 'idle'"
+            :state="transcript"
+          />
           <PlaygroundResult
             v-else-if="!isModelRun && hasResult && selected.ready"
             :snapshot="display"
@@ -587,15 +654,15 @@ onKeyStroke('Escape', () => {
           aria-label="History"
           data-testid="playground-history"
         >
-          <span v-if="isSpeech" class="text-rune-caption text-rune-text-3">
-            Voice runs are not saved in history.
+          <span v-if="isSpeech || isTranscribe" class="text-rune-caption text-rune-text-3">
+            Audio runs are not saved in history.
           </span>
           <span v-else-if="!history.runs.value.length" class="text-rune-caption text-rune-text-3">
             This session's runs appear here.
           </span>
           <RuneButton
             v-for="item in history.runs.value"
-            v-show="!isSpeech"
+            v-show="!isSpeech && !isTranscribe"
             :key="item.id"
             variant="ghost"
             class="size-16 min-h-0 overflow-hidden rounded-rune-tile! p-0!"

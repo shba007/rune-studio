@@ -16,6 +16,8 @@ const invoked = vi.fn<(command: string, args?: unknown) => Promise<unknown>>()
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: async (command: string, args?: unknown) => {
     void invoked(command, args)
+    if (command === 'playground_transcribe')
+      return { text: 'Hello from audio', model: 'asr-a', elapsedMs: 1000 }
     if (command === 'playground_speech')
       return {
         audio: 'data:audio/wav;base64,UklGRjAwMDBXQVZF',
@@ -86,6 +88,7 @@ vi.mock('@/composables/useAgent', () => ({
         { id: 'up-x', imageIn: 'no', toolCalls: 'no', tasks: ['image-upscale'] },
         { id: 'img-m', imageIn: 'no', toolCalls: 'no', tasks: ['text-to-image'] },
         { id: 'voice-a', imageIn: 'no', toolCalls: 'no', tasks: ['text-to-audio'] },
+        { id: 'asr-a', imageIn: 'no', toolCalls: 'no', tasks: ['audio-to-text'] },
       ],
     }),
   }),
@@ -101,6 +104,28 @@ beforeEach(() => {
 })
 
 describe('playground window', () => {
+  it('uploads an audio file and displays the transcript', async () => {
+    const wrapper = mount(PlaygroundWindow)
+    await flushPromises()
+    await wrapper.get('[data-testid="pipeline-transcribe"]').trigger('click')
+    expect(wrapper.text()).toContain('asr-a')
+    expect(wrapper.get('[data-testid="playground-run"]').attributes('disabled')).toBeDefined()
+    const input = wrapper.get('input[aria-label="WAV file"]')
+    Object.defineProperty(input.element, 'files', {
+      configurable: true,
+      value: [new File(['audio'], 'sample.wav', { type: 'audio/wav' })],
+    })
+    await input.trigger('change')
+    await wrapper.get('[data-testid="playground-run"]').trigger('click')
+    await vi.waitFor(() =>
+      expect(invoked).toHaveBeenCalledWith('playground_transcribe', {
+        input: { audio: expect.stringContaining('data:audio/wav;base64,'), model: 'asr-a' },
+      }),
+    )
+    await flushPromises()
+    expect(wrapper.get('[data-testid="transcript-result"]').text()).toContain('Hello from audio')
+    wrapper.unmount()
+  })
   it('lists every pipeline group in one full-height sidebar', () => {
     const wrapper = mount(PlaygroundWindow)
     const labels = wrapper.findAll('[data-testid="playground-nav"] button').map((b) => b.text())

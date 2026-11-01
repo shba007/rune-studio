@@ -37,6 +37,7 @@ describe('playground registry', () => {
       'create',
       'upscale',
       'tts',
+      'transcribe',
     ])
     expect(PLAYGROUND_GROUPS[0]!.pipelines.slice(0, 4).map((p) => p.id)).toEqual([
       'ask',

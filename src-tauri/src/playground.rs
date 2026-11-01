@@ -44,6 +44,7 @@ const DEPTH_TASK: &str = "image-to-depth";
 const UPSCALE_TASK: &str = "image-upscale";
 const CREATE_TASK: &str = "text-to-image";
 const SPEECH_TASK: &str = "text-to-audio";
+const TRANSCRIBE_TASK: &str = "audio-to-text";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
 const MAX_IMAGE_CHARS: usize = 40_000_000;
 
@@ -254,6 +255,137 @@ fn infer_url(settings: &Settings, path: &str) -> Result<reqwest::Url, String> {
 
 const MAX_SPEECH_BYTES: usize = 4096;
 const MAX_AUDIO_BYTES: usize = 25 * 1024 * 1024;
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct TranscribeInput {
+    audio: String,
+    model: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscribeResult {
+    text: String,
+    model: String,
+    elapsed_ms: u64,
+}
+
+fn transcribe_audio(data: &str) -> Result<Vec<u8>, &'static str> {
+    let body = data
+        .split_once(',')
+        .and_then(|(header, body)| header.ends_with(";base64").then_some(body))
+        .ok_or("Choose a WAV file")?;
+    if body.len() > MAX_AUDIO_BYTES.div_ceil(3) * 4 {
+        return Err("Choose a WAV file no larger than 25 MB");
+    }
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(body)
+        .map_err(|_| "Could not read the WAV file")?;
+    if bytes.len() > MAX_AUDIO_BYTES {
+        return Err("Choose a WAV file no larger than 25 MB");
+    }
+    if !is_transcription_wav(&bytes) {
+        return Err("Choose a 16 kHz mono 16-bit PCM WAV file");
+    }
+    Ok(bytes)
+}
+
+fn is_transcription_wav(bytes: &[u8]) -> bool {
+    if bytes.len() < 12 || &bytes[..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
+        return false;
+    }
+    let declared = u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize;
+    if declared.checked_add(8) != Some(bytes.len()) {
+        return false;
+    }
+    let mut pos = 12usize;
+    let mut valid_format = false;
+    let mut has_audio = false;
+    while pos + 8 <= bytes.len() {
+        let len = u32::from_le_bytes(bytes[pos + 4..pos + 8].try_into().unwrap()) as usize;
+        let start = pos + 8;
+        let Some(end) = start.checked_add(len).filter(|end| *end <= bytes.len()) else {
+            return false;
+        };
+        if &bytes[pos..pos + 4] == b"fmt " && len >= 16 {
+            valid_format = bytes[start..start + 2] == 1u16.to_le_bytes()
+                && bytes[start + 2..start + 4] == 1u16.to_le_bytes()
+                && bytes[start + 4..start + 8] == 16000u32.to_le_bytes()
+                && bytes[start + 14..start + 16] == 16u16.to_le_bytes();
+        }
+        if &bytes[pos..pos + 4] == b"data" && len > 0 {
+            has_audio = true;
+        }
+        let Some(next) = end.checked_add(len % 2).filter(|next| *next <= bytes.len()) else {
+            return false;
+        };
+        pos = next;
+    }
+    pos == bytes.len() && valid_format && has_audio
+}
+
+#[tauri::command]
+pub async fn playground_transcribe(
+    app: AppHandle,
+    input: TranscribeInput,
+) -> Result<TranscribeResult, String> {
+    let audio = transcribe_audio(&input.audio)?;
+    let (settings, key, model) = session(&app, &input.model, TRANSCRIBE_TASK).await?;
+    let url = infer_url(&settings, "/v1/audio/transcriptions")?;
+    let state = app.state::<AppState>();
+    send_transcription(&state.http, url, key.as_deref(), model, audio).await
+}
+
+async fn send_transcription(
+    http: &reqwest::Client,
+    url: reqwest::Url,
+    key: Option<&str>,
+    model: String,
+    audio: Vec<u8>,
+) -> Result<TranscribeResult, String> {
+    let form = reqwest::multipart::Form::new()
+        .text("model", model.clone())
+        .text("response_format", "json")
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(audio)
+                .file_name("audio.wav")
+                .mime_str("audio/wav")
+                .map_err(|e| e.to_string())?,
+        );
+    let started = Instant::now();
+    let mut request = http.post(url).timeout(REQUEST_TIMEOUT).multipart(form);
+    if let Some(key) = key {
+        request = request.bearer_auth(key);
+    }
+    let response = request
+        .send()
+        .await
+        .map_err(|e| format!("Transcription request failed: {e}"))?;
+    let status = response.status();
+    let text = response
+        .text()
+        .await
+        .map_err(|e| format!("Transcription response failed: {e}"))?;
+    if !status.is_success() {
+        return Err(format!(
+            "Infer refused the transcription request ({status}): {}",
+            infer_error_detail(&text)
+        ));
+    }
+    let body: serde_json::Value =
+        serde_json::from_str(&text).map_err(|_| "Infer returned an unreadable transcript")?;
+    let transcript = body
+        .get("text")
+        .and_then(serde_json::Value::as_str)
+        .ok_or("Infer returned no transcript")?;
+    Ok(TranscribeResult {
+        text: transcript.into(),
+        model,
+        elapsed_ms: started.elapsed().as_millis() as u64,
+    })
+}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -567,6 +699,107 @@ pub async fn playground_create(app: AppHandle, input: CreateInput) -> Result<Cre
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn sends_multipart_audio_and_reads_transcript() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut request = Vec::new();
+            let mut buffer = [0u8; 4096];
+            loop {
+                let count = stream.read(&mut buffer).unwrap();
+                if count == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buffer[..count]);
+                if let Some(end) = request.windows(4).position(|v| v == b"\r\n\r\n") {
+                    let headers = String::from_utf8_lossy(&request[..end]);
+                    let length = headers
+                        .lines()
+                        .find_map(|line| {
+                            line.to_lowercase()
+                                .strip_prefix("content-length:")
+                                .and_then(|n| n.trim().parse::<usize>().ok())
+                        })
+                        .unwrap();
+                    if request.len() >= end + 4 + length {
+                        break;
+                    }
+                }
+            }
+            let response = b"{\"text\":\"hello\"}";
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+                response.len()
+            )
+            .unwrap();
+            stream.write_all(response).unwrap();
+            String::from_utf8_lossy(&request).into_owned()
+        });
+        let result = send_transcription(
+            &reqwest::Client::builder().no_proxy().build().unwrap(),
+            format!("http://{address}/v1/audio/transcriptions")
+                .parse()
+                .unwrap(),
+            Some("test-key"),
+            "asr-model".into(),
+            b"audio bytes".to_vec(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.text, "hello");
+        let request = server.join().unwrap();
+        assert!(request.starts_with("POST /v1/audio/transcriptions "));
+        assert!(
+            request
+                .to_lowercase()
+                .contains("authorization: bearer test-key")
+        );
+        for expected in [
+            "multipart/form-data",
+            "name=\"model\"",
+            "asr-model",
+            "name=\"file\"",
+            "audio bytes",
+            "name=\"response_format\"",
+        ] {
+            assert!(request.contains(expected), "{expected}");
+        }
+    }
+
+    #[test]
+    fn accepts_only_mono_16khz_16bit_pcm_wav_for_transcription() {
+        let mut wav = b"RIFF".to_vec();
+        wav.extend_from_slice(&38u32.to_le_bytes());
+        wav.extend_from_slice(b"WAVEfmt ");
+        wav.extend_from_slice(&16u32.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&16000u32.to_le_bytes());
+        wav.extend_from_slice(&32000u32.to_le_bytes());
+        wav.extend_from_slice(&2u16.to_le_bytes());
+        wav.extend_from_slice(&16u16.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&2u32.to_le_bytes());
+        wav.extend_from_slice(&[0, 0]);
+        assert!(is_transcription_wav(&wav));
+        let uri = format!(
+            "data:audio/wav;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(&wav)
+        );
+        assert_eq!(transcribe_audio(&uri).unwrap(), wav);
+        wav[22] = 2;
+        assert!(!is_transcription_wav(&wav));
+        assert!(!is_transcription_wav(b"RIFF"));
+        assert!(transcribe_audio("data:audio/wav;base64,invalid").is_err());
+    }
 
     #[test]
     fn validates_speech_text_and_wav() {

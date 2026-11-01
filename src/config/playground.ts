@@ -93,7 +93,13 @@ export const PLAYGROUND_GROUPS: PlaygroundGroup[] = [
       later('convert', 'Convert', 'convert', 'Make a recording sound like another voice.'),
       later('music', 'Music', 'music', 'Songs, instrumentals and sound effects.'),
       later('separate', 'Separate', 'separate', 'Split a track into vocals and instruments.'),
-      later('transcribe', 'Transcribe', 'captions', 'Turn speech into text.'),
+      {
+        id: 'transcribe',
+        label: 'Transcribe',
+        icon: 'captions',
+        ready: true,
+        summary: 'Turn speech from a WAV file into text.',
+      },
     ],
   },
   {
@@ -211,6 +217,7 @@ export type DepthState = RunState<DepthResult>
 export type UpscaleState = RunState<UpscaleResult>
 export type CreateState = RunState<CreateResult>
 export type SpeechState = RunState<SpeechResult>
+export type TranscribeState = RunState<{ text: string; model: string; elapsedMs: number }>
 
 export const idleRun = <T>(): RunState<T> => ({ status: 'idle', result: null, error: '' })
 
@@ -223,6 +230,13 @@ export interface ModelPipeline {
 }
 
 export const MODEL_PIPELINES: Record<string, ModelPipeline> = {
+  transcribe: {
+    task: 'audio-to-text',
+    command: 'playground_transcribe',
+    modelLabel: 'Transcription model',
+    none: 'No audio-to-text model',
+    idle: 'Choose a WAV file and a transcription model, then press Run.',
+  },
   tts: {
     task: 'text-to-audio',
     command: 'playground_speech',
