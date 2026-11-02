@@ -2,7 +2,7 @@
 import { friendly } from '@/config/errors'
 import type { EditState } from '@/config/playground'
 
-defineProps<{ state: EditState; variation?: boolean }>()
+defineProps<{ state: EditState; variation?: boolean; reference?: boolean }>()
 </script>
 
 <template>
@@ -23,12 +23,22 @@ defineProps<{ state: EditState; variation?: boolean }>()
         class="max-h-[60vh] max-w-full rounded-rune-tile object-contain"
         data-testid="edit-image"
       />
-      <p v-if="state.result.prompt" class="m-0 text-center text-rune-caption text-rune-text-3">
+      <p
+        v-if="state.result.prompt && !reference"
+        class="m-0 text-center text-rune-caption text-rune-text-3"
+      >
         {{ state.result.prompt }}
       </p>
+      <details
+        v-if="state.result.prompt && reference"
+        class="max-w-prose text-center text-rune-caption text-rune-text-3"
+      >
+        <summary class="cursor-pointer">View prompt</summary>
+        <p class="m-0 whitespace-pre-wrap break-words pt-2">{{ state.result.prompt }}</p>
+      </details>
       <a
         :href="state.result.image"
-        :download="`rune-${variation ? 'variation' : 'edit'}.${state.result.image.startsWith('data:image/jpeg') ? 'jpg' : 'png'}`"
+        :download="`rune-${reference ? 'reference' : variation ? 'variation' : 'edit'}.${state.result.image.startsWith('data:image/jpeg') ? 'jpg' : 'png'}`"
         class="text-rune-body text-rune-ink underline"
         data-testid="edit-download"
         >Download image</a

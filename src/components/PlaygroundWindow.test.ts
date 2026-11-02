@@ -17,6 +17,8 @@ let pendingSpeech: Promise<unknown> | null = null
 let pendingCaption: Promise<unknown> | null = null
 let pendingEdit: Promise<unknown> | null = null
 let pendingVariation: Promise<unknown> | null = null
+let pendingReference: Promise<unknown> | null = null
+let referenceError = ''
 let variationError = ''
 let pendingStart: Promise<number> | null = null
 let translationReply: Promise<unknown> | null = null
@@ -57,6 +59,16 @@ vi.mock('@tauri-apps/api/core', () => ({
         elapsedMs: 4000,
       }
     if (command === 'playground_edit' && pendingEdit) return pendingEdit
+    if (command === 'playground_reference' && referenceError) throw new Error(referenceError)
+    if (command === 'playground_reference' && pendingReference) return pendingReference
+    if (command === 'playground_reference')
+      return {
+        original: 'data:image/jpeg;base64,AA==',
+        image: 'data:image/png;base64,AA==',
+        prompt: 'Use the colors',
+        model: 'edit-m',
+        elapsedMs: 2000,
+      }
     if (command === 'playground_variation' && variationError) throw new Error(variationError)
     if (command === 'playground_variation' && pendingVariation) return pendingVariation
     if (command === 'playground_variation')
@@ -107,7 +119,8 @@ vi.mock('@tauri-apps/api/core', () => ({
   },
 }))
 vi.mock('@/config/imageFile', () => ({
-  readImageAsPng: async () => 'data:image/png;base64,AA==',
+  readImageAsPng: async (file: File) =>
+    file.name === 'second.png' ? 'data:image/png;base64,BB==' : 'data:image/png;base64,AA==',
 }))
 vi.mock('@/composables/useNativeBlur', () => ({ useNativeBlur: () => {} }))
 vi.mock('@/composables/useAnalysis', () => ({
@@ -133,6 +146,13 @@ vi.mock('@/composables/useAgent', () => ({
             { id: 'up-x', imageIn: 'no', toolCalls: 'no', tasks: ['image-upscale'] },
             { id: 'img-m', imageIn: 'no', toolCalls: 'no', tasks: ['text-to-image'] },
             { id: 'edit-m', imageIn: 'no', toolCalls: 'no', tasks: ['text-image-to-image'] },
+            {
+              id: 'edit-ten',
+              imageIn: 'no',
+              toolCalls: 'no',
+              tasks: ['text-image-to-image'],
+              maxImageReferences: 10,
+            },
             {
               id: 'voice-a',
               imageIn: 'no',
@@ -160,6 +180,8 @@ beforeEach(() => {
   pendingCaption = null
   pendingEdit = null
   pendingVariation = null
+  pendingReference = null
+  referenceError = ''
   variationError = ''
   pendingStart = null
   translationReply = null
@@ -503,6 +525,164 @@ describe('playground window', () => {
     )
     await wrapper.get('[data-testid="history-run"]').trigger('click')
     expect(wrapper.get('[data-testid="history-details"]').text()).toContain('Variations')
+    wrapper.unmount()
+  })
+
+  it('requires two reference files and preserves their order and labels', async () => {
+    const wrapper = mount(PlaygroundWindow)
+    await flushPromises()
+    await wrapper.get('[data-testid="pipeline-reference"]').trigger('click')
+    await wrapper.get('textarea').setValue('Use the colors')
+    expect(wrapper.get('[data-testid="playground-run"]').attributes('disabled')).toBeDefined()
+    async function choose(index: number, name: string) {
+      const input = wrapper.get(`[aria-label="Image ${index}"]`)
+      Object.defineProperty(input.element, 'files', {
+        configurable: true,
+        value: [new File(['x'], name, { type: 'image/png' })],
+      })
+      await input.trigger('change')
+      await flushPromises()
+    }
+    await choose(1, 'first.png')
+    expect(wrapper.get('[data-testid="reference-drop-1"] img').attributes('alt')).toBe('first.png')
+    expect(wrapper.get('[data-testid="playground-run"]').attributes('disabled')).toBeDefined()
+    await choose(2, 'second.png')
+    expect(wrapper.get('[data-testid="reference-drop-2"] img').attributes('alt')).toBe('second.png')
+    await wrapper.get('[data-testid="playground-run"]').trigger('click')
+    await flushPromises()
+    expect(invoked).toHaveBeenCalledWith('playground_reference', {
+      runId: 42,
+      input: {
+        images: ['data:image/png;base64,AA==', 'data:image/png;base64,BB=='],
+        model: 'edit-m',
+        prompt: 'Use the colors',
+      },
+    })
+    expect(wrapper.get('[data-testid="edit-download"]').attributes('download')).toBe(
+      'rune-reference.png',
+    )
+    await wrapper.get('[data-testid="history-run"]').trigger('click')
+    expect(wrapper.get('[data-testid="history-details"]').text()).toContain('Image 1: first.png')
+    expect(wrapper.get('[data-testid="history-details"]').text()).toContain('Image 2: second.png')
+    wrapper.unmount()
+  })
+
+  it('uses the selected model limit, preserves images on model change, and sends ordered inputs', async () => {
+    const wrapper = mount(PlaygroundWindow)
+    await flushPromises()
+    await wrapper.get('[data-testid="pipeline-reference"]').trigger('click')
+    expect(wrapper.get('[data-testid="reference-add"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[aria-label="Reference model"]').trigger('click')
+    const ten = wrapper.findAll('[role="option"]').find((item) => item.text().includes('edit-ten'))
+    await ten!.trigger('click')
+    await wrapper.get('textarea').setValue('Combine all images')
+    for (let index = 1; index <= 10; index++) {
+      if (index > 2) await wrapper.get('[data-testid="reference-add"]').trigger('click')
+      const input = wrapper.get(`[aria-label="Image ${index}"]`)
+      Object.defineProperty(input.element, 'files', {
+        configurable: true,
+        value: [new File(['x'], `${index}.png`, { type: 'image/png' })],
+      })
+      await input.trigger('change')
+      await flushPromises()
+    }
+    expect(wrapper.get('[data-testid="reference-add"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[aria-label="Reference model"]').trigger('click')
+    const legacy = wrapper.findAll('[role="option"]').find((item) => item.text().includes('edit-m'))
+    await legacy!.trigger('click')
+    expect(wrapper.get('[role="alert"]').text()).toContain('up to 2')
+    expect(wrapper.get('[data-testid="playground-run"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.findAll('[id^="reference-file-"]')).toHaveLength(10)
+    await wrapper.get('[aria-label="Reference model"]').trigger('click')
+    const selected = wrapper
+      .findAll('[role="option"]')
+      .find((item) => item.text().includes('edit-ten'))
+    await selected!.trigger('click')
+    await wrapper.get('[data-testid="playground-run"]').trigger('click')
+    await flushPromises()
+    const call = invoked.mock.calls.find(([command]) => command === 'playground_reference')
+    expect(call).toBeDefined()
+    expect((call![1] as { input: { images: string[] } }).input.images).toHaveLength(10)
+    await wrapper.get('[data-testid="history-run"]').trigger('click')
+    expect(wrapper.get('[data-testid="history-details"]').text()).toContain('Image 10: 10.png')
+    await wrapper.get('[aria-label="Remove image 3"]').trigger('click')
+    expect(wrapper.findAll('[id^="reference-file-"]')).toHaveLength(9)
+    wrapper.unmount()
+  })
+
+  it('offers example instructions and accepts a dropped reference image', async () => {
+    const wrapper = mount(PlaygroundWindow)
+    await flushPromises()
+    await wrapper.get('[data-testid="pipeline-reference"]').trigger('click')
+    const example = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('Transfer style'))
+    expect(example).toBeDefined()
+    await example!.trigger('click')
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe(
+      'Apply the colors and style of image 2 to image 1.',
+    )
+    await wrapper.get('[data-testid="reference-drop-1"]').trigger('drop', {
+      dataTransfer: { files: [new File(['x'], 'first.png', { type: 'image/png' })] },
+    })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="reference-drop-1"] img').attributes('alt')).toBe('first.png')
+    wrapper.unmount()
+  })
+
+  it('cancels a reference run without saving a late result', async () => {
+    let finish!: (value: unknown) => void
+    pendingReference = new Promise((resolve) => {
+      finish = resolve
+    })
+    const wrapper = mount(PlaygroundWindow)
+    await flushPromises()
+    await wrapper.get('[data-testid="pipeline-reference"]').trigger('click')
+    await wrapper.get('textarea').setValue('Use both images')
+    for (const index of [1, 2]) {
+      const input = wrapper.get(`[aria-label="Image ${index}"]`)
+      Object.defineProperty(input.element, 'files', {
+        configurable: true,
+        value: [new File(['x'], `${index}.png`, { type: 'image/png' })],
+      })
+      await input.trigger('change')
+    }
+    await flushPromises()
+    await wrapper.get('[data-testid="playground-run"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="result-cancel"]').trigger('click')
+    finish({
+      original: 'source',
+      image: 'late',
+      prompt: 'Use both images',
+      model: 'edit-m',
+      elapsedMs: 10,
+    })
+    await flushPromises()
+    expect(invoked).toHaveBeenCalledWith('playground_cancel_run', { runId: 42 })
+    expect(usePlaygroundHistory().runs.value).toHaveLength(0)
+    wrapper.unmount()
+  })
+
+  it('shows reference inference errors without saving a result', async () => {
+    referenceError = 'Infer refused the image edit request: model cannot use two images'
+    const wrapper = mount(PlaygroundWindow)
+    await flushPromises()
+    await wrapper.get('[data-testid="pipeline-reference"]').trigger('click')
+    await wrapper.get('textarea').setValue('Use both images')
+    for (const index of [1, 2]) {
+      const input = wrapper.get(`[aria-label="Image ${index}"]`)
+      Object.defineProperty(input.element, 'files', {
+        configurable: true,
+        value: [new File(['x'], `${index}.png`, { type: 'image/png' })],
+      })
+      await input.trigger('change')
+    }
+    await flushPromises()
+    await wrapper.get('[data-testid="playground-run"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('model cannot use two images')
+    expect(usePlaygroundHistory().runs.value).toHaveLength(0)
     wrapper.unmount()
   })
 

@@ -51,6 +51,7 @@ describe('playground registry', () => {
       'edit',
       'variation',
       'upscale',
+      'reference',
       'tts',
       'transcribe',
       'translate-speech',

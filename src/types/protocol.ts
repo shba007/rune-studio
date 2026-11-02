@@ -29,6 +29,7 @@ export interface ModelCapabilities {
   toolCalls: TriState
   thinkingControl: TriState
   maxImageEdgePx: number | null
+  maxImageReferences?: number | null
   contextTokens: number | null
   locality: Locality
   resident: TriState

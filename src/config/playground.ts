@@ -95,7 +95,13 @@ export const PLAYGROUND_GROUPS: PlaygroundGroup[] = [
         ready: true,
         summary: 'Enlarge an image 2× or 4× with an upscale model.',
       },
-      later('reference', 'Reference', 'reference', 'Generate guided by a reference image.'),
+      {
+        id: 'reference',
+        label: 'Reference',
+        icon: 'reference',
+        ready: true,
+        summary: 'Generate using two images and an instruction.',
+      },
     ],
   },
   {
@@ -168,6 +174,11 @@ export const QUESTION_HINTS: Record<string, string[]> = {
     'Change the background to a sunny beach',
     'Make the lighting warmer',
     'Turn this into a watercolor painting',
+  ],
+  reference: [
+    'Replace the person in image 2 with the person from image 1. Preserve the person from image 1, his/her face, hairstyle, body but not clothes. Keep the environmental setting from image 2. Do not keep the person from image 2.',
+    'Apply the colors and style of image 2 to image 1.',
+    'Combine the main subjects of both images in one scene.',
   ],
 }
 
@@ -281,6 +292,13 @@ export interface ModelPipeline {
 }
 
 export const MODEL_PIPELINES: Record<string, ModelPipeline> = {
+  reference: {
+    task: 'text-image-to-image',
+    command: 'playground_reference',
+    modelLabel: 'Reference model',
+    none: 'No image edit model',
+    idle: 'Choose two images, describe how to use them and press Run.',
+  },
   variation: {
     task: 'text-image-to-image',
     command: 'playground_variation',

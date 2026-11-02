@@ -102,11 +102,11 @@ async function doType() {
       </RuneButton>
     </HubRow>
     <HubRow label="Type text" hint="Sent to the focused window.">
-      <input
+      <textarea
         v-model="text"
         type="text"
         aria-label="Text to type"
-        class="h-10 w-48 rounded-rune-tile bg-rune-sunken px-3 text-rune-body text-rune-ink"
+        class="h-48 w-80 rounded-rune-tile bg-rune-sunken px-3 py-2 text-rune-body text-rune-ink"
         @keydown.enter="doType"
       />
       <RuneButton size="sm" :disabled="busy !== null" @click="doType">

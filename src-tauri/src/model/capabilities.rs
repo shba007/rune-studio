@@ -88,6 +88,8 @@ pub struct ModelCapabilities {
     pub tool_calls: TriState,
     pub thinking_control: TriState,
     pub max_image_edge_px: Option<u32>,
+    #[serde(default)]
+    pub max_image_references: Option<u64>,
     pub context_tokens: Option<u64>,
     pub locality: Locality,
     pub resident: TriState,
@@ -131,6 +133,7 @@ impl ModelCapabilities {
             tool_calls: TriState::Unknown,
             thinking_control: TriState::Unknown,
             max_image_edge_px: None,
+            max_image_references: None,
             context_tokens: None,
             locality: Locality::Unknown,
             resident: TriState::Unknown,
@@ -356,6 +359,7 @@ pub fn parse_model_entry(entry: &Value) -> Option<ModelCapabilities> {
         tool_calls,
         thinking_control,
         max_image_edge_px,
+        max_image_references: obj.get("max_image_references").and_then(|v| v.as_u64()),
         context_tokens,
         locality,
         resident,
@@ -450,6 +454,23 @@ pub type SharedCapabilityCache = Arc<CapabilityCache>;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_and_serializes_advertised_image_reference_limit() {
+        let model = parse_model_entry(&serde_json::json!({"id":"edit", "max_image_references":10}))
+            .unwrap();
+        assert_eq!(model.max_image_references, Some(10));
+        assert_eq!(
+            serde_json::to_value(model).unwrap()["maxImageReferences"],
+            10
+        );
+        assert_eq!(
+            parse_model_entry(&serde_json::json!({"id":"old"}))
+                .unwrap()
+                .max_image_references,
+            None
+        );
+    }
 
     #[test]
     fn parses_audio_operations_and_defaults_missing_or_future_statuses_to_unverified() {

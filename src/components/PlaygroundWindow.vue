@@ -110,12 +110,14 @@ const activeResolution = computed({
   set: (value: string) => (resolution.value = value),
 })
 const hints = computed(() => QUESTION_HINTS[selected.value.id] ?? [])
+const referenceHintLabels = ['Replace subject', 'Transfer style', 'Combine subjects']
 
 const modelPipeline = computed(() => MODEL_PIPELINES[selectedId.value])
 const isModelRun = computed(() => !!modelPipeline.value)
 const isCreate = computed(() => selectedId.value === 'create')
 const isEdit = computed(() => selectedId.value === 'edit')
 const isVariation = computed(() => selectedId.value === 'variation')
+const isReference = computed(() => selectedId.value === 'reference')
 const isSpeech = computed(() => selectedId.value === 'tts')
 const isCaption = computed(() => selectedId.value === 'caption')
 const captionDetail = ref('concise')
@@ -162,6 +164,7 @@ const upscale = ref<UpscaleState>(idleRun())
 const create = ref<CreateState>(idleRun())
 const edit = ref<EditState>(idleRun())
 const variation = ref<EditState>(idleRun())
+const reference = ref<EditState>(idleRun())
 const speech = ref<SpeechState>(idleRun())
 const transcript = ref<TranscribeState>(idleRun())
 const translation = ref<TranscribeState>(idleRun())
@@ -172,6 +175,7 @@ const modelRuns: Record<string, Ref<RunState<unknown>>> = {
   create: create as Ref<RunState<unknown>>,
   edit: edit as Ref<RunState<unknown>>,
   variation: variation as Ref<RunState<unknown>>,
+  reference: reference as Ref<RunState<unknown>>,
   tts: speech as Ref<RunState<unknown>>,
   transcribe: transcript as Ref<RunState<unknown>>,
   'translate-speech': translation as Ref<RunState<unknown>>,
@@ -190,6 +194,7 @@ const shownUpscale = shownState('upscale', upscale)
 const shownCreate = shownState('create', create)
 const shownEdit = shownState('edit', edit)
 const shownVariation = shownState('variation', variation)
+const shownReference = shownState('reference', reference)
 const shownSpeech = shownState('tts', speech)
 const shownTranscript = shownState('transcribe', transcript)
 const shownTranslation = shownState('translate-speech', translation)
@@ -237,6 +242,7 @@ const loadingLabel = computed(
       create: 'Creating image',
       edit: 'Editing image',
       variation: 'Creating variation',
+      reference: 'Creating image',
       depth: 'Estimating depth',
       caption: 'Creating caption',
       upscale: 'Upscaling image',
@@ -256,6 +262,35 @@ const headerOptions = computed(() => (isModelRun.value ? taskOptions.value : mod
 
 const options = computed(() => targets.value.filter((item) => item.target.kind === source.value))
 const file = ref<{ name: string; data: string } | null>(null)
+const referenceFiles = ref<({ name: string; data: string } | null)[]>([null, null])
+const referenceNotices = ref(['', ''])
+const referenceDragging = ref<number | null>(null)
+const referenceLimit = computed(() => {
+  const value = agent.backend.value?.models?.find(
+    (item) => item.id === activeTaskModel.value,
+  )?.maxImageReferences
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+    ? Math.min(value, 10)
+    : 2
+})
+const referenceCount = computed(() => referenceFiles.value.filter(Boolean).length)
+let referenceRevision = 0
+
+function addReference() {
+  if (referenceFiles.value.length >= referenceLimit.value) return
+  referenceFiles.value.push(null)
+  referenceNotices.value.push('')
+}
+function removeReference(index: number) {
+  referenceRevision++
+  if (referenceFiles.value.length > 2) {
+    referenceFiles.value.splice(index, 1)
+    referenceNotices.value.splice(index, 1)
+  } else {
+    referenceFiles.value[index] = null
+    referenceNotices.value[index] = ''
+  }
+}
 const fileNotice = ref('')
 const dragging = ref(false)
 const fileInput = useTemplateRef<HTMLInputElement>('fileInput')
@@ -271,20 +306,50 @@ const hasResult = computed(() => display.value.status !== 'idle')
 const canRun = computed(
   () =>
     selected.value.ready &&
-    (!isEdit.value || !!question.value.trim()) &&
-    (isAudioText.value
-      ? !!audioFile.value
-      : isSpeech.value
-        ? !!speechText.value.trim() && speechBytes.value <= 4096
-        : isCreate.value
-          ? !!question.value.trim()
-          : source.value === 'file'
-            ? !!file.value
-            : !!target.value) &&
+    (!(isEdit.value || isReference.value) || !!question.value.trim()) &&
+    (isReference.value
+      ? referenceCount.value >= 2 &&
+        referenceCount.value <= referenceLimit.value &&
+        referenceFiles.value.every(Boolean)
+      : isAudioText.value
+        ? !!audioFile.value
+        : isSpeech.value
+          ? !!speechText.value.trim() && speechBytes.value <= 4096
+          : isCreate.value
+            ? !!question.value.trim()
+            : source.value === 'file'
+              ? !!file.value
+              : !!target.value) &&
     (isModelRun.value
       ? !!activeTaskModel.value && modelRuns[selectedId.value]?.value.status !== 'running'
       : !analysis.busy.value),
 )
+
+async function takeReference(picked: File | undefined, index: number) {
+  if (!picked) return
+  const revision = referenceRevision
+  referenceFiles.value[index] = null
+  referenceNotices.value[index] = ''
+  try {
+    const data = await readImageAsPng(picked)
+    if (revision === referenceRevision) referenceFiles.value[index] = { name: picked.name, data }
+  } catch (error) {
+    if (revision === referenceRevision)
+      referenceNotices.value[index] = error instanceof Error ? error.message : String(error)
+  }
+}
+
+function pickReference(event: Event, index: number) {
+  const input = event.target as HTMLInputElement
+  const picked = input.files?.[0]
+  input.value = ''
+  void takeReference(picked, index)
+}
+
+function dropReference(event: DragEvent, index: number) {
+  referenceDragging.value = null
+  void takeReference(event.dataTransfer?.files?.[0], index)
+}
 
 function pickAudio(event: Event) {
   const input = event.target as HTMLInputElement
@@ -389,15 +454,17 @@ watch(
 async function runModel(id: string, pipeline: ModelPipeline) {
   const option = options.value.find((item) => JSON.stringify(item.target) === target.value)
   const input =
-    id === 'transcribe' || id === 'translate-speech'
-      ? audioFile.value && { file: audioFile.value }
-      : id === 'tts'
-        ? { text: speechText.value }
-        : id === 'create'
-          ? { prompt: question.value, size: imageSize.value }
-          : source.value === 'file'
-            ? file.value && { image: file.value.data }
-            : option && { target: option.target }
+    id === 'reference'
+      ? { images: referenceFiles.value.flatMap((file) => (file ? [file.data] : [])) }
+      : id === 'transcribe' || id === 'translate-speech'
+        ? audioFile.value && { file: audioFile.value }
+        : id === 'tts'
+          ? { text: speechText.value }
+          : id === 'create'
+            ? { prompt: question.value, size: imageSize.value }
+            : source.value === 'file'
+              ? file.value && { image: file.value.data }
+              : option && { target: option.target }
   const state = modelRuns[id]
   if (!input || !state) return
   history.clearView()
@@ -411,7 +478,7 @@ async function runModel(id: string, pipeline: ModelPipeline) {
         ? { scale: scale.value }
         : id === 'caption'
           ? { detail: captionDetail.value }
-          : id === 'edit'
+          : id === 'edit' || id === 'reference'
             ? { prompt: question.value }
             : {}
     const model = activeTaskModel.value
@@ -430,6 +497,13 @@ async function runModel(id: string, pipeline: ModelPipeline) {
     if (id === 'caption') details.push(`Detail: ${captionDetail.value}`)
     if (id === 'upscale') details.push(`Scale: ${scale.value}×`)
     if (id === 'edit') details.push(`Prompt: ${question.value}`)
+    if (id === 'reference')
+      details.splice(
+        0,
+        details.length,
+        ...referenceFiles.value.map((file, index) => `Image ${index + 1}: ${file?.name}`),
+        `Prompt: ${question.value}`,
+      )
     details.unshift(`Model: ${model}`)
     const payload = 'file' in input ? { audio: await readAudio(input.file!) } : input
     if (run.cancelled) return
@@ -626,7 +700,95 @@ onKeyStroke('Escape', () => {
                 {{ audioNotice }}
               </p>
             </div>
-            <div v-if="!isCreate && !isSpeech && !isAudioText" class="flex flex-col gap-2">
+            <div v-if="isReference" class="flex flex-col gap-2">
+              <div class="flex items-baseline justify-between gap-2">
+                <span class="text-rune-heading text-rune-text-3 uppercase">Reference images</span>
+                <span class="text-rune-caption text-rune-text-3"
+                  >{{ referenceCount }} / {{ referenceLimit }}</span
+                >
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <div
+                  v-for="index in referenceFiles.length"
+                  :key="index"
+                  class="min-w-0 text-rune-body text-rune-text-2"
+                >
+                  <span class="mb-1 block text-rune-caption text-rune-text-3"
+                    >Image {{ index }}</span
+                  >
+                  <input
+                    :id="`reference-file-${index}`"
+                    type="file"
+                    accept="image/*"
+                    class="sr-only"
+                    :aria-label="`Image ${index}`"
+                    @change="pickReference($event, index - 1)"
+                  />
+                  <label
+                    :for="`reference-file-${index}`"
+                    class="grid aspect-square w-full cursor-pointer place-items-center overflow-hidden rounded-rune-tile bg-rune-surface text-rune-body text-rune-text-2"
+                    :class="referenceDragging === index - 1 && 'outline-2 outline-accent'"
+                    :data-testid="`reference-drop-${index}`"
+                    @dragover.prevent="referenceDragging = index - 1"
+                    @dragleave="referenceDragging = null"
+                    @drop.prevent="dropReference($event, index - 1)"
+                  >
+                    <img
+                      v-if="referenceFiles[index - 1]"
+                      :src="referenceFiles[index - 1]?.data"
+                      :alt="referenceFiles[index - 1]?.name"
+                      class="size-full object-contain"
+                    />
+                    <span
+                      v-else
+                      class="flex flex-col items-center gap-2 p-2 text-center text-rune-caption"
+                      ><AppIcon name="add" /> Add image</span
+                    >
+                  </label>
+                  <span
+                    v-if="referenceFiles[index - 1]"
+                    class="mt-1 block truncate text-rune-caption text-rune-text-2"
+                    :title="referenceFiles[index - 1]?.name"
+                    >{{ referenceFiles[index - 1]?.name }}</span
+                  >
+                  <button
+                    v-if="referenceFiles[index - 1] || referenceFiles.length > 2"
+                    type="button"
+                    class="mt-1 cursor-pointer text-rune-caption text-rune-text-2 underline"
+                    :aria-label="`Remove image ${index}`"
+                    @click="removeReference(index - 1)"
+                  >
+                    Remove
+                  </button>
+                  <span v-if="referenceNotices[index - 1]" role="alert" class="text-error">{{
+                    referenceNotices[index - 1]
+                  }}</span>
+                </div>
+              </div>
+              <RuneButton
+                size="sm"
+                class="self-start normal-case!"
+                :disabled="referenceFiles.length >= referenceLimit"
+                data-testid="reference-add"
+                @click="addReference"
+                >Add image</RuneButton
+              >
+              <p
+                v-if="referenceCount > referenceLimit"
+                role="alert"
+                class="m-0 text-rune-caption text-error"
+              >
+                This model supports up to {{ referenceLimit }} images. Remove images or select
+                another model.
+              </p>
+              <p v-else class="m-0 text-rune-caption text-rune-text-3">
+                Choose at least two images. This model supports up to {{ referenceLimit }}.
+              </p>
+            </div>
+            <div
+              v-if="!isReference && !isCreate && !isSpeech && !isAudioText"
+              class="flex flex-col gap-2"
+            >
               <span class="text-rune-heading text-rune-text-3 uppercase">Source</span>
               <RuneChoice v-model="source" label="Source" :options="SOURCE_OPTIONS" />
               <div
@@ -713,9 +875,12 @@ onKeyStroke('Escape', () => {
                 </RuneButton>
               </div>
             </div>
-            <div v-if="!isModelRun || isCreate || isEdit" class="flex flex-col gap-2">
+            <div
+              v-if="!isModelRun || isCreate || isEdit || isReference"
+              class="flex flex-col gap-2"
+            >
               <span class="text-rune-heading text-rune-text-3 uppercase">{{
-                isCreate || isEdit ? 'Prompt' : 'Question'
+                isCreate || isEdit || isReference ? 'Prompt' : 'Question'
               }}</span>
               <textarea
                 v-model="question"
@@ -723,23 +888,26 @@ onKeyStroke('Escape', () => {
                 :maxlength="questionLimit(selectedId)"
                 aria-label="Question"
                 :placeholder="
-                  isEdit
-                    ? 'Describe the change to make'
-                    : isCreate
-                      ? 'Describe the image to create'
-                      : 'What do you want to know?'
+                  isReference
+                    ? 'Describe how to use the two images'
+                    : isEdit
+                      ? 'Describe the change to make'
+                      : isCreate
+                        ? 'Describe the image to create'
+                        : 'What do you want to know?'
                 "
                 class="w-full resize-none rounded-rune-tile bg-rune-surface p-4 text-rune-body text-rune-ink outline-none placeholder:text-rune-text-3 focus-visible:outline-2 focus-visible:outline-accent"
               />
               <div class="flex flex-wrap gap-2">
                 <RuneButton
-                  v-for="hint in hints"
+                  v-for="(hint, index) in hints"
                   :key="hint"
                   size="sm"
                   class="normal-case!"
+                  :title="isReference ? hint : undefined"
                   @click="question = hint"
                 >
-                  {{ hint }}
+                  {{ isReference ? (referenceHintLabels[index] ?? 'Example') : hint }}
                 </RuneButton>
               </div>
             </div>
@@ -807,13 +975,25 @@ onKeyStroke('Escape', () => {
             <p class="m-0 font-semibold">
               {{ findPipeline(history.viewed.value.pipeline)?.label ?? 'Run' }} · Saved run
             </p>
-            <p
-              v-for="detail in history.viewed.value.details"
-              :key="detail"
-              class="m-0 whitespace-pre-wrap break-words"
-            >
-              {{ detail }}
-            </p>
+            <template v-if="history.viewed.value.pipeline !== 'reference'">
+              <p
+                v-for="detail in history.viewed.value.details"
+                :key="detail"
+                class="m-0 whitespace-pre-wrap break-words"
+              >
+                {{ detail }}
+              </p>
+            </template>
+            <details v-if="history.viewed.value.pipeline === 'reference'" class="mt-1">
+              <summary class="cursor-pointer">View inputs and prompt</summary>
+              <p
+                v-for="detail in history.viewed.value.details"
+                :key="detail"
+                class="m-0 whitespace-pre-wrap break-words"
+              >
+                {{ detail }}
+              </p>
+            </details>
           </div>
           <RuneButton size="sm" @click="history.clearView()">Back to live</RuneButton>
         </div>
@@ -850,6 +1030,11 @@ onKeyStroke('Escape', () => {
             v-else-if="isVariation && shownVariation.status !== 'idle'"
             :state="shownVariation"
             variation
+          />
+          <PlaygroundEdit
+            v-else-if="isReference && shownReference.status !== 'idle'"
+            :state="shownReference"
+            reference
           />
           <PlaygroundSpeech
             v-else-if="isSpeech && shownSpeech.status !== 'idle'"

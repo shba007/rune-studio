@@ -98,6 +98,7 @@ cancellable_command!(playground_upscale, upscale, UpscaleInput, UpscaleResult);
 cancellable_command!(playground_create, create, CreateInput, CreateResult);
 cancellable_command!(playground_edit, edit, EditInput, EditResult);
 cancellable_command!(playground_variation, variation, VariationInput, EditResult);
+cancellable_command!(playground_reference, reference, ReferenceInput, EditResult);
 
 pub fn open(app: &AppHandle) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window(WINDOW) {
@@ -135,7 +136,7 @@ const CREATE_TASK: &str = "text-to-image";
 const EDIT_TASK: &str = "text-image-to-image";
 const SPEECH_TASK: &str = "text-to-audio";
 const TRANSCRIBE_TASK: &str = "audio-to-text";
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
 const MAX_IMAGE_CHARS: usize = 40_000_000;
 
 #[derive(Deserialize)]
@@ -325,7 +326,7 @@ async fn session(
     model: &str,
     task: &str,
     operation: Option<AudioOperation>,
-) -> Result<(Settings, Option<String>, String), String> {
+) -> Result<(Settings, Option<String>, String, ModelCapabilities), String> {
     let state = app.state::<AppState>();
     let (settings, key) = crate::settings::snapshot_with_api_key(&state.settings);
     let status = crate::backend::check(&state.http, &settings, key.as_deref()).await;
@@ -340,15 +341,15 @@ async fn session(
             "Choose a model that Infer lists with {task} support"
         ));
     }
+    let capabilities = status
+        .models
+        .iter()
+        .find(|item| item.id == model)
+        .ok_or("Model is unavailable")?;
     if let Some(operation) = operation {
-        let capabilities = status
-            .models
-            .iter()
-            .find(|item| item.id == model)
-            .ok_or("Model is unavailable")?;
         validate_audio_operation(capabilities, operation)?;
     }
-    Ok((settings, key, model))
+    Ok((settings, key, model, capabilities.clone()))
 }
 
 #[derive(Clone, Copy)]
@@ -394,7 +395,7 @@ async fn prepare(
     if target.is_some() == image.is_some() {
         return Err("Choose either a screen or window, or an image".into());
     }
-    let (settings, key, model) = session(app, model, task, None).await?;
+    let (settings, key, model, _) = session(app, model, task, None).await?;
     let max_edge = settings.model_image_resolution.max_edge();
     let capture_edge = settings.recording_resolution.max_edge();
     let frame = tokio::time::timeout(
@@ -608,7 +609,7 @@ async fn audio_to_text(
         AudioTextOperation::Transcribe => AudioOperation::Transcription,
         AudioTextOperation::Translate => AudioOperation::Translation,
     };
-    let (settings, key, model) =
+    let (settings, key, model, _) =
         session(&app, &input.model, TRANSCRIBE_TASK, Some(required)).await?;
     let url = infer_url(&settings, operation.path())?;
     let state = app.state::<AppState>();
@@ -705,7 +706,7 @@ fn speech_audio(bytes: &[u8]) -> Result<String, &'static str> {
 
 async fn speech(app: AppHandle, input: SpeechInput) -> Result<SpeechResult, String> {
     validate_speech_text(&input.text)?;
-    let (settings, key, model) = session(
+    let (settings, key, model, _) = session(
         &app,
         &input.model,
         SPEECH_TASK,
@@ -933,6 +934,14 @@ pub struct VariationInput {
     model: String,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ReferenceInput {
+    images: Vec<String>,
+    model: String,
+    prompt: String,
+}
+
 #[derive(Serialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct EditResult {
@@ -972,7 +981,7 @@ async fn send_edit(
     key: Option<&str>,
     model: String,
     prompt: Option<String>,
-    jpeg: Vec<u8>,
+    images: Vec<Vec<u8>>,
     original: String,
 ) -> Result<EditResult, String> {
     let label = if prompt.is_some() {
@@ -980,16 +989,18 @@ async fn send_edit(
     } else {
         "image variation"
     };
-    let form = reqwest::multipart::Form::new()
+    let mut form = reqwest::multipart::Form::new()
         .text("model", model.clone())
-        .text("response_format", "b64_json")
-        .part(
-            "image",
-            reqwest::multipart::Part::bytes(jpeg)
-                .file_name("image.jpg")
+        .text("response_format", "b64_json");
+    for (index, image) in images.into_iter().enumerate() {
+        form = form.part(
+            if index == 0 { "image" } else { "image[]" },
+            reqwest::multipart::Part::bytes(image)
+                .file_name(format!("image-{}.jpg", index + 1))
                 .mime_str("image/jpeg")
                 .map_err(|e| e.to_string())?,
         );
+    }
     let form = if let Some(prompt) = &prompt {
         form.text("prompt", prompt.clone())
     } else {
@@ -1041,7 +1052,7 @@ async fn edit(app: AppHandle, input: EditInput) -> Result<EditResult, String> {
         prepared.key.as_deref(),
         prepared.model,
         Some(prompt),
-        prepared.frame.jpeg,
+        vec![prepared.frame.jpeg],
         original,
     )
     .await
@@ -1057,10 +1068,70 @@ async fn variation(app: AppHandle, input: VariationInput) -> Result<EditResult, 
         prepared.key.as_deref(),
         prepared.model,
         None,
-        prepared.frame.jpeg,
+        vec![prepared.frame.jpeg],
         original,
     )
     .await
+}
+
+async fn reference(app: AppHandle, input: ReferenceInput) -> Result<EditResult, String> {
+    let prompt = input.prompt.trim().to_string();
+    if prompt.is_empty() {
+        return Err("Describe how to use the images".into());
+    }
+    if prompt.chars().count() > MAX_PROMPT_CHARS {
+        return Err(format!("Prompt exceeds {MAX_PROMPT_CHARS} characters"));
+    }
+    if !(2..=10).contains(&input.images.len()) {
+        return Err("Choose between 2 and 10 images".into());
+    }
+    let (settings, key, model, caps) = session(&app, &input.model, EDIT_TASK, None).await?;
+    validate_reference_count(input.images.len(), caps.max_image_references)?;
+    let max_edge = settings.model_image_resolution.max_edge();
+    let capture_edge = settings.recording_resolution.max_edge();
+    let frames = tokio::time::timeout(
+        Duration::from_secs(30),
+        tauri::async_runtime::spawn_blocking(move || {
+            input
+                .images
+                .into_iter()
+                .map(|data| {
+                    let bytes = depth_image(&data)?;
+                    screenshot::insight_image(&bytes, max_edge, capture_edge)
+                        .map_err(|e| e.to_string())
+                })
+                .collect::<Result<Vec<_>, String>>()
+        }),
+    )
+    .await
+    .map_err(|_| "Reading the images timed out")?
+    .map_err(|e| e.to_string())??;
+    let original = frames[0].data_uri();
+    let images = frames.into_iter().map(|frame| frame.jpeg).collect();
+    let url = infer_url(&settings, "/v1/images/edits")?;
+    send_edit(
+        &app.state::<AppState>().http,
+        url,
+        key.as_deref(),
+        model,
+        Some(prompt),
+        images,
+        original,
+    )
+    .await
+}
+
+fn validate_reference_count(count: usize, advertised: Option<u64>) -> Result<(), String> {
+    let limit = advertised.unwrap_or(2).min(10) as usize;
+    if limit < 2 {
+        return Err("This model does not support two reference images".into());
+    }
+    if count < 2 || count > limit {
+        return Err(format!(
+            "Choose at least 2 images and no more than {limit} for this model"
+        ));
+    }
+    Ok(())
 }
 
 fn image_uri(encoded: &str) -> String {
@@ -1106,7 +1177,7 @@ async fn create(app: AppHandle, input: CreateInput) -> Result<CreateResult, Stri
     if !valid_size(&input.size) {
         return Err("Choose an image size between 256 and 2048 pixels".into());
     }
-    let (settings, key, model) = session(&app, &input.model, CREATE_TASK, None).await?;
+    let (settings, key, model, _) = session(&app, &input.model, CREATE_TASK, None).await?;
     let started = Instant::now();
     let url = infer_url(&settings, "/v1/images/generations")?;
     let body = serde_json::json!({
@@ -1131,6 +1202,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn reference_counts_follow_advertised_limit_and_legacy_fallback() {
+        assert!(validate_reference_count(2, None).is_ok());
+        assert!(validate_reference_count(3, None).is_err());
+        assert!(validate_reference_count(10, Some(10)).is_ok());
+        assert!(validate_reference_count(11, Some(99)).is_err());
+        assert!(validate_reference_count(3, Some(2)).is_err());
+        assert!(validate_reference_count(2, Some(1)).is_err());
+        assert!(validate_reference_count(1, Some(10)).is_err());
+    }
+
+    #[test]
     fn edit_requires_text_and_image_task_and_valid_output() {
         assert!(task_matches("text-image-to-image", EDIT_TASK));
         assert!(!task_matches("image-to-image", EDIT_TASK));
@@ -1151,7 +1233,7 @@ mod tests {
     #[tokio::test]
     async fn sends_edit_as_authenticated_multipart() {
         use std::io::{Read, Write};
-        for variation in [false, true] {
+        for (variation, count) in [(false, 1), (true, 1), (false, 2), (false, 10)] {
             let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
             let address = listener.local_addr().unwrap();
             let server = std::thread::spawn(move || {
@@ -1203,7 +1285,9 @@ mod tests {
                 Some("test-key"),
                 "edit-model".into(),
                 (!variation).then(|| "Make blue".into()),
-                b"jpeg bytes".to_vec(),
+                std::iter::once(b"jpeg bytes".to_vec())
+                    .chain((2..=count).map(|n| format!("reference-{n:02}").into_bytes()))
+                    .collect(),
                 "source".into(),
             )
             .await
@@ -1231,6 +1315,18 @@ mod tests {
                 assert!(request.contains(expected), "missing {expected}");
             }
             assert_eq!(request.contains("name=\"prompt\""), !variation);
+            if count > 1 {
+                assert!(request.contains("name=\"image[]\""));
+                let mut previous = request.find("jpeg bytes").unwrap();
+                for n in 2..=count {
+                    let next = request.find(&format!("reference-{n:02}")).unwrap();
+                    assert!(previous < next);
+                    previous = next;
+                }
+                assert_eq!(request.matches("name=\"image[]\"").count(), count - 1);
+            } else {
+                assert!(!request.contains("name=\"image[]\""));
+            }
         }
     }
 
