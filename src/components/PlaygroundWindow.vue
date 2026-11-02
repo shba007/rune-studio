@@ -118,6 +118,12 @@ const isCreate = computed(() => selectedId.value === 'create')
 const isEdit = computed(() => selectedId.value === 'edit')
 const isVariation = computed(() => selectedId.value === 'variation')
 const isReference = computed(() => selectedId.value === 'reference')
+const referenceFormat = ref<'jpeg' | 'png'>('jpeg')
+const referenceQuality = ref(80)
+const referenceFormatOptions = [
+  { value: 'jpeg' as const, label: 'JPEG' },
+  { value: 'png' as const, label: 'PNG' },
+]
 const isSpeech = computed(() => selectedId.value === 'tts')
 const isCaption = computed(() => selectedId.value === 'caption')
 const captionDetail = ref('concise')
@@ -455,7 +461,11 @@ async function runModel(id: string, pipeline: ModelPipeline) {
   const option = options.value.find((item) => JSON.stringify(item.target) === target.value)
   const input =
     id === 'reference'
-      ? { images: referenceFiles.value.flatMap((file) => (file ? [file.data] : [])) }
+      ? {
+          images: referenceFiles.value.flatMap((file) => (file ? [file.data] : [])),
+          format: referenceFormat.value,
+          quality: referenceQuality.value,
+        }
       : id === 'transcribe' || id === 'translate-speech'
         ? audioFile.value && { file: audioFile.value }
         : id === 'tts'
@@ -503,6 +513,7 @@ async function runModel(id: string, pipeline: ModelPipeline) {
         details.length,
         ...referenceFiles.value.map((file, index) => `Image ${index + 1}: ${file?.name}`),
         `Prompt: ${question.value}`,
+        `Input format: ${referenceFormat.value === 'jpeg' ? `JPEG · quality ${referenceQuality.value}` : 'PNG · lossless'}`,
       )
     details.unshift(`Model: ${model}`)
     const payload = 'file' in input ? { audio: await readAudio(input.file!) } : input
@@ -784,6 +795,34 @@ onKeyStroke('Escape', () => {
               <p v-else class="m-0 text-rune-caption text-rune-text-3">
                 Choose at least two images. This model supports up to {{ referenceLimit }}.
               </p>
+              <details class="mt-2 text-rune-body text-rune-text-2">
+                <summary class="cursor-pointer">Image input quality</summary>
+                <div class="mt-3 flex flex-col items-start gap-3">
+                  <RuneChoice
+                    v-model="referenceFormat"
+                    label="Reference image format"
+                    :options="referenceFormatOptions"
+                  />
+                  <label v-if="referenceFormat === 'jpeg'" class="flex w-full flex-col gap-2">
+                    <span>JPEG quality: {{ referenceQuality }}</span>
+                    <input
+                      v-model.number="referenceQuality"
+                      type="range"
+                      min="1"
+                      max="100"
+                      aria-label="JPEG quality"
+                      class="w-full"
+                    />
+                  </label>
+                  <p class="m-0 text-rune-caption text-rune-text-3">
+                    {{
+                      referenceFormat === 'jpeg'
+                        ? 'JPEG uses the model image resolution setting. Higher quality produces larger files.'
+                        : 'PNG keeps the prepared reference image losslessly, including transparency. Larger files may take longer.'
+                    }}
+                  </p>
+                </div>
+              </details>
             </div>
             <div
               v-if="!isReference && !isCreate && !isSpeech && !isAudioText"

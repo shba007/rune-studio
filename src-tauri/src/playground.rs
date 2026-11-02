@@ -940,6 +940,22 @@ pub struct ReferenceInput {
     images: Vec<String>,
     model: String,
     prompt: String,
+    #[serde(default)]
+    format: ReferenceFormat,
+    #[serde(default = "default_reference_quality")]
+    quality: u8,
+}
+
+#[derive(Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+enum ReferenceFormat {
+    #[default]
+    Jpeg,
+    Png,
+}
+
+fn default_reference_quality() -> u8 {
+    80
 }
 
 #[derive(Serialize, Debug, PartialEq)]
@@ -975,13 +991,18 @@ fn edit_result(
     })
 }
 
+struct EditImages {
+    data: Vec<Vec<u8>>,
+    format: ReferenceFormat,
+}
+
 async fn send_edit(
     http: &reqwest::Client,
     url: reqwest::Url,
     key: Option<&str>,
     model: String,
     prompt: Option<String>,
-    images: Vec<Vec<u8>>,
+    images: EditImages,
     original: String,
 ) -> Result<EditResult, String> {
     let label = if prompt.is_some() {
@@ -992,12 +1013,16 @@ async fn send_edit(
     let mut form = reqwest::multipart::Form::new()
         .text("model", model.clone())
         .text("response_format", "b64_json");
-    for (index, image) in images.into_iter().enumerate() {
+    let (extension, mime) = match images.format {
+        ReferenceFormat::Jpeg => ("jpg", "image/jpeg"),
+        ReferenceFormat::Png => ("png", "image/png"),
+    };
+    for (index, image) in images.data.into_iter().enumerate() {
         form = form.part(
             if index == 0 { "image" } else { "image[]" },
             reqwest::multipart::Part::bytes(image)
-                .file_name(format!("image-{}.jpg", index + 1))
-                .mime_str("image/jpeg")
+                .file_name(format!("image-{}.{extension}", index + 1))
+                .mime_str(mime)
                 .map_err(|e| e.to_string())?,
         );
     }
@@ -1052,7 +1077,10 @@ async fn edit(app: AppHandle, input: EditInput) -> Result<EditResult, String> {
         prepared.key.as_deref(),
         prepared.model,
         Some(prompt),
-        vec![prepared.frame.jpeg],
+        EditImages {
+            data: vec![prepared.frame.jpeg],
+            format: ReferenceFormat::Jpeg,
+        },
         original,
     )
     .await
@@ -1068,7 +1096,10 @@ async fn variation(app: AppHandle, input: VariationInput) -> Result<EditResult, 
         prepared.key.as_deref(),
         prepared.model,
         None,
-        vec![prepared.frame.jpeg],
+        EditImages {
+            data: vec![prepared.frame.jpeg],
+            format: ReferenceFormat::Jpeg,
+        },
         original,
     )
     .await
@@ -1085,29 +1116,30 @@ async fn reference(app: AppHandle, input: ReferenceInput) -> Result<EditResult, 
     if !(2..=10).contains(&input.images.len()) {
         return Err("Choose between 2 and 10 images".into());
     }
+    if !(1..=100).contains(&input.quality) {
+        return Err("JPEG quality must be between 1 and 100".into());
+    }
     let (settings, key, model, caps) = session(&app, &input.model, EDIT_TASK, None).await?;
     validate_reference_count(input.images.len(), caps.max_image_references)?;
     let max_edge = settings.model_image_resolution.max_edge();
     let capture_edge = settings.recording_resolution.max_edge();
+    let format = input.format;
+    let quality = input.quality;
     let frames = tokio::time::timeout(
         Duration::from_secs(30),
         tauri::async_runtime::spawn_blocking(move || {
             input
                 .images
                 .into_iter()
-                .map(|data| {
-                    let bytes = depth_image(&data)?;
-                    screenshot::insight_image(&bytes, max_edge, capture_edge)
-                        .map_err(|e| e.to_string())
-                })
+                .map(|data| prepare_reference_image(data, format, quality, max_edge, capture_edge))
                 .collect::<Result<Vec<_>, String>>()
         }),
     )
     .await
     .map_err(|_| "Reading the images timed out")?
     .map_err(|e| e.to_string())??;
-    let original = frames[0].data_uri();
-    let images = frames.into_iter().map(|frame| frame.jpeg).collect();
+    let original = frames[0].0.clone();
+    let images = frames.into_iter().map(|(_, bytes)| bytes).collect();
     let url = infer_url(&settings, "/v1/images/edits")?;
     send_edit(
         &app.state::<AppState>().http,
@@ -1115,10 +1147,48 @@ async fn reference(app: AppHandle, input: ReferenceInput) -> Result<EditResult, 
         key.as_deref(),
         model,
         Some(prompt),
-        images,
+        EditImages {
+            data: images,
+            format,
+        },
         original,
     )
     .await
+}
+
+fn prepare_reference_image(
+    data: String,
+    format: ReferenceFormat,
+    quality: u8,
+    max_edge: u32,
+    capture_edge: u32,
+) -> Result<(String, Vec<u8>), String> {
+    let bytes = depth_image(&data)?;
+    if format == ReferenceFormat::Png
+        && image::guess_format(&bytes).ok() != Some(image::ImageFormat::Png)
+    {
+        return Err("Choose a valid PNG image".into());
+    }
+    if format == ReferenceFormat::Png {
+        let reader =
+            image::ImageReader::with_format(std::io::Cursor::new(&bytes), image::ImageFormat::Png);
+        let (width, height) = reader
+            .into_dimensions()
+            .map_err(|_| "Could not read the PNG image")?;
+        if width == 0 || height == 0 || u64::from(width) * u64::from(height) > 64_000_000 {
+            return Err("The image is too large".into());
+        }
+        image::load_from_memory_with_format(&bytes, image::ImageFormat::Png)
+            .map_err(|_| "Could not read the PNG image")?;
+        Ok((data, bytes))
+    } else {
+        let mut frame =
+            screenshot::insight_image(&bytes, max_edge, capture_edge).map_err(|e| e.to_string())?;
+        if quality != screenshot::MODEL_JPEG_QUALITY {
+            frame.set_jpeg_quality(quality).map_err(|e| e.to_string())?;
+        }
+        Ok((frame.data_uri(), frame.jpeg))
+    }
 }
 
 fn validate_reference_count(count: usize, advertised: Option<u64>) -> Result<(), String> {
@@ -1199,6 +1269,59 @@ async fn create(app: AppHandle, input: CreateInput) -> Result<CreateResult, Stri
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn reference_input_defaults_to_jpeg_quality_80() {
+        let value: super::ReferenceInput =
+            serde_json::from_str(r#"{"images":[],"model":"m","prompt":"p"}"#).unwrap();
+        assert!(value.format == super::ReferenceFormat::Jpeg);
+        assert_eq!(value.quality, 80);
+        let png: super::ReferenceInput = serde_json::from_str(
+            r#"{"images":[],"model":"m","prompt":"p","format":"png","quality":95}"#,
+        )
+        .unwrap();
+        assert!(png.format == super::ReferenceFormat::Png);
+        assert_eq!(png.quality, 95);
+        assert!(
+            serde_json::from_str::<super::ReferenceInput>(
+                r#"{"images":[],"model":"m","prompt":"p","format":"webp"}"#
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn reference_format_preserves_png_bytes_or_encodes_resized_jpeg() {
+        use base64::Engine;
+        let image = image::RgbaImage::from_pixel(16, 16, image::Rgba([15, 30, 45, 128]));
+        let mut buffer = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgba8(image)
+            .write_to(&mut buffer, image::ImageFormat::Png)
+            .unwrap();
+        let bytes = buffer.into_inner();
+        let data = format!(
+            "data:image/png;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(&bytes)
+        );
+        let (preview, png) = super::prepare_reference_image(
+            data.clone(),
+            super::ReferenceFormat::Png,
+            80,
+            8,
+            u32::MAX,
+        )
+        .unwrap();
+        assert_eq!(preview, data);
+        assert_eq!(png, bytes);
+        let (preview, jpeg) =
+            super::prepare_reference_image(data, super::ReferenceFormat::Jpeg, 95, 8, u32::MAX)
+                .unwrap();
+        assert!(preview.starts_with("data:image/jpeg;base64,"));
+        assert_eq!(
+            image::guess_format(&jpeg).unwrap(),
+            image::ImageFormat::Jpeg
+        );
+        assert_eq!(image::load_from_memory(&jpeg).unwrap().width(), 8);
+    }
     use super::*;
 
     #[test]
@@ -1233,7 +1356,13 @@ mod tests {
     #[tokio::test]
     async fn sends_edit_as_authenticated_multipart() {
         use std::io::{Read, Write};
-        for (variation, count) in [(false, 1), (true, 1), (false, 2), (false, 10)] {
+        for (variation, count, format) in [
+            (false, 1, ReferenceFormat::Jpeg),
+            (true, 1, ReferenceFormat::Jpeg),
+            (false, 2, ReferenceFormat::Jpeg),
+            (false, 2, ReferenceFormat::Png),
+            (false, 10, ReferenceFormat::Png),
+        ] {
             let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
             let address = listener.local_addr().unwrap();
             let server = std::thread::spawn(move || {
@@ -1285,9 +1414,12 @@ mod tests {
                 Some("test-key"),
                 "edit-model".into(),
                 (!variation).then(|| "Make blue".into()),
-                std::iter::once(b"jpeg bytes".to_vec())
-                    .chain((2..=count).map(|n| format!("reference-{n:02}").into_bytes()))
-                    .collect(),
+                EditImages {
+                    data: std::iter::once(b"jpeg bytes".to_vec())
+                        .chain((2..=count).map(|n| format!("reference-{n:02}").into_bytes()))
+                        .collect(),
+                    format,
+                },
                 "source".into(),
             )
             .await
@@ -1309,11 +1441,20 @@ mod tests {
                 "name=\"response_format\"",
                 "b64_json",
                 "name=\"image\"",
-                "image/jpeg",
                 "jpeg bytes",
             ] {
                 assert!(request.contains(expected), "missing {expected}");
             }
+            assert!(request.contains(if format == ReferenceFormat::Png {
+                "image/png"
+            } else {
+                "image/jpeg"
+            }));
+            assert!(request.contains(if format == ReferenceFormat::Png {
+                "image-1.png"
+            } else {
+                "image-1.jpg"
+            }));
             assert_eq!(request.contains("name=\"prompt\""), !variation);
             if count > 1 {
                 assert!(request.contains("name=\"image[]\""));

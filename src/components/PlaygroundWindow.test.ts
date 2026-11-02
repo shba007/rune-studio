@@ -556,6 +556,8 @@ describe('playground window', () => {
         images: ['data:image/png;base64,AA==', 'data:image/png;base64,BB=='],
         model: 'edit-m',
         prompt: 'Use the colors',
+        format: 'jpeg',
+        quality: 80,
       },
     })
     expect(wrapper.get('[data-testid="edit-download"]').attributes('download')).toBe(
@@ -564,6 +566,43 @@ describe('playground window', () => {
     await wrapper.get('[data-testid="history-run"]').trigger('click')
     expect(wrapper.get('[data-testid="history-details"]').text()).toContain('Image 1: first.png')
     expect(wrapper.get('[data-testid="history-details"]').text()).toContain('Image 2: second.png')
+    wrapper.unmount()
+  })
+
+  it('sends the chosen reference format and JPEG quality', async () => {
+    const wrapper = mount(PlaygroundWindow)
+    await flushPromises()
+    await wrapper.get('[data-testid="pipeline-reference"]').trigger('click')
+    await wrapper.get('textarea').setValue('Use the colors')
+    for (const index of [1, 2]) {
+      const input = wrapper.get(`[aria-label="Image ${index}"]`)
+      Object.defineProperty(input.element, 'files', {
+        configurable: true,
+        value: [new File(['x'], `image${index}.png`, { type: 'image/png' })],
+      })
+      await input.trigger('change')
+      await flushPromises()
+    }
+    await wrapper.get('[aria-label="JPEG quality"]').setValue('95')
+    await wrapper.get('[data-testid="playground-run"]').trigger('click')
+    await flushPromises()
+    expect(invoked).toHaveBeenCalledWith(
+      'playground_reference',
+      expect.objectContaining({
+        input: expect.objectContaining({ format: 'jpeg', quality: 95 }),
+      }),
+    )
+    const format = wrapper.get('[aria-label="Reference image format"]')
+    await format.findAll('[role="radio"]')[1]!.trigger('click')
+    expect(wrapper.find('[aria-label="JPEG quality"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="playground-run"]').trigger('click')
+    await flushPromises()
+    expect(invoked).toHaveBeenCalledWith(
+      'playground_reference',
+      expect.objectContaining({
+        input: expect.objectContaining({ format: 'png', quality: 95 }),
+      }),
+    )
     wrapper.unmount()
   })
 

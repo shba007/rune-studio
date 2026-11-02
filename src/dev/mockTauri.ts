@@ -134,9 +134,9 @@ export function installTauriMock() {
         case 'get_settings':
           return {
             baseUrl: 'http://127.0.0.1:8080',
-            model: 'gemma-4-12b-it',
+            model: 'qwen3.5-4b-q4',
             models: {
-              agent: 'gemma-4-12b-it',
+              agent: 'qwen3.5-4b-q4',
               verifier: '',
               analysis: '',
               voice: '',

@@ -10,6 +10,7 @@ use crate::{error::AppResult, hotkeys, model::role::ModelRole};
 pub(crate) const KEYRING_SERVICE: &str = "dev.shirsendu-bairagi.rune-studio";
 const KEYRING_USER: &str = "rune-infer-api-key";
 pub const LEGACY_CONNECTION: &str = "legacy";
+const DEFAULT_AGENT_MODEL: &str = "qwen3.5-4b-q4";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -56,7 +57,7 @@ pub struct ModelRoles {
 }
 
 fn default_agent_model() -> String {
-    "gemma-4-12b-it".into()
+    DEFAULT_AGENT_MODEL.into()
 }
 
 fn default_decision_model() -> String {
@@ -83,7 +84,7 @@ impl ModelRoles {
                 if !self.agent.is_empty() {
                     &self.agent
                 } else {
-                    "gemma-4-12b-it"
+                    DEFAULT_AGENT_MODEL
                 }
             }
             ModelRole::Verifier => {
@@ -248,10 +249,11 @@ impl<'de> Deserialize<'de> for Settings {
         D: serde::Deserializer<'de>,
     {
         let helper = SettingsDeHelper::deserialize(deserializer)?;
+        let no_roles = helper.models.is_none();
         let mut models = helper.models.unwrap_or_default();
         if let Some(ref m) = helper.model
             && !m.is_empty()
-            && (models.agent.is_empty() || models.agent == "gemma-4-12b-it")
+            && (no_roles || models.agent.is_empty() || models.agent == "gemma-4-12b-it")
         {
             models.agent = m.clone();
         }
@@ -740,6 +742,25 @@ pub fn set_api_key_for_slot(id: &str, key: &str) -> AppResult<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn default_agent_model_applies_to_new_settings_and_empty_agent_role() {
+        use super::*;
+        let settings = Settings::default();
+        assert_eq!(settings.model, "qwen3.5-4b-q4");
+        assert_eq!(settings.models.agent, "qwen3.5-4b-q4");
+        let empty = ModelRoles {
+            agent: String::new(),
+            ..ModelRoles::default()
+        };
+        assert_eq!(empty.model_for_role(ModelRole::Agent), "qwen3.5-4b-q4");
+        let saved: Settings =
+            serde_json::from_str(r#"{"model":"custom","models":{"agent":"custom"}}"#).unwrap();
+        assert_eq!(saved.models.agent, "custom");
+        let selected: Settings =
+            serde_json::from_str(r#"{"model":"old-legacy","models":{"agent":"qwen3.5-4b-q4"}}"#)
+                .unwrap();
+        assert_eq!(selected.models.agent, "qwen3.5-4b-q4");
+    }
     #[test]
     fn legacy_migration_preserves_model_roles_and_isolates_credentials() {
         use super::*;

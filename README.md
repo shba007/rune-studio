@@ -18,6 +18,12 @@
   <a href="https://github.com/voidzero-dev"><img src="https://img.shields.io/badge/Bundler-Vite--Plus-646CFF.svg" alt="Vite-Plus"></a>
 </p>
 
+</div>
+
+<p align="center">
+  <video src="./public/preview.mp4" controls="controls" muted="muted" width="100%"></video>
+</p>
+
 ---
 
 ## Overview

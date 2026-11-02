@@ -42,6 +42,11 @@ pub struct Frame {
 }
 
 impl Frame {
+    pub fn set_jpeg_quality(&mut self, quality: u8) -> Result<(), ObserveError> {
+        self.jpeg = encode_jpeg(&self.image, quality)?;
+        Ok(())
+    }
+
     pub fn save_recording_frame(
         &self,
         path: &std::path::Path,
@@ -536,6 +541,21 @@ mod tests {
         assert_eq!((frame.monitor.width, frame.monitor.height), (1600, 900));
         assert!(!frame.png.is_empty() && !frame.jpeg.is_empty());
         assert!(insight_image(b"not an image", 720, u32::MAX).is_err());
+    }
+
+    #[test]
+    fn reference_jpeg_quality_reencodes_the_resized_source() {
+        let source = image::RgbImage::from_fn(96, 96, |x, y| {
+            image::Rgb([(x * 2) as u8, (y * 2) as u8, ((x * y) % 256) as u8])
+        });
+        let png = encode_png(&source).unwrap();
+        let mut frame = insight_image(&png, 48, u32::MAX).unwrap();
+        frame.set_jpeg_quality(10).unwrap();
+        let low = frame.jpeg.clone();
+        frame.set_jpeg_quality(95).unwrap();
+        assert_ne!(low, frame.jpeg);
+        assert_eq!(image::load_from_memory(&frame.jpeg).unwrap().width(), 48);
+        assert!(frame.jpeg.len() > low.len());
     }
 
     #[test]

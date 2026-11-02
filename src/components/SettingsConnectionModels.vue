@@ -477,7 +477,7 @@ watch(
           :agent-model="draft.models.agent"
           :models="discovered"
           :selected-models="activeConnection?.selectedModels"
-          :placeholder="role.key === 'agent' ? 'e.g. gemma-4-12b-it' : undefined"
+          :placeholder="role.key === 'agent' ? 'e.g. qwen3.5-4b-q4' : undefined"
         />
       </HubGroup>
 

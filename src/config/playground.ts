@@ -176,7 +176,7 @@ export const QUESTION_HINTS: Record<string, string[]> = {
     'Turn this into a watercolor painting',
   ],
   reference: [
-    'Replace the person in image 2 with the person from image 1. Preserve the person from image 1, his/her face, hairstyle, body but not clothes. Keep the environmental setting from image 2. Do not keep the person from image 2.',
+    'Replace the person in image 2 with the person from image 1. Preserve the face, hairstyle and body shape from image 1, and the pose, clothes and setting from image 2. Match the scene lighting, shadows and perspective, with natural skin texture and realistic details.',
     'Apply the colors and style of image 2 to image 1.',
     'Combine the main subjects of both images in one scene.',
   ],
