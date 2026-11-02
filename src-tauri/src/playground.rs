@@ -749,7 +749,7 @@ async fn speech(app: AppHandle, input: SpeechInput) -> Result<SpeechResult, Stri
         ));
     }
     Ok(SpeechResult {
-        audio: speech_audio(&bytes)?.into(),
+        audio: speech_audio(&bytes)?,
         text: input.text,
         model,
         elapsed_ms: started.elapsed().as_millis() as u64,
