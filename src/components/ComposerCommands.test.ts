@@ -11,6 +11,7 @@ function show(externalAgent = false, running = false) {
   const analyzeScreen = vi.fn<() => Promise<void>>(async () => {})
   const openWorkspace = vi.fn<(section: string) => Promise<void>>(async () => {})
   const openSettings = vi.fn<() => Promise<void>>(async () => {})
+  const openPlayground = vi.fn<() => Promise<void>>(async () => {})
   const submit = vi.fn<(text: string) => Promise<boolean>>(async () => true)
   const agent = {
     state: ref(running ? 'acting' : 'idle'),
@@ -26,6 +27,7 @@ function show(externalAgent = false, running = false) {
     analyzeScreen,
     openWorkspace,
     openSettings,
+    openPlayground,
     toggleListening: vi.fn<() => void>(),
     stop: vi.fn<() => void>(),
   } as unknown as Agent
@@ -36,15 +38,14 @@ function show(externalAgent = false, running = false) {
     submit,
   } as unknown as TaskBoardModel
   const wrapper = mount(Composer, { props: { agent, board } })
-  return { wrapper, agent, analyzeScreen, openWorkspace, openSettings, submit }
+  return { wrapper, agent, analyzeScreen, openWorkspace, openSettings, openPlayground, submit }
 }
 
 it('suggests local commands and opens Goals using keyboard selection without planning a task', async () => {
   const { wrapper, openWorkspace, submit } = show()
   const field = wrapper.get('textarea')
   await field.setValue('/')
-  expect(wrapper.findAll('[role="option"]')).toHaveLength(6)
-  await field.trigger('keydown', { key: 'ArrowDown' })
+  expect(wrapper.findAll('[role="option"]')).toHaveLength(5)
   await field.trigger('keydown', { key: 'Enter' })
   await flushPromises()
   expect(openWorkspace).toHaveBeenCalledWith('goals')
@@ -57,12 +58,12 @@ it('suggests local commands and opens Goals using keyboard selection without pla
 it('opens the existing Visual Analysis flow through a filtered suggestion or exact command', async () => {
   const { wrapper, analyzeScreen, submit } = show()
   const field = wrapper.get('textarea')
-  await field.setValue('/vis')
+  await field.setValue('#vis')
   expect(wrapper.findAll('[role="option"]')).toHaveLength(1)
   await wrapper.get('[role="option"]').trigger('click')
   await flushPromises()
   expect(analyzeScreen).toHaveBeenCalledOnce()
-  await field.setValue('/visual-analysis')
+  await field.setValue('#visual-analysis')
   await wrapper.get('[aria-label="Run command"]').trigger('click')
   await flushPromises()
   expect(analyzeScreen).toHaveBeenCalledTimes(2)
@@ -70,10 +71,27 @@ it('opens the existing Visual Analysis flow through a filtered suggestion or exa
   wrapper.unmount()
 })
 
+it('lists Flows under # and opens Image to Voice in Playground', async () => {
+  const { wrapper, openPlayground, analyzeScreen } = show()
+  const field = wrapper.get('textarea')
+  await field.setValue('#')
+  expect(wrapper.findAll('[role="option"]')).toHaveLength(2)
+  await field.setValue('#image to voice')
+  await field.trigger('keydown', { key: 'Enter' })
+  await flushPromises()
+  expect(openPlayground).toHaveBeenCalledWith('image-voice')
+  expect(analyzeScreen).not.toHaveBeenCalled()
+  await field.setValue('/visual analysis')
+  await field.trigger('keydown', { key: 'Enter' })
+  expect(analyzeScreen).not.toHaveBeenCalled()
+  expect(wrapper.get('[role="alert"]').text()).toContain('Unknown command')
+  wrapper.unmount()
+})
+
 it('preserves API desktop exclusion and external-agent Visual Analysis routing', async () => {
   const { wrapper, agent, analyzeScreen, submit } = show(false, true)
   const field = wrapper.get('textarea')
-  await field.setValue('/visual analysis')
+  await field.setValue('#visual analysis')
   expect(wrapper.get('[role="option"]').attributes('disabled')).toBeDefined()
   await field.trigger('keydown', { key: 'Enter' })
   await flushPromises()
@@ -108,7 +126,7 @@ it('supports completion and Escape, keeps unknown commands local, and respects o
   expect(wrapper.get('[role="alert"]').text()).toContain('Unknown command')
   expect(submit).not.toHaveBeenCalled()
   agent.health.value.tone = 'down'
-  await field.setValue('/visual analysis')
+  await field.setValue('#visual analysis')
   expect(field.attributes('disabled')).toBeUndefined()
   await field.trigger('keydown', { key: 'Enter' })
   await flushPromises()

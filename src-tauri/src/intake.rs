@@ -352,6 +352,7 @@ async fn infer(
         max_tokens: Some(2500),
         data_class: Some(DataClass::Finance),
         background: false,
+        http_timeout: None,
         ..Default::default()
     };
     if classification {

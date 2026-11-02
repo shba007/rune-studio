@@ -163,6 +163,7 @@ async fn verify_within(
         max_tokens: None,
         data_class: input.data_class,
         background: false,
+        http_timeout: None,
     };
     match tokio::time::timeout(limit, client.call_json(&request, &schema)).await {
         Err(_) => Err(format!(

@@ -157,6 +157,7 @@ pub async fn listen(
         max_tokens: Some(MAX_TRANSCRIPT_TOKENS),
         data_class: Some(crate::life::DataClass::Finance),
         background: false,
+        http_timeout: None,
     };
     let reply = client.call_json(&request, &schema).await?;
     let listened = parse(&reply);
@@ -255,6 +256,7 @@ mod tests {
             max_tokens: Some(MAX_TRANSCRIPT_TOKENS),
             data_class: None,
             background: false,
+            http_timeout: None,
         };
         let profile = crate::model::profile::resolve_profile("m", None, None);
         let body = crate::model::client::json_body("m", &profile, &request, &schema);

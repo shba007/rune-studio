@@ -1138,6 +1138,7 @@ async fn make_plan(
         data_class: crate::workspace_tasks::protected_execution_context(app)
             .then_some(crate::life::DataClass::Finance),
         background: false,
+        http_timeout: None,
     };
     let plan = crate::agent::unless_stopped(cancel, client.call_json_retrying(&request, &schema))
         .await
@@ -1240,6 +1241,7 @@ async fn background(
             data_class: crate::workspace_tasks::protected_execution_context(app)
                 .then_some(crate::life::DataClass::Finance),
             background: false,
+            http_timeout: None,
         };
         let (name, arguments) = if let Some(schema) = &result_schema {
             let result =

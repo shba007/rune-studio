@@ -68,6 +68,7 @@ pub struct Request<'a> {
     pub max_tokens: Option<u32>,
     pub data_class: Option<crate::life::DataClass>,
     pub background: bool,
+    pub http_timeout: Option<Duration>,
 }
 
 impl<'a> Default for Request<'a> {
@@ -82,6 +83,7 @@ impl<'a> Default for Request<'a> {
             max_tokens: None,
             data_class: None,
             background: false,
+            http_timeout: None,
         }
     }
 }
@@ -541,7 +543,7 @@ impl ChatClient<'_> {
                 "{}/v1/chat/completions",
                 self.base_url.trim_end_matches('/')
             ))
-            .timeout(REQUEST_TIMEOUT)
+            .timeout(request.http_timeout.unwrap_or(REQUEST_TIMEOUT))
             .json(body);
         if let Some(key) = self.api_key {
             http = http.bearer_auth(key);
@@ -1619,6 +1621,7 @@ mod tests {
             max_tokens: None,
             data_class: None,
             background: false,
+            http_timeout: None,
         }
     }
 
@@ -1874,6 +1877,7 @@ mod tests {
             max_tokens: None,
             data_class: None,
             background: false,
+            http_timeout: None,
         };
         let profile = ModelProfile::conservative("m");
         let body = chat_body("m", &profile, &request);
@@ -1907,6 +1911,7 @@ mod tests {
             max_tokens: None,
             data_class: None,
             background: false,
+            http_timeout: None,
         };
         let profile = ModelProfile::conservative("m");
         let off = chat_body("m", &profile, &request);
@@ -1943,6 +1948,7 @@ mod tests {
             max_tokens: None,
             data_class: None,
             background: false,
+            http_timeout: None,
         };
         let mut profile = ModelProfile::conservative("the-model");
         profile.tool_choice_required = TriState::Yes;
@@ -1974,6 +1980,7 @@ mod tests {
             max_tokens: None,
             data_class: None,
             background: false,
+            http_timeout: None,
         };
 
         let mut p_none = ModelProfile::conservative("m");

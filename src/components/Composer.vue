@@ -67,11 +67,13 @@ const selectedCommand = ref(0)
 const commandPending = ref(false)
 const commandNotice = ref('')
 const slash = computed(() => command.value.trimStart().startsWith('/'))
+const flow = computed(() => command.value.trimStart().startsWith('#'))
+const commandInput = computed(() => slash.value || flow.value)
 const suggestions = computed(() => composerCommands(command.value))
 const scheduling = computed(() => isScheduleText(command.value))
 const inlineReminder = computed(() => !slash.value && /^remind\b/i.test(command.value.trim()))
 const showCommands = computed(
-  () => slash.value && !scheduling.value && !menuDismissed.value && !props.analysisBusy,
+  () => commandInput.value && !scheduling.value && !menuDismissed.value && !props.analysisBusy,
 )
 watch(command, () => {
   selectedCommand.value = 0
@@ -79,7 +81,7 @@ watch(command, () => {
   commandNotice.value = ''
 })
 function unavailableReason(item: ComposerCommand) {
-  if (item.id !== 'analysis') return ''
+  if (item.id !== 'screen-insight') return ''
   if (offline.value) return 'Needs the model server'
   if (!external.value && agent.isRunning.value) return 'Finish or stop the current task first'
   return ''
@@ -101,7 +103,8 @@ async function runCommand(item: ComposerCommand) {
   }
   commandPending.value = true
   try {
-    if (item.id === 'analysis') await agent.analyzeScreen()
+    if (item.id === 'screen-insight') await agent.analyzeScreen()
+    else if (item.command.startsWith('#')) await agent.openPlayground(item.id)
     else if (item.id === 'settings') await agent.openSettings()
     else if (item.id === 'playground') await agent.openPlayground()
     else await agent.openWorkspace(item.id)
@@ -148,7 +151,8 @@ const action = computed(() => {
       tone: 'red',
       run: () => props.cancelAnalysis?.(),
     } as const
-  if (slash.value) return { icon: 'send', label: 'Run command', tone: 'dark', run: submit } as const
+  if (commandInput.value)
+    return { icon: 'send', label: 'Run command', tone: 'dark', run: submit } as const
   if (props.analysisSubmit)
     return { icon: 'send', label: 'Analyze', tone: 'dark', run: submit } as const
   if (props.board && hasText.value)
@@ -171,13 +175,13 @@ const action = computed(() => {
 const external = computed(() => agent.settings.value?.externalAgent === true)
 const offline = computed(() => agent.health.value.tone === 'down')
 const placeholder = computed(() => {
-  if (external.value) return 'Type / for commands; start tasks in your host'
+  if (external.value) return 'Type # for Flows or / for commands'
   if (props.analysisSubmit) return props.analysisBusy ? 'Analyzing…' : 'Type or say a request'
   if (needsConfirm.value) return 'Needs your OK'
   if (props.board && agent.isRunning.value) return 'Add a request'
   if (agent.isRunning.value) return 'Working…'
   if (isListening.value) return 'Listening…'
-  if (offline.value) return 'Offline · type / for commands'
+  if (offline.value) return 'Offline · type # for Flows or / for commands'
   return 'Type or say a request'
 })
 
@@ -257,12 +261,15 @@ async function submit() {
       return
     }
   }
-  if (slash.value) {
+  if (commandInput.value) {
     const item =
       exactComposerCommand(text) ??
       (showCommands.value ? suggestions.value[selectedCommand.value] : undefined)
     if (item) await runCommand(item)
-    else commandNotice.value = 'Unknown command. Type / to see available commands.'
+    else
+      commandNotice.value = flow.value
+        ? 'Unknown Flow. Type # to see available Flows.'
+        : 'Unknown command. Type / to see available commands.'
     return
   }
   if (offline.value) return
@@ -372,7 +379,7 @@ async function submit() {
           commandPending ||
           (Boolean(analysisSubmit) && analysisBusy)
         "
-        aria-label="Request or slash command"
+        aria-label="Request, Flow or command"
         :aria-expanded="showCommands"
         :aria-controls="showCommands ? menuId : undefined"
         :aria-activedescendant="
@@ -418,9 +425,9 @@ async function submit() {
             "
             :disabled="
               commandPending ||
-              (external && !slash && !inlineReminder && action.icon !== 'stop') ||
-              (!slash && !inlineReminder && !analysisSubmit && board?.pending.value) ||
-              (offline && !slash && !inlineReminder && action.icon !== 'stop')
+              (external && !commandInput && !inlineReminder && action.icon !== 'stop') ||
+              (!commandInput && !inlineReminder && !analysisSubmit && board?.pending.value) ||
+              (offline && !commandInput && !inlineReminder && action.icon !== 'stop')
             "
             :aria-pressed="action.icon === 'mic' ? isListening : undefined"
             @click="action.run()"

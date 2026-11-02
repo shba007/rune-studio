@@ -11,6 +11,9 @@ const snapshot = ref<AnalysisSnapshot>({ ...EMPTY_SNAPSHOT })
 const capture = vi.fn<(...args: unknown[]) => Promise<boolean>>(async () => true)
 const cancel = vi.fn<() => Promise<boolean>>(async () => true)
 const captureImage = vi.fn<(...args: unknown[]) => Promise<boolean>>(async () => true)
+const flowEvents = vi.hoisted(() => ({
+  handler: null as null | ((event: { payload: string }) => void),
+}))
 
 const invoked = vi.fn<(command: string, args?: unknown) => Promise<unknown>>()
 let pendingSpeech: Promise<unknown> | null = null
@@ -28,6 +31,19 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: async (command: string, args?: unknown) => {
     void invoked(command, args)
     if (command === 'playground_start_run') return pendingStart ?? 42
+    if (command === 'playground_visual_plan')
+      return {
+        image: 'data:image/png;base64,AA==',
+        model: 'vision-a',
+        questions: {
+          entities: 'What is visible?',
+          regions: 'Which regions?',
+          structure: 'Which landmarks?',
+          depth: 'What is near?',
+        },
+      }
+    if (command === 'playground_visual_branch')
+      return { answer: 'A red square.', findings: [], model: 'vision-a' }
     if (command === 'playground_speech' && pendingSpeech) return pendingSpeech
     if (command === 'playground_translate_speech') {
       if (translationError) throw new Error(translationError)
@@ -118,6 +134,12 @@ vi.mock('@tauri-apps/api/core', () => ({
       : null
   },
 }))
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: async (name: string, handler: (event: { payload: string }) => void) => {
+    if (name === 'playground-select-flow') flowEvents.handler = handler
+    return () => {}
+  },
+}))
 vi.mock('@/config/imageFile', () => ({
   readImageAsPng: async (file: File) =>
     file.name === 'second.png' ? 'data:image/png;base64,BB==' : 'data:image/png;base64,AA==',
@@ -192,10 +214,90 @@ beforeEach(() => {
   capture.mockClear()
   cancel.mockClear()
   captureImage.mockClear()
+  flowEvents.handler = null
   usePlaygroundHistory().clear()
 })
 
 describe('playground window', () => {
+  it('shows a separate Flow list and opens its graph view', async () => {
+    const wrapper = mount(PlaygroundWindow, { global: { stubs: { teleport: true } } })
+    await flushPromises()
+    const flows = wrapper.findAll('button').find((button) => button.text() === 'Flows')
+    expect(flows).toBeDefined()
+    await flows!.trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="flow-image-voice"]').text()).toContain('Image to Voice')
+    const view = wrapper.get('[aria-label="Flow view"]')
+    await view.findAll('[role="radio"]')[1]!.trigger('click')
+    expect(wrapper.get('[data-testid="flow-graph"]').text()).toContain('Create Voice')
+    await wrapper.get('[data-testid="flow-screen-insight"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="visual-analysis-flow"]').text()).toContain('Visual Analysis')
+    for (const role of ['Regions & Context', 'Structure & Landmarks', 'Depth'])
+      await wrapper.get(`[aria-label="Enable ${role}"]`).trigger('click')
+    await wrapper.get('button[aria-label="Planning model"]').trigger('click')
+    await wrapper
+      .get('[role="listbox"][aria-label="Planning model"]')
+      .findAll('[role="option"]')[1]!
+      .trigger('click')
+    await wrapper.get('button[aria-label="Entities model"]').trigger('click')
+    await wrapper
+      .get('[role="listbox"][aria-label="Entities model"]')
+      .findAll('[role="option"]')[1]!
+      .trigger('click')
+    await wrapper.get('#visual-flow-question').setValue('What is visible?')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Run Flow')!
+      .trigger('click')
+    await flushPromises()
+    expect(invoked).toHaveBeenCalledWith(
+      'playground_visual_plan',
+      expect.objectContaining({
+        input: {
+          target: { kind: 'screen', id: 1 },
+          model: 'vision-a',
+          question: 'What is visible?',
+        },
+      }),
+    )
+    await wrapper
+      .get('[aria-label="Visual Analysis source"]')
+      .findAll('[role="radio"]')[1]!
+      .trigger('click')
+    const runFlow = wrapper.findAll('button').find((button) => button.text() === 'Run Flow')!
+    expect(runFlow.attributes('disabled')).toBeDefined()
+    const image = wrapper.get('[aria-label="Visual Analysis image"]')
+    Object.defineProperty(image.element, 'files', {
+      configurable: true,
+      value: [new File(['x'], 'cat.png', { type: 'image/png' })],
+    })
+    await image.trigger('change')
+    await flushPromises()
+    expect(
+      wrapper
+        .get('[data-testid="visual-analysis-flow"]')
+        .find('[aria-label="Choose capture target"]')
+        .exists(),
+    ).toBe(false)
+    await runFlow.trigger('click')
+    expect(invoked).toHaveBeenCalledWith(
+      'playground_visual_plan',
+      expect.objectContaining({
+        input: {
+          image: 'data:image/png;base64,AA==',
+          model: 'vision-a',
+          question: 'What is visible?',
+        },
+      }),
+    )
+    await wrapper.get('[aria-label="Flow view"]').findAll('[role="radio"]')[1]!.trigger('click')
+    expect(wrapper.get('[data-testid="visual-flow-graph"]').text()).toContain('Analysis results')
+    flowEvents.handler?.({ payload: 'image-voice' })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="image-voice-flow"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
   it('restores a voice result and its input after switching pipelines', async () => {
     const wrapper = mount(PlaygroundWindow)
     await flushPromises()

@@ -16,7 +16,15 @@ import AppIcon from './AppIcon.vue'
 import CaptureTargetPicker from './CaptureTargetPicker.vue'
 import WhenText from './WhenText.vue'
 
-const props = defineProps<{ analysis: ReturnType<typeof useAnalysis> }>()
+const props = withDefaults(
+  defineProps<{
+    analysis: ReturnType<typeof useAnalysis>
+    enableShortcut?: boolean
+    imageMode?: boolean
+    image?: string
+  }>(),
+  { enableShortcut: true },
+)
 const emit = defineEmits<{ close: [] }>()
 const { snapshot, busy, notice } = props.analysis
 
@@ -25,6 +33,7 @@ const targets = ref<{ target: { kind: string; id: number }; label: string; prima
 )
 let initialSelection = true
 const selectedTarget = ref('')
+const lastImageRun = ref<{ image: string; question: string } | null>(null)
 const targetNotice = ref('')
 const refreshing = ref(false)
 const refreshStatus = ref('')
@@ -57,6 +66,12 @@ async function loadTargets() {
 }
 onMounted(loadTargets)
 const open = ref<number | null>(null)
+watch(
+  () => props.imageMode,
+  () => {
+    targetNotice.value = ''
+  },
+)
 
 const stage = computed(() => stageWord(snapshot.value.status))
 const waiting = computed(() => busy.value)
@@ -65,6 +80,16 @@ const failed = computed(() => snapshot.value.status === 'error')
 
 async function submit(question = '') {
   if (busy.value) return false
+  if (props.imageMode) {
+    if (!props.image) {
+      targetNotice.value = 'Choose an image before sending your question.'
+      return false
+    }
+    lastImageRun.value = { image: props.image, question: question.trim() }
+    void props.analysis.captureImage(lastImageRun.value.question, lastImageRun.value.image)
+    return true
+  }
+  lastImageRun.value = null
   const option = targets.value.find((item) => JSON.stringify(item.target) === selectedTarget.value)
   if (option) {
     void props.analysis.capture(question.trim(), option.target)
@@ -86,6 +111,14 @@ async function close() {
 
 function retry() {
   if (busy.value) return
+  if (lastImageRun.value) {
+    void props.analysis.captureImage(lastImageRun.value.question, lastImageRun.value.image)
+    return
+  }
+  if (props.imageMode) {
+    void submit(snapshot.value.question)
+    return
+  }
   if (snapshot.value.id.startsWith('insight-')) {
     void submit(snapshot.value.question)
     return
@@ -107,6 +140,7 @@ watch(
 )
 
 onKeyStroke('Escape', (event) => {
+  if (!props.enableShortcut) return
   const next = escape({ open: open.value, selected: snapshot.value.selected, shown: true })
   event.stopPropagation()
   if (open.value !== null) open.value = next.open
@@ -146,13 +180,17 @@ onKeyStroke('Escape', (event) => {
       </header>
 
       <CaptureTargetPicker
-        v-if="!busy"
+        v-if="!busy && !imageMode"
         v-model="selectedTarget"
         :options="targets"
         :refreshing="refreshing"
         @refresh="loadTargets"
       />
-      <p v-if="refreshStatus && !busy" role="status" class="text-rune-caption text-rune-text-2">
+      <p
+        v-if="refreshStatus && !busy && !imageMode"
+        role="status"
+        class="text-rune-caption text-rune-text-2"
+      >
         {{ refreshStatus }}
       </p>
       <p v-if="targetNotice && !busy && !failed" role="alert" class="text-rune-caption text-error">
@@ -183,7 +221,6 @@ onKeyStroke('Escape', (event) => {
       </p>
       <p class="text-rune-caption text-rune-text-2">
         Model observations, not verified facts. Screenshot text does not authorize actions.
-        Successful analyses save this capture with task history.
       </p>
     </section>
     <AnalysisAnswer v-if="showAnswer" :text="snapshot.answer" :waiting="waiting" />

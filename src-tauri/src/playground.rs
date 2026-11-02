@@ -16,7 +16,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 pub const WINDOW: &str = "playground";
 
@@ -100,8 +100,327 @@ cancellable_command!(playground_edit, edit, EditInput, EditResult);
 cancellable_command!(playground_variation, variation, VariationInput, EditResult);
 cancellable_command!(playground_reference, reference, ReferenceInput, EditResult);
 
-pub fn open(app: &AppHandle) -> tauri::Result<()> {
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct VisualPlanInput {
+    target: Option<CaptureTarget>,
+    image: Option<String>,
+    model: String,
+    question: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VisualPlanResult {
+    image: String,
+    questions: crate::analysis::run::VisualQuestions,
+    model: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct VisualBranchInput {
+    image: String,
+    model: String,
+    question: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VisualBranchResult {
+    answer: String,
+    findings: Vec<crate::analysis::report::Finding>,
+    model: String,
+    boxes_rejected: u32,
+}
+
+async fn visual_settings(app: &AppHandle, model: &str) -> Result<Settings, String> {
+    let state = app.state::<AppState>();
+    let (mut settings, key) = crate::settings::snapshot_with_api_key(&state.settings);
+    settings.models.analysis = model.trim().to_string();
+    let status = crate::backend::check(&state.http, &settings, key.as_deref()).await;
+    if !status.reachable || !status.auth_ok {
+        return Err(status
+            .error
+            .unwrap_or("Infer is unavailable or authentication failed".into()));
+    }
+    crate::workflow::vision_model(&settings, &status.models)?;
+    Ok(settings)
+}
+
+fn visual_guard(app: &AppHandle) -> Result<(), String> {
+    if crate::recording::busy() {
+        return Err("Stop or finish screen recording before starting Visual Analysis".into());
+    }
+    let state = app.state::<AppState>();
+    if state.settings.locked().external_agent {
+        return Err("Visual Analysis uses API mode. Select API mode first.".into());
+    }
+    if crate::events::agent_state(app).is_running() || state.lease.locked().is_held() {
+        return Err("Finish or stop the current task first".into());
+    }
+    if crate::analysis::state::in_flight(state.analysis.locked().status) {
+        return Err("Another analysis is running".into());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn playground_visual_plan(
+    app: AppHandle,
+    run_id: u64,
+    input: VisualPlanInput,
+) -> Result<VisualPlanResult, String> {
+    let state = app.state::<PlaygroundRuns>();
+    let token = state
+        .runs
+        .locked()
+        .get(&run_id)
+        .cloned()
+        .ok_or("Playground run was cancelled")?;
+    let work_app = app.clone();
+    state
+        .run(run_id, async move {
+            visual_guard(&work_app)?;
+            if input.target.is_some() == input.image.is_some() {
+                return Err("Choose either a screen or window, or an image".into());
+            }
+            if input.question.chars().count() > 400 {
+                return Err("Question exceeds 400 characters".into());
+            }
+            let settings = visual_settings(&work_app, &input.model).await?;
+            let max_edge = settings.model_image_resolution.max_edge();
+            let capture_edge = settings.recording_resolution.max_edge();
+            let frame = tokio::time::timeout(
+                Duration::from_secs(10),
+                tauri::async_runtime::spawn_blocking(move || match (input.target, input.image) {
+                    (Some(target), None) => {
+                        screenshot::insight_capture(target, max_edge, capture_edge).map_err(
+                            |error| {
+                                format!("Capture permission denied or target unavailable: {error}")
+                            },
+                        )
+                    }
+                    (None, Some(data)) => depth_image(&data).and_then(|bytes| {
+                        screenshot::insight_image(&bytes, max_edge, capture_edge)
+                            .map_err(|error| error.to_string())
+                    }),
+                    _ => Err("Choose either a screen or window, or an image".into()),
+                }),
+            )
+            .await
+            .map_err(|_| "Reading the image timed out")?
+            .map_err(|error| error.to_string())??;
+            let questions = crate::analysis::run::plan_visual_questions(
+                &work_app,
+                &input.question,
+                &frame.data_uri(),
+                &token,
+                &settings,
+            )
+            .await?;
+            Ok(VisualPlanResult {
+                image: format!(
+                    "data:image/png;base64,{}",
+                    base64::engine::general_purpose::STANDARD.encode(&frame.png)
+                ),
+                questions,
+                model: settings.models.analysis,
+            })
+        })
+        .await
+}
+
+#[tauri::command]
+pub async fn playground_visual_branch(
+    app: AppHandle,
+    run_id: u64,
+    input: VisualBranchInput,
+) -> Result<VisualBranchResult, String> {
+    let state = app.state::<PlaygroundRuns>();
+    let token = state
+        .runs
+        .locked()
+        .get(&run_id)
+        .cloned()
+        .ok_or("Playground run was cancelled")?;
+    let work_app = app.clone();
+    state
+        .run(run_id, async move {
+            visual_guard(&work_app)?;
+            if input.question.trim().is_empty() || input.question.chars().count() > 500 {
+                return Err("Choose a question of up to 500 characters".into());
+            }
+            let settings = visual_settings(&work_app, &input.model).await?;
+            let bytes = depth_image(&input.image)?;
+            let frame = screenshot::insight_image(
+                &bytes,
+                settings.model_image_resolution.max_edge(),
+                settings.recording_resolution.max_edge(),
+            )
+            .map_err(|error| error.to_string())?;
+            let output = crate::analysis::run::analyze_image_with_settings_timeout(
+                &work_app,
+                &input.question,
+                &frame.data_uri(),
+                &token,
+                "visual-flow-branch",
+                &settings,
+                crate::analysis::run::PLAYGROUND_FLOW_TIMEOUT,
+            )
+            .await
+            .map_err(|error| error.to_string())?;
+            let mut findings = output.parsed.findings;
+            let boxes_rejected = crate::analysis::boxes::guard(&mut findings);
+            Ok(VisualBranchResult {
+                answer: output.parsed.answer,
+                findings,
+                model: output.model,
+                boxes_rejected,
+            })
+        })
+        .await
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ImageVoiceInput {
+    image: String,
+    caption_model: String,
+    speech_model: String,
+    detail: String,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct FlowProgress {
+    run_id: u64,
+    stage: &'static str,
+    caption: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageVoiceResult {
+    caption: String,
+    caption_model: String,
+    speech: Option<SpeechResult>,
+    error: Option<String>,
+}
+
+#[tauri::command]
+pub async fn playground_image_voice_flow(
+    app: AppHandle,
+    run_id: u64,
+    input: ImageVoiceInput,
+) -> Result<ImageVoiceResult, String> {
+    let state = app.state::<PlaygroundRuns>();
+    let token = state
+        .runs
+        .locked()
+        .get(&run_id)
+        .cloned()
+        .ok_or("Playground run was cancelled")?;
+    let work_app = app.clone();
+    state
+        .run(run_id, async move {
+            session(&work_app, &input.caption_model, CAPTION_TASK, None).await?;
+            session(
+                &work_app,
+                &input.speech_model,
+                SPEECH_TASK,
+                Some(AudioOperation::Speech),
+            )
+            .await?;
+            let caption_app = work_app.clone();
+            let speech_app = work_app.clone();
+            image_voice_steps(
+                &token,
+                caption(
+                    caption_app,
+                    CaptionInput {
+                        target: None,
+                        image: Some(input.image),
+                        model: input.caption_model,
+                        detail: input.detail,
+                    },
+                ),
+                move |text| {
+                    speech(
+                        speech_app,
+                        SpeechInput {
+                            text,
+                            model: input.speech_model,
+                        },
+                    )
+                },
+                |stage, caption| {
+                    if let Some(window) = work_app.get_webview_window(WINDOW) {
+                        let _ = window.emit(
+                            "playground-flow-progress",
+                            FlowProgress {
+                                run_id,
+                                stage,
+                                caption,
+                            },
+                        );
+                    }
+                },
+            )
+            .await
+        })
+        .await
+}
+
+async fn image_voice_steps<C, F, S, P>(
+    token: &CancelToken,
+    caption_call: C,
+    speech_call: F,
+    mut progress: P,
+) -> Result<ImageVoiceResult, String>
+where
+    C: Future<Output = Result<CaptionResult, String>>,
+    F: FnOnce(String) -> S,
+    S: Future<Output = Result<SpeechResult, String>>,
+    P: FnMut(&'static str, Option<String>),
+{
+    if token.is_cancelled() {
+        return Err("Playground run was cancelled".into());
+    }
+    progress("caption", None);
+    let result = caption_call.await?;
+    if token.is_cancelled() {
+        return Err("Playground run was cancelled".into());
+    }
+    let text = result.caption;
+    progress("speech", Some(text.clone()));
+    if token.is_cancelled() {
+        return Err("Playground run was cancelled".into());
+    }
+    let output = match validate_speech_text(&text) {
+        Err(err) => Err(err.to_string()),
+        Ok(()) => speech_call(text.clone()).await,
+    };
+    if token.is_cancelled() {
+        return Err("Playground run was cancelled".into());
+    }
+    let (speech, error) = match output {
+        Ok(value) => (Some(value), None),
+        Err(error) => (None, Some(error)),
+    };
+    Ok(ImageVoiceResult {
+        caption: text,
+        caption_model: result.model,
+        speech,
+        error,
+    })
+}
+
+fn open_with_flow(app: &AppHandle, flow: Option<&str>) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window(WINDOW) {
+        if let Some(flow) = flow {
+            window.emit("playground-select-flow", flow)?;
+        }
         window.unminimize()?;
         window.show()?;
         return window.set_focus();
@@ -109,7 +428,14 @@ pub fn open(app: &AppHandle) -> tauri::Result<()> {
     let window = WebviewWindowBuilder::new(
         app,
         WINDOW,
-        WebviewUrl::App("index.html?view=playground".into()),
+        WebviewUrl::App(
+            match flow {
+                Some("image-voice") => "index.html?view=playground&flow=image-voice",
+                Some("screen-insight") => "index.html?view=playground&flow=screen-insight",
+                _ => "index.html?view=playground",
+            }
+            .into(),
+        ),
     )
     .title("Rune Playground")
     .inner_size(crate::window::PANEL_WIDTH, crate::window::PANEL_HEIGHT)
@@ -125,12 +451,20 @@ pub fn open(app: &AppHandle) -> tauri::Result<()> {
 }
 
 #[tauri::command]
-pub async fn open_playground(app: AppHandle) -> Result<(), String> {
-    open(&app).map_err(|err| format!("Could not open Playground: {err}"))
+pub async fn open_playground(app: AppHandle, flow: Option<String>) -> Result<(), String> {
+    if flow
+        .as_deref()
+        .is_some_and(|id| !matches!(id, "image-voice" | "screen-insight"))
+    {
+        return Err("Unknown Flow".into());
+    }
+    open_with_flow(&app, flow.as_deref()).map_err(|err| format!("Could not open Playground: {err}"))
 }
 
 const DEPTH_TASK: &str = "image-to-depth";
 const CAPTION_TASK: &str = "image-to-text";
+// Some vision models spend part of their output budget on reasoning before the caption.
+const CAPTION_MAX_TOKENS: u32 = 1024;
 const UPSCALE_TASK: &str = "image-upscale";
 const CREATE_TASK: &str = "text-to-image";
 const EDIT_TASK: &str = "text-image-to-image";
@@ -224,8 +558,13 @@ struct CaptionEnvelope {
 fn caption_result(body: &str, image: String, elapsed_ms: u64) -> Result<CaptionResult, String> {
     let result: CaptionEnvelope =
         serde_json::from_str(body).map_err(|_| "Infer returned an unreadable caption")?;
-    if result.caption.trim().is_empty() || result.model.trim().is_empty() {
-        return Err("Infer returned an empty caption or model".into());
+    if result.caption.trim().is_empty() {
+        return Err(
+            "Infer returned an empty description. Retry or choose another caption model.".into(),
+        );
+    }
+    if result.model.trim().is_empty() {
+        return Err("Infer did not identify the caption model.".into());
     }
     Ok(CaptionResult {
         image,
@@ -263,7 +602,7 @@ async fn send_caption(
     detail: String,
 ) -> Result<CaptionResult, String> {
     let started = Instant::now();
-    let body = serde_json::json!({"model": model, "image": image, "detail": detail});
+    let body = serde_json::json!({"model": model, "image": image, "detail": detail, "max_tokens": CAPTION_MAX_TOKENS});
     let response = post_json(http, key, url, body, "caption").await?;
     caption_result(&response, image, started.elapsed().as_millis() as u64)
 }
@@ -1269,6 +1608,102 @@ async fn create(app: AppHandle, input: CreateInput) -> Result<CreateResult, Stri
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn image_voice_flow_passes_caption_to_speech_and_keeps_partial_errors() {
+        use super::*;
+        let token = CancelToken::default();
+        let make_caption = || async {
+            Ok(CaptionResult {
+                image: "image".into(),
+                caption: "A red square".into(),
+                model: "caption".into(),
+                elapsed_ms: 1,
+            })
+        };
+        let result = image_voice_steps(
+            &token,
+            make_caption(),
+            |text| async move {
+                assert_eq!(text, "A red square");
+                Ok(SpeechResult {
+                    audio: "wav".into(),
+                    text,
+                    model: "voice".into(),
+                    elapsed_ms: 1,
+                })
+            },
+            |_, _| {},
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.caption, "A red square");
+        assert!(result.speech.is_some());
+        let result = image_voice_steps(
+            &token,
+            make_caption(),
+            |_| async { Err("voice failed".into()) },
+            |_, _| {},
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.caption, "A red square");
+        assert_eq!(result.error.as_deref(), Some("voice failed"));
+    }
+
+    #[tokio::test]
+    async fn image_voice_flow_never_calls_speech_after_cancellation_or_oversized_caption() {
+        use super::*;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let calls = AtomicUsize::new(0);
+        let token = CancelToken::default();
+        let make_caption = |text: String| async move {
+            Ok(CaptionResult {
+                image: "image".into(),
+                caption: text,
+                model: "caption".into(),
+                elapsed_ms: 1,
+            })
+        };
+        let speech = |_: String| {
+            calls.fetch_add(1, Ordering::SeqCst);
+            async { Err("unexpected".into()) }
+        };
+        let failed = image_voice_steps(
+            &token,
+            async { Err("caption failed".into()) },
+            speech,
+            |_, _| {},
+        )
+        .await;
+        assert!(failed.is_err());
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        let speech = |_: String| {
+            calls.fetch_add(1, Ordering::SeqCst);
+            async { Err("unexpected".into()) }
+        };
+        let result = image_voice_steps(&token, make_caption("x".repeat(4097)), speech, |_, _| {})
+            .await
+            .unwrap();
+        assert!(result.error.unwrap().contains("4096"));
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        let speech = |_: String| {
+            calls.fetch_add(1, Ordering::SeqCst);
+            async { Err("unexpected".into()) }
+        };
+        let result = image_voice_steps(
+            &token,
+            make_caption("caption".into()),
+            speech,
+            |stage, _| {
+                if stage == "speech" {
+                    token.cancel();
+                }
+            },
+        )
+        .await;
+        assert!(result.is_err());
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
     #[test]
     fn reference_input_defaults_to_jpeg_quality_80() {
         let value: super::ReferenceInput =
@@ -1538,7 +1973,7 @@ mod tests {
             serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap();
         assert_eq!(
             body,
-            serde_json::json!({"model":"vision","image":"data:image/jpeg;base64,AA==","detail":"detailed"})
+            serde_json::json!({"model":"vision","image":"data:image/jpeg;base64,AA==","detail":"detailed","max_tokens":1024})
         );
     }
 

@@ -592,6 +592,7 @@ async fn make_plan(
         data_class: crate::workspace_tasks::protected_execution_context(app)
             .then_some(crate::life::DataClass::Finance),
         background: false,
+        http_timeout: None,
     };
     let mut send_thinking = thinking_sender(app, client.model);
     let started = Instant::now();
@@ -1037,6 +1038,7 @@ async fn run(
             data_class: crate::workspace_tasks::protected_execution_context(app)
                 .then_some(crate::life::DataClass::Finance),
             background: false,
+            http_timeout: None,
         };
         let mut send_thinking = thinking_sender(app, client.model);
         let started = Instant::now();
@@ -1889,6 +1891,7 @@ mod live {
             max_tokens: None,
             data_class: None,
             background: false,
+            http_timeout: None,
         };
         let mut updates = 0;
         let mut longest = 0;

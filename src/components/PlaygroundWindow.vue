@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { invoke } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { onKeyStroke } from '@vueuse/core'
 import { computed, onMounted, onUnmounted, ref, useTemplateRef, watch, type Ref } from 'vue'
 
@@ -13,6 +14,7 @@ import {
   type PlaygroundRun,
 } from '@/composables/usePlaygroundHistory'
 import { friendly } from '@/config/errors'
+import { FLOWS } from '@/config/flows'
 import { readImageAsPng } from '@/config/imageFile'
 import {
   DEFAULT_PIPELINE,
@@ -56,6 +58,8 @@ import PlaygroundSpeech from './PlaygroundSpeech.vue'
 import PlaygroundLoading from './PlaygroundLoading.vue'
 import PlaygroundTranscript from './PlaygroundTranscript.vue'
 import PlaygroundCaption from './PlaygroundCaption.vue'
+import PlaygroundFlows from './PlaygroundFlows.vue'
+import PlaygroundSettingsPanel from './PlaygroundSettingsPanel.vue'
 import RuneButton from './RuneButton.vue'
 import RuneChip from './RuneChip.vue'
 import RuneChoice from './RuneChoice.vue'
@@ -75,6 +79,39 @@ const windowRoot = useTemplateRef<HTMLElement>('windowRoot')
 useNativeBlur(windowRoot, true)
 
 const selectedId = ref(DEFAULT_PIPELINE)
+const playgroundSection = ref<'operations' | 'flows'>('operations')
+const flowVisited = ref(false)
+const requestedFlow = ref('')
+const flowRequest = ref(0)
+function showFlow(id: string) {
+  if (!FLOWS.some((flow) => flow.id === id)) return
+  requestedFlow.value = id
+  flowRequest.value++
+  openFlows()
+}
+let unlistenFlow: UnlistenFn | undefined
+let flowDisposed = false
+onMounted(async () => {
+  const initial = new URLSearchParams(window.location.search).get('flow')
+  if (initial) showFlow(initial)
+  const unlisten = await listen<string>('playground-select-flow', (event) =>
+    showFlow(event.payload),
+  )
+  if (flowDisposed) unlisten()
+  else unlistenFlow = unlisten
+})
+onUnmounted(() => {
+  flowDisposed = true
+  unlistenFlow?.()
+})
+function openFlows() {
+  flowVisited.value = true
+  playgroundSection.value = 'flows'
+}
+function selectOperation(id: string) {
+  selectedId.value = id
+  playgroundSection.value = 'operations'
+}
 const sidebarOpen = ref(true)
 const nav = useSectionHistory(selectedId)
 const menuItems = PLAYGROUND_GROUPS.flatMap((group) => group.pipelines).map((item) => ({
@@ -604,6 +641,7 @@ onKeyStroke('Enter', (event) => {
   run()
 })
 onKeyStroke('Escape', () => {
+  if (playgroundSection.value === 'flows') return
   if (isModelRun.value && loading.value) cancelModel(selectedId.value)
   else if (!isModelRun.value && analysis.busy.value) void analysis.cancel()
   else history.clearView()
@@ -626,13 +664,35 @@ onKeyStroke('Escape', () => {
       @toggle="sidebarOpen = !sidebarOpen"
       @back="nav.back()"
       @forward="nav.forward()"
-      @select="selectedId = $event"
+      @select="selectOperation"
     />
-    <div class="flex min-h-0 flex-1">
+    <nav aria-label="Playground sections" class="flex gap-2 bg-rune-sunken px-4 py-2">
+      <RuneButton
+        size="sm"
+        :variant="playgroundSection === 'operations' ? 'primary' : 'ghost'"
+        @click="playgroundSection = 'operations'"
+        >Operations</RuneButton
+      >
+      <RuneButton
+        size="sm"
+        :variant="playgroundSection === 'flows' ? 'primary' : 'ghost'"
+        @click="openFlows"
+        >Flows</RuneButton
+      >
+    </nav>
+    <PlaygroundFlows
+      v-if="flowVisited"
+      v-show="playgroundSection === 'flows'"
+      :models="agent.backend.value?.models ?? []"
+      :sidebar-open="sidebarOpen"
+      :selected-flow="requestedFlow"
+      :flow-request="flowRequest"
+    />
+    <div v-show="playgroundSection === 'operations'" class="flex min-h-0 flex-1">
       <nav
         v-show="sidebarOpen"
         class="glass flex w-64 shrink-0 flex-col bg-rune-sunken pb-4"
-        aria-label="Pipelines"
+        aria-label="Operations"
         data-testid="playground-nav"
       >
         <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pt-2">
@@ -655,11 +715,7 @@ onKeyStroke('Escape', () => {
         </div>
       </nav>
 
-      <section
-        class="flex w-88 shrink-0 flex-col"
-        aria-label="Settings"
-        data-testid="playground-params"
-      >
+      <PlaygroundSettingsPanel aria-label="Settings" data-testid="playground-params">
         <header data-tauri-drag-region class="flex h-12 shrink-0 items-center px-6">
           <RuneChoice
             v-model="headerModel"
@@ -762,15 +818,15 @@ onKeyStroke('Escape', () => {
                     :title="referenceFiles[index - 1]?.name"
                     >{{ referenceFiles[index - 1]?.name }}</span
                   >
-                  <button
+                  <RuneButton
                     v-if="referenceFiles[index - 1] || referenceFiles.length > 2"
-                    type="button"
-                    class="mt-1 cursor-pointer text-rune-caption text-rune-text-2 underline"
+                    variant="link"
+                    class="mt-1 p-0! text-rune-caption! normal-case! underline"
                     :aria-label="`Remove image ${index}`"
                     @click="removeReference(index - 1)"
                   >
                     Remove
-                  </button>
+                  </RuneButton>
                   <span v-if="referenceNotices[index - 1]" role="alert" class="text-error">{{
                     referenceNotices[index - 1]
                   }}</span>
@@ -1002,7 +1058,7 @@ onKeyStroke('Escape', () => {
             Run
           </RuneButton>
         </div>
-      </section>
+      </PlaygroundSettingsPanel>
 
       <div class="relative flex min-w-0 flex-1 flex-col">
         <div

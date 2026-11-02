@@ -378,7 +378,7 @@ export function useAgent() {
   }, 1000)
   const openSettings = (section = 'general') => call('open_settings_window', { section })
   const openWorkspace = (section = 'life') => call('open_workspace', { section })
-  const openPlayground = () => call('open_playground')
+  const openPlayground = (flow?: string) => call('open_playground', { flow: flow ?? null })
   const toggleListening = () => call('toggle_listening')
   async function answer(approved: boolean) {
     const waiting = question.value

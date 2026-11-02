@@ -29,6 +29,7 @@ function fake(over: Partial<AnalysisSnapshot> = {}) {
   const snapshot = ref<AnalysisSnapshot>({ ...EMPTY_SNAPSHOT, ...over })
   const calls = {
     capture: vi.fn<(...args: unknown[]) => void>(),
+    captureImage: vi.fn<(...args: unknown[]) => void>(),
     ask: vi.fn<(...args: unknown[]) => void>(),
     cancel: vi.fn<(...args: unknown[]) => void>(),
     close: vi.fn<(...args: unknown[]) => Promise<boolean>>(async () => true),
@@ -48,6 +49,29 @@ const submitFromComposer = (wrapper: { vm: unknown }, question: string) =>
   (wrapper.vm as { submit: (question: string) => Promise<boolean> }).submit(question)
 
 describe('AnalysisCard states', () => {
+  it('retries an image analysis with the original image even if the source changes', async () => {
+    const { analysis, snapshot, calls } = fake()
+    const wrapper = mount(AnalysisCard, {
+      props: { analysis, imageMode: true, image: 'data:image/png;base64,AA==' },
+    })
+    await submitFromComposer(wrapper, 'What is this?')
+    expect(calls.captureImage).toHaveBeenCalledWith('What is this?', 'data:image/png;base64,AA==')
+    await wrapper.setProps({ imageMode: false })
+    snapshot.value = {
+      ...snapshot.value,
+      status: 'error',
+      question: 'What is this?',
+      error: 'Failed',
+    }
+    await nextTick()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().trim() === 'Retry')!
+      .trigger('click')
+    expect(calls.captureImage).toHaveBeenCalledTimes(2)
+    expect(calls.capture).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
   it('warns about rejected pose data without hiding valid landmarks', () => {
     const { analysis } = fake({
       status: 'done',

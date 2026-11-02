@@ -151,7 +151,7 @@ export const knowledgeConcepts: KnowledgeConcept[] = [
     meaning:
       'An explicitly requested analysis of a selected screen or window, with findings and visual annotations.',
     example:
-      'Use /visual analysis, confirm the capture target, and ask about visible objects or body landmarks.',
+      'Use #visual analysis, confirm the capture target, and ask about visible objects or body landmarks.',
     today:
       'The selected Analysis model must support the required inputs. Entities, Regions & Context, Structure & Landmarks, and Depth are visibility groups. Geometry depends on the data the model returns; a checkbox cannot create a missing mask, skeleton, or depth map. Saved successful captures can be reviewed under Tasks.',
     section: 'tasks',

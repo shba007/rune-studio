@@ -1,12 +1,8 @@
 import type { IconName } from '@/icons'
+import { FLOWS } from '@/config/flows'
 
 export const COMPOSER_COMMANDS = [
-  {
-    id: 'analysis',
-    command: '/visual analysis',
-    description: 'Choose a screen or window to analyze',
-    icon: 'scan',
-  },
+  ...FLOWS.map(({ id, command, description, icon }) => ({ id, command, description, icon })),
   { id: 'goals', command: '/goals', description: 'Open Goals in Workspace', icon: 'thinking' },
   {
     id: 'tasks',
@@ -37,7 +33,7 @@ const normalized = (text: string) =>
     .replace(/[-_\s]+/g, ' ')
 export const isScheduleText = (text: string) => /^\/schedule\s+\S/i.test(text.trimStart())
 export function composerCommands(text: string): ComposerCommand[] {
-  if (!text.trimStart().startsWith('/') || isScheduleText(text)) return []
+  if (!/^[/#]/.test(text.trimStart()) || isScheduleText(text)) return []
   const query = normalized(text)
   return COMPOSER_COMMANDS.filter((item) => item.command.startsWith(query))
 }

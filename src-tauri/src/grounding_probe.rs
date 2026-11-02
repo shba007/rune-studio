@@ -277,6 +277,7 @@ async fn ask(
             max_tokens: Some(1500),
             data_class: None,
             background: false,
+            http_timeout: None,
         };
         let profile = crate::model::profile::resolve_profile(&mode.model, None, None);
         let body = crate::model::client::json_body(&mode.model, &profile, &request, &schema);

@@ -24,6 +24,7 @@ use crate::{
 };
 
 const CALL_TIMEOUT: Duration = Duration::from_secs(60);
+pub(crate) const PLAYGROUND_FLOW_TIMEOUT: Duration = Duration::from_secs(600);
 
 fn overlay_wanted(snapshot: &super::state::Snapshot) -> bool {
     if snapshot
@@ -225,6 +226,96 @@ pub struct ModelAnalysis {
     pub model: String,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VisualQuestions {
+    pub entities: String,
+    pub regions: String,
+    pub structure: String,
+    pub depth: String,
+}
+
+pub(crate) async fn plan_visual_questions(
+    app: &AppHandle,
+    question: &str,
+    image: &str,
+    cancel: &CancelToken,
+    settings: &settings::Settings,
+) -> Result<VisualQuestions, String> {
+    let state = app.state::<AppState>();
+    let api_key = settings::api_key_for(settings);
+    let model = settings.model_for_role(crate::model::role::ModelRole::Analysis);
+    let profile = crate::workspace_tasks::execution_profile(
+        app,
+        &settings.base_url,
+        api_key.as_deref(),
+        model,
+    )
+    .await
+    .map_err(|error| error.to_string())?;
+    let client = ChatClient {
+        app: Some(app),
+        output_limit: settings.output_limit(),
+        http: &state.http,
+        base_url: &settings.base_url,
+        api_key: api_key.as_deref(),
+        model,
+        profile: Some(&profile),
+        sink: None,
+        no_swap: false,
+        on_loading: None,
+    };
+    let system = "Inspect the image and propose one concise, relevant question for each role: entities (objects, people, text and UI), regions (scene regions and context), structure (visible pose and landmarks), and depth (relative spatial relationships). Respect the user's optional question. Do not invent objects or hidden landmarks. Return only the requested structured questions.";
+    let user_text = if question.trim().is_empty() {
+        "No additional question was provided."
+    } else {
+        question.trim()
+    };
+    let request = crate::model::client::Request {
+        system,
+        user_text,
+        screenshot: Some(image),
+        max_tokens: Some(800),
+        http_timeout: Some(PLAYGROUND_FLOW_TIMEOUT),
+        data_class: crate::workspace_tasks::protected_execution_context(app)
+            .then_some(crate::life::DataClass::Finance),
+        ..Default::default()
+    };
+    let schema = serde_json::json!({"type":"object","additionalProperties":false,"properties":{"entities":{"type":"string"},"regions":{"type":"string"},"structure":{"type":"string"},"depth":{"type":"string"}},"required":["entities","regions","structure","depth"]});
+    let reply = match unless_stopped(
+        cancel,
+        tokio::time::timeout(
+            PLAYGROUND_FLOW_TIMEOUT,
+            client.call_json_reply_retrying(&request, &schema),
+        ),
+    )
+    .await
+    {
+        None => return Err("Planner cancelled".into()),
+        Some(Err(_)) => return Err("The planning model timed out".into()),
+        Some(Ok(Err(error))) => return Err(error.to_string()),
+        Some(Ok(Ok(reply))) => reply,
+    };
+    parse_visual_questions(reply.call.arguments)
+}
+
+fn parse_visual_questions(value: serde_json::Value) -> Result<VisualQuestions, String> {
+    let mut questions: VisualQuestions = serde_json::from_value(value)
+        .map_err(|_| "The planning model returned invalid questions")?;
+    for text in [
+        &mut questions.entities,
+        &mut questions.regions,
+        &mut questions.structure,
+        &mut questions.depth,
+    ] {
+        if text.trim().is_empty() {
+            return Err("The planning model returned an empty question".into());
+        }
+        *text = text.trim().chars().take(500).collect();
+    }
+    Ok(questions)
+}
+
 /// Shared inference only: never begins/ends an archive session or changes UI state.
 pub async fn analyze_image(
     app: &AppHandle,
@@ -245,6 +336,27 @@ pub(crate) async fn analyze_image_with_settings(
     cancel: &CancelToken,
     run_id: &str,
     settings: &settings::Settings,
+) -> Result<ModelAnalysis, AnalysisError> {
+    analyze_image_with_settings_timeout(
+        app,
+        question,
+        image,
+        cancel,
+        run_id,
+        settings,
+        CALL_TIMEOUT,
+    )
+    .await
+}
+
+pub(crate) async fn analyze_image_with_settings_timeout(
+    app: &AppHandle,
+    question: &str,
+    image: &str,
+    cancel: &CancelToken,
+    run_id: &str,
+    settings: &settings::Settings,
+    timeout: Duration,
 ) -> Result<ModelAnalysis, AnalysisError> {
     let state = app.state::<AppState>();
     let api_key = settings::api_key_for(settings);
@@ -275,7 +387,7 @@ pub(crate) async fn analyze_image_with_settings(
         question,
         image,
         cancel,
-        CALL_TIMEOUT,
+        timeout,
         crate::workspace_tasks::protected_execution_context(app)
             .then_some(crate::life::DataClass::Finance),
     )
@@ -306,6 +418,7 @@ async fn analyze_with_class(
     let schema = report::schema();
     let mut request = report::request(question, image);
     request.data_class = data_class;
+    request.http_timeout = Some(timeout);
     let call = async {
         tokio::time::timeout(timeout, client.call_json_reply_retrying(&request, &schema)).await
     };
@@ -348,7 +461,7 @@ fn finish(
     question: &str,
     id: &str,
     ended: Ended,
-    mut screenshot_path: Option<String>,
+    screenshot_path: Option<String>,
     latency_ms: u64,
 ) {
     let state = app.state::<AppState>();
@@ -382,25 +495,11 @@ fn finish(
                 mut findings,
                 ..
             } => {
-                let capture_error = if id.starts_with("insight-") {
-                    analysis.frame.as_ref().and_then(|frame| {
-                        match archive::save_completed_insight(id, question, &answer, &frame.png) {
-                            Ok(path) => { screenshot_path = Some(path.display().to_string()); None }
-                            Err(error) => {
-                                let message = format!("Analysis succeeded, but its capture could not be saved: {error}");
-                                log::warn!("{message}");
-                                Some(message)
-                            }
-                        }
-                    })
-                } else {
-                    None
-                };
                 analysis.boxes_rejected = super::boxes::guard(&mut findings);
                 analysis.answer = answer;
                 analysis.findings = findings;
                 analysis.status = Status::Done;
-                ("ok", "succeeded", capture_error)
+                ("ok", "succeeded", None)
             }
             Ended::Failed(why) => {
                 analysis.status = Status::Error;
@@ -561,6 +660,24 @@ mod model_tests {
     use serde_json::{Value, json};
 
     #[test]
+    fn visual_planner_requires_all_nonempty_questions_and_bounds_them() {
+        let input = json!({"entities": " objects? ", "regions": "regions?", "structure": "pose?", "depth": "depth?"});
+        assert_eq!(
+            parse_visual_questions(input.clone()).unwrap().entities,
+            "objects?"
+        );
+        let mut missing = input.clone();
+        missing.as_object_mut().unwrap().remove("depth");
+        assert!(parse_visual_questions(missing).is_err());
+        let mut empty = input.clone();
+        empty["structure"] = json!("   ");
+        assert!(parse_visual_questions(empty).is_err());
+        let mut long = input;
+        long["entities"] = json!("x".repeat(600));
+        assert_eq!(parse_visual_questions(long).unwrap().entities.len(), 500);
+    }
+
+    #[test]
     fn progress_overlay_is_visible_before_findings_exist_even_with_groups_hidden() {
         let mut snapshot = super::super::state::AnalysisState::default().snapshot();
         snapshot.visible_groups = crate::settings::VisualAnalysis {
@@ -708,6 +825,11 @@ mod model_tests {
             ask(&url, &CancelToken::default(), Duration::from_millis(50)).await,
             Err(AnalysisError::Failed(_))
         ));
+        let (url, _) = server("report", response.clone(), Duration::from_millis(300));
+        let completed = ask(&url, &CancelToken::default(), Duration::from_secs(2))
+            .await
+            .unwrap();
+        assert_eq!(completed.parsed.answer, "late");
         let (url, _) = server("report", response, Duration::from_millis(300));
         let cancel = CancelToken::default();
         let remote = cancel.clone();

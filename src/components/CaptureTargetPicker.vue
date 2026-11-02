@@ -6,6 +6,8 @@ import RuneIconButton from './RuneIconButton.vue'
 
 const props = defineProps<{
   refreshing?: boolean
+  disabled?: boolean
+  contained?: boolean
   options: { target: { kind: string; id: number }; label: string }[]
 }>()
 const emit = defineEmits<{ refresh: [] }>()
@@ -43,6 +45,7 @@ function choose(value: string) {
       type="button"
       aria-label="Choose capture target"
       :aria-expanded="expanded"
+      :disabled="disabled"
       class="inline-flex h-8 max-w-64 min-w-0 cursor-pointer items-center gap-2 rounded-full bg-rune-sunken pr-3 pl-3 text-left text-rune-body text-rune-ink transition-colors hover:bg-black"
       @click="expanded = !expanded"
     >
@@ -54,14 +57,15 @@ function choose(value: string) {
       variant="ghost"
       size="sm"
       label="Refresh capture targets"
-      :disabled="refreshing"
+      :disabled="refreshing || disabled"
       @click="refresh"
     >
       <AppIcon name="refresh" size="sm" />
     </RuneIconButton>
     <div
-      v-if="expanded"
-      class="absolute top-full right-0 mt-1 flex w-80 max-w-[80vw] flex-col gap-2 rounded-rune-tile bg-rune-raised p-2"
+      v-if="expanded && !disabled"
+      class="absolute top-full mt-1 flex max-w-[80vw] flex-col gap-2 rounded-rune-tile bg-rune-raised p-2"
+      :class="contained ? 'left-0 w-full' : 'right-0 w-80'"
     >
       <input
         v-model="search"
