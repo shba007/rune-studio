@@ -29,7 +29,7 @@ const colors = {
 <template>
   <div class="relative w-full shrink-0">
     <span
-      class="absolute -top-6 left-1 inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-rune-caption"
+      class="absolute -top-8 left-1 inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-rune-caption"
       :class="colors[props.tone].icon"
     >
       <AppIcon :name="icon" size="sm" /> <span>{{ step }} · {{ kind }}</span>

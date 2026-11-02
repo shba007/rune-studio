@@ -4,7 +4,12 @@ import { computed, ref, watch } from 'vue'
 
 import RuneButton from './RuneButton.vue'
 
-const props = defineProps<{ startedAt: number; label: string; cancellable: boolean }>()
+const props = defineProps<{
+  startedAt: number
+  label: string
+  cancellable: boolean
+  compact?: boolean
+}>()
 defineEmits<{ cancel: [] }>()
 
 const now = ref(Date.now())
@@ -18,7 +23,8 @@ const elapsed = computed(() => (Math.max(0, now.value - props.startedAt) / 1000)
 
 <template>
   <div
-    class="flex flex-col items-center gap-4 text-center"
+    class="flex items-center text-center"
+    :class="compact ? 'flex-row gap-3' : 'flex-col gap-4'"
     role="status"
     data-testid="playground-loading"
   >

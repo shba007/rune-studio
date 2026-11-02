@@ -287,44 +287,6 @@ pub fn session_dir(id: &str) -> Option<PathBuf> {
         .map(|session| session.dir.clone())
 }
 
-// Insight archives one completed capture without becoming the active desktop
-// session or enabling the continuous session recorder.
-pub fn save_completed_insight(
-    id: &str,
-    question: &str,
-    answer: &str,
-    png: &[u8],
-) -> Result<PathBuf, ArchiveError> {
-    save_insight_in(root()?, id, question, answer, png, now())
-}
-
-fn save_insight_in(
-    base: &Path,
-    id: &str,
-    question: &str,
-    answer: &str,
-    png: &[u8],
-    at: u64,
-) -> Result<PathBuf, ArchiveError> {
-    let mut session = begin_in(base, question, "screen-insight", at)?;
-    session.id = id.to_string();
-    let result = (|| {
-        let folder = session.dir.join(Kind::Screenshots.folder());
-        fs::create_dir(&folder).map_err(write_error)?;
-        let pending = folder.join("capture.part");
-        let path = folder.join("capture.png");
-        fs::write(&pending, png).map_err(write_error)?;
-        fs::rename(pending, &path).map_err(write_error)?;
-        end_in(&session, "succeeded", answer, at).map_err(write_error)?;
-        Ok(path)
-    })();
-    if result.is_err() {
-        // begin_in created this unique directory for this write only.
-        let _ = fs::remove_dir_all(&session.dir);
-    }
-    result
-}
-
 pub struct SessionDeletion {
     original: PathBuf,
     staged: PathBuf,
@@ -625,35 +587,6 @@ mod tests {
         assert_eq!(slug(""), "task");
         assert!(slug(&"a ".repeat(100)).chars().count() <= SLUG_MAX);
         assert!(!slug("ends with a dash ----").ends_with('-'));
-    }
-
-    #[test]
-    fn completed_insight_saves_one_capture_without_replacing_the_active_session() {
-        let base = scratch("insight");
-        let original = current().as_ref().map(|session| session.id.clone());
-        let png = b"native-png-bytes";
-        let path = save_insight_in(
-            &base,
-            "insight-test",
-            "What is visible?",
-            "A document",
-            png,
-            1_792_396_752,
-        )
-        .unwrap();
-        assert_eq!(fs::read(&path).unwrap(), png);
-        assert_eq!(path.file_name().unwrap(), "capture.png");
-        let session = path.parent().unwrap().parent().unwrap();
-        let manifest: Value =
-            serde_json::from_slice(&fs::read(session.join("session.json")).unwrap()).unwrap();
-        assert_eq!(manifest["id"], "insight-test");
-        assert_eq!(manifest["source"], "screen-insight");
-        assert_eq!(
-            current().as_ref().map(|session| session.id.clone()),
-            original
-        );
-        assert!(!path.with_extension("part").exists());
-        let _ = fs::remove_dir_all(base);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { invoke } from '@tauri-apps/api/core'
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useAnalysis } from '@/composables/useAnalysis'
 import { readSnapshot } from '@/config/analysis'
 import { friendly } from '@/config/errors'
@@ -19,6 +19,7 @@ import RuneSwitch from './RuneSwitch.vue'
 
 const props = defineProps<{ models: ModelCapabilities[] }>()
 type RoleId = 'entities' | 'regions' | 'structure' | 'depth'
+type QuestionRoleId = Exclude<RoleId, 'depth'>
 type RoleState = {
   status: 'waiting' | 'running' | 'done' | 'error' | 'cancelled'
   error: string
@@ -30,23 +31,11 @@ interface TargetOption {
   label: string
   primary?: boolean
 }
-const definitions: { id: RoleId; label: string; prompt: string }[] = [
-  {
-    id: 'entities',
-    label: 'Entities',
-    prompt: 'Focus on visible objects, people, text and interface elements.',
-  },
-  {
-    id: 'regions',
-    label: 'Regions & Context',
-    prompt: 'Focus on scene regions, categories and context.',
-  },
-  {
-    id: 'structure',
-    label: 'Structure & Landmarks',
-    prompt: 'Focus on visible pose, joints and landmarks. Do not invent hidden landmarks.',
-  },
-  { id: 'depth', label: 'Depth', prompt: '' },
+const definitions: { id: RoleId; label: string }[] = [
+  { id: 'entities', label: 'Entities' },
+  { id: 'regions', label: 'Regions & Context' },
+  { id: 'structure', label: 'Structure & Landmarks' },
+  { id: 'depth', label: 'Depth' },
 ]
 const blankRole = (): RoleState => ({ status: 'waiting', error: '', snapshot: null, depth: null })
 const roles = ref<Record<RoleId, { enabled: boolean; model: string }>>({
@@ -86,7 +75,27 @@ const sources = [
 const mode = ref<'app' | 'graph'>('app')
 const plannerModel = ref('')
 const plannerStatus = ref<'waiting' | 'running' | 'done' | 'error' | 'cancelled'>('waiting')
-const plannerQuestions = ref<Record<RoleId, string> | null>(null)
+const plannerQuestions = ref<Record<QuestionRoleId, string> | null>(null)
+const runRoles = ref<RoleId[]>([])
+const selectedResult = ref<RoleId>('entities')
+function navigateResults(event: KeyboardEvent) {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key) || !runRoles.value.length)
+    return
+  event.preventDefault()
+  const index = runRoles.value.indexOf(selectedResult.value)
+  const next =
+    event.key === 'Home'
+      ? 0
+      : event.key === 'End'
+        ? runRoles.value.length - 1
+        : (index + (event.key === 'ArrowRight' ? 1 : -1) + runRoles.value.length) %
+          runRoles.value.length
+  selectedResult.value = runRoles.value[next]!
+  const list = (event.currentTarget as HTMLElement).parentElement
+  void nextTick(() =>
+    (list?.querySelector('[role="tab"][aria-selected="true"]') as HTMLElement | null)?.focus(),
+  )
+}
 const targets = ref<TargetOption[]>([])
 const target = ref('')
 const refreshing = ref(false)
@@ -165,6 +174,8 @@ async function run() {
     ...role,
     model: roles.value[role.id].model,
   }))
+  runRoles.value = selectedRoles.map((role) => role.id)
+  selectedResult.value = selectedRoles[0]!.id
   const request = { cancelled: false, ids: new Set<number>() }
   active = request
   running.value = true
@@ -196,10 +207,15 @@ async function run() {
   try {
     const input =
       source.value === 'image' ? { image: image.value?.data } : { target: selected?.target }
-    const plan = await call<{ image: string; model: string; questions: Record<RoleId, string> }>(
-      'playground_visual_plan',
-      { ...input, model: plannerModel.value, question: question.value.trim() },
-    )
+    const plan = await call<{
+      image: string
+      model: string
+      questions: Record<QuestionRoleId, string>
+    }>('playground_visual_plan', {
+      ...input,
+      model: plannerModel.value,
+      question: question.value.trim(),
+    })
     if (request.cancelled) {
       plannerStatus.value = 'cancelled'
       return
@@ -312,6 +328,7 @@ const depthState = (state: RoleState): DepthState => ({
     :stale="previousResult"
     :steps="enabledRoles.length + 3"
     graph-wide
+    app-top
     @cancel="cancel"
   >
     <template #settings>
@@ -374,7 +391,7 @@ const depthState = (state: RoleState): DepthState => ({
           floating
         />
         <p class="m-0 text-rune-caption text-rune-text-3">
-          The planning model creates a question for each analysis branch.
+          The planning model creates questions for the text-based analysis branches.
         </p>
       </div>
       <div v-for="role in definitions" :key="role.id" class="flex flex-col gap-2">
@@ -407,7 +424,7 @@ const depthState = (state: RoleState): DepthState => ({
         </p>
       </div>
       <p class="m-0 text-rune-caption text-rune-text-3">
-        Depth produces a relative depth map and does not use the generated question.
+        Depth produces a relative depth map without a question.
       </p>
       <p v-if="!enabledRoles.length" class="m-0 text-rune-caption text-rune-text-3">
         Enable at least one role.
@@ -489,7 +506,7 @@ const depthState = (state: RoleState): DepthState => ({
               aria-hidden="true"
             ></span>
             <span
-              class="h-10 shrink-0 border-l border-dashed border-rune-text-3/50"
+              class="h-12 shrink-0 border-l border-dashed border-rune-text-3/50"
               aria-hidden="true"
             ></span>
             <PlaygroundFlowNode
@@ -510,10 +527,11 @@ const depthState = (state: RoleState): DepthState => ({
                   {{ roles[role.id].model || 'Select a model' }}
                 </p>
               </div>
-              <div v-if="plannerQuestions" class="mt-3 rounded-rune-tile bg-rune-surface p-3">
-                <p class="m-0 text-rune-caption text-rune-text-3">
-                  {{ role.id === 'depth' ? 'Context' : 'Question' }}
-                </p>
+              <div
+                v-if="plannerQuestions && role.id !== 'depth'"
+                class="mt-3 rounded-rune-tile bg-rune-surface p-3"
+              >
+                <p class="m-0 text-rune-caption text-rune-text-3">Question</p>
                 <p class="mt-1 mb-0 break-words text-rune-caption text-rune-text-2">
                   {{ plannerQuestions[role.id] }}
                 </p>
@@ -566,41 +584,88 @@ const depthState = (state: RoleState): DepthState => ({
       >
     </template>
     <template #app>
-      <p v-if="!lastConfiguration && !running" class="text-center text-rune-text-3">
-        Choose an input and models to run the Flow.
-      </p>
-      <div v-if="plannerQuestions" class="w-full rounded-rune-tile bg-rune-sunken p-4">
-        <h2 class="m-0 text-rune-body">Planned questions</h2>
-        <p
-          v-for="role in enabledRoles"
-          :key="role.id"
-          class="mb-0 text-rune-caption text-rune-text-2"
-        >
-          <strong>{{ role.label }}:</strong> {{ plannerQuestions[role.id]
-          }}<span v-if="role.id === 'depth'"> (context only; depth uses the whole image)</span>
+      <div
+        v-if="!lastConfiguration && !running"
+        class="my-auto flex min-h-64 flex-col items-center justify-center gap-2 text-center"
+      >
+        <p class="m-0 text-rune-body text-rune-text-2">Your analysis will appear here</p>
+        <p class="m-0 text-rune-caption text-rune-text-3">
+          Choose an input and models, then run the Flow.
         </p>
       </div>
-      <template v-for="role in definitions" :key="role.id">
+      <div v-if="runRoles.length" class="flex w-full flex-col gap-4" data-testid="visual-results">
+        <div>
+          <p class="m-0 text-rune-heading text-rune-text-3 uppercase">Analysis results</p>
+          <p class="mt-1 mb-0 text-rune-caption text-rune-text-2">
+            Choose a branch to inspect its result.
+          </p>
+        </div>
+        <div role="tablist" aria-label="Analysis branches" class="flex gap-2 overflow-x-auto pb-1">
+          <RuneButton
+            v-for="role in definitions.filter((item) => runRoles.includes(item.id))"
+            :key="role.id"
+            role="tab"
+            :aria-label="role.label"
+            :aria-selected="selectedResult === role.id"
+            :tabindex="selectedResult === role.id ? 0 : -1"
+            aria-controls="visual-result-panel"
+            :variant="selectedResult === role.id ? 'primary' : 'secondary'"
+            size="sm"
+            class="shrink-0 normal-case!"
+            @click="selectedResult = role.id"
+            @keydown="navigateResults"
+            >{{ role.label }}
+            <span class="text-rune-caption opacity-70">{{ roleStatus(role.id) }}</span></RuneButton
+          >
+        </div>
         <section
-          v-if="results[role.id].status !== 'waiting'"
-          class="w-full rounded-rune-tile bg-rune-sunken p-4"
-          :aria-label="`${role.label} result`"
+          role="tabpanel"
+          id="visual-result-panel"
+          class="w-full rounded-rune-tile border border-white/10 bg-rune-sunken p-4"
+          :aria-label="definitions.find((role) => role.id === selectedResult)?.label + ' result'"
         >
-          <div class="flex items-center justify-between gap-3">
-            <h2 class="m-0 text-rune-body">{{ role.label }}</h2>
-            <span class="text-rune-caption text-rune-text-3">{{ roleStatus(role.id) }}</span>
+          <header class="flex items-center justify-between gap-3">
+            <h2 class="m-0 text-rune-body">
+              {{ definitions.find((role) => role.id === selectedResult)?.label }}
+            </h2>
+            <span class="text-rune-caption text-rune-text-3">{{ roleStatus(selectedResult) }}</span>
+          </header>
+          <div
+            v-if="plannerQuestions && selectedResult !== 'depth'"
+            class="mt-4 rounded-rune-tile bg-rune-surface p-3"
+          >
+            <p class="m-0 text-rune-heading text-rune-text-3 uppercase">Question</p>
+            <p class="mt-1 mb-0 break-words text-rune-body">
+              {{ plannerQuestions[selectedResult] }}
+            </p>
           </div>
-          <p v-if="results[role.id].error" role="alert" class="text-error">
-            {{ results[role.id].error }}
+          <p
+            v-if="results[selectedResult].status === 'waiting'"
+            class="text-rune-caption text-rune-text-3"
+          >
+            Waiting for the planning step.
+          </p>
+          <p
+            v-else-if="results[selectedResult].status === 'running'"
+            class="text-rune-caption text-rune-text-3"
+          >
+            Analyzing this branch…
+          </p>
+          <p v-if="results[selectedResult].error" role="alert" class="break-words text-error">
+            {{ results[selectedResult].error }}
           </p>
           <PlaygroundResult
-            v-if="results[role.id].snapshot"
-            :snapshot="results[role.id].snapshot!"
+            v-if="results[selectedResult].snapshot"
+            :key="selectedResult"
+            :snapshot="results[selectedResult].snapshot!"
             :live="false"
           />
-          <PlaygroundDepth v-if="results[role.id].depth" :state="depthState(results[role.id])" />
+          <PlaygroundDepth
+            v-if="results[selectedResult].depth"
+            :state="depthState(results[selectedResult])"
+          />
         </section>
-      </template>
+      </div>
     </template>
   </PlaygroundFlowLayout>
 </template>

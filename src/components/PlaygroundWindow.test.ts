@@ -39,7 +39,6 @@ vi.mock('@tauri-apps/api/core', () => ({
           entities: 'What is visible?',
           regions: 'Which regions?',
           structure: 'Which landmarks?',
-          depth: 'What is near?',
         },
       }
     if (command === 'playground_visual_branch')

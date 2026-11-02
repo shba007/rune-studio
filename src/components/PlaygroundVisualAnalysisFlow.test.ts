@@ -19,7 +19,6 @@ const questions = {
   entities: 'Which objects?',
   regions: 'Which regions?',
   structure: 'Which landmarks?',
-  depth: 'What is near?',
 }
 const picture = 'data:image/png;base64,AA=='
 let nextId = 0
@@ -109,7 +108,11 @@ it('plans questions first and launches independent branches against the same fra
     input: { image: string }
   }
   expect(depthCall.input.image).toBe(picture)
+  expect(depthCall.input).not.toHaveProperty('question')
   await wrapper.get('[aria-label="Flow view"]').findAll('[role="radio"]')[1]!.trigger('click')
+  expect(
+    wrapper.get('[data-testid="graph-progress"]').find('[data-testid="result-cancel"]').exists(),
+  ).toBe(true)
   expect(wrapper.get('[data-testid="visual-flow-graph"]').text()).toContain('7 steps')
   expect(wrapper.get('[data-testid="visual-parallel-branches"]').findAll('article')).toHaveLength(4)
   for (let i = 0; i < 3; i++)
@@ -126,9 +129,17 @@ it('plans questions first and launches independent branches against the same fra
   })
   await flushPromises()
   expect(wrapper.get('[data-testid="visual-node-structure"]').text()).toContain('Complete')
+  expect(wrapper.get('[data-testid="visual-node-depth"]').text()).not.toContain('Question')
   await wrapper.get('[aria-label="Flow view"]').findAll('[role="radio"]')[0]!.trigger('click')
   expect(wrapper.get('[aria-label="Entities result"]').text()).toContain('A red square')
   expect(wrapper.text()).toContain('Which objects?')
+  await wrapper.get('[role="tab"][aria-label="Entities"]').trigger('keydown', { key: 'ArrowRight' })
+  expect(
+    wrapper.get('[role="tab"][aria-label="Regions & Context"]').attributes('aria-selected'),
+  ).toBe('true')
+  await wrapper.get('[role="tab"][aria-label="Depth"]').trigger('click')
+  expect(wrapper.get('[aria-label="Depth result"]').text()).toContain('depth-a')
+  expect(wrapper.get('[aria-label="Depth result"]').text()).not.toContain('Question')
   wrapper.unmount()
 })
 
@@ -180,10 +191,13 @@ it('isolates a failed branch and retains successful siblings', async () => {
   await configure(wrapper)
   await runButton(wrapper).trigger('click')
   await flushPromises()
+  await wrapper.get('[role="tab"][aria-label="Regions & Context"]').trigger('click')
   expect(wrapper.get('[aria-label="Regions & Context result"]').text()).toContain(
     'Model unavailable',
   )
+  await wrapper.get('[role="tab"][aria-label="Structure & Landmarks"]').trigger('click')
   expect(wrapper.get('[aria-label="Structure & Landmarks result"]').text()).toContain('Complete')
+  await wrapper.get('[role="tab"][aria-label="Depth"]').trigger('click')
   expect(wrapper.get('[aria-label="Depth result"]').text()).toContain('Complete')
   wrapper.unmount()
 })
@@ -221,13 +235,15 @@ it('cancels all active branches and keeps their results cancelled', async () => 
   await runButton(wrapper).trigger('click')
   await flushPromises()
   expect(pending).toHaveLength(4)
-  await wrapper.get('[data-testid="result-cancel"]').trigger('click')
+  await wrapper.get('[aria-label="Flow view"]').findAll('[role="radio"]')[1]!.trigger('click')
+  await wrapper.get('[data-testid="graph-progress"] [data-testid="result-cancel"]').trigger('click')
   expect(invoke.mock.calls.filter(([command]) => command === 'playground_cancel_run')).toHaveLength(
     4,
   )
   for (const finish of pending) finish({ answer: 'late', findings: [], model: 'vision-a' })
   await flushPromises()
   expect(wrapper.text()).toContain('Flow cancelled')
+  await wrapper.get('[aria-label="Flow view"]').findAll('[role="radio"]')[0]!.trigger('click')
   expect(wrapper.get('[aria-label="Entities result"]').text()).toContain('Cancelled')
   expect(wrapper.text()).not.toContain('late')
   wrapper.unmount()

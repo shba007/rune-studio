@@ -232,7 +232,6 @@ pub struct VisualQuestions {
     pub entities: String,
     pub regions: String,
     pub structure: String,
-    pub depth: String,
 }
 
 pub(crate) async fn plan_visual_questions(
@@ -265,7 +264,7 @@ pub(crate) async fn plan_visual_questions(
         no_swap: false,
         on_loading: None,
     };
-    let system = "Inspect the image and propose one concise, relevant question for each role: entities (objects, people, text and UI), regions (scene regions and context), structure (visible pose and landmarks), and depth (relative spatial relationships). Respect the user's optional question. Do not invent objects or hidden landmarks. Return only the requested structured questions.";
+    let system = "Inspect the image and propose one concise, relevant question for each role: entities (objects, people, text and UI), regions (scene regions and context), and structure (visible pose and landmarks). Respect the user's optional question. Do not invent objects or hidden landmarks. Return only the requested structured questions.";
     let user_text = if question.trim().is_empty() {
         "No additional question was provided."
     } else {
@@ -281,7 +280,7 @@ pub(crate) async fn plan_visual_questions(
             .then_some(crate::life::DataClass::Finance),
         ..Default::default()
     };
-    let schema = serde_json::json!({"type":"object","additionalProperties":false,"properties":{"entities":{"type":"string"},"regions":{"type":"string"},"structure":{"type":"string"},"depth":{"type":"string"}},"required":["entities","regions","structure","depth"]});
+    let schema = serde_json::json!({"type":"object","additionalProperties":false,"properties":{"entities":{"type":"string"},"regions":{"type":"string"},"structure":{"type":"string"}},"required":["entities","regions","structure"]});
     let reply = match unless_stopped(
         cancel,
         tokio::time::timeout(
@@ -306,7 +305,6 @@ fn parse_visual_questions(value: serde_json::Value) -> Result<VisualQuestions, S
         &mut questions.entities,
         &mut questions.regions,
         &mut questions.structure,
-        &mut questions.depth,
     ] {
         if text.trim().is_empty() {
             return Err("The planning model returned an empty question".into());
@@ -661,13 +659,13 @@ mod model_tests {
 
     #[test]
     fn visual_planner_requires_all_nonempty_questions_and_bounds_them() {
-        let input = json!({"entities": " objects? ", "regions": "regions?", "structure": "pose?", "depth": "depth?"});
+        let input = json!({"entities": " objects? ", "regions": "regions?", "structure": "pose?"});
         assert_eq!(
             parse_visual_questions(input.clone()).unwrap().entities,
             "objects?"
         );
         let mut missing = input.clone();
-        missing.as_object_mut().unwrap().remove("depth");
+        missing.as_object_mut().unwrap().remove("structure");
         assert!(parse_visual_questions(missing).is_err());
         let mut empty = input.clone();
         empty["structure"] = json!("   ");

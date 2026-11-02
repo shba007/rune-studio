@@ -17,6 +17,7 @@ defineProps<{
   stale?: boolean
   steps?: number
   graphWide?: boolean
+  appTop?: boolean
 }>()
 defineEmits<{ cancel: [] }>()
 const mode = defineModel<'app' | 'graph'>({ required: true })
@@ -53,7 +54,7 @@ const mode = defineModel<'app' | 'graph'>({ required: true })
           :class="graphWide ? 'max-w-[1100px]' : 'max-w-[440px]'"
           :data-testid="graphTestId"
         >
-          <div class="mb-6 flex w-full items-end justify-between gap-3">
+          <div class="mb-10 flex w-full items-end justify-between gap-3">
             <div>
               <p class="m-0 text-rune-caption text-rune-text-3 uppercase">Flow overview</p>
               <p class="mt-1 mb-0 text-rune-body text-rune-text-2">{{ title }}</p>
@@ -67,7 +68,8 @@ const mode = defineModel<'app' | 'graph'>({ required: true })
         </div>
         <div
           v-else
-          class="flex min-h-full w-full max-w-2xl flex-col items-center justify-center gap-4"
+          class="flex min-h-full w-full flex-col items-center gap-4"
+          :class="appTop ? 'max-w-4xl justify-start' : 'max-w-2xl justify-center'"
           :data-testid="appTestId"
         >
           <PlaygroundLoading
@@ -83,17 +85,19 @@ const mode = defineModel<'app' | 'graph'>({ required: true })
         <p v-if="mode === 'graph' && error" role="alert" class="text-center text-error">
           {{ error }}
         </p>
-        <div
-          v-if="mode === 'graph' && running"
-          class="sticky bottom-3 z-10 mt-6 rounded-rune-tile border border-white/10 bg-rune-sunken px-6 py-4 shadow-xl"
-        >
-          <PlaygroundLoading
-            :started-at="started"
-            :label="loadingLabel"
-            :cancellable="true"
-            @cancel="$emit('cancel')"
-          />
-        </div>
+      </div>
+      <div
+        v-if="mode === 'graph' && running"
+        class="absolute top-16 right-4 z-20 rounded-rune-tile border border-white/10 bg-rune-sunken px-4 py-3 shadow-xl"
+        data-testid="graph-progress"
+      >
+        <PlaygroundLoading
+          :started-at="started"
+          :label="loadingLabel"
+          :cancellable="true"
+          compact
+          @cancel="$emit('cancel')"
+        />
       </div>
     </section>
   </div>
