@@ -41,9 +41,14 @@ fn visual(action: &Action, monitor: &Monitor) -> (String, Option<Point>, bool, &
             };
             (String::new(), Some(Point { x: px, y: py }), *double, name)
         }
-        Action::ClickElement { id, button, double } => {
-            let point = uia::lookup(id).map(|element| {
-                let (x, y) = element.centre();
+        Action::ClickElement {
+            target,
+            button,
+            double,
+            ..
+        } => {
+            let point = target.as_ref().map(|target| {
+                let (x, y) = target.element.centre();
                 Point { x, y }
             });
             let name = match button {
@@ -219,10 +224,29 @@ pub fn execute(action: &Action, monitor: &Monitor, cancel: &CancelToken) -> Resu
             let (px, py) = model_to_pixels(monitor, *x, *y);
             Input::new()?.click(px, py, *button, *double, cancel)
         }
-        Action::ClickElement { id, button, double } => {
-            let element = uia::resolve(id).map_err(ExecError::Input)?;
-            let (px, py) = element.centre();
-            Input::new()?.click(px, py, *button, *double, cancel)
+        Action::ClickElement {
+            target,
+            button,
+            double,
+            ..
+        } => {
+            let target = target.as_ref().ok_or_else(|| {
+                ExecError::Input("Control was not validated; observe again".into())
+            })?;
+            uia::validate_target(target, &uia::capture()).map_err(ExecError::Input)?;
+            let (px, py) = target.element.centre();
+            Input::new()?.click_checked(
+                (px, py),
+                *button,
+                *double,
+                cancel,
+                crate::exec::input::PointerMovement::for_control(target.element.role),
+                || {
+                    uia::validate_target(target, &uia::capture()).map_err(|error| {
+                        ExecError::Input(format!("Target changed during pointer movement: {error}"))
+                    })
+                },
+            )
         }
         Action::Scroll {
             x,

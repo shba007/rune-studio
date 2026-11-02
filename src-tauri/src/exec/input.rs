@@ -130,6 +130,22 @@ pub struct Input {
     enigo: Enigo,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PointerMovement {
+    Direct,
+    Glide,
+}
+
+impl PointerMovement {
+    pub fn for_control(role: &str) -> Self {
+        if role == "menu item" {
+            Self::Direct
+        } else {
+            Self::Glide
+        }
+    }
+}
+
 impl Input {
     pub fn new() -> Result<Self, ExecError> {
         Ok(Self {
@@ -182,7 +198,31 @@ impl Input {
         double: bool,
         cancel: &CancelToken,
     ) -> Result<(), ExecError> {
-        self.glide_to(px, py, cancel)?;
+        self.click_checked(
+            (px, py),
+            button,
+            double,
+            cancel,
+            PointerMovement::Glide,
+            || Ok(()),
+        )
+    }
+
+    pub fn click_checked(
+        &mut self,
+        point: (i32, i32),
+        button: MouseButton,
+        double: bool,
+        cancel: &CancelToken,
+        movement: PointerMovement,
+        check: impl FnOnce() -> Result<(), ExecError>,
+    ) -> Result<(), ExecError> {
+        match movement {
+            PointerMovement::Direct => self.move_to(point.0, point.1, cancel)?,
+            PointerMovement::Glide => self.glide_to(point.0, point.1, cancel)?,
+        }
+        check()?;
+        cancel.check()?;
         self.enigo
             .button(button.into(), Direction::Click)
             .map_err(input_error)?;
@@ -325,6 +365,19 @@ pub fn parse_key(name: &str) -> Result<Key, ExecError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn named_menu_items_move_directly_while_other_controls_glide() {
+        assert_eq!(
+            PointerMovement::for_control("menu item"),
+            PointerMovement::Direct
+        );
+        assert_eq!(
+            PointerMovement::for_control("button"),
+            PointerMovement::Glide
+        );
+        assert_eq!(PointerMovement::for_control("edit"), PointerMovement::Glide);
+    }
 
     #[test]
     fn named_keys_and_aliases_parse() {

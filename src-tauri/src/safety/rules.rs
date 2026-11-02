@@ -167,10 +167,10 @@ pub fn assess(action: &Action, reason: &str, foreground: &Foreground) -> Assessm
         Action::TypeText { text } => assess_typing(text, foreground, &mut result),
         Action::OpenApp { name } => assess_launch(name, &mut result),
         Action::Click { .. } | Action::Drag { .. } => assess_click(foreground, &mut result),
-        Action::ClickElement { id, .. } => {
+        Action::ClickElement { target, .. } => {
             assess_click(foreground, &mut result);
-            if let Some(element) = crate::exec::uia::lookup(id) {
-                assess_control(&element.name, &mut result);
+            if let Some(target) = target {
+                assess_control(&target.element.name, &mut result);
             }
         }
         Action::External { .. }
@@ -374,6 +374,29 @@ mod tests {
         let mut calm = Assessment::low();
         assess_control("Save", &mut calm);
         assert_eq!(calm.risk, Risk::Low);
+    }
+
+    #[test]
+    fn named_click_assesses_the_bound_control() {
+        let action = Action::ClickElement {
+            id: "e1".into(),
+            button: MouseButton::Left,
+            double: false,
+            target: Some(crate::exec::uia::BoundTarget {
+                window: 42,
+                element: crate::exec::uia::Element {
+                    id: "e1".into(),
+                    role: "button",
+                    name: "Delete all".into(),
+                    value: None,
+                    rect: (0, 0, 20, 20),
+                },
+            }),
+        };
+        assert_eq!(
+            risk(&action, "select it", &fg("Notes", "notepad")),
+            Risk::High
+        );
     }
 
     #[test]

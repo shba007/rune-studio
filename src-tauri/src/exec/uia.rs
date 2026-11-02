@@ -1,5 +1,11 @@
 use crate::sync::LockExt;
-use std::sync::Mutex;
+use std::{
+    collections::HashMap,
+    sync::{
+        Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
+};
 
 #[cfg_attr(not(windows), allow(dead_code))]
 pub const MAX_ELEMENTS: usize = 60;
@@ -32,48 +38,108 @@ impl Element {
     }
 }
 
-static LATEST: Mutex<Vec<Element>> = Mutex::new(Vec::new());
-
-pub fn remember(elements: Vec<Element>) {
-    *LATEST.locked() = elements;
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Snapshot {
+    pub window: Option<isize>,
+    pub elements: Vec<Element>,
 }
 
-pub fn lookup(id: &str) -> Option<Element> {
+#[derive(Debug, Clone, PartialEq)]
+pub struct BoundTarget {
+    pub window: isize,
+    pub element: Element,
+}
+
+static LATEST: std::sync::LazyLock<Mutex<HashMap<String, Snapshot>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+
+pub fn remember(scope: &str, mut snapshot: Snapshot) -> Snapshot {
+    for element in &mut snapshot.elements {
+        element.id = format!("e{}", NEXT_ID.fetch_add(1, Ordering::Relaxed));
+    }
+    let mut latest = LATEST.locked();
+    if scope.starts_with("bridge:") {
+        latest.retain(|key, _| !key.starts_with("bridge:") || key == scope);
+    }
+    latest.insert(scope.to_string(), snapshot.clone());
+    snapshot
+}
+
+pub fn lookup(scope: &str, id: &str) -> Option<BoundTarget> {
     let id = id.trim();
     LATEST
         .locked()
-        .iter()
-        .find(|element| element.id.eq_ignore_ascii_case(id))
-        .cloned()
+        .get(scope)
+        .and_then(|snapshot| Some((snapshot.window?, &snapshot.elements)))
+        .and_then(|(window, elements)| {
+            elements
+                .iter()
+                .find(|element| element.id.eq_ignore_ascii_case(id))
+                .cloned()
+                .map(|element| BoundTarget { window, element })
+        })
 }
 
 pub fn best_match(before: &Element, fresh: &[Element]) -> Option<Element> {
-    let (cx, cy) = before.centre();
-    fresh
+    let mut matches = fresh
         .iter()
-        .filter(|element| element.role == before.role && element.name == before.name)
-        .min_by_key(|element| {
-            let (x, y) = element.centre();
-            i64::from(x - cx).pow(2) + i64::from(y - cy).pow(2)
-        })
-        .map(|element| Element {
-            id: before.id.clone(),
-            ..element.clone()
-        })
-}
-
-pub fn resolve(id: &str) -> Result<Element, String> {
-    let before = lookup(id).ok_or_else(|| format!("there is no element {id} in the latest list; use an id from the current list or click a point"))?;
-    best_match(&before, &snapshot()).ok_or_else(|| {
-        format!(
-            "the {} \"{}\" is no longer on the screen; look at the screen and choose again",
-            before.role, before.name
-        )
+        .filter(|element| element.role == before.role && element.name == before.name);
+    let element = matches.next()?;
+    if matches.next().is_some() {
+        return None;
+    }
+    Some(Element {
+        id: before.id.clone(),
+        ..element.clone()
     })
 }
 
-pub fn forget() {
-    LATEST.locked().clear();
+pub fn bind(scope: &str, id: &str) -> Result<BoundTarget, String> {
+    let target = lookup(scope, id).ok_or_else(|| {
+        format!("there is no element {id} in this session's latest list; observe again")
+    })?;
+    validate_target(&target, &capture())?;
+    Ok(target)
+}
+
+pub fn validate_target(target: &BoundTarget, fresh: &Snapshot) -> Result<(), String> {
+    if fresh.window != Some(target.window) {
+        return Err("The active window changed; observe and choose again".into());
+    }
+    let current = best_match(&target.element, &fresh.elements)
+        .ok_or("The control is missing or ambiguous; observe and choose again")?;
+    if current.rect != target.element.rect {
+        return Err("The control moved; observe and choose again".into());
+    }
+    Ok(())
+}
+
+pub fn forget(scope: &str) {
+    LATEST.locked().remove(scope);
+}
+
+#[cfg(windows)]
+pub fn current_window() -> Option<isize> {
+    let window = unsafe { windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow() };
+    (!window.is_invalid()).then_some(window.0 as isize)
+}
+#[cfg(not(windows))]
+pub fn current_window() -> Option<isize> {
+    None
+}
+
+pub fn capture() -> Snapshot {
+    let before = current_window();
+    let elements = snapshot();
+    if before.is_none() || before != current_window() {
+        return Snapshot::default();
+    }
+    Snapshot {
+        window: before,
+        elements,
+    }
 }
 
 pub fn describe(elements: &[Element]) -> String {
@@ -286,51 +352,74 @@ mod tests {
     }
 
     #[test]
-    fn the_nearest_of_several_with_the_same_name_wins_and_a_missing_one_is_none() {
-        let before = Element {
-            rect: (0, 0, 20, 20),
-            ..element("e1", "Delete")
-        };
-        let near = Element {
-            id: "e2".into(),
-            rect: (0, 40, 20, 60),
-            ..before.clone()
-        };
-        let far = Element {
-            id: "e3".into(),
-            rect: (0, 400, 20, 420),
-            ..before.clone()
-        };
-        assert_eq!(
-            best_match(&before, &[far, near]).unwrap().rect,
-            (0, 40, 20, 60)
-        );
+    fn ambiguous_and_missing_controls_are_rejected() {
+        let before = element("e1", "Delete");
+        assert!(best_match(&before, &[before.clone(), before.clone()]).is_none());
         assert!(best_match(&before, &[element("e4", "Save")]).is_none());
-        let other_role = Element {
-            role: "link",
-            ..before.clone()
-        };
-        assert!(best_match(&before, &[other_role]).is_none());
     }
 
     #[test]
-    fn ids_belong_to_the_latest_listing_only() {
-        forget();
-        assert!(lookup("e1").is_none());
-        remember(vec![element("e1", "Save"), element("e2", "Cancel")]);
-        assert_eq!(lookup("e2").unwrap().name, "Cancel");
-        assert_eq!(
-            lookup(" E1 ").unwrap().name,
-            "Save",
-            "ids ignore case and spaces"
-        );
-        remember(vec![element("e1", "Open")]);
-        assert!(
-            lookup("e2").is_none(),
-            "an old id must not survive a new listing"
-        );
-        assert_eq!(lookup("e1").unwrap().name, "Open");
-        forget();
-        assert!(lookup("e1").is_none());
+    fn ids_are_scoped_and_expire_on_the_next_listing() {
+        let snapshot = Snapshot {
+            window: Some(42),
+            elements: vec![element("e1", "Save")],
+        };
+        let first = remember("test:first", snapshot.clone());
+        let id = &first.elements[0].id;
+        assert_eq!(lookup("test:first", id).unwrap().element.name, "Save");
+        assert!(lookup("test:other", id).is_none());
+        let second = remember("test:first", snapshot);
+        assert_ne!(id, &second.elements[0].id);
+        assert!(lookup("test:first", id).is_none());
+        forget("test:first");
+        assert!(lookup("test:first", &second.elements[0].id).is_none());
+    }
+
+    #[test]
+    fn target_requires_same_window_unique_control_and_position() {
+        let element = element("e1", "Save");
+        let target = BoundTarget {
+            window: 42,
+            element: element.clone(),
+        };
+        let mut fresh = Snapshot {
+            window: Some(42),
+            elements: vec![element.clone()],
+        };
+        assert!(validate_target(&target, &fresh).is_ok());
+        fresh.window = Some(43);
+        assert!(validate_target(&target, &fresh).is_err());
+        fresh.window = Some(42);
+        fresh.elements.push(element.clone());
+        assert!(validate_target(&target, &fresh).is_err());
+        fresh.elements.pop();
+        fresh.elements[0].rect.0 += 1;
+        assert!(validate_target(&target, &fresh).is_err());
+        fresh.elements.clear();
+        assert!(validate_target(&target, &fresh).is_err());
+    }
+
+    #[test]
+    fn switching_or_closing_a_menu_invalidates_its_original_item() {
+        let item = Element {
+            role: "menu item",
+            ..element("e1", "New tab")
+        };
+        let target = BoundTarget {
+            window: 42,
+            element: item.clone(),
+        };
+        let mut fresh = Snapshot {
+            window: Some(42),
+            elements: vec![item],
+        };
+        assert!(validate_target(&target, &fresh).is_ok());
+        fresh.elements = vec![Element {
+            role: "menu item",
+            ..element("e2", "Undo")
+        }];
+        assert!(validate_target(&target, &fresh).is_err());
+        fresh.elements.clear();
+        assert!(validate_target(&target, &fresh).is_err());
     }
 }

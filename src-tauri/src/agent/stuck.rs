@@ -4,6 +4,86 @@ const PIXEL_DELTA: u8 = 10;
 const CHANGED_FRACTION: f64 = 0.002;
 pub const SIGNATURE_SIZE: (u32, u32) = (128, 72);
 
+#[derive(Debug, PartialEq, Eq)]
+struct ControlKey {
+    window: isize,
+    role: &'static str,
+    name: String,
+}
+
+impl From<&crate::exec::uia::BoundTarget> for ControlKey {
+    fn from(target: &crate::exec::uia::BoundTarget) -> Self {
+        Self {
+            window: target.window,
+            role: target.element.role,
+            name: target.element.name.clone(),
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct ControlWatch {
+    last: Option<ControlKey>,
+    consecutive: u32,
+}
+
+impl ControlWatch {
+    pub fn observe_window(&mut self, window: Option<isize>) {
+        if window.is_some()
+            && self
+                .last
+                .as_ref()
+                .is_some_and(|last| Some(last.window) != window)
+        {
+            self.record(None);
+        }
+    }
+
+    pub fn record(&mut self, target: Option<&crate::exec::uia::BoundTarget>) {
+        let next = target.map(ControlKey::from);
+        self.consecutive = if next.is_some() && next == self.last {
+            self.consecutive + 1
+        } else if next.is_some() {
+            1
+        } else {
+            0
+        };
+        self.last = next;
+    }
+
+    pub fn warning(&self) -> Option<&'static str> {
+        (self.consecutive >= 2).then_some("You already clicked the same control twice. Review the action history and current screen before deciding what to do next; do not click it again without user clarification.")
+    }
+
+    pub fn should_stop(&self, target: &crate::exec::uia::BoundTarget) -> bool {
+        self.consecutive >= 2 && self.last.as_ref() == Some(&ControlKey::from(target))
+    }
+}
+
+const WAIT_WARN_AFTER: u32 = 2;
+const WAIT_STOP_AFTER: u32 = 3;
+
+#[derive(Default)]
+pub struct WaitWatch {
+    consecutive: u32,
+}
+
+impl WaitWatch {
+    pub fn record(&mut self, is_wait: bool) {
+        self.consecutive = if is_wait { self.consecutive + 1 } else { 0 };
+    }
+
+    pub fn warning(&self) -> Option<&'static str> {
+        (self.consecutive >= WAIT_WARN_AFTER).then_some(
+            "You have waited repeatedly. Recheck the current window and controls; Rune's own status messages are not evidence that an application is loading. Choose a useful next action, or stop if you cannot proceed.",
+        )
+    }
+
+    pub fn should_stop_wait(&self) -> bool {
+        self.consecutive >= WAIT_STOP_AFTER
+    }
+}
+
 pub struct Acted {
     pub key: String,
     pub quiet: bool,
@@ -103,6 +183,69 @@ mod tests {
 
     fn click(n: u32) -> Acted {
         Acted::new("click", format!("click {n}"))
+    }
+
+    fn control(window: isize, id: &str, name: &str) -> crate::exec::uia::BoundTarget {
+        crate::exec::uia::BoundTarget {
+            window,
+            element: crate::exec::uia::Element {
+                id: id.into(),
+                role: "button",
+                name: name.into(),
+                value: None,
+                rect: (0, 0, 20, 20),
+            },
+        }
+    }
+
+    #[test]
+    fn repeated_control_is_bound_to_window_role_and_name_not_snapshot_id() {
+        let mut watch = ControlWatch::default();
+        let first = control(42, "e634", "Add New Tab");
+        let refreshed = control(42, "e661", "Add New Tab");
+        watch.record(Some(&first));
+        assert!(watch.warning().is_none());
+        assert!(!watch.should_stop(&refreshed));
+        watch.record(Some(&refreshed));
+        assert!(watch.warning().is_some());
+        assert!(watch.should_stop(&control(42, "e689", "Add New Tab")));
+        assert!(!watch.should_stop(&control(43, "e689", "Add New Tab")));
+        assert!(!watch.should_stop(&control(42, "e689", "Save")));
+        let mut different_role = refreshed.clone();
+        different_role.element.role = "menu item";
+        assert!(!watch.should_stop(&different_role));
+    }
+
+    #[test]
+    fn different_action_or_changed_window_clears_repeated_control_streak() {
+        let mut watch = ControlWatch::default();
+        let first = control(42, "e1", "Add New Tab");
+        watch.record(Some(&first));
+        watch.record(Some(&first));
+        watch.record(None);
+        assert!(!watch.should_stop(&first));
+        watch.record(Some(&first));
+        watch.record(Some(&first));
+        watch.observe_window(Some(43));
+        assert!(!watch.should_stop(&first));
+        watch.record(Some(&first));
+        watch.record(Some(&control(42, "e2", "Save")));
+        assert!(!watch.should_stop(&first));
+    }
+
+    #[test]
+    fn consecutive_waits_warn_then_stop_and_other_actions_reset_the_count() {
+        let mut watch = WaitWatch::default();
+        watch.record(true);
+        assert!(watch.warning().is_none());
+        watch.record(true);
+        assert!(watch.warning().is_some());
+        assert!(!watch.should_stop_wait());
+        watch.record(true);
+        assert!(watch.should_stop_wait());
+        watch.record(false);
+        assert!(watch.warning().is_none());
+        assert!(!watch.should_stop_wait());
     }
 
     #[test]

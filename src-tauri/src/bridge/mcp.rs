@@ -763,14 +763,19 @@ async fn elements(app: &AppHandle) -> Reply {
     if let Err(reply) = touch(app) {
         return reply;
     }
-    let found = tauri::async_runtime::spawn_blocking(uia::snapshot)
+    let state = app.state::<AppState>();
+    let scope = state.current_scope();
+    let found = tauri::async_runtime::spawn_blocking(uia::capture)
         .await
         .unwrap_or_default();
-    let text = uia::describe(&found);
-    uia::remember(found);
+    if scope.token.is_cancelled() || state.current_scope().id != scope.id {
+        return LeaseError::StoppedByUser.into();
+    }
+    let found = uia::remember(&format!("bridge:{}", scope.id), found);
+    let text = uia::describe(&found.elements);
     if text.is_empty() {
         return Reply::text(
-            "No controls could be listed for the front window (it may not support it, or it may be one of Rune's own). Use rune_observe and click a point instead.",
+            "No controls could be listed for the front window (it may not support it, or it may be one of Rune's own). Use rune_observe; if the target is unclear, ask the user.",
         );
     }
     Reply::text(format!(
@@ -808,7 +813,7 @@ async fn act_turn(
     };
     row.rec.tool = Some(tool.to_string());
     row.rec.args_json = Some(arguments.to_string());
-    let decision = match protocol::parse(tool, arguments) {
+    let mut decision = match protocol::parse(tool, arguments) {
         Ok(decision) => decision,
         Err(problem) => {
             row.fail(&problem);
@@ -845,6 +850,23 @@ async fn act_turn(
             "unknown_key",
             format!("\"{bad}\" is not a key name. Use: {KEY_NAMES}"),
         );
+    }
+
+    if let protocol::Action::ClickElement { id, target, .. } = &mut decision.action {
+        let id = id.clone();
+        let scope_key = format!("bridge:{}", scope.id);
+        match tauri::async_runtime::spawn_blocking(move || uia::bind(&scope_key, &id)).await {
+            Ok(Ok(bound)) => *target = Some(bound),
+            result => {
+                let problem = match result {
+                    Ok(Err(e)) => e,
+                    Err(e) => e.to_string(),
+                    _ => unreachable!(),
+                };
+                row.fail(&problem);
+                return Reply::error("stale_control", problem);
+            }
+        }
     }
 
     let recording_owner = crate::recording::Owner::Session(scope.id);

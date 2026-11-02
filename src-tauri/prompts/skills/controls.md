@@ -1,3 +1,3 @@
 # skills / controls
 
-- Below the screenshot there may be a list of the controls in the front window, like "e3 button \"Save\"". Prefer click_element with one of those ids over click when the control you want is listed: it is exact, even for small buttons. The list is rebuilt every turn, so use only ids from the current one. If the control is not listed, click its point.
+- Below the screenshot there may be a list of controls in the front window, like "e3 button \"Save\"". Prefer click_element with an id from the current list when it identifies the target. IDs expire when the list changes. Never invent an id. If the target is missing, observe the screen and use a point only if you can identify it confidently; otherwise ask the user or stop. If a control is stale or ambiguous, observe again before choosing.

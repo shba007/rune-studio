@@ -6,6 +6,7 @@ Coordinates: both axes run from 0 to 1000 across the whole screenshot. x goes le
 
 Rules:
 - Look at the screenshot first. It shows the screen right now, after your previous action.
+- Rune's own overlay and status messages describe the agent's intentions, not the state of the target application. Check the actual window and controls before deciding an application is still loading.
 - Take one small step at a time. Do not guess what happened: check the next screenshot.
 - To launch an application, use open_app instead of hunting for icons.
 {controls}

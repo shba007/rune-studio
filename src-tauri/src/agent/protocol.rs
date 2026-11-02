@@ -27,6 +27,7 @@ pub enum Action {
         id: String,
         button: MouseButton,
         double: bool,
+        target: Option<uia::BoundTarget>,
     },
     Scroll {
         x: f64,
@@ -110,14 +111,19 @@ impl Action {
                 };
                 format!("{kind} ({}, {})", x.round(), y.round())
             }
-            Action::ClickElement { id, button, double } => {
+            Action::ClickElement {
+                id,
+                button,
+                double,
+                target,
+            } => {
                 let kind = match (button, double) {
                     (MouseButton::Left, false) => "click",
                     (MouseButton::Left, true) => "double-click",
                     (MouseButton::Right, _) => "right-click",
                     (MouseButton::Middle, _) => "middle-click",
                 };
-                match uia::lookup(id) {
+                match target.as_ref().map(|target| &target.element) {
                     Some(element) => format!(
                         "{kind} {} \"{}\" ({id})",
                         element.role,
@@ -282,6 +288,7 @@ pub fn parse(name: &str, arguments: &Value) -> Result<Decision, String> {
                 id: id.trim().to_string(),
                 button,
                 double: arguments["double"].as_bool().unwrap_or(false),
+                target: None,
             }
         }
         "scroll" => {
@@ -846,7 +853,8 @@ mod tests {
             Action::ClickElement {
                 id: "e7".into(),
                 button: MouseButton::Right,
-                double: true
+                double: true,
+                target: None,
             }
         );
         assert!(parse("click_element", &json!({})).is_err());

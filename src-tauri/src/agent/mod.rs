@@ -125,6 +125,7 @@ pub fn start_planned(
             .await
         })
         .await;
+        uia::forget(&format!("agent:{run_id}"));
         stop_leftovers(&leftovers, &outcome);
         end_session(&session, &outcome);
         let (label, summary) = outcome_label(&outcome);
@@ -762,9 +763,12 @@ async fn run(
     let mut declines = 0;
 
     let mut watch = stuck::Watch::default();
+    let mut wait_watch = stuck::WaitWatch::default();
+    let mut control_watch = stuck::ControlWatch::default();
     let mut elevated_watch = stuck::ElevatedWatch::default();
     let mut acted: Option<stuck::Acted> = None;
-    uia::forget();
+    let control_scope = format!("agent:{run_id}");
+    uia::forget(&control_scope);
 
     if let Ok(monitor) = screenshot::monitor(None) {
         let worker_cancel = cancel.clone();
@@ -808,16 +812,23 @@ async fn run(
                 .locked()
                 .recording_resolution
                 .max_edge();
+            let observed_window = uia::current_window();
             let (captured, elements) = tokio::join!(
                 tauri::async_runtime::spawn_blocking(move || {
                     screenshot::capture(None, model_image_edge, MODEL_JPEG_QUALITY, capture_edge)
                 }),
-                tauri::async_runtime::spawn_blocking(uia::snapshot),
+                tauri::async_runtime::spawn_blocking(uia::capture),
             );
             observe_ms += millis(observing).unwrap_or(0);
-            let elements = elements.unwrap_or_default();
-            let listing = uia::describe(&elements);
-            uia::remember(elements);
+            let mut elements = elements.unwrap_or_default();
+            if observed_window.is_none()
+                || elements.window != observed_window
+                || uia::current_window() != observed_window
+            {
+                elements = uia::Snapshot::default();
+            }
+            let elements = uia::remember(&control_scope, elements);
+            let listing = uia::describe(&elements.elements);
             let frame = match captured {
                 Ok(Ok(frame)) => frame,
                 Ok(Err(err)) => {
@@ -885,8 +896,11 @@ async fn run(
                 "I can't control this window because it runs as administrator.".into(),
             );
         }
+        control_watch.observe_window(uia::current_window());
         let warning = [
             stuck::warning(unchanged),
+            wait_watch.warning().map(str::to_string),
+            control_watch.warning().map(str::to_string),
             notes.and_then(|notes| notes.hint).map(String::from),
             elevated.then(|| foreground::ELEVATED_WARNING.to_string()),
         ]
@@ -1088,7 +1102,7 @@ async fn run(
         }
 
         let Decision {
-            action,
+            mut action,
             reason,
             goal,
             risk,
@@ -1114,6 +1128,16 @@ async fn run(
                 continue;
             }
         };
+        let is_wait = matches!(action, Action::Wait { .. });
+        if is_wait && wait_watch.should_stop_wait() {
+            let message = "Stopped after repeated waits without another action. Check the application and try again.";
+            row.fail(message);
+            trace.event(run_id, "repeated_wait_stop", "{}");
+            return Outcome::Failed(message.into());
+        }
+        if !is_wait {
+            wait_watch.record(false);
+        }
         let planned = handoff.locked().board_id.is_some();
         let goal = if planned {
             if matches!(action, Action::External { .. }) {
@@ -1225,6 +1249,8 @@ async fn run(
             row.rec.result = Some(if result.is_ok() { "ok" } else { "error" }.into());
             if let Err(error) = &result {
                 row.rec.error = Some(error.clone());
+            } else {
+                control_watch.record(None);
             }
             history.push(Entry {
                 action: action.describe(),
@@ -1246,6 +1272,7 @@ async fn run(
             row.rec.gate_ms = millis(asking);
             row.rec.gate = Some("none".into());
             row.rec.result = Some("ok".into());
+            control_watch.record(None);
             trace.event(
                 run_id,
                 "ask_user",
@@ -1256,6 +1283,46 @@ async fn run(
                 outcome,
             });
             continue;
+        }
+
+        if let Action::ClickElement { id, target, .. } = &mut action {
+            let id = id.clone();
+            let scope = control_scope.clone();
+            let result = tauri::async_runtime::spawn_blocking(move || uia::bind(&scope, &id)).await;
+            match result {
+                Ok(Ok(bound)) => *target = Some(bound),
+                other => {
+                    let problem = match other {
+                        Ok(Err(e)) => e,
+                        Err(e) => e.to_string(),
+                        _ => unreachable!(),
+                    };
+                    row.rec.result = Some("skipped".into());
+                    row.rec.error = Some(problem.clone());
+                    history.push(Entry {
+                        action: action.describe(),
+                        outcome: problem,
+                    });
+                    continue;
+                }
+            }
+        }
+
+        let control_target = match &action {
+            Action::ClickElement {
+                target: Some(target),
+                ..
+            } => Some(target.clone()),
+            _ => None,
+        };
+        if control_target
+            .as_ref()
+            .is_some_and(|target| control_watch.should_stop(target))
+        {
+            let message = "Stopped after clicking the same control twice. Check the result and clarify your request before trying again.";
+            row.fail(message);
+            trace.event(run_id, "repeated_control_stop", "{}");
+            return Outcome::Failed(message.into());
         }
 
         let gating = Instant::now();
@@ -1334,6 +1401,7 @@ async fn run(
                 return Outcome::Stopped;
             }
             let step_result = if row.rec.result.as_deref() == Some("ok") {
+                control_watch.record(None);
                 Ok(())
             } else {
                 Err(ExecError::Input(outcome.clone()))
@@ -1397,6 +1465,10 @@ async fn run(
                 });
             }
             Ok(()) => {
+                control_watch.record(control_target.as_ref());
+                if is_wait {
+                    wait_watch.record(true);
+                }
                 row.rec.result = Some("ok".into());
                 history.push(Entry {
                     action: described,

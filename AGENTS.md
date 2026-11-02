@@ -66,8 +66,10 @@ backed up before replacement; selected tool restrictions remain. Public Studio
 native/WASM plugin ABI is unchanged. Kit/Infer own shared ~/.rune installation,
 storage and migration. Never fall back to CWD or overwrite conflicting data.
 
-Implement only Screen Insight for now. Its static workflow registry is in
-src-tauri/src/workflow.rs. Capture follows explicit screen/window selection and
+Prioritize computer use as Studio's main product experience. The first onboarding
+cycle should lead to a working, small computer-use task. Screen Insight is a
+supporting feature. Its static workflow registry is in src-tauri/src/workflow.rs.
+Insight capture follows explicit screen/window selection and
 a user action; Insight frames remain in memory and never use archive capture
 or continuous monitoring. Require an explicit Analysis model with advertised
 vision/tool support. Keep external-agent and API sessions separate.
