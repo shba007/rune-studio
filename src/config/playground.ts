@@ -37,6 +37,13 @@ export const PLAYGROUND_GROUPS: PlaygroundGroup[] = [
         summary: 'Ask a question about a screen, a window or an image.',
       },
       {
+        id: 'caption',
+        label: 'Caption',
+        icon: 'captions',
+        ready: true,
+        summary: 'Describe a screen, window or image.',
+      },
+      {
         id: 'point',
         label: 'Point',
         icon: 'target',
@@ -44,18 +51,39 @@ export const PLAYGROUND_GROUPS: PlaygroundGroup[] = [
         summary: 'Find where something is and mark it on the image.',
       },
       {
+        id: 'detect',
+        label: 'Detect objects',
+        icon: 'scan',
+        ready: true,
+        summary: 'Detect objects and their locations in an image.',
+      },
+      {
+        id: 'instance-segment',
+        label: 'Segment objects',
+        icon: 'scan',
+        ready: true,
+        summary: 'Detect individual objects and their masks.',
+      },
+      {
+        id: 'oriented-detect',
+        label: 'Detect oriented objects',
+        icon: 'scan',
+        ready: true,
+        summary: 'Detect rotated objects with oriented bounding boxes.',
+      },
+      {
+        id: 'segment',
+        label: 'Segment scene',
+        icon: 'scan',
+        ready: true,
+        summary: 'Identify semantic regions in an image.',
+      },
+      {
         id: 'pose',
         label: 'Pose',
         icon: 'pose',
         ready: true,
-        summary: 'Mark joints and landmarks for pose questions.',
-      },
-      {
-        id: 'caption',
-        label: 'Caption',
-        icon: 'captions',
-        ready: true,
-        summary: 'Describe a screen, window or image.',
+        summary: 'Detect people and estimate their pose keypoints.',
       },
       {
         id: 'depth',
@@ -149,6 +177,36 @@ export const findPipeline = (id: string) =>
   PLAYGROUND_GROUPS.flatMap((group) => group.pipelines).find((item) => item.id === id)
 
 export type PlaygroundSource = 'screen' | 'window' | 'file'
+
+export type VisualOperation = 'detect' | 'segment' | 'pose' | 'instance-segment' | 'oriented-detect'
+export const VISUAL_ROLES: Record<
+  VisualOperation,
+  'entities' | 'regions' | 'structure' | 'instances' | 'oriented'
+> = {
+  detect: 'entities',
+  'instance-segment': 'instances',
+  'oriented-detect': 'oriented',
+  segment: 'regions',
+  pose: 'structure',
+}
+export interface VisualResult {
+  model: string
+  data?: {
+    label: string
+    confidence: number
+    box?: { x: number; y: number; width: number; height: number }
+    mask?: string
+    oriented_box?: { corners_pixels: [number, number][]; angle_radians: number }
+    pose?: { name: string; x: number; y: number; confidence: number }[]
+  }[]
+  class_map?: string
+  classes?: { id: number; label: string }[]
+  usage?: { image_width: number; image_height: number }
+}
+export interface VisualOperationResult {
+  image: string
+  result: VisualResult
+}
 
 export const SOURCE_OPTIONS: { value: PlaygroundSource; label: string }[] = [
   { value: 'screen', label: 'Screen' },
@@ -292,6 +350,41 @@ export interface ModelPipeline {
 }
 
 export const MODEL_PIPELINES: Record<string, ModelPipeline> = {
+  'instance-segment': {
+    task: 'image-to-detection',
+    command: 'playground_visual_branch',
+    modelLabel: 'Instance segmentation model',
+    none: 'No instance segmentation model',
+    idle: 'Choose a source and an instance segmentation model, then press Run.',
+  },
+  'oriented-detect': {
+    task: 'image-to-detection',
+    command: 'playground_visual_branch',
+    modelLabel: 'Oriented detection model',
+    none: 'No oriented detection model',
+    idle: 'Choose a source and an oriented detection model, then press Run.',
+  },
+  detect: {
+    task: 'image-to-detection',
+    command: 'playground_visual_branch',
+    modelLabel: 'Detection model',
+    none: 'No detection model',
+    idle: 'Choose a source and detection model, then press Run.',
+  },
+  segment: {
+    task: 'image-to-segmentation',
+    command: 'playground_visual_branch',
+    modelLabel: 'Segmentation model',
+    none: 'No segmentation model',
+    idle: 'Choose a source and segmentation model, then press Run.',
+  },
+  pose: {
+    task: 'image-to-detection',
+    command: 'playground_visual_branch',
+    modelLabel: 'Pose model',
+    none: 'No pose model',
+    idle: 'Choose a source and pose model, then press Run.',
+  },
   reference: {
     task: 'text-image-to-image',
     command: 'playground_reference',
@@ -394,6 +487,26 @@ export const taskModelIds = (
         (!operation || model.audioOperations?.[operation]?.status === 'supported'),
     )
     .map((model) => model.id)
+
+export function visualOperationModels(
+  models: { id: string; tasks?: string[]; rawCapabilities?: string[] }[],
+  operation: VisualOperation,
+) {
+  const ids = taskModelIds(models, MODEL_PIPELINES[operation]!.task)
+  return ids.filter((id) => {
+    const capabilities = models.find((model) => model.id === id)?.rawCapabilities ?? []
+    const has = (name: string) =>
+      capabilities.some((capability) => capability.toLowerCase() === name)
+    if (operation === 'pose') return has('pose estimation')
+    if (operation === 'instance-segment') return has('instance segmentation')
+    if (operation === 'oriented-detect') return has('oriented bounding boxes')
+    if (operation === 'detect')
+      return (
+        !has('pose estimation') && !has('instance segmentation') && !has('oriented bounding boxes')
+      )
+    return true
+  })
+}
 
 export const RESOLUTION_OPTIONS = [
   { value: '720', label: '720 px' },

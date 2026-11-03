@@ -22,7 +22,11 @@ const { copy, copied } = useClipboard({ copiedDuring: 1600 })
 <template>
   <div class="flex flex-col gap-8">
     <SettingsConnectionModels v-if="!executionOnly" :agent="agent" :draft="draft" />
-    <SettingsVisualAnalysis v-if="!executionOnly" :draft="draft" />
+    <SettingsVisualAnalysis
+      v-if="!executionOnly"
+      :draft="draft"
+      :models="agent.backend.value?.models ?? []"
+    />
     <HubGroup title="Execution">
       <HubRow
         label="Execution mode"

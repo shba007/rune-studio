@@ -49,13 +49,43 @@ const submitFromComposer = (wrapper: { vm: unknown }, question: string) =>
   (wrapper.vm as { submit: (question: string) => Promise<boolean> }).submit(question)
 
 describe('AnalysisCard states', () => {
+  it('keeps the capture picker inside the panel and supports filtering and Escape', async () => {
+    vi.mocked(invoke).mockResolvedValueOnce([
+      { target: { kind: 'screen', id: 1 }, label: 'Main screen', primary: true },
+      { target: { kind: 'window', id: 42 }, label: 'Notepad window' },
+    ])
+    const { analysis, calls } = fake()
+    const wrapper = mount(AnalysisCard, { props: { analysis } })
+    await flushPromises()
+    const toggle = wrapper.get('[aria-label="Choose capture target"]')
+    expect(toggle.classes()).toContain('flex-1')
+    expect(toggle.element.parentElement).toBe(
+      wrapper.get('[aria-label="Refresh capture targets"]').element.parentElement,
+    )
+    await toggle.trigger('click')
+    const filter = wrapper.get('[aria-label="Filter capture targets"]')
+    expect(filter.element.parentElement?.classList.contains('absolute')).toBe(false)
+    await filter.setValue('Notepad')
+    expect(wrapper.get('[aria-label="Capture targets"]').text()).toContain('Notepad window')
+    expect(wrapper.get('[aria-label="Capture targets"]').text()).not.toContain('Main screen')
+    const option = wrapper.get('[aria-label="Capture targets"] button')
+    expect(option.attributes('title')).toBe('Notepad window')
+    expect(option.find('.truncate').exists()).toBe(true)
+    await filter.trigger('keydown.esc')
+    expect(wrapper.find('[aria-label="Filter capture targets"]').exists()).toBe(false)
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(calls.capture).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
   it('retries an image analysis with the original image even if the source changes', async () => {
     const { analysis, snapshot, calls } = fake()
     const wrapper = mount(AnalysisCard, {
       props: { analysis, imageMode: true, image: 'data:image/png;base64,AA==' },
     })
     await submitFromComposer(wrapper, 'What is this?')
-    expect(calls.captureImage).toHaveBeenCalledWith('What is this?', 'data:image/png;base64,AA==')
+    expect(calls.captureImage).toHaveBeenCalledWith('What is this?', 'data:image/png;base64,AA==', {
+      sharedVisual: true,
+    })
     await wrapper.setProps({ imageMode: false })
     snapshot.value = {
       ...snapshot.value,
@@ -100,10 +130,14 @@ describe('AnalysisCard states', () => {
     await flushPromises()
     expect(calls.capture).not.toHaveBeenCalled()
     await submitFromComposer(wrapper, 'Describe this screen')
-    expect(calls.capture).toHaveBeenLastCalledWith('Describe this screen', {
-      kind: 'screen',
-      id: 2,
-    })
+    expect(calls.capture).toHaveBeenLastCalledWith(
+      'Describe this screen',
+      {
+        kind: 'screen',
+        id: 2,
+      },
+      { sharedVisual: true },
+    )
     await wrapper.get('[aria-label="Choose capture target"]').trigger('click')
     await wrapper
       .findAll('button')
@@ -112,10 +146,14 @@ describe('AnalysisCard states', () => {
     await wrapper.get('[aria-label="Refresh capture targets"]').trigger('click')
     await flushPromises()
     await submitFromComposer(wrapper, 'Describe this window')
-    expect(calls.capture).toHaveBeenLastCalledWith('Describe this window', {
-      kind: 'window',
-      id: 42,
-    })
+    expect(calls.capture).toHaveBeenLastCalledWith(
+      'Describe this window',
+      {
+        kind: 'window',
+        id: 42,
+      },
+      { sharedVisual: true },
+    )
     wrapper.unmount()
   })
   it('clears a disappeared target and refuses submission from the main composer', async () => {
@@ -154,7 +192,11 @@ describe('AnalysisCard states', () => {
     expect(wrapper.find('input').exists()).toBe(false)
     calls.capture.mockImplementationOnce(() => new Promise<void>(() => {}))
     expect(await submitFromComposer(wrapper, 'What failed?')).toBe(true)
-    expect(calls.capture).toHaveBeenCalledWith('What failed?', { kind: 'window', id: 42 })
+    expect(calls.capture).toHaveBeenCalledWith(
+      'What failed?',
+      { kind: 'window', id: 42 },
+      { sharedVisual: true },
+    )
     snapshot.value = {
       ...snapshot.value,
       status: 'done',

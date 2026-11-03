@@ -24,6 +24,29 @@ afterEach(() => {
   harness.invoke.mockReset()
 })
 
+it('opens screen analysis mode without capturing or opening Playground', async () => {
+  harness.invoke.mockImplementation(async (command) =>
+    command === 'get_settings' ? { externalAgent: false } : null,
+  )
+  let agent!: Agent
+  const wrapper = mount(
+    defineComponent({
+      setup() {
+        agent = useAgent()
+        return () => null
+      },
+    }),
+  )
+  await flushPromises()
+  harness.invoke.mockClear()
+  await agent.analyzeScreen()
+  expect(agent.mode.value).toBe('analysis')
+  expect(harness.invoke).toHaveBeenCalledWith('set_mode', { mode: 'analysis' })
+  expect(harness.invoke).not.toHaveBeenCalledWith('open_playground', expect.anything())
+  expect(harness.invoke).not.toHaveBeenCalledWith('analyze_screen', expect.anything())
+  wrapper.unmount()
+})
+
 it('shares connectivity between Settings and composer, rejects stale results, and recovers on polling', async () => {
   vi.useFakeTimers()
   window.history.replaceState({}, '', '/')

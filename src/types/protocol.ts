@@ -52,6 +52,10 @@ export interface ModelRoles {
 
 export type AnalysisGroup = 'entities' | 'regions' | 'structure' | 'depth'
 export type VisualAnalysisVisibility = Record<AnalysisGroup, boolean>
+export type VisualAnalysisModels = Record<'planner' | AnalysisGroup, string> & {
+  instances?: string
+  oriented?: string
+}
 
 export interface Settings {
   connections: {
@@ -66,6 +70,7 @@ export interface Settings {
   activeConnectionId: string
   connectionsRevision: number
   visualAnalysis?: VisualAnalysisVisibility
+  visualAnalysisModels?: VisualAnalysisModels
   verifyMode: 'off' | 'background' | 'blocking'
   demoMode: boolean
   recordSessionVideo: 'off' | 'motion'
@@ -270,6 +275,14 @@ export interface Pose {
 }
 
 export interface AnalysisSnapshot {
+  visualMaps?: {
+    segmentation: string | null
+    classes: { id: number; label: string }[]
+    depth: string | null
+    errors: string[]
+    instances?: { mask: string; label: string }[]
+    oriented?: { corners: [number, number][]; label: string }[]
+  }
   visibleGroups?: VisualAnalysisVisibility
   screenshot?: string | null
   status: AnalysisStatus

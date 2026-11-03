@@ -153,6 +153,7 @@ pub struct Settings {
     pub model_image_resolution: ImageResolution,
     pub recording_resolution: ImageResolution,
     pub visual_analysis: VisualAnalysis,
+    pub visual_analysis_models: VisualAnalysisModels,
     pub offer_review: OfferReview,
     pub demo_mode: bool,
     pub reflection_enabled: bool,
@@ -191,6 +192,7 @@ struct SettingsDeHelper {
     pub model_image_resolution: ImageResolution,
     pub recording_resolution: ImageResolution,
     pub visual_analysis: VisualAnalysis,
+    pub visual_analysis_models: VisualAnalysisModels,
     pub offer_review: OfferReview,
     pub demo_mode: bool,
     pub reflection_enabled: bool,
@@ -230,6 +232,7 @@ impl Default for SettingsDeHelper {
             model_image_resolution: def.model_image_resolution,
             recording_resolution: def.recording_resolution,
             visual_analysis: def.visual_analysis,
+            visual_analysis_models: def.visual_analysis_models,
             offer_review: def.offer_review,
             demo_mode: def.demo_mode,
             reflection_enabled: def.reflection_enabled,
@@ -352,6 +355,7 @@ impl<'de> Deserialize<'de> for Settings {
             model_image_resolution: helper.model_image_resolution,
             recording_resolution: helper.recording_resolution,
             visual_analysis: helper.visual_analysis,
+            visual_analysis_models: helper.visual_analysis_models,
             offer_review: helper.offer_review,
             demo_mode: helper.demo_mode,
             reflection_enabled: helper.reflection_enabled,
@@ -508,6 +512,7 @@ impl Default for Settings {
             model_image_resolution: ImageResolution::Large,
             recording_resolution: ImageResolution::Native,
             visual_analysis: VisualAnalysis::default(),
+            visual_analysis_models: VisualAnalysisModels::default(),
             offer_review: OfferReview::default(),
             demo_mode: false,
             reflection_enabled: true,
@@ -1093,6 +1098,19 @@ mod tests {
     }
 }
 
+/// Model choices for the Visual Analysis workflow; an empty operation is disabled.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct VisualAnalysisModels {
+    pub planner: String,
+    pub entities: String,
+    pub regions: String,
+    pub structure: String,
+    pub depth: String,
+    pub instances: String,
+    pub oriented: String,
+}
+
 /// Display preferences only: never remove findings from requests or history.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -1127,6 +1145,22 @@ impl VisualAnalysis {
 #[cfg(test)]
 mod visual_analysis_tests {
     use super::*;
+    #[test]
+    fn visual_analysis_models_default_empty_and_round_trip() {
+        let mut settings: Settings = serde_json::from_str("{}").unwrap();
+        assert_eq!(
+            settings.visual_analysis_models,
+            VisualAnalysisModels::default()
+        );
+        settings.visual_analysis_models.planner = "vision-model".into();
+        settings.visual_analysis_models.entities = "detector".into();
+        let restored: Settings =
+            serde_json::from_str(&serde_json::to_string(&settings).unwrap()).unwrap();
+        assert_eq!(
+            restored.visual_analysis_models,
+            settings.visual_analysis_models
+        );
+    }
     #[test]
     fn old_settings_show_all_groups_and_hidden_preferences_round_trip() {
         let mut settings: Settings = serde_json::from_str("{}").unwrap();

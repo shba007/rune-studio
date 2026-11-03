@@ -7,6 +7,7 @@ import {
   MODEL_PIPELINES,
   createSize,
   taskModelIds,
+  visualOperationModels,
   filterFindings,
   questionLimit,
   shapeQuestion,
@@ -27,6 +28,24 @@ const finding = (n: number, extra: Partial<Finding>): Finding => ({
 })
 
 describe('playground registry', () => {
+  it('requires an advertised pose capability for pose models', () => {
+    const models = [
+      { id: 'boxes', tasks: ['image-to-detection'], rawCapabilities: [] },
+      { id: 'pose', tasks: ['image-to-detection'], rawCapabilities: ['Pose Estimation'] },
+      { id: 'masks', tasks: ['image-to-detection'], rawCapabilities: ['Instance Segmentation'] },
+      {
+        id: 'rotated',
+        tasks: ['image-to-detection'],
+        rawCapabilities: ['Oriented Bounding Boxes'],
+      },
+      { id: 'segments', tasks: ['image-to-segmentation'] },
+    ]
+    expect(visualOperationModels(models, 'detect')).toEqual(['boxes'])
+    expect(visualOperationModels(models, 'pose')).toEqual(['pose'])
+    expect(visualOperationModels(models, 'segment')).toEqual(['segments'])
+    expect(visualOperationModels(models, 'instance-segment')).toEqual(['masks'])
+    expect(visualOperationModels(models, 'oriented-detect')).toEqual(['rotated'])
+  })
   it('only offers text-guided image edit models', () => {
     expect(
       taskModelIds(
@@ -43,9 +62,13 @@ describe('playground registry', () => {
     const ready = PLAYGROUND_GROUPS.flatMap((g) => g.pipelines).filter((p) => p.ready)
     expect(ready.map((p) => p.id)).toEqual([
       'ask',
-      'point',
-      'pose',
       'caption',
+      'point',
+      'detect',
+      'instance-segment',
+      'oriented-detect',
+      'segment',
+      'pose',
       'depth',
       'create',
       'edit',
@@ -56,11 +79,15 @@ describe('playground registry', () => {
       'transcribe',
       'translate-speech',
     ])
-    expect(PLAYGROUND_GROUPS[0]!.pipelines.slice(0, 5).map((p) => p.id)).toEqual([
+    expect(PLAYGROUND_GROUPS[0]!.pipelines.slice(0, 9).map((p) => p.id)).toEqual([
       'ask',
-      'point',
-      'pose',
       'caption',
+      'point',
+      'detect',
+      'instance-segment',
+      'oriented-detect',
+      'segment',
+      'pose',
       'depth',
     ])
   })

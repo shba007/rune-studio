@@ -8,6 +8,7 @@ const props = defineProps<{
   refreshing?: boolean
   disabled?: boolean
   contained?: boolean
+  inlineMenu?: boolean
   options: { target: { kind: string; id: number }; label: string }[]
 }>()
 const emit = defineEmits<{ refresh: [] }>()
@@ -38,7 +39,7 @@ function choose(value: string) {
   <div
     ref="root"
     class="relative flex min-w-0 items-center gap-2"
-    :class="expanded && 'z-20'"
+    :class="[expanded && 'z-20', inlineMenu && 'flex-wrap']"
     @keydown.esc.stop="expanded = false"
   >
     <button
@@ -47,6 +48,8 @@ function choose(value: string) {
       :aria-expanded="expanded"
       :disabled="disabled"
       class="inline-flex h-8 max-w-64 min-w-0 cursor-pointer items-center gap-2 rounded-full bg-rune-sunken pr-3 pl-3 text-left text-rune-body text-rune-ink transition-colors hover:bg-black"
+      :class="inlineMenu && 'flex-1'"
+      :title="label || 'Choose a screen or window'"
       @click="expanded = !expanded"
     >
       <AppIcon :name="label?.startsWith('Screen') ? 'monitor' : 'app'" size="sm" />
@@ -64,8 +67,12 @@ function choose(value: string) {
     </RuneIconButton>
     <div
       v-if="expanded && !disabled"
-      class="absolute top-full mt-1 flex max-w-[80vw] flex-col gap-2 rounded-rune-tile bg-rune-raised p-2"
-      :class="contained ? 'left-0 w-full' : 'right-0 w-80'"
+      class="flex flex-col gap-2 rounded-rune-tile bg-rune-raised p-2"
+      :class="
+        inlineMenu
+          ? 'w-full min-w-0'
+          : ['absolute top-full mt-1 max-w-[80vw]', contained ? 'left-0 w-full' : 'right-0 w-80']
+      "
     >
       <input
         v-model="search"
@@ -86,7 +93,8 @@ function choose(value: string) {
             :key="JSON.stringify(option.target)"
             type="button"
             :aria-pressed="selected === JSON.stringify(option.target)"
-            class="flex w-full cursor-pointer items-center gap-2 rounded-full px-3 py-2 text-left text-rune-body transition-colors hover:bg-white/8"
+            class="flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-rune-control px-3 py-2 text-left text-rune-body transition-colors hover:bg-white/8"
+            :title="option.label"
             :class="
               selected === JSON.stringify(option.target) ? 'text-rune-ink' : 'text-rune-text-2'
             "
@@ -96,7 +104,7 @@ function choose(value: string) {
               class="size-1.5 shrink-0 rounded-full"
               :class="selected === JSON.stringify(option.target) ? 'bg-white' : 'bg-rune-text-3'"
             />
-            <span class="min-w-0 [overflow-wrap:anywhere]">{{ option.label }}</span>
+            <span class="min-w-0 flex-1 truncate">{{ option.label }}</span>
           </button>
         </template>
         <p v-if="!filtered.length" class="m-0 px-3 py-3 text-rune-caption text-rune-text-3">

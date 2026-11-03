@@ -120,18 +120,57 @@ pub struct VisualPlanResult {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct VisualBranchInput {
-    image: String,
-    model: String,
-    question: String,
+    pub(crate) target: Option<CaptureTarget>,
+    pub(crate) image: Option<String>,
+    pub(crate) model: String,
+    pub(crate) role: String,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VisualBranchResult {
-    answer: String,
-    findings: Vec<crate::analysis::report::Finding>,
-    model: String,
-    boxes_rejected: u32,
+    pub(crate) image: String,
+    pub(crate) result: serde_json::Value,
+}
+
+fn visual_branch_contract(
+    role: &str,
+) -> Result<(&'static str, &'static str, &'static [&'static str]), String> {
+    match role {
+        "entities" => Ok(("image-to-detection", "/v1/images/detections", &["boxes"])),
+        "structure" => Ok((
+            "image-to-detection",
+            "/v1/images/detections",
+            &["boxes", "keypoints"],
+        )),
+        "instances" => Ok((
+            "image-to-detection",
+            "/v1/images/detections",
+            &["boxes", "masks"],
+        )),
+        "oriented" => Ok((
+            "image-to-detection",
+            "/v1/images/detections",
+            &["boxes", "oriented_boxes"],
+        )),
+        "regions" => Ok(("image-to-segmentation", "/v1/images/segmentations", &[])),
+        _ => Err("Unknown visual analysis branch".into()),
+    }
+}
+
+fn validate_visual_capability(role: &str, capabilities: &[String]) -> Result<(), String> {
+    let has = |name: &str| {
+        capabilities
+            .iter()
+            .any(|capability| capability.eq_ignore_ascii_case(name))
+    };
+    match role {
+        "structure" if !has("Pose Estimation") => Err("Choose a model that advertises Pose Estimation".into()),
+        "instances" if !has("Instance Segmentation") => Err("Choose a model that advertises Instance Segmentation".into()),
+        "oriented" if !has("Oriented Bounding Boxes") => Err("Choose a model that advertises Oriented Bounding Boxes".into()),
+        "entities" if ["Pose Estimation", "Instance Segmentation", "Oriented Bounding Boxes"].iter().any(|name| has(name)) => Err("Choose a standard object detection model, not a specialized pose, instance segmentation or oriented-box model".into()),
+        _ => Ok(()),
+    }
 }
 
 async fn visual_settings(app: &AppHandle, model: &str) -> Result<Settings, String> {
@@ -238,48 +277,84 @@ pub async fn playground_visual_branch(
     input: VisualBranchInput,
 ) -> Result<VisualBranchResult, String> {
     let state = app.state::<PlaygroundRuns>();
-    let token = state
-        .runs
-        .locked()
-        .get(&run_id)
-        .cloned()
-        .ok_or("Playground run was cancelled")?;
     let work_app = app.clone();
     state
         .run(run_id, async move {
             visual_guard(&work_app)?;
-            if input.question.trim().is_empty() || input.question.chars().count() > 500 {
-                return Err("Choose a question of up to 500 characters".into());
-            }
-            let settings = visual_settings(&work_app, &input.model).await?;
-            let bytes = depth_image(&input.image)?;
-            let frame = screenshot::insight_image(
-                &bytes,
-                settings.model_image_resolution.max_edge(),
-                settings.recording_resolution.max_edge(),
-            )
-            .map_err(|error| error.to_string())?;
-            let output = crate::analysis::run::analyze_image_with_settings_timeout(
-                &work_app,
-                &input.question,
-                &frame.data_uri(),
-                &token,
-                "visual-flow-branch",
-                &settings,
-                crate::analysis::run::PLAYGROUND_FLOW_TIMEOUT,
-            )
-            .await
-            .map_err(|error| error.to_string())?;
-            let mut findings = output.parsed.findings;
-            let boxes_rejected = crate::analysis::boxes::guard(&mut findings);
-            Ok(VisualBranchResult {
-                answer: output.parsed.answer,
-                findings,
-                model: output.model,
-                boxes_rejected,
-            })
+            run_visual_operation(&work_app, input).await
         })
         .await
+}
+
+pub(crate) async fn run_visual_operation(
+    app: &AppHandle,
+    input: VisualBranchInput,
+) -> Result<VisualBranchResult, String> {
+    let (task, endpoint, features) = visual_branch_contract(&input.role)?;
+    let prepared = prepare(app, input.target, input.image, &input.model, task).await?;
+    if input.role != "regions" {
+        let (_, _, _, model) = session(app, &input.model, task, None).await?;
+        validate_visual_capability(&input.role, &model.raw_capabilities)?;
+    }
+    let url = infer_url(&prepared.settings, endpoint)?;
+    let mut body = serde_json::json!({"model": prepared.model, "image": prepared.frame.data_uri()});
+    if !features.is_empty() {
+        body["features"] = serde_json::json!(features);
+    }
+    let response = post(app, prepared.key.as_deref(), url, body, "visual analysis").await?;
+    let result: serde_json::Value = serde_json::from_str(&response)
+        .map_err(|_| "Infer returned an unreadable visual analysis result")?;
+    let valid = if input.role == "regions" {
+        result
+            .get("class_map")
+            .and_then(|v| v.as_str())
+            .is_some_and(|v| v.starts_with("data:image/png;base64,"))
+            && result.get("classes").and_then(|v| v.as_array()).is_some()
+    } else {
+        let has_size = input.role != "oriented"
+            || ["/usage/image_width", "/usage/image_height"]
+                .iter()
+                .all(|path| {
+                    result
+                        .pointer(path)
+                        .and_then(|v| v.as_u64())
+                        .is_some_and(|v| v > 0)
+                });
+        has_size
+            && result
+                .get("data")
+                .and_then(|v| v.as_array())
+                .is_some_and(|items| {
+                    items.iter().all(|item| match input.role.as_str() {
+                        "instances" => item
+                            .get("mask")
+                            .and_then(|v| v.as_str())
+                            .is_some_and(|s| s.starts_with("data:image/png;base64,")),
+                        "oriented" => item
+                            .pointer("/oriented_box/corners_pixels")
+                            .and_then(|v| v.as_array())
+                            .is_some_and(|points| {
+                                points.len() == 4
+                                    && points.iter().all(|point| {
+                                        point.as_array().is_some_and(|coords| {
+                                            coords.len() == 2
+                                                && coords.iter().all(|value| {
+                                                    value.as_f64().is_some_and(f64::is_finite)
+                                                })
+                                        })
+                                    })
+                            }),
+                        _ => true,
+                    })
+                })
+    };
+    if !valid {
+        return Err("Infer returned an invalid visual analysis result".into());
+    }
+    Ok(VisualBranchResult {
+        image: prepared.frame.data_uri(),
+        result,
+    })
 }
 
 #[derive(Deserialize)]
@@ -477,17 +552,17 @@ const MAX_IMAGE_CHARS: usize = 40_000_000;
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct DepthInput {
     #[serde(default)]
-    target: Option<CaptureTarget>,
+    pub(crate) target: Option<CaptureTarget>,
     #[serde(default)]
-    image: Option<String>,
-    model: String,
+    pub(crate) image: Option<String>,
+    pub(crate) model: String,
 }
 
 #[derive(Serialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DepthResult {
     original: String,
-    preview: Option<String>,
+    pub(crate) preview: Option<String>,
     width: u32,
     height: u32,
     min: f32,
@@ -1095,7 +1170,7 @@ async fn speech(app: AppHandle, input: SpeechInput) -> Result<SpeechResult, Stri
     })
 }
 
-async fn depth(app: AppHandle, input: DepthInput) -> Result<DepthResult, String> {
+pub(crate) async fn depth(app: AppHandle, input: DepthInput) -> Result<DepthResult, String> {
     let prepared = prepare(&app, input.target, input.image, &input.model, DEPTH_TASK).await?;
     let original = prepared.frame.data_uri();
     let started = Instant::now();
@@ -1608,6 +1683,52 @@ async fn create(app: AppHandle, input: CreateInput) -> Result<CreateResult, Stri
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn visual_branch_contract_matches_infer_image_endpoints() {
+        assert_eq!(
+            super::visual_branch_contract("entities").unwrap(),
+            (
+                "image-to-detection",
+                "/v1/images/detections",
+                &["boxes"][..]
+            )
+        );
+        assert_eq!(
+            super::visual_branch_contract("structure").unwrap(),
+            (
+                "image-to-detection",
+                "/v1/images/detections",
+                &["boxes", "keypoints"][..]
+            )
+        );
+        assert_eq!(
+            super::visual_branch_contract("regions").unwrap(),
+            ("image-to-segmentation", "/v1/images/segmentations", &[][..])
+        );
+        assert!(super::visual_branch_contract("unknown").is_err());
+        assert_eq!(
+            super::visual_branch_contract("instances").unwrap().2,
+            &["boxes", "masks"]
+        );
+        assert_eq!(
+            super::visual_branch_contract("oriented").unwrap().2,
+            &["boxes", "oriented_boxes"]
+        );
+    }
+    #[test]
+    fn specialized_detection_models_are_not_used_as_plain_detectors() {
+        for (role, capability) in [
+            ("structure", "Pose Estimation"),
+            ("instances", "Instance Segmentation"),
+            ("oriented", "Oriented Bounding Boxes"),
+        ] {
+            let advertised = vec![capability.to_string()];
+            assert!(super::validate_visual_capability("entities", &advertised).is_err());
+            assert!(super::validate_visual_capability(role, &advertised).is_ok());
+            assert!(super::validate_visual_capability(role, &[]).is_err());
+        }
+        assert!(super::validate_visual_capability("entities", &[]).is_ok());
+    }
     #[tokio::test]
     async fn image_voice_flow_passes_caption_to_speech_and_keeps_partial_errors() {
         use super::*;

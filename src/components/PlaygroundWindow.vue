@@ -6,6 +6,7 @@ import { computed, onMounted, onUnmounted, ref, useTemplateRef, watch, type Ref 
 
 import { useAgent } from '@/composables/useAgent'
 import { useAnalysis } from '@/composables/useAnalysis'
+import { useCaptureTargets } from '@/composables/useCaptureTargets'
 import { useNativeBlur } from '@/composables/useNativeBlur'
 import { useSectionHistory } from '@/composables/useSectionHistory'
 import {
@@ -13,7 +14,6 @@ import {
   type ModelHistoryResult,
   type PlaygroundRun,
 } from '@/composables/usePlaygroundHistory'
-import { friendly } from '@/config/errors'
 import { FLOWS } from '@/config/flows'
 import { readImageAsPng } from '@/config/imageFile'
 import {
@@ -33,6 +33,8 @@ import {
   questionLimit,
   shapeQuestion,
   taskModelIds,
+  visualOperationModels,
+  VISUAL_ROLES,
   speechTextBytes,
   unshapeQuestion,
   type CreateState,
@@ -45,6 +47,8 @@ import {
   type SpeechState,
   type TranscribeState,
   type PlaygroundSource,
+  type VisualOperation,
+  type VisualOperationResult,
 } from '@/config/playground'
 
 import AppIcon from './AppIcon.vue'
@@ -58,6 +62,7 @@ import PlaygroundSpeech from './PlaygroundSpeech.vue'
 import PlaygroundLoading from './PlaygroundLoading.vue'
 import PlaygroundTranscript from './PlaygroundTranscript.vue'
 import PlaygroundCaption from './PlaygroundCaption.vue'
+import PlaygroundVisualResult from './PlaygroundVisualResult.vue'
 import PlaygroundFlows from './PlaygroundFlows.vue'
 import PlaygroundSettingsPanel from './PlaygroundSettingsPanel.vue'
 import RuneButton from './RuneButton.vue'
@@ -65,12 +70,6 @@ import RuneChip from './RuneChip.vue'
 import RuneChoice from './RuneChoice.vue'
 import RuneNavItem from './RuneNavItem.vue'
 import TitleBar from './TitleBar.vue'
-
-interface TargetOption {
-  target: { kind: string; id: number }
-  label: string
-  primary?: boolean
-}
 
 const agent = useAgent()
 const analysis = useAnalysis()
@@ -122,10 +121,13 @@ const selected = computed(() => findPipeline(selectedId.value) ?? findPipeline(D
 const source = ref<PlaygroundSource>('screen')
 const question = ref('')
 const resolution = ref('')
-const targets = ref<TargetOption[]>([])
+const {
+  targets,
+  refreshing,
+  notice: targetNotice,
+  load: loadTargets,
+} = useCaptureTargets('No capture targets are available. Check permissions and refresh.')
 const target = ref('')
-const refreshing = ref(false)
-const targetNotice = ref('')
 
 const capable = computed(() =>
   (agent.backend.value?.models ?? []).filter(
@@ -151,6 +153,10 @@ const referenceHintLabels = ['Replace subject', 'Transfer style', 'Combine subje
 
 const modelPipeline = computed(() => MODEL_PIPELINES[selectedId.value])
 const isModelRun = computed(() => !!modelPipeline.value)
+const isVisualOperation = computed(() =>
+  ['detect', 'segment', 'pose', 'instance-segment', 'oriented-detect'].includes(selectedId.value),
+)
+const isSharedVisualModel = computed(() => isVisualOperation.value || selectedId.value === 'depth')
 const isCreate = computed(() => selectedId.value === 'create')
 const isEdit = computed(() => selectedId.value === 'edit')
 const isVariation = computed(() => selectedId.value === 'variation')
@@ -182,11 +188,10 @@ const imageSize = computed(() => createSize(createResolution.value, createAspect
 const taskOptions = computed(() => {
   const pipeline = modelPipeline.value
   if (!pipeline) return []
-  const ids = taskModelIds(
-    agent.backend.value?.models ?? [],
-    pipeline.task,
-    pipeline.audioOperation,
-  )
+  const models = agent.backend.value?.models ?? []
+  const ids = isVisualOperation.value
+    ? visualOperationModels(models, selectedId.value as VisualOperation)
+    : taskModelIds(models, pipeline.task, pipeline.audioOperation)
   return ids.length
     ? ids.map((id) => ({ value: id, label: id }))
     : [{ value: '', label: pipeline.none }]
@@ -194,6 +199,13 @@ const taskOptions = computed(() => {
 const taskChoice = ref<Record<string, string>>({})
 const activeTaskModel = computed({
   get: () => {
+    const shared = agent.settings.value?.visualAnalysisModels
+    if (shared && isSharedVisualModel.value) {
+      const key =
+        selectedId.value === 'depth' ? 'depth' : VISUAL_ROLES[selectedId.value as VisualOperation]
+      const configured = shared[key] ?? ''
+      return taskOptions.value.some((item) => item.value === configured) ? configured : ''
+    }
     const picked = taskChoice.value[selectedId.value]
     return taskOptions.value.some((item) => item.value === picked)
       ? picked!
@@ -211,6 +223,11 @@ const reference = ref<EditState>(idleRun())
 const speech = ref<SpeechState>(idleRun())
 const transcript = ref<TranscribeState>(idleRun())
 const translation = ref<TranscribeState>(idleRun())
+const detection = ref<RunState<VisualOperationResult>>(idleRun())
+const segmentation = ref<RunState<VisualOperationResult>>(idleRun())
+const pose = ref<RunState<VisualOperationResult>>(idleRun())
+const instances = ref<RunState<VisualOperationResult>>(idleRun())
+const oriented = ref<RunState<VisualOperationResult>>(idleRun())
 const modelRuns: Record<string, Ref<RunState<unknown>>> = {
   depth: depth as Ref<RunState<unknown>>,
   caption: caption as Ref<RunState<unknown>>,
@@ -222,6 +239,11 @@ const modelRuns: Record<string, Ref<RunState<unknown>>> = {
   tts: speech as Ref<RunState<unknown>>,
   transcribe: transcript as Ref<RunState<unknown>>,
   'translate-speech': translation as Ref<RunState<unknown>>,
+  detect: detection as Ref<RunState<unknown>>,
+  segment: segmentation as Ref<RunState<unknown>>,
+  pose: pose as Ref<RunState<unknown>>,
+  'instance-segment': instances as Ref<RunState<unknown>>,
+  'oriented-detect': oriented as Ref<RunState<unknown>>,
 }
 function shownState<T>(id: string, state: Ref<RunState<T>>) {
   return computed<RunState<T>>(() => {
@@ -241,6 +263,20 @@ const shownReference = shownState('reference', reference)
 const shownSpeech = shownState('tts', speech)
 const shownTranscript = shownState('transcribe', transcript)
 const shownTranslation = shownState('translate-speech', translation)
+const shownVisual = computed(() => {
+  const state = {
+    detect: detection,
+    segment: segmentation,
+    pose,
+    'instance-segment': instances,
+    'oriented-detect': oriented,
+  }[selectedId.value]
+  if (!state) return idleRun<VisualOperationResult>()
+  const viewed = history.viewed.value
+  return viewed?.kind === 'model' && viewed.pipeline === selectedId.value
+    ? { status: 'done' as const, result: viewed.result as VisualOperationResult, error: '' }
+    : state.value
+})
 const startedAt = ref<Record<string, number>>({})
 const activeRuns: Record<string, { runId?: number; cancelled: boolean }> = {}
 
@@ -291,6 +327,11 @@ const loadingLabel = computed(
       upscale: 'Upscaling image',
       transcribe: 'Transcribing audio',
       'translate-speech': 'Translating speech',
+      detect: 'Detecting objects',
+      segment: 'Segmenting scene',
+      pose: 'Estimating pose',
+      'instance-segment': 'Segmenting objects',
+      'oriented-detect': 'Detecting oriented objects',
     })[selectedId.value] ?? 'Analyzing image',
 )
 const scale = ref(2)
@@ -439,22 +480,6 @@ function onPick(event: Event) {
   input.value = ''
 }
 
-async function loadTargets() {
-  if (refreshing.value) return
-  refreshing.value = true
-  targetNotice.value = ''
-  try {
-    const found = await invoke<unknown>('screen_insight_targets')
-    targets.value = Array.isArray(found) ? (found as TargetOption[]) : []
-    if (!targets.value.length)
-      targetNotice.value = 'No capture targets are available. Check permissions and refresh.'
-  } catch (error) {
-    targets.value = []
-    targetNotice.value = friendly(String(error))
-  } finally {
-    refreshing.value = false
-  }
-}
 onMounted(loadTargets)
 
 watch(
@@ -560,9 +585,10 @@ async function runModel(id: string, pipeline: ModelPipeline) {
       requestCancel(id, run.runId)
       return
     }
+    const visualRole = VISUAL_ROLES[id as VisualOperation]
     const result = await invoke<unknown>(pipeline.command, {
       runId: run.runId,
-      input: { ...payload, model, ...extra },
+      input: { ...payload, model, ...extra, ...(visualRole ? { role: visualRole } : {}) },
     })
     if (!run.cancelled) {
       state.value = { status: 'done', result, error: '' }
@@ -684,6 +710,7 @@ onKeyStroke('Escape', () => {
       v-if="flowVisited"
       v-show="playgroundSection === 'flows'"
       :models="agent.backend.value?.models ?? []"
+      :visual-models="agent.settings.value?.visualAnalysisModels"
       :sidebar-open="sidebarOpen"
       :selected-flow="requestedFlow"
       :flow-request="flowRequest"
@@ -723,6 +750,7 @@ onKeyStroke('Escape', () => {
             menu
             icon="model"
             :options="headerOptions"
+            :disabled="isSharedVisualModel && !!agent.settings.value?.visualAnalysisModels"
           />
         </header>
         <div class="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-6 pb-4">
@@ -731,6 +759,12 @@ onKeyStroke('Escape', () => {
             <h1 class="m-0 font-sans text-rune-title">{{ selected.label }}</h1>
           </header>
           <p class="m-0 text-rune-body text-rune-text-2">{{ selected.summary }}</p>
+          <p
+            v-if="isSharedVisualModel && agent.settings.value?.visualAnalysisModels"
+            class="m-0 text-rune-caption text-rune-text-3"
+          >
+            Configure this model in Settings → Capture & privacy.
+          </p>
           <p
             v-if="modelPipeline?.audioOperation && !activeTaskModel"
             class="m-0 text-rune-caption text-rune-text-3"
@@ -1108,6 +1142,17 @@ onKeyStroke('Escape', () => {
             v-else-if="selectedId === 'depth' && shownDepth.status !== 'idle'"
             :state="shownDepth"
           />
+          <div
+            v-else-if="isVisualOperation && shownVisual.status !== 'idle'"
+            class="max-h-full w-full max-w-3xl overflow-auto p-6"
+          >
+            <p v-if="shownVisual.error" role="alert" class="text-error">{{ shownVisual.error }}</p>
+            <PlaygroundVisualResult
+              v-if="shownVisual.result"
+              :result="shownVisual.result.result"
+              :image="shownVisual.result.image"
+            />
+          </div>
           <PlaygroundCaption
             v-else-if="isCaption && shownCaption.status !== 'idle'"
             :state="shownCaption"

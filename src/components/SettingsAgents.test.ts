@@ -9,7 +9,7 @@ describe('execution mode', () => {
   it('selects one flow before a session and disables switching during execution', async () => {
     const draft = reactive({ externalAgent: false }) as Settings
     const running = ref(false)
-    const agent = { isRunning: running, bridge: ref(null) } as unknown as Agent
+    const agent = { isRunning: running, bridge: ref(null), backend: ref(null) } as unknown as Agent
     const wrapper = mount(SettingsAgents, {
       props: { agent, draft },
       global: { stubs: { SettingsConnectionModels: true } },

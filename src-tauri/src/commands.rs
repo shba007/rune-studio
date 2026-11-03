@@ -196,6 +196,35 @@ pub fn save_settings(
                 "Choose a model selected for the active connection.".into(),
             ));
         }
+        let old_visual = &current.visual_analysis_models;
+        let new_visual = &settings.visual_analysis_models;
+        let before = [
+            &old_visual.planner,
+            &old_visual.entities,
+            &old_visual.regions,
+            &old_visual.structure,
+            &old_visual.depth,
+            &old_visual.instances,
+            &old_visual.oriented,
+        ];
+        let after = [
+            &new_visual.planner,
+            &new_visual.entities,
+            &new_visual.regions,
+            &new_visual.structure,
+            &new_visual.depth,
+            &new_visual.instances,
+            &new_visual.oriented,
+        ];
+        if before
+            .iter()
+            .zip(after)
+            .any(|(old, new)| *old != new && !new.trim().is_empty() && !selected.contains(new))
+        {
+            return Err(AppError::Invalid(
+                "Choose a model selected for the active connection.".into(),
+            ));
+        }
     }
     let was_on = current.external_agent;
     validate_mode_change(

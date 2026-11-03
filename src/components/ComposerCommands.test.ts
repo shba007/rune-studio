@@ -55,8 +55,8 @@ it('suggests local commands and opens Goals using keyboard selection without pla
   wrapper.unmount()
 })
 
-it('opens the existing Visual Analysis flow through a filtered suggestion or exact command', async () => {
-  const { wrapper, analyzeScreen, submit } = show()
+it('opens screen Visual Analysis through a filtered suggestion or exact command', async () => {
+  const { wrapper, openPlayground, analyzeScreen, submit } = show()
   const field = wrapper.get('textarea')
   await field.setValue('#vis')
   expect(wrapper.findAll('[role="option"]')).toHaveLength(1)
@@ -67,6 +67,7 @@ it('opens the existing Visual Analysis flow through a filtered suggestion or exa
   await wrapper.get('[aria-label="Run command"]').trigger('click')
   await flushPromises()
   expect(analyzeScreen).toHaveBeenCalledTimes(2)
+  expect(openPlayground).not.toHaveBeenCalled()
   expect(submit).not.toHaveBeenCalled()
   wrapper.unmount()
 })

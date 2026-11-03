@@ -29,7 +29,7 @@ export function useAnalysis() {
   const capture = (
     question?: string,
     target?: { kind: string; id: number },
-    options?: { model?: string; resolution?: string },
+    options?: { model?: string; resolution?: string; sharedVisual?: boolean },
   ) =>
     target
       ? run('run_workflow', {
@@ -40,7 +40,7 @@ export function useAnalysis() {
   const captureImage = (
     question: string,
     image: string,
-    options?: { model?: string; resolution?: string },
+    options?: { model?: string; resolution?: string; sharedVisual?: boolean },
   ) => run('run_workflow', { workflowId: 'screen-insight', input: { image, question, ...options } })
   const ask = (question: string) => run('analyze_again', { question })
   const cancel = () => run('cancel_analysis')

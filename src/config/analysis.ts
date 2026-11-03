@@ -123,7 +123,54 @@ function readMonitor(value: unknown): MonitorInfo | null {
 export function readSnapshot(raw: unknown): AnalysisSnapshot {
   if (typeof raw !== 'object' || raw === null) return { ...EMPTY_SNAPSHOT }
   const value = raw as Record<string, unknown>
+  const maps =
+    value.visualMaps && typeof value.visualMaps === 'object'
+      ? (value.visualMaps as Record<string, unknown>)
+      : {}
+  const png = (item: unknown) =>
+    typeof item === 'string' && item.startsWith('data:image/png;base64,') ? item : null
   return {
+    visualMaps: {
+      segmentation: png(maps.segmentation),
+      depth: png(maps.depth),
+      classes: Array.isArray(maps.classes)
+        ? maps.classes.filter(
+            (item): item is { id: number; label: string } =>
+              !!item &&
+              Number.isInteger(item.id) &&
+              item.id >= 0 &&
+              item.id <= 255 &&
+              typeof item.label === 'string',
+          )
+        : [],
+      errors: Array.isArray(maps.errors)
+        ? maps.errors.filter((item): item is string => typeof item === 'string')
+        : [],
+      instances: Array.isArray(maps.instances)
+        ? maps.instances.filter(
+            (item): item is { mask: string; label: string } =>
+              !!item &&
+              typeof item.label === 'string' &&
+              typeof item.mask === 'string' &&
+              /^data:image\/png;base64,[a-z0-9+/=]+$/i.test(item.mask),
+          )
+        : [],
+      oriented: Array.isArray(maps.oriented)
+        ? maps.oriented.filter(
+            (item): item is { corners: [number, number][]; label: string } =>
+              !!item &&
+              typeof item.label === 'string' &&
+              Array.isArray(item.corners) &&
+              item.corners.length === 4 &&
+              item.corners.every(
+                (point: unknown) =>
+                  Array.isArray(point) &&
+                  point.length === 2 &&
+                  point.every((n) => typeof n === 'number' && Number.isFinite(n)),
+              ),
+          )
+        : [],
+    },
     screenshot:
       typeof value.screenshot === 'string' &&
       /^data:image\/(jpeg|png);base64,/.test(value.screenshot)

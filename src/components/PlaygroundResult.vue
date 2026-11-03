@@ -91,6 +91,7 @@ const pct = (value: number) => `${value / 10}%`
         alt="Captured frame"
         class="block max-h-[56vh] max-w-full object-contain"
       />
+      <slot name="annotations" />
       <div
         v-for="marker in markers"
         :key="marker.n"

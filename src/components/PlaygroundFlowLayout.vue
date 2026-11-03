@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import { useElementSize } from '@vueuse/core'
+import { computed, ref } from 'vue'
 import { FLOW_VIEWS } from '@/config/flows'
 import PlaygroundLoading from './PlaygroundLoading.vue'
 import PlaygroundSettingsPanel from './PlaygroundSettingsPanel.vue'
+import RuneButton from './RuneButton.vue'
 import RuneChoice from './RuneChoice.vue'
 
-defineProps<{
+const props = defineProps<{
   title: string
   settingsLabel: string
   resultLabel: string
@@ -17,10 +20,27 @@ defineProps<{
   stale?: boolean
   steps?: number
   graphWide?: boolean
+  graphWidth?: number
   appTop?: boolean
 }>()
 defineEmits<{ cancel: [] }>()
 const mode = defineModel<'app' | 'graph'>({ required: true })
+const viewport = ref<HTMLElement | null>(null)
+const { width: viewportWidth } = useElementSize(viewport)
+const zoomFactor = ref(1)
+const graphWidth = computed(() => props.graphWidth ?? (props.graphWide ? 1100 : 440))
+const fitZoom = computed(() =>
+  viewportWidth.value > 48 ? Math.min(1, (viewportWidth.value - 48) / graphWidth.value) : 1,
+)
+const zoom = computed(() => Math.max(0.1, Math.min(2, fitZoom.value * zoomFactor.value)))
+function changeZoom(multiplier: number) {
+  zoomFactor.value = Math.max(0.1, Math.min(2, zoom.value * multiplier)) / fitZoom.value
+}
+function onWheel(event: WheelEvent) {
+  if (mode.value !== 'graph' || !event.ctrlKey) return
+  event.preventDefault()
+  changeZoom(event.deltaY < 0 ? 1.1 : 1 / 1.1)
+}
 </script>
 <template>
   <div class="flex min-h-0 min-w-0 flex-1">
@@ -40,7 +60,9 @@ const mode = defineModel<'app' | 'graph'>({ required: true })
         ><RuneChoice v-model="mode" label="Flow view" :options="FLOW_VIEWS" />
       </header>
       <div
+        ref="viewport"
         class="flex min-h-0 flex-1 flex-col items-center overflow-auto bg-[radial-gradient(circle,rgb(255_255_255/0.16)_1px,transparent_1.5px)] bg-size-[24px_24px] px-6 py-8"
+        @wheel="onWheel"
       >
         <p
           v-if="stale && !running"
@@ -50,21 +72,25 @@ const mode = defineModel<'app' | 'graph'>({ required: true })
         </p>
         <div
           v-if="mode === 'graph'"
-          class="flex w-full shrink-0 flex-col items-center"
-          :class="graphWide ? 'max-w-[1100px]' : 'max-w-[440px]'"
-          :data-testid="graphTestId"
+          class="flex w-max min-w-full shrink-0 justify-center self-start"
         >
-          <div class="mb-10 flex w-full items-end justify-between gap-3">
-            <div>
-              <p class="m-0 text-rune-caption text-rune-text-3 uppercase">Flow overview</p>
-              <p class="mt-1 mb-0 text-rune-body text-rune-text-2">{{ title }}</p>
+          <div
+            class="flex shrink-0 flex-col items-center"
+            :style="{ width: `${graphWidth}px`, zoom }"
+            :data-testid="graphTestId"
+          >
+            <div class="mb-10 flex w-full items-end justify-between gap-3">
+              <div>
+                <p class="m-0 text-rune-caption text-rune-text-3 uppercase">Flow overview</p>
+                <p class="mt-1 mb-0 text-rune-body text-rune-text-2">{{ title }}</p>
+              </div>
+              <span
+                class="rounded-full border border-white/10 px-3 py-1 text-rune-caption text-rune-text-3"
+                >{{ steps ?? 3 }} steps · Read only</span
+              >
             </div>
-            <span
-              class="rounded-full border border-white/10 px-3 py-1 text-rune-caption text-rune-text-3"
-              >{{ steps ?? 3 }} steps · Read only</span
-            >
+            <slot name="graph" />
           </div>
-          <slot name="graph" />
         </div>
         <div
           v-else
@@ -85,6 +111,21 @@ const mode = defineModel<'app' | 'graph'>({ required: true })
         <p v-if="mode === 'graph' && error" role="alert" class="text-center text-error">
           {{ error }}
         </p>
+      </div>
+      <div
+        v-if="mode === 'graph'"
+        class="absolute right-4 bottom-4 z-20 flex items-center gap-1 rounded-rune-tile border border-white/10 bg-rune-sunken p-1 shadow-xl"
+        aria-label="Graph zoom"
+      >
+        <RuneButton variant="ghost" size="sm" aria-label="Zoom out" @click="changeZoom(1 / 1.2)">
+          −
+        </RuneButton>
+        <RuneButton variant="ghost" size="sm" aria-label="Fit graph" @click="zoomFactor = 1">
+          {{ Math.round(zoom * 100) }}%
+        </RuneButton>
+        <RuneButton variant="ghost" size="sm" aria-label="Zoom in" @click="changeZoom(1.2)">
+          +
+        </RuneButton>
       </div>
       <div
         v-if="mode === 'graph' && running"

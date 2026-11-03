@@ -196,7 +196,7 @@ onBeforeUnmount(() => {
             </div>
             <div v-else-if="section === 'capture'" class="flex flex-col gap-8">
               <SettingsGeneral :agent="agent" :draft="draft" view="capture" />
-              <SettingsVisualAnalysis :draft="draft" />
+              <SettingsVisualAnalysis :draft="draft" :models="agent.backend.value?.models ?? []" />
               <SettingsGoalContext :draft="draft" />
             </div>
             <SettingsGeneral

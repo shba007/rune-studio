@@ -8,6 +8,7 @@ import type {
   EditResult,
   SpeechResult,
   UpscaleResult,
+  VisualOperationResult,
 } from '@/config/playground'
 
 export type ModelHistoryResult =
@@ -17,6 +18,7 @@ export type ModelHistoryResult =
   | EditResult
   | SpeechResult
   | UpscaleResult
+  | VisualOperationResult
   | { text: string; model: string; elapsedMs: number }
 export type PlaygroundRun =
   | { kind: 'insight'; id: string; pipeline: string; snapshot: AnalysisSnapshot; details: string[] }

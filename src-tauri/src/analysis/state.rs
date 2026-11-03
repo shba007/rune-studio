@@ -5,6 +5,35 @@ use serde::Serialize;
 use super::report::{Finding, Status};
 use crate::{exec::CancelToken, model::coords::Monitor, safety::foreground::WindowId};
 
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VisualMaps {
+    pub segmentation: Option<String>,
+    pub classes: Vec<VisualClass>,
+    pub depth: Option<String>,
+    pub errors: Vec<String>,
+    pub instances: Vec<VisualInstance>,
+    pub oriented: Vec<VisualOriented>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct VisualInstance {
+    pub mask: String,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct VisualOriented {
+    pub corners: [[f64; 2]; 4],
+    pub label: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct VisualClass {
+    pub id: u8,
+    pub label: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct StoredFrame {
     pub jpeg: Arc<Vec<u8>>,
@@ -15,6 +44,7 @@ pub struct StoredFrame {
 }
 
 pub struct AnalysisState {
+    pub visual_maps: VisualMaps,
     pub status: Status,
     pub id: String,
     pub question: String,
@@ -34,6 +64,7 @@ pub struct AnalysisState {
 impl Default for AnalysisState {
     fn default() -> Self {
         Self {
+            visual_maps: VisualMaps::default(),
             status: Status::Idle,
             id: String::new(),
             question: String::new(),
@@ -55,6 +86,7 @@ impl Default for AnalysisState {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
+    pub visual_maps: VisualMaps,
     pub visible_groups: crate::settings::VisualAnalysis,
     pub screenshot: Option<String>,
     pub status: Status,
@@ -78,6 +110,7 @@ impl AnalysisState {
     }
     pub fn snapshot(&self) -> Snapshot {
         Snapshot {
+            visual_maps: self.visual_maps.clone(),
             visible_groups: crate::settings::VisualAnalysis::default(),
             screenshot: if self.id.starts_with("insight-") {
                 self.frame.as_ref().map(|frame| {
@@ -107,6 +140,7 @@ impl AnalysisState {
     }
 
     pub fn close(&mut self) {
+        self.visual_maps = VisualMaps::default();
         self.cancel.cancel();
         self.status = Status::Idle;
         self.id.clear();
@@ -120,6 +154,7 @@ impl AnalysisState {
     }
 
     pub fn begin(&mut self, question: &str, fresh: bool) {
+        self.visual_maps = VisualMaps::default();
         self.status = if fresh {
             Status::Capturing
         } else {
@@ -176,6 +211,16 @@ pub fn may_follow(from: Status, to: Status) -> bool {
 mod tests {
     use super::*;
     use Status::*;
+    #[test]
+    fn visual_maps_are_cleared_on_new_capture_and_close() {
+        let mut state = AnalysisState::default();
+        state.visual_maps.depth = Some("depth".into());
+        state.begin("next", true);
+        assert!(state.visual_maps.depth.is_none());
+        state.visual_maps.segmentation = Some("map".into());
+        state.close();
+        assert!(state.visual_maps.segmentation.is_none());
+    }
     #[test]
     fn superseding_or_closing_a_workflow_rejects_its_late_output() {
         let mut state = AnalysisState::default();

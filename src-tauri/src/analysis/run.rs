@@ -33,10 +33,15 @@ fn overlay_wanted(snapshot: &super::state::Snapshot) -> bool {
     {
         return false;
     }
-    let visible_geometry = snapshot
-        .findings
-        .iter()
-        .any(|finding| finding.has_geometry() && snapshot.visible_groups.shows(finding.group));
+    let visible_geometry =
+        (snapshot.visible_groups.regions && snapshot.visual_maps.segmentation.is_some())
+            || (snapshot.visible_groups.depth && snapshot.visual_maps.depth.is_some())
+            || (snapshot.visible_groups.entities
+                && (!snapshot.visual_maps.instances.is_empty()
+                    || !snapshot.visual_maps.oriented.is_empty()))
+            || snapshot.findings.iter().any(|finding| {
+                finding.has_geometry() && snapshot.visible_groups.shows(finding.group)
+            });
     wants_overlay(snapshot.status, visible_geometry, snapshot.stale)
 }
 
@@ -563,10 +568,14 @@ fn watch_for_change(app: &AppHandle, id: String) {
         let state = app.state::<AppState>();
         let analysis = state.analysis.locked();
         analysis.status == Status::Done
-            && analysis
-                .findings
-                .iter()
-                .any(|finding| finding.has_geometry())
+            && (analysis.visual_maps.segmentation.is_some()
+                || analysis.visual_maps.depth.is_some()
+                || !analysis.visual_maps.instances.is_empty()
+                || !analysis.visual_maps.oriented.is_empty()
+                || analysis
+                    .findings
+                    .iter()
+                    .any(|finding| finding.has_geometry()))
     };
     if !has_boxes || id.is_empty() {
         return;
@@ -639,6 +648,7 @@ pub(crate) fn finish_workflow(
                 }
                 analysis.frame = output.frame;
                 analysis.created_utc = output.captured_utc;
+                analysis.visual_maps = output.visual_maps;
                 Ended::Done {
                     answer: output.analysis.parsed.answer,
                     findings: output.analysis.parsed.findings,
@@ -692,6 +702,18 @@ mod model_tests {
             snapshot.status = status;
             assert!(!overlay_wanted(&snapshot));
         }
+    }
+    #[test]
+    fn maps_keep_the_overlay_visible_only_when_enabled_and_fresh() {
+        let mut snapshot = super::super::state::AnalysisState::default().snapshot();
+        snapshot.status = Status::Done;
+        snapshot.visual_maps.depth = Some("data:image/png;base64,AA==".into());
+        assert!(overlay_wanted(&snapshot));
+        snapshot.visible_groups.depth = false;
+        assert!(!overlay_wanted(&snapshot));
+        snapshot.visible_groups.depth = true;
+        snapshot.stale = true;
+        assert!(!overlay_wanted(&snapshot));
     }
     use std::io::{BufRead, Read, Write};
 

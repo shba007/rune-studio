@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, type Component } from 'vue'
 import { FLOWS } from '@/config/flows'
-import type { ModelCapabilities } from '@/types/protocol'
+import type { ModelCapabilities, VisualAnalysisModels } from '@/types/protocol'
 import AppIcon from './AppIcon.vue'
 import PlaygroundImageVoiceFlow from './PlaygroundImageVoiceFlow.vue'
 import PlaygroundVisualAnalysisFlow from './PlaygroundVisualAnalysisFlow.vue'
@@ -12,6 +12,7 @@ const props = defineProps<{
   sidebarOpen: boolean
   selectedFlow?: string
   flowRequest?: number
+  visualModels?: VisualAnalysisModels
 }>()
 const selected = ref(
   FLOWS.some((flow) => flow.id === props.selectedFlow) ? props.selectedFlow! : FLOWS[0]!.id,
@@ -48,7 +49,12 @@ const flowComponents: Record<string, Component> = {
       </RuneNavItem>
     </nav>
     <KeepAlive>
-      <component :is="flowComponents[selected]" :key="selected" :models="models" />
+      <component
+        :is="flowComponents[selected]"
+        :key="selected"
+        :models="models"
+        :visual-models="visualModels"
+      />
     </KeepAlive>
   </div>
 </template>

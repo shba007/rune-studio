@@ -1,51 +1,75 @@
 <script setup lang="ts">
 import { invoke } from '@tauri-apps/api/core'
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useAnalysis } from '@/composables/useAnalysis'
-import { readSnapshot } from '@/config/analysis'
+import { useCaptureTargets } from '@/composables/useCaptureTargets'
 import { friendly } from '@/config/errors'
-import { taskModelIds, type DepthResult, type DepthState } from '@/config/playground'
-import type { AnalysisSnapshot, ModelCapabilities } from '@/types/protocol'
+import {
+  taskModelIds,
+  visualOperationModels,
+  type DepthResult,
+  type DepthState,
+  type VisualOperation,
+  type VisualResult,
+} from '@/config/playground'
+import type { ModelCapabilities, VisualAnalysisModels } from '@/types/protocol'
 import CaptureTargetPicker from './CaptureTargetPicker.vue'
 import PlaygroundDepth from './PlaygroundDepth.vue'
 import PlaygroundFlowLayout from './PlaygroundFlowLayout.vue'
 import PlaygroundFlowNode from './PlaygroundFlowNode.vue'
 import PlaygroundFlowConnection from './PlaygroundFlowConnection.vue'
 import PlaygroundImagePicker from './PlaygroundImagePicker.vue'
-import PlaygroundResult from './PlaygroundResult.vue'
+import PlaygroundVisualResult from './PlaygroundVisualResult.vue'
 import RuneButton from './RuneButton.vue'
 import RuneChoice from './RuneChoice.vue'
 import RuneSwitch from './RuneSwitch.vue'
 
-const props = defineProps<{ models: ModelCapabilities[] }>()
-type RoleId = 'entities' | 'regions' | 'structure' | 'depth'
-type QuestionRoleId = Exclude<RoleId, 'depth'>
+const props = defineProps<{ models: ModelCapabilities[]; visualModels?: VisualAnalysisModels }>()
+type RoleId = 'entities' | 'regions' | 'structure' | 'depth' | 'instances' | 'oriented'
+type QuestionRoleId = 'entities' | 'regions' | 'structure'
 type RoleState = {
   status: 'waiting' | 'running' | 'done' | 'error' | 'cancelled'
   error: string
-  snapshot: AnalysisSnapshot | null
+  result: VisualResult | null
   depth: DepthResult | null
-}
-interface TargetOption {
-  target: { kind: string; id: number }
-  label: string
-  primary?: boolean
 }
 const definitions: { id: RoleId; label: string }[] = [
   { id: 'entities', label: 'Entities' },
+  { id: 'instances', label: 'Object masks' },
+  { id: 'oriented', label: 'Oriented objects' },
   { id: 'regions', label: 'Regions & Context' },
   { id: 'structure', label: 'Structure & Landmarks' },
   { id: 'depth', label: 'Depth' },
 ]
-const blankRole = (): RoleState => ({ status: 'waiting', error: '', snapshot: null, depth: null })
+const operationLabels: Record<RoleId, string> = {
+  entities: 'Detect objects',
+  instances: 'Segment objects',
+  oriented: 'Detect oriented objects',
+  regions: 'Segment scene',
+  structure: 'Pose',
+  depth: 'Depth',
+}
+const graphLabels: Record<RoleId, string> = {
+  entities: 'Detection',
+  instances: 'Instance segmentation',
+  oriented: 'Oriented detection',
+  regions: 'Segmentation',
+  structure: 'Pose',
+  depth: 'Depth',
+}
+const blankRole = (): RoleState => ({ status: 'waiting', error: '', result: null, depth: null })
 const roles = ref<Record<RoleId, { enabled: boolean; model: string }>>({
   entities: { enabled: true, model: '' },
+  instances: { enabled: false, model: '' },
+  oriented: { enabled: false, model: '' },
   regions: { enabled: true, model: '' },
   structure: { enabled: true, model: '' },
   depth: { enabled: true, model: '' },
 })
 const results = ref<Record<RoleId, RoleState>>({
   entities: blankRole(),
+  instances: blankRole(),
+  oriented: blankRole(),
   regions: blankRole(),
   structure: blankRole(),
   depth: blankRole(),
@@ -55,10 +79,20 @@ const visionModels = computed(() =>
     .filter((model) => model.imageIn === 'yes' && model.toolCalls === 'yes')
     .map((model) => model.id),
 )
-const depthModels = computed(() => taskModelIds(props.models, 'image-to-depth'))
+const roleModels = (role: RoleId) => {
+  if (role === 'depth') return taskModelIds(props.models, 'image-to-depth')
+  const operations: Record<Exclude<RoleId, 'depth'>, VisualOperation> = {
+    entities: 'detect',
+    instances: 'instance-segment',
+    oriented: 'oriented-detect',
+    regions: 'segment',
+    structure: 'pose',
+  }
+  return visualOperationModels(props.models, operations[role])
+}
 const options = (role: RoleId) => [
   { value: '', label: 'Select a model', disabled: true },
-  ...(role === 'depth' ? depthModels.value : visionModels.value).map((id) => ({
+  ...roleModels(role).map((id) => ({
     value: id,
     label: id,
   })),
@@ -74,8 +108,23 @@ const sources = [
 ]
 const mode = ref<'app' | 'graph'>('app')
 const plannerModel = ref('')
+watch(
+  () => props.visualModels,
+  (settings) => {
+    if (!settings) return
+    plannerModel.value = settings.planner
+    for (const { id } of definitions) {
+      roles.value[id] = { enabled: Boolean(settings[id]), model: settings[id] ?? '' }
+    }
+  },
+  { immediate: true, deep: true },
+)
 const plannerStatus = ref<'waiting' | 'running' | 'done' | 'error' | 'cancelled'>('waiting')
 const plannerQuestions = ref<Record<QuestionRoleId, string> | null>(null)
+const suggestedQuestion = (role: RoleId) =>
+  role === 'entities' || role === 'regions' || role === 'structure'
+    ? (plannerQuestions.value?.[role] ?? '')
+    : ''
 const runRoles = ref<RoleId[]>([])
 const selectedResult = ref<RoleId>('entities')
 function navigateResults(event: KeyboardEvent) {
@@ -96,10 +145,13 @@ function navigateResults(event: KeyboardEvent) {
     (list?.querySelector('[role="tab"][aria-selected="true"]') as HTMLElement | null)?.focus(),
   )
 }
-const targets = ref<TargetOption[]>([])
+const {
+  targets,
+  refreshing,
+  notice: targetError,
+  load,
+} = useCaptureTargets('No capture targets available. Check screen permissions and refresh.')
 const target = ref('')
-const refreshing = ref(false)
-const targetError = ref('')
 const runError = ref('')
 const running = ref(false)
 const started = ref(0)
@@ -128,9 +180,7 @@ const canRun = computed(
     enabledRoles.value.length > 0 &&
     visionModels.value.includes(plannerModel.value) &&
     (source.value === 'image' ? !!image.value : !!selectedTarget.value) &&
-    enabledRoles.value.every(({ id }) =>
-      (id === 'depth' ? depthModels.value : visionModels.value).includes(roles.value[id].model),
-    ),
+    enabledRoles.value.every(({ id }) => roleModels(id).includes(roles.value[id].model)),
 )
 const loadingLabel = computed(() =>
   plannerStatus.value === 'running' ? 'Planning questions' : 'Analyzing branches',
@@ -138,26 +188,16 @@ const loadingLabel = computed(() =>
 let active: { cancelled: boolean; ids: Set<number> } | null = null
 
 async function loadTargets() {
-  if (refreshing.value) return
-  refreshing.value = true
-  targetError.value = ''
-  try {
-    const result = await invoke<unknown>('screen_insight_targets')
-    targets.value = Array.isArray(result) ? result : []
+  const result = await load()
+  if (result === 'loaded') {
     if (!targets.value.some((item) => JSON.stringify(item.target) === target.value))
       target.value = ''
     if (!target.value) {
       const primary = targets.value.find((item) => item.primary && item.target.kind === 'screen')
       if (primary) target.value = JSON.stringify(primary.target)
     }
-    if (!targets.value.length)
-      targetError.value = 'No capture targets available. Check screen permissions and refresh.'
-  } catch (error) {
-    targets.value = []
+  } else if (result === 'failed') {
     target.value = ''
-    targetError.value = friendly(String(error))
-  } finally {
-    refreshing.value = false
   }
 }
 onMounted(loadTargets)
@@ -187,6 +227,8 @@ async function run() {
   plannerStatus.value = 'running'
   results.value = {
     entities: blankRole(),
+    instances: blankRole(),
+    oriented: blankRole(),
     regions: blankRole(),
     structure: blankRole(),
     depth: blankRole(),
@@ -239,33 +281,16 @@ async function run() {
             }
             state.depth = depth
           } else {
-            const result = await call<{
-              answer: string
-              findings: unknown[]
-              model: string
-              boxesRejected: number
-            }>('playground_visual_branch', {
+            const result = await call<{ result: VisualResult }>('playground_visual_branch', {
               image: plan.image,
               model: role.model,
-              question: plan.questions[role.id],
+              role: role.id,
             })
             if (request.cancelled) {
               state.status = 'cancelled'
               return
             }
-            state.snapshot = readSnapshot({
-              id: 'visual-' + role.id,
-              status: 'done',
-              screenshot: plan.image,
-              answer: result.answer,
-              findings: result.findings,
-              model: result.model,
-              question: plan.questions[role.id],
-              boxesRejected: result.boxesRejected,
-            })
-            state.snapshot.findings = state.snapshot.findings.filter(
-              (finding) => finding.group === role.id,
-            )
+            state.result = result.result
           }
           state.status = request.cancelled ? 'cancelled' : 'done'
         } catch (error) {
@@ -320,6 +345,7 @@ const depthState = (state: RoleState): DepthState => ({
     settings-label="Visual Analysis settings"
     result-label="Visual Analysis result"
     graph-test-id="visual-flow-graph"
+    :graph-width="Math.max(440, enabledRoles.length * 336)"
     app-test-id="visual-flow-app"
     :running="running"
     :started="started"
@@ -385,13 +411,17 @@ const depthState = (state: RoleState): DepthState => ({
         <RuneChoice
           v-model="plannerModel"
           label="Planning model"
-          :options="options('entities')"
-          :disabled="running"
+          :options="[
+            { value: '', label: 'Select a model', disabled: true },
+            ...visionModels.map((id) => ({ value: id, label: id })),
+          ]"
+          :disabled="running || !!visualModels"
           menu
           floating
         />
         <p class="m-0 text-rune-caption text-rune-text-3">
-          The planning model creates questions for the text-based analysis branches.
+          {{ visualModels ? 'Configure models in Settings → Capture & privacy. ' : '' }}The planning
+          model suggests questions for context. The image models do not answer them.
         </p>
       </div>
       <div v-for="role in definitions" :key="role.id" class="flex flex-col gap-2">
@@ -400,7 +430,7 @@ const depthState = (state: RoleState): DepthState => ({
           ><RuneSwitch
             v-model="roles[role.id].enabled"
             :label="`Enable ${role.label}`"
-            :disabled="running"
+            :disabled="running || !!visualModels"
           />
         </div>
         <RuneChoice
@@ -408,7 +438,7 @@ const depthState = (state: RoleState): DepthState => ({
           v-model="roles[role.id].model"
           :label="`${role.label} model`"
           :options="options(role.id)"
-          :disabled="running"
+          :disabled="running || !!visualModels"
           menu
           floating
         />
@@ -416,15 +446,23 @@ const depthState = (state: RoleState): DepthState => ({
           v-if="roles[role.id].enabled && options(role.id).length === 1"
           class="m-0 text-rune-caption text-rune-text-3"
         >
-          {{
-            role.id === 'depth'
-              ? 'No depth model available.'
-              : 'No model advertises image input and tool calling.'
-          }}
+          {{ 'No compatible model is available for this branch.' }}
+        </p>
+        <p
+          v-else-if="
+            roles[role.id].enabled &&
+            roles[role.id].model &&
+            !roleModels(role.id).includes(roles[role.id].model)
+          "
+          role="alert"
+          class="m-0 text-rune-caption text-error"
+        >
+          The configured model is unavailable or incompatible. Choose a compatible model in Settings
+          → Capture & privacy.
         </p>
       </div>
       <p class="m-0 text-rune-caption text-rune-text-3">
-        Depth produces a relative depth map without a question.
+        Detection, segmentation, pose and depth process the image without a question.
       </p>
       <p v-if="!enabledRoles.length" class="m-0 text-rune-caption text-rune-text-3">
         Enable at least one role.
@@ -483,15 +521,16 @@ const depthState = (state: RoleState): DepthState => ({
       </PlaygroundFlowNode>
       <PlaygroundFlowConnection label="Questions + image" tone="violet" />
       <div
-        class="w-full overflow-x-auto pb-2"
+        class="w-full min-w-0 overflow-x-auto pb-2"
         aria-label="Parallel analysis branches"
         data-testid="visual-parallel-branches"
+        tabindex="0"
       >
         <div class="mx-auto flex w-max min-w-full items-stretch justify-center">
           <div
             v-for="(role, index) in enabledRoles"
             :key="role.id"
-            class="relative flex w-68 shrink-0 flex-col items-center px-2"
+            class="relative flex w-[336px] shrink-0 flex-col items-center px-2"
           >
             <span
               v-if="enabledRoles.length > 1"
@@ -512,7 +551,7 @@ const depthState = (state: RoleState): DepthState => ({
             <PlaygroundFlowNode
               :step="String(index + 3).padStart(2, '0')"
               kind="Operation"
-              :title="role.label"
+              :title="graphLabels[role.id]"
               :status="roleStatus(role.id)"
               :icon="role.id === 'depth' ? 'depth' : 'scan'"
               tone="violet"
@@ -522,18 +561,21 @@ const depthState = (state: RoleState): DepthState => ({
               :data-testid="'visual-node-' + role.id"
             >
               <div class="mt-4 rounded-rune-tile border border-white/5 bg-black/20 p-3">
+                <p class="m-0 text-rune-caption text-rune-text-3">{{ operationLabels[role.id] }}</p>
                 <p class="m-0 text-rune-caption text-rune-text-3">Model</p>
                 <p class="mt-1 mb-0 break-words text-rune-body">
                   {{ roles[role.id].model || 'Select a model' }}
                 </p>
               </div>
               <div
-                v-if="plannerQuestions && role.id !== 'depth'"
+                v-if="suggestedQuestion(role.id)"
                 class="mt-3 rounded-rune-tile bg-rune-surface p-3"
               >
-                <p class="m-0 text-rune-caption text-rune-text-3">Question</p>
+                <p class="m-0 text-rune-caption text-rune-text-3">
+                  Suggested question (context only)
+                </p>
                 <p class="mt-1 mb-0 break-words text-rune-caption text-rune-text-2">
-                  {{ plannerQuestions[role.id] }}
+                  {{ suggestedQuestion(role.id) }}
                 </p>
               </div>
               <p
@@ -631,12 +673,14 @@ const depthState = (state: RoleState): DepthState => ({
             <span class="text-rune-caption text-rune-text-3">{{ roleStatus(selectedResult) }}</span>
           </header>
           <div
-            v-if="plannerQuestions && selectedResult !== 'depth'"
+            v-if="suggestedQuestion(selectedResult)"
             class="mt-4 rounded-rune-tile bg-rune-surface p-3"
           >
-            <p class="m-0 text-rune-heading text-rune-text-3 uppercase">Question</p>
+            <p class="m-0 text-rune-heading text-rune-text-3 uppercase">
+              Suggested question (context only)
+            </p>
             <p class="mt-1 mb-0 break-words text-rune-body">
-              {{ plannerQuestions[selectedResult] }}
+              {{ suggestedQuestion(selectedResult) }}
             </p>
           </div>
           <p
@@ -654,11 +698,10 @@ const depthState = (state: RoleState): DepthState => ({
           <p v-if="results[selectedResult].error" role="alert" class="break-words text-error">
             {{ results[selectedResult].error }}
           </p>
-          <PlaygroundResult
-            v-if="results[selectedResult].snapshot"
-            :key="selectedResult"
-            :snapshot="results[selectedResult].snapshot!"
-            :live="false"
+          <PlaygroundVisualResult
+            v-if="results[selectedResult].result"
+            :result="results[selectedResult].result!"
+            :image="capturedImage"
           />
           <PlaygroundDepth
             v-if="results[selectedResult].depth"

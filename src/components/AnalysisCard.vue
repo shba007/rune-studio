@@ -86,13 +86,15 @@ async function submit(question = '') {
       return false
     }
     lastImageRun.value = { image: props.image, question: question.trim() }
-    void props.analysis.captureImage(lastImageRun.value.question, lastImageRun.value.image)
+    void props.analysis.captureImage(lastImageRun.value.question, lastImageRun.value.image, {
+      sharedVisual: true,
+    })
     return true
   }
   lastImageRun.value = null
   const option = targets.value.find((item) => JSON.stringify(item.target) === selectedTarget.value)
   if (option) {
-    void props.analysis.capture(question.trim(), option.target)
+    void props.analysis.capture(question.trim(), option.target, { sharedVisual: true })
     return true
   }
   if (snapshot.value.id.startsWith('insight-') || !snapshot.value.monitor) {
@@ -112,7 +114,9 @@ async function close() {
 function retry() {
   if (busy.value) return
   if (lastImageRun.value) {
-    void props.analysis.captureImage(lastImageRun.value.question, lastImageRun.value.image)
+    void props.analysis.captureImage(lastImageRun.value.question, lastImageRun.value.image, {
+      sharedVisual: true,
+    })
     return
   }
   if (props.imageMode) {
@@ -125,7 +129,7 @@ function retry() {
   }
   const failedQuestion = snapshot.value.question
   const option = targets.value.find((item) => JSON.stringify(item.target) === selectedTarget.value)
-  if (option) void props.analysis.capture(failedQuestion, option.target)
+  if (option) void props.analysis.capture(failedQuestion, option.target, { sharedVisual: true })
   else if (snapshot.value.monitor) void props.analysis.ask(failedQuestion)
 }
 
@@ -184,6 +188,7 @@ onKeyStroke('Escape', (event) => {
         v-model="selectedTarget"
         :options="targets"
         :refreshing="refreshing"
+        inline-menu
         @refresh="loadTargets"
       />
       <p
@@ -224,6 +229,37 @@ onKeyStroke('Escape', (event) => {
       </p>
     </section>
     <AnalysisAnswer v-if="showAnswer" :text="snapshot.answer" :waiting="waiting" />
+
+    <section
+      v-if="
+        snapshot.visualMaps?.classes.length ||
+        snapshot.visualMaps?.depth ||
+        snapshot.visualMaps?.instances?.length ||
+        snapshot.visualMaps?.oriented?.length ||
+        snapshot.visualMaps?.errors.length
+      "
+      class="rounded-rune-panel bg-rune-surface p-3 text-rune-caption text-rune-text-2"
+      aria-label="Visual Analysis maps"
+    >
+      <p v-if="snapshot.visualMaps?.depth" class="m-0">Depth map is shown on the screen overlay.</p>
+      <p v-if="snapshot.visualMaps?.instances?.length" class="mt-1 mb-0">
+        Object masks on overlay: {{ snapshot.visualMaps.instances.length }}
+      </p>
+      <p v-if="snapshot.visualMaps?.oriented?.length" class="mt-1 mb-0">
+        Oriented objects on overlay: {{ snapshot.visualMaps.oriented.length }}
+      </p>
+      <p v-if="snapshot.visualMaps?.classes.length" class="mt-1 mb-0">
+        Segmentation: {{ snapshot.visualMaps.classes.map((item) => item.label).join(', ') }}
+      </p>
+      <p
+        v-for="error in snapshot.visualMaps?.errors"
+        :key="error"
+        role="alert"
+        class="mt-1 mb-0 text-error"
+      >
+        {{ error }}
+      </p>
+    </section>
 
     <ol
       v-if="snapshot.findings.length && !busy"

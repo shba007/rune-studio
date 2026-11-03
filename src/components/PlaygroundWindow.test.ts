@@ -27,6 +27,9 @@ let pendingStart: Promise<number> | null = null
 let translationReply: Promise<unknown> | null = null
 let translationError = ''
 let noVerifiedAudio = false
+let sharedVisualModels:
+  | { planner: string; entities: string; regions: string; structure: string; depth: string }
+  | undefined
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: async (command: string, args?: unknown) => {
     void invoked(command, args)
@@ -42,7 +45,10 @@ vi.mock('@tauri-apps/api/core', () => ({
         },
       }
     if (command === 'playground_visual_branch')
-      return { answer: 'A red square.', findings: [], model: 'vision-a' }
+      return {
+        image: 'data:image/png;base64,AA==',
+        result: { data: [{ label: 'person', confidence: 0.9 }], model: 'detect-a' },
+      }
     if (command === 'playground_speech' && pendingSpeech) return pendingSpeech
     if (command === 'playground_translate_speech') {
       if (translationError) throw new Error(translationError)
@@ -155,12 +161,39 @@ vi.mock('@/composables/useAnalysis', () => ({
 }))
 vi.mock('@/composables/useAgent', () => ({
   useAgent: () => ({
-    settings: ref({ models: { analysis: 'vision-a' }, modelImageResolution: '1280' }),
+    settings: ref({
+      models: { analysis: 'vision-a' },
+      modelImageResolution: '1280',
+      visualAnalysisModels: sharedVisualModels,
+    }),
     backend: ref({
       models: noVerifiedAudio
         ? [{ id: 'unverified-asr', imageIn: 'no', toolCalls: 'no', tasks: ['audio-to-text'] }]
         : [
             { id: 'vision-a', imageIn: 'yes', toolCalls: 'yes', tasks: ['text-image-to-text'] },
+            { id: 'detect-a', imageIn: 'no', toolCalls: 'no', tasks: ['image-to-detection'] },
+            {
+              id: 'pose-a',
+              imageIn: 'no',
+              toolCalls: 'no',
+              tasks: ['image-to-detection'],
+              rawCapabilities: ['Pose Estimation'],
+            },
+            { id: 'segment-a', imageIn: 'no', toolCalls: 'no', tasks: ['image-to-segmentation'] },
+            {
+              id: 'instances-a',
+              imageIn: 'no',
+              toolCalls: 'no',
+              tasks: ['image-to-detection'],
+              rawCapabilities: ['Instance Segmentation'],
+            },
+            {
+              id: 'oriented-a',
+              imageIn: 'no',
+              toolCalls: 'no',
+              tasks: ['image-to-detection'],
+              rawCapabilities: ['Oriented Bounding Boxes'],
+            },
             { id: 'vision-no-tools', imageIn: 'yes', toolCalls: 'no', tasks: ['image-to-text'] },
             { id: 'text-only', imageIn: 'no', toolCalls: 'yes' },
             { id: 'depth-s', imageIn: 'no', toolCalls: 'no', tasks: ['image-to-depth'] },
@@ -208,6 +241,7 @@ beforeEach(() => {
   translationReply = null
   translationError = ''
   noVerifiedAudio = false
+  sharedVisualModels = undefined
   invoked.mockClear()
   snapshot.value = { ...EMPTY_SNAPSHOT }
   capture.mockClear()
@@ -218,6 +252,75 @@ beforeEach(() => {
 })
 
 describe('playground window', () => {
+  it('uses the shared model for visual Operations', async () => {
+    sharedVisualModels = {
+      planner: 'vision-a',
+      entities: 'detect-a',
+      regions: '',
+      structure: '',
+      depth: '',
+    }
+    const wrapper = mount(PlaygroundWindow, { global: { stubs: { teleport: true } } })
+    await flushPromises()
+    await wrapper.get('[data-testid="pipeline-detect"]').trigger('click')
+    const picker = wrapper.get('button[aria-label="Detection model"]')
+    expect(picker.text()).toContain('detect-a')
+    expect(picker.attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-testid="playground-run"]').trigger('click')
+    await flushPromises()
+    expect(invoked).toHaveBeenCalledWith('playground_visual_branch', {
+      runId: 42,
+      input: { target: { kind: 'screen', id: 1 }, model: 'detect-a', role: 'entities' },
+    })
+    wrapper.unmount()
+  })
+  it.each([
+    ['detect', 'entities', 'detect-a'],
+    ['segment', 'regions', 'segment-a'],
+    ['pose', 'structure', 'pose-a'],
+    ['instance-segment', 'instances', 'instances-a'],
+    ['oriented-detect', 'oriented', 'oriented-a'],
+  ])('runs %s as a shared image operation', async (operation, role, model) => {
+    const wrapper = mount(PlaygroundWindow, { global: { stubs: { teleport: true } } })
+    await flushPromises()
+    await wrapper.get(`[data-testid="pipeline-${operation}"]`).trigger('click')
+    expect(wrapper.find('textarea[aria-label="Question"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="playground-run"]').trigger('click')
+    await flushPromises()
+    expect(invoked).toHaveBeenCalledWith('playground_visual_branch', {
+      runId: 42,
+      input: { target: { kind: 'screen', id: 1 }, model, role },
+    })
+    expect(wrapper.get('[aria-label="Result"]').text()).toContain('person')
+    wrapper.unmount()
+  })
+
+  it('runs detection on a selected file and keeps the image with its result', async () => {
+    const wrapper = mount(PlaygroundWindow, { global: { stubs: { teleport: true } } })
+    await flushPromises()
+    await wrapper.get('[data-testid="pipeline-detect"]').trigger('click')
+    await wrapper.get('[aria-label="Source"]').findAll('[role="radio"]')[2]!.trigger('click')
+    const input = wrapper.get('[aria-label="Image file"]')
+    Object.defineProperty(input.element, 'files', {
+      configurable: true,
+      value: [new File(['image'], 'example.png', { type: 'image/png' })],
+    })
+    await input.trigger('change')
+    await flushPromises()
+    await wrapper.get('[data-testid="playground-run"]').trigger('click')
+    await flushPromises()
+    expect(invoked).toHaveBeenCalledWith('playground_visual_branch', {
+      runId: 42,
+      input: { image: 'data:image/png;base64,AA==', model: 'detect-a', role: 'entities' },
+    })
+    expect(wrapper.get('[alt="Captured frame"]').attributes('src')).toBe(
+      'data:image/png;base64,AA==',
+    )
+    await wrapper.get('[data-testid="history-run"]').trigger('click')
+    expect(wrapper.get('[data-testid="history-details"]').text()).toContain('Detect objects')
+    expect(wrapper.get('[aria-label="Result"]').text()).toContain('person')
+    wrapper.unmount()
+  })
   it('shows a separate Flow list and opens its graph view', async () => {
     const wrapper = mount(PlaygroundWindow, { global: { stubs: { teleport: true } } })
     await flushPromises()
@@ -572,8 +675,18 @@ describe('playground window', () => {
   it('lists every pipeline group in one full-height sidebar', () => {
     const wrapper = mount(PlaygroundWindow)
     const labels = wrapper.findAll('[data-testid="playground-nav"] button').map((b) => b.text())
-    expect(labels.slice(0, 5)).toEqual(['Ask', 'Point', 'Pose', 'Caption', 'Depth'])
-    expect(labels).toHaveLength(22)
+    expect(labels.slice(0, 9)).toEqual([
+      'Ask',
+      'Caption',
+      'Point',
+      'Detect objects',
+      'Segment objects',
+      'Detect oriented objects',
+      'Segment scene',
+      'Pose',
+      'Depth',
+    ])
+    expect(labels).toHaveLength(26)
     expect(wrapper.findAll('[data-testid="playground-nav"] h2').map((h) => h.text())).toEqual([
       'Images',
       'Audio',

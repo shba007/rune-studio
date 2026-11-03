@@ -29,6 +29,7 @@ import { friendly } from '@/config/errors'
 import AgentMark from './AgentMark.vue'
 import AnalysisBar from './AnalysisBar.vue'
 import AnalysisLayer from './AnalysisLayer.vue'
+import AnalysisMapsLayer from './AnalysisMapsLayer.vue'
 import OverlayBarShell from './OverlayBarShell.vue'
 import AppIcon from './AppIcon.vue'
 import CursorGlyph from './CursorGlyph.vue'
@@ -720,6 +721,7 @@ onBeforeUnmount(() => {
         :hotkey="hotkeyLabel"
       />
     </template>
+    <AnalysisMapsLayer v-if="drawsMarkers" :snapshot="analysis.snapshot.value" :view="view" />
     <AnalysisLayer
       v-if="drawsMarkers"
       :snapshot="analysis.snapshot.value"
