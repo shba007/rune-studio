@@ -1,7 +1,7 @@
 {
   "generator": "changelogen@0.6.2",
-  "version": "0.7.0",
-  "sourceHead": "5e8b15ff93d426378f5e1f5857fd1e2f23116f89",
-  "baseTag": "v0.6.0",
-  "notesHash": "edf58ef8c1edb901049ef7589357c6d7e1cd241c381bbc0bfa9b2f78b754c915"
+  "version": "0.8.0",
+  "sourceHead": "303cc08a1447bd0d4f6d8255ba9feed4762f65d3",
+  "baseTag": "v0.7.0",
+  "notesHash": "6ae80933bdb2492bfd4efce5c1f321f4fbb2417312ff81337fefc13723cd9be2"
 }

@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.8.0
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.7.0...v0.8.0)
+
+### 🚀 Enhancements
+
+- Enhance embedded Infer support in CI and deployment workflows ([303cc08](https://github.com/shba007/rune-studio/commit/303cc08))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+
 ## v0.7.0
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.6.0...v0.7.0)
