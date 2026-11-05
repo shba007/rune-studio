@@ -589,7 +589,10 @@ pub fn load(app: &AppHandle) -> Settings {
         match settings_path(app).and_then(|path| fs::read_to_string(path).map_err(Into::into)) {
             Ok(text) => serde_json::from_str(&text).unwrap_or_default(),
             Err(_) => {
+                #[cfg(all(windows, feature = "embedded-infer"))]
                 let mut settings = Settings::default();
+                #[cfg(not(all(windows, feature = "embedded-infer")))]
+                let settings = Settings::default();
                 #[cfg(all(windows, feature = "embedded-infer"))]
                 if settings_path(app).is_ok_and(|path| !path.exists()) {
                     use_local_infer_by_default(&mut settings);

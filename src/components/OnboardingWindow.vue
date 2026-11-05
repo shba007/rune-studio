@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import type { BackendProbe, Settings } from '@/types/protocol'
+import RuneButton from './RuneButton.vue'
 
 type Choice = 'local' | 'cloud'
 const logo = '/logo.svg'
@@ -111,7 +112,9 @@ async function proceed() {
   <main class="setup-shell">
     <header data-tauri-drag-region class="setup-header">
       <span>RUNE STUDIO</span>
-      <button type="button" aria-label="Close setup" @click="closeSetup">×</button>
+      <RuneButton variant="link" type="button" aria-label="Close setup" @click="closeSetup"
+        >×</RuneButton
+      >
     </header>
     <section v-if="step === 0" class="setup-center">
       <img :src="logo" alt="" class="setup-logo" />
@@ -129,7 +132,7 @@ async function proceed() {
         <p>Your choice becomes the active model connection. You can change it later in Settings.</p>
       </div>
       <div class="setup-choices">
-        <button
+        <RuneButton
           type="button"
           :aria-pressed="choice === 'local'"
           :class="{ selected: choice === 'local' }"
@@ -137,8 +140,8 @@ async function proceed() {
         >
           <strong>On this computer</strong
           ><span>Download a model and run it with local Infer.</span>
-        </button>
-        <button
+        </RuneButton>
+        <RuneButton
           type="button"
           :aria-pressed="choice === 'cloud'"
           :class="{ selected: choice === 'cloud' }"
@@ -146,7 +149,7 @@ async function proceed() {
         >
           <strong>Cloud or other server</strong
           ><span>Connect a compatible model server using its address and credentials.</span>
-        </button>
+        </RuneButton>
       </div>
     </section>
     <section v-else-if="step === 2" class="setup-content">
@@ -160,7 +163,9 @@ async function proceed() {
               : 'Add your server, activate the connection, and choose its Agent model.'
           }}
         </p>
-        <button class="setup-button" type="button" @click="openSetup">Open Models & tools</button>
+        <RuneButton class="setup-button" type="button" @click="openSetup"
+          >Open Models & tools</RuneButton
+        >
       </div>
       <div class="setup-note">
         <strong>Close Settings and come back when you are ready.</strong>
@@ -193,10 +198,17 @@ async function proceed() {
       >
         <span v-for="n in 4" :key="n" :class="{ current: n === step + 1 }" />
       </div>
-      <button v-if="step > 0" type="button" :disabled="busy" @click="move(step - 1)">Back</button>
-      <button class="setup-button" type="button" :disabled="busy" @click="proceed">
+      <RuneButton
+        v-if="step > 0"
+        variant="link"
+        type="button"
+        :disabled="busy"
+        @click="move(step - 1)"
+        >Back</RuneButton
+      >
+      <RuneButton class="setup-button" type="button" :disabled="busy" @click="proceed">
         {{ busy ? 'Checking…' : step === 2 ? 'Check setup' : nextLabel }}
-      </button>
+      </RuneButton>
     </footer>
   </main>
 </template>
@@ -293,9 +305,11 @@ async function proceed() {
 .setup-choices button {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 10px;
   cursor: pointer;
   font-family: inherit;
+  text-transform: none;
 }
 .setup-choices button.selected {
   border-color: var(--accent);
@@ -315,6 +329,7 @@ async function proceed() {
   font-weight: 650;
   cursor: pointer;
   font-family: inherit;
+  text-transform: none;
 }
 .setup-button:disabled {
   opacity: 0.5;

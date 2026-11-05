@@ -1,7 +1,10 @@
 //! First-run onboarding state, separate from the user's connection settings.
 use std::io::Write;
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager};
+#[cfg(all(windows, feature = "embedded-infer"))]
+use tauri::{WebviewUrl, WebviewWindowBuilder};
 
+#[cfg(all(windows, feature = "embedded-infer"))]
 const WINDOW: &str = "onboarding";
 const MARKER: &[u8] = b"Rune Studio onboarding v1\n";
 
@@ -21,6 +24,7 @@ fn marker_exists(path: &std::path::Path) -> Result<bool, String> {
     }
 }
 
+#[cfg(all(windows, feature = "embedded-infer"))]
 pub fn prepare(app: &AppHandle) -> Result<bool, String> {
     let dir = app
         .path()
@@ -29,6 +33,7 @@ pub fn prepare(app: &AppHandle) -> Result<bool, String> {
     prepare_in(&dir)
 }
 
+#[cfg(any(all(windows, feature = "embedded-infer"), test))]
 fn prepare_in(dir: &std::path::Path) -> Result<bool, String> {
     let pending = dir.join("onboarding.pending");
     let complete = dir.join("onboarding.complete");
@@ -94,6 +99,7 @@ mod tests {
     }
 }
 
+#[cfg(all(windows, feature = "embedded-infer"))]
 pub fn open(app: &AppHandle) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window(WINDOW) {
         window.show()?;

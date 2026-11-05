@@ -35,12 +35,11 @@ tauri-build = { version = "2.7", features = [] }
 agent-bridge = ["dep:axum"]
 # The evaluation harness (docs/ARCHITECTURE.md, "The evaluation harness"). Never in a release build.
 eval = []
-# Development integration; replace the local path with a pinned Infer revision
-# before enabling this feature in distributable builds.
+# Pin the embedded Infer implementation so clean checkouts resolve it reproducibly.
 embedded-infer = ["dep:rune-infer"]
 
 [dependencies]
-rune-infer = { path = "../../code-infer", default-features = false, features = [
+rune-infer = { git = "https://github.com/shba007/rune-infer.git", rev = "d83272e423ee68dc3cc0dccb57ed6e589622845f", default-features = false, features = [
   "cpu",
 ], optional = true }
 dirs = "7"

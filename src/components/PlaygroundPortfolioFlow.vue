@@ -38,7 +38,7 @@ const matteOptions = computed(() => [
           (m.tasks?.includes('text-image-to-image') &&
             m.rawCapabilities?.some((c) => c.toLowerCase() === 'transparency (rgba)'))),
     )
-    .map((m) => ({ value: m.id, label: m.id })),
+    .map((m) => ({ value: m.id, label: m.id, disabled: false })),
 ])
 const matteModel = ref('')
 const visionReady = computed(() => models.value.some((item) => item.id === model.value))

@@ -163,9 +163,11 @@ mod tests {
 
     #[tokio::test]
     async fn stopped_local_infer_has_an_actionable_status() {
-        let mut settings = Settings::default();
-        settings.active_connection_id = "studio-embedded-infer".into();
-        settings.base_url = "http://127.0.0.1:0".into();
+        let settings = Settings {
+            active_connection_id: "studio-embedded-infer".into(),
+            base_url: "http://127.0.0.1:0".into(),
+            ..Settings::default()
+        };
         let status = check(&reqwest::Client::new(), &settings, None).await;
         assert!(!status.reachable);
         assert!(status.error.unwrap().contains("Download or select a model"));
