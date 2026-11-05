@@ -1,5 +1,43 @@
 # Changelog
 
+## v0.7.0
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.6.0...v0.7.0)
+
+### 🚀 Enhancements
+
+- Add text-to-speech functionality with audio playback and download options ([67d51b7](https://github.com/shba007/rune-studio/commit/67d51b7))
+- Add audio transcription functionality with WAV file support ([7f7177a](https://github.com/shba007/rune-studio/commit/7f7177a))
+- Implement playground run management with cancellation support ([7d35889](https://github.com/shba007/rune-studio/commit/7d35889))
+- Add speech translation functionality with support for wav files ([219919a](https://github.com/shba007/rune-studio/commit/219919a))
+- Add playgroundcaption component for image captioning ([c3776be](https://github.com/shba007/rune-studio/commit/c3776be))
+- Enhance voice processing with structured output support and error handling ([608cffa](https://github.com/shba007/rune-studio/commit/608cffa))
+- Add image editing functionality with new PlaygroundEdit component and related logic ([bb2ffcd](https://github.com/shba007/rune-studio/commit/bb2ffcd))
+- Add image variation functionality with playground_variation command and related components ([4543fa6](https://github.com/shba007/rune-studio/commit/4543fa6))
+- Add reference functionality to playground with support for 10 images and related logic ([2bac191](https://github.com/shba007/rune-studio/commit/2bac191))
+- Enhance control interaction with improved target validation and user feedback ([6f09006](https://github.com/shba007/rune-studio/commit/6f09006))
+- Add reference format and quality options for image processing in playground ([3460455](https://github.com/shba007/rune-studio/commit/3460455))
+- Add flow management and visual analysis features ([4d6bb14](https://github.com/shba007/rune-studio/commit/4d6bb14))
+- Add visual analysis capabilities and integrate new models ([8878bdd](https://github.com/shba007/rune-studio/commit/8878bdd))
+- Add local model download and management features, and onboarding ([33a941d](https://github.com/shba007/rune-studio/commit/33a941d))
+- Update dependencies and improve onboarding flow with new settings structure ([d0aec25](https://github.com/shba007/rune-studio/commit/d0aec25))
+
+### 🩹 Fixes
+
+- Correct audio conversion in speech result handling ([2204082](https://github.com/shba007/rune-studio/commit/2204082))
+
+### 💅 Refactors
+
+- Remove depth-related logic from visual questions and adjust related components ([08591e7](https://github.com/shba007/rune-studio/commit/08591e7))
+
+### 🏡 Chore
+
+- Update rune-infer dependency to version 0.18.0 ([5e8b15f](https://github.com/shba007/rune-studio/commit/5e8b15f))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+
 ## v0.6.0
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.5.0...v0.6.0)
