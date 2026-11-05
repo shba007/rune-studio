@@ -50,6 +50,13 @@ pub async fn check(
     settings: &Settings,
     api_key: Option<&str>,
 ) -> BackendStatus {
+    if settings.active_connection_id == "studio-embedded-infer"
+        && settings.base_url == "http://127.0.0.1:0"
+    {
+        return BackendStatus::unreachable(
+            "Local Infer is not running. Download or select a model, then start it.".into(),
+        );
+    }
     let base = settings.base_url.trim_end_matches('/');
 
     let started = Instant::now();
@@ -110,20 +117,7 @@ pub async fn check(
     let body = response.text().await.unwrap_or_default();
     let models = parse_models_response(&body);
 
-    let configured_roles = [
-        settings.model_for_role(crate::model::role::ModelRole::Agent),
-        settings.model_for_role(crate::model::role::ModelRole::Verifier),
-        settings.model_for_role(crate::model::role::ModelRole::Analysis),
-        settings.model_for_role(crate::model::role::ModelRole::Voice),
-        settings.model_for_role(crate::model::role::ModelRole::Decision),
-    ];
-    let missing_models = configured_roles
-        .into_iter()
-        .filter(|wanted| !wanted.is_empty() && !models.iter().any(|m| m.id == *wanted))
-        .map(|s| s.to_string())
-        .collect::<std::collections::BTreeSet<_>>()
-        .into_iter()
-        .collect();
+    let missing_models = missing_models(settings, &models);
 
     let agent_model = settings.model_for_role(crate::model::role::ModelRole::Agent);
     let model_capabilities = models
@@ -144,9 +138,49 @@ pub async fn check(
     }
 }
 
+fn missing_models(settings: &Settings, models: &[ModelCapabilities]) -> Vec<String> {
+    let mut configured_roles = vec![
+        settings.model_for_role(crate::model::role::ModelRole::Agent),
+        settings.model_for_role(crate::model::role::ModelRole::Verifier),
+        settings.model_for_role(crate::model::role::ModelRole::Analysis),
+        settings.model_for_role(crate::model::role::ModelRole::Voice),
+    ];
+    if settings.fast_checks && settings.decision_url.trim().is_empty() {
+        configured_roles.push(settings.model_for_role(crate::model::role::ModelRole::Decision));
+    }
+    configured_roles
+        .into_iter()
+        .filter(|wanted| !wanted.is_empty() && !models.iter().any(|m| m.id == *wanted))
+        .map(|s| s.to_string())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn stopped_local_infer_has_an_actionable_status() {
+        let mut settings = Settings::default();
+        settings.active_connection_id = "studio-embedded-infer".into();
+        settings.base_url = "http://127.0.0.1:0".into();
+        let status = check(&reqwest::Client::new(), &settings, None).await;
+        assert!(!status.reachable);
+        assert!(status.error.unwrap().contains("Download or select a model"));
+    }
+
+    #[test]
+    fn optional_decision_model_is_only_required_when_fast_checks_use_this_server() {
+        let mut settings = Settings::default();
+        let models = vec![ModelCapabilities::unknown(&settings.models.agent)];
+        assert!(missing_models(&settings, &models).is_empty());
+        settings.fast_checks = true;
+        assert_eq!(missing_models(&settings, &models), ["liquid-d1-3b"]);
+        settings.decision_url = "http://127.0.0.1:9999".into();
+        assert!(missing_models(&settings, &models).is_empty());
+    }
 
     fn capabilities_of(json: &str, model: &str) -> Vec<String> {
         let models = parse_models_response(json);

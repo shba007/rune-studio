@@ -7,22 +7,26 @@ import PlaygroundSettingsPanel from './PlaygroundSettingsPanel.vue'
 import RuneButton from './RuneButton.vue'
 import RuneChoice from './RuneChoice.vue'
 
-const props = defineProps<{
-  title: string
-  settingsLabel: string
-  resultLabel: string
-  graphTestId: string
-  appTestId: string
-  running: boolean
-  started: number
-  loadingLabel: string
-  error?: string
-  stale?: boolean
-  steps?: number
-  graphWide?: boolean
-  graphWidth?: number
-  appTop?: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    title: string
+    settingsLabel: string
+    resultLabel: string
+    graphTestId: string
+    appTestId: string
+    running: boolean
+    started: number
+    loadingLabel: string
+    error?: string
+    stale?: boolean
+    steps?: number
+    graphWide?: boolean
+    graphWidth?: number
+    appTop?: boolean
+    loadingCancellable?: boolean
+  }>(),
+  { loadingCancellable: true },
+)
 defineEmits<{ cancel: [] }>()
 const mode = defineModel<'app' | 'graph'>({ required: true })
 const viewport = ref<HTMLElement | null>(null)
@@ -102,7 +106,7 @@ function onWheel(event: WheelEvent) {
             v-if="running"
             :started-at="started"
             :label="loadingLabel"
-            :cancellable="true"
+            :cancellable="loadingCancellable !== false"
             @cancel="$emit('cancel')"
           />
           <p v-if="error" role="alert" class="text-center text-error">{{ error }}</p>
@@ -135,7 +139,7 @@ function onWheel(event: WheelEvent) {
         <PlaygroundLoading
           :started-at="started"
           :label="loadingLabel"
-          :cancellable="true"
+          :cancellable="loadingCancellable !== false"
           compact
           @cancel="$emit('cancel')"
         />

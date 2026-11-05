@@ -37,7 +37,7 @@ impl PlaygroundRuns {
             token.cancel();
         }
     }
-    async fn run<T>(
+    pub(crate) async fn run<T>(
         &self,
         id: u64,
         work: impl Future<Output = Result<T, String>>,
@@ -55,6 +55,10 @@ impl PlaygroundRuns {
         };
         self.runs.locked().remove(&id);
         result
+    }
+
+    pub(crate) fn token(&self, id: u64) -> Option<CancelToken> {
+        self.runs.locked().get(&id).cloned()
     }
 }
 
@@ -99,6 +103,12 @@ cancellable_command!(playground_create, create, CreateInput, CreateResult);
 cancellable_command!(playground_edit, edit, EditInput, EditResult);
 cancellable_command!(playground_variation, variation, VariationInput, EditResult);
 cancellable_command!(playground_reference, reference, ReferenceInput, EditResult);
+cancellable_command!(
+    playground_extract_subject,
+    extract_subject,
+    ExtractSubjectInput,
+    ExtractSubjectResult
+);
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -115,6 +125,117 @@ pub struct VisualPlanResult {
     image: String,
     questions: crate::analysis::run::VisualQuestions,
     model: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PortfolioClassifyInput {
+    image: String,
+    model: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PortfolioReviewInput {
+    original: String,
+    candidate: String,
+    model: String,
+}
+
+const PORTFOLIO_REVIEW_PROMPT: &str = "Compare the original image on the left with the candidate on the right. The candidate should preserve the person, face, hands, clothing and pose while replacing the background. Start the answer with exactly one line: DECISION: ACCEPT, DECISION: RETRY, or DECISION: REVIEW. Use RETRY for a clear fixable background or matte defect; use REVIEW if uncertain or if identity, body or clothing may have changed. Then explain only visible differences and possible edge defects. Do not claim identity is verified.";
+
+async fn portfolio_vision_settings(app: &AppHandle, model: &str) -> Result<Settings, String> {
+    let settings = visual_settings(app, model).await?;
+    let url = reqwest::Url::parse(&settings.base_url).map_err(|_| "Invalid Infer address")?;
+    let host = url.host_str().unwrap_or_default().trim_matches(['[', ']']);
+    if host != "localhost"
+        && !host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback())
+    {
+        return Err("Portfolio Studio requires a local Infer server".into());
+    }
+    let state = app.state::<AppState>();
+    let key = crate::settings::api_key_for(&settings);
+    let status = crate::backend::check(&state.http, &settings, key.as_deref()).await;
+    if !status.models.iter().any(|candidate| {
+        candidate.id == model && candidate.locality == crate::model::capabilities::Locality::Local
+    }) {
+        return Err("Choose a verified local vision model".into());
+    }
+    Ok(settings)
+}
+
+#[tauri::command]
+pub async fn portfolio_review(
+    app: AppHandle,
+    run_id: u64,
+    input: PortfolioReviewInput,
+) -> Result<String, String> {
+    let state = app.state::<PlaygroundRuns>();
+    let token = state
+        .runs
+        .locked()
+        .get(&run_id)
+        .cloned()
+        .ok_or("Playground run was cancelled")?;
+    let work_app = app.clone();
+    state
+        .run(run_id, async move {
+            visual_guard(&work_app)?;
+            let settings = portfolio_vision_settings(&work_app, &input.model).await?;
+            let comparison = portfolio_comparison(&input.original, &input.candidate)?;
+            let frame = screenshot::insight_image(
+                &comparison,
+                settings.model_image_resolution.max_edge(),
+                settings.recording_resolution.max_edge(),
+            )
+            .map_err(|e| e.to_string())?;
+            let report = crate::analysis::run::analyze_image_with_settings_timeout(
+                &work_app,
+                PORTFOLIO_REVIEW_PROMPT,
+                &frame.data_uri(),
+                &token,
+                "portfolio-review",
+                &settings,
+                crate::analysis::run::PLAYGROUND_FLOW_TIMEOUT,
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+            if report.parsed.answer.trim().is_empty() {
+                return Err("The vision model returned an empty review".into());
+            }
+            Ok(report.parsed.answer)
+        })
+        .await
+}
+
+#[tauri::command]
+pub async fn portfolio_classify(
+    app: AppHandle,
+    run_id: u64,
+    input: PortfolioClassifyInput,
+) -> Result<String, String> {
+    let state = app.state::<PlaygroundRuns>();
+    let token = state
+        .runs
+        .locked()
+        .get(&run_id)
+        .cloned()
+        .ok_or("Playground run was cancelled")?;
+    let work_app = app.clone();
+    state.run(run_id, async move {
+        visual_guard(&work_app)?;
+        let settings = portfolio_vision_settings(&work_app, &input.model).await?;
+        let bytes = portfolio_image(&input.image)?;
+        let frame = screenshot::insight_image(&bytes, settings.model_image_resolution.max_edge(), settings.recording_resolution.max_edge()).map_err(|e| e.to_string())?;
+        let report = crate::analysis::run::analyze_image_with_settings_timeout(
+            &work_app,
+            "Classify the photographed person's body view as exactly one of: front, left three-quarter, right three-quarter, back, waist-detail, uncertain. Use uncertain when the view is ambiguous. Start the answer with the label.",
+            &frame.data_uri(), &token, "portfolio-classify", &settings, crate::analysis::run::PLAYGROUND_FLOW_TIMEOUT,
+        ).await.map_err(|e| e.to_string())?;
+        Ok(report.parsed.answer)
+    }).await
 }
 
 #[derive(Deserialize)]
@@ -529,7 +650,7 @@ fn open_with_flow(app: &AppHandle, flow: Option<&str>) -> tauri::Result<()> {
 pub async fn open_playground(app: AppHandle, flow: Option<String>) -> Result<(), String> {
     if flow
         .as_deref()
-        .is_some_and(|id| !matches!(id, "image-voice" | "screen-insight"))
+        .is_some_and(|id| !matches!(id, "image-voice" | "screen-insight" | "portfolio-studio"))
     {
         return Err("Unknown Flow".into());
     }
@@ -728,6 +849,26 @@ fn depth_image(data: &str) -> Result<Vec<u8>, String> {
         .map_err(|_| "The image data is not valid".into())
 }
 
+pub(crate) fn portfolio_image(data: &str) -> Result<Vec<u8>, String> {
+    let (body, expected) = if let Some(body) = data.strip_prefix("data:image/jpeg;base64,") {
+        (body, image::ImageFormat::Jpeg)
+    } else if let Some(body) = data.strip_prefix("data:image/png;base64,") {
+        (body, image::ImageFormat::Png)
+    } else {
+        return Err("Choose a JPEG or PNG image".into());
+    };
+    if body.len() > MAX_IMAGE_CHARS {
+        return Err("The image is too large".into());
+    }
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(body)
+        .map_err(|_| "The image data is not valid")?;
+    if image::guess_format(&bytes).ok() != Some(expected) {
+        return Err("The image format does not match its contents".into());
+    }
+    Ok(bytes)
+}
+
 struct Prepared {
     settings: Settings,
     key: Option<String>,
@@ -735,7 +876,7 @@ struct Prepared {
     frame: screenshot::Frame,
 }
 
-async fn session(
+pub(crate) async fn session(
     app: &AppHandle,
     model: &str,
     task: &str,
@@ -750,7 +891,13 @@ async fn session(
             .unwrap_or("Infer is unavailable or authentication failed".into()));
     }
     let model = model.trim().to_string();
-    if !task_models(&status.models, task).contains(&model) {
+    let matches_task = if task == "portfolio cutout" {
+        task_models(&status.models, "image-to-matting").contains(&model)
+            || task_models(&status.models, EDIT_TASK).contains(&model)
+    } else {
+        task_models(&status.models, task).contains(&model)
+    };
+    if !matches_task {
         return Err(format!(
             "Choose a model that Infer lists with {task} support"
         ));
@@ -767,7 +914,7 @@ async fn session(
 }
 
 #[derive(Clone, Copy)]
-enum AudioOperation {
+pub(crate) enum AudioOperation {
     Transcription,
     Translation,
     Speech,
@@ -845,7 +992,7 @@ async fn post(
     post_json(&state.http, key, url, body, what).await
 }
 
-async fn post_json(
+pub(crate) async fn post_json(
     http: &reqwest::Client,
     key: Option<&str>,
     url: reqwest::Url,
@@ -901,7 +1048,7 @@ fn infer_error_detail(body: &str) -> String {
     detail.chars().take(300).collect()
 }
 
-fn infer_url(settings: &Settings, path: &str) -> Result<reqwest::Url, String> {
+pub(crate) fn infer_url(settings: &Settings, path: &str) -> Result<reqwest::Url, String> {
     reqwest::Url::parse(&format!(
         "{}{path}",
         settings.base_url.trim_end_matches('/')
@@ -1382,6 +1529,281 @@ pub struct EditResult {
     elapsed_ms: u64,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ExtractSubjectInput {
+    image: String,
+    model: String,
+    #[serde(default)]
+    retry: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtractSubjectResult {
+    original: String,
+    cutout: String,
+    composite: String,
+    model: String,
+    elapsed_ms: u64,
+}
+
+fn png_bytes(image: &image::DynamicImage) -> Result<Vec<u8>, String> {
+    let mut output = std::io::Cursor::new(Vec::new());
+    image
+        .write_to(&mut output, image::ImageFormat::Png)
+        .map_err(|e| format!("Could not encode image: {e}"))?;
+    Ok(output.into_inner())
+}
+
+fn portfolio_comparison(original: &str, candidate: &str) -> Result<Vec<u8>, String> {
+    fn decode(uri: &str) -> Result<image::RgbImage, String> {
+        let bytes = portfolio_image(uri)?;
+        let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes))
+            .with_guessed_format()
+            .map_err(|_| "Could not read comparison image")?;
+        let mut limits = image::Limits::default();
+        limits.max_image_width = Some(768);
+        limits.max_image_height = Some(768);
+        limits.max_alloc = Some(32 * 1024 * 1024);
+        reader.limits(limits);
+        Ok(reader
+            .decode()
+            .map_err(|_| "Could not decode comparison image")?
+            .into_rgb8())
+    }
+    let original = decode(original)?;
+    let candidate = decode(candidate)?;
+    if original.dimensions() != candidate.dimensions() {
+        return Err("The candidate does not match the original preview dimensions".into());
+    }
+    let (width, height) = original.dimensions();
+    let mut comparison = image::RgbImage::new(width * 2, height);
+    image::imageops::replace(&mut comparison, &original, 0, 0);
+    image::imageops::replace(&mut comparison, &candidate, i64::from(width), 0);
+    png_bytes(&image::DynamicImage::ImageRgb8(comparison))
+}
+
+fn decode_portrait_matte(
+    body: &str,
+    width: u32,
+    height: u32,
+) -> Result<image::DynamicImage, String> {
+    let alpha = decode_matte_alpha(body, width, height)?;
+    Ok(image::DynamicImage::ImageRgba8(image::RgbaImage::from_fn(
+        width,
+        height,
+        |x, y| image::Rgba([0, 0, 0, alpha.get_pixel(x, y).0[0]]),
+    )))
+}
+
+pub(crate) fn decode_matte_alpha(
+    body: &str,
+    width: u32,
+    height: u32,
+) -> Result<image::GrayImage, String> {
+    let value: serde_json::Value =
+        serde_json::from_str(body).map_err(|_| "Infer returned an unreadable portrait matte")?;
+    if value["width"].as_u64() != Some(u64::from(width))
+        || value["height"].as_u64() != Some(u64::from(height))
+    {
+        return Err("The returned matte dimensions do not match the source image".into());
+    }
+    let uri = value["alpha_matte"]
+        .as_str()
+        .ok_or("Infer returned no portrait matte")?;
+    if !uri.starts_with("data:image/png;base64,") {
+        return Err("Infer returned a portrait matte that is not PNG".into());
+    }
+    let bytes = portfolio_image(uri)?;
+    let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|_| "Could not read portrait matte")?;
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(width);
+    limits.max_image_height = Some(height);
+    limits.max_alloc = Some(64 * 1024 * 1024);
+    reader.limits(limits);
+    let matte = reader
+        .decode()
+        .map_err(|_| "Infer returned an invalid portrait matte")?;
+    if matte.color() != image::ColorType::L8 || matte.width() != width || matte.height() != height {
+        return Err("Infer returned a portrait matte with an invalid format or dimensions".into());
+    }
+    Ok(matte.into_luma8())
+}
+
+fn compose_subject(
+    source: &image::DynamicImage,
+    generated: &image::DynamicImage,
+) -> Result<(Vec<u8>, Vec<u8>), String> {
+    if !generated.color().has_alpha() {
+        return Err("Infer returned an image without an alpha channel".into());
+    }
+    let source = source.to_rgba8();
+    let generated = generated.to_rgba8();
+    if source.dimensions() != generated.dimensions() {
+        return Err("The returned alpha dimensions do not match the source image".into());
+    }
+    let mut has_transparent = false;
+    let mut opaque_pixels = 0_u64;
+    let mut visible_pixels = 0_u64;
+    let mut cutout = source.clone();
+    let mut composite = image::RgbImage::new(source.width(), source.height());
+    for (x, y, pixel) in cutout.enumerate_pixels_mut() {
+        let alpha = generated.get_pixel(x, y).0[3];
+        has_transparent |= alpha < 16;
+        opaque_pixels += u64::from(alpha > 239);
+        visible_pixels += u64::from(alpha > 15);
+        pixel.0[3] = alpha;
+        let grey = 150_u32.saturating_sub(45 * y / source.height().max(1));
+        let blend = |c: u8| {
+            ((u32::from(c) * u32::from(alpha) + grey * (255 - u32::from(alpha)) + 127) / 255) as u8
+        };
+        composite.put_pixel(
+            x,
+            y,
+            image::Rgb([blend(pixel.0[0]), blend(pixel.0[1]), blend(pixel.0[2])]),
+        );
+    }
+    if !has_transparent || opaque_pixels == 0 {
+        return Err("Infer did not return a usable subject alpha mask".into());
+    }
+    if opaque_pixels * 4 < visible_pixels {
+        return Err(
+            "The returned subject mask is mostly translucent; try again or use another model"
+                .into(),
+        );
+    }
+    Ok((
+        png_bytes(&image::DynamicImage::ImageRgba8(cutout))?,
+        png_bytes(&image::DynamicImage::ImageRgb8(composite))?,
+    ))
+}
+
+async fn extract_subject(
+    app: AppHandle,
+    input: ExtractSubjectInput,
+) -> Result<ExtractSubjectResult, String> {
+    let bytes = portfolio_image(&input.image)?;
+    let reader = image::ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|_| "Could not read image")?;
+    let mut reader = reader;
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(4096);
+    limits.max_image_height = Some(4096);
+    limits.max_alloc = Some(128 * 1024 * 1024);
+    reader.limits(limits);
+    let source = reader.decode().map_err(|_| "Could not decode image")?;
+    let scale = 768.0 / f64::from(source.width().max(source.height()));
+    let dimension = |n: u32| (((f64::from(n) * scale / 16.0).round() as u32) * 16).clamp(64, 768);
+    let source = source.resize_exact(
+        dimension(source.width()),
+        dimension(source.height()),
+        image::imageops::FilterType::Lanczos3,
+    );
+    let png = png_bytes(&source)?;
+    let original = format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(&png)
+    );
+    let (settings, key, model, caps) =
+        session(&app, &input.model, "portfolio cutout", None).await?;
+    let url = reqwest::Url::parse(&settings.base_url).map_err(|_| "Invalid Infer address")?;
+    let host = url.host_str().unwrap_or_default().trim_matches(['[', ']']);
+    if host != "localhost"
+        && !host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback())
+    {
+        return Err("Subject extraction requires a local Infer server".into());
+    }
+    let use_matte =
+        caps.tasks.iter().any(|task| task == "image-to-matting") && caps.portrait_matting_verified;
+    let use_edit = caps.tasks.iter().any(|task| task == EDIT_TASK)
+        && caps
+            .raw_capabilities
+            .iter()
+            .any(|s| s.eq_ignore_ascii_case("Transparency (RGBA)"));
+    if caps.locality != crate::model::capabilities::Locality::Local || !(use_matte || use_edit) {
+        return Err(
+            "Choose a local verified portrait-matting model or RGBA image-edit model".into(),
+        );
+    }
+    let started = Instant::now();
+    if use_matte {
+        let response = post(
+            &app,
+            key.as_deref(),
+            infer_url(&settings, "/v1/images/portrait-mattings")?,
+            serde_json::json!({ "model": model, "image": original }),
+            "portrait matting",
+        )
+        .await?;
+        let generated = decode_portrait_matte(&response, source.width(), source.height())?;
+        let (cutout, composite) = compose_subject(&source, &generated)?;
+        let uri = |bytes| {
+            format!(
+                "data:image/png;base64,{}",
+                base64::engine::general_purpose::STANDARD.encode(bytes)
+            )
+        };
+        return Ok(ExtractSubjectResult {
+            original,
+            cutout: uri(cutout),
+            composite: uri(composite),
+            model,
+            elapsed_ms: started.elapsed().as_millis() as u64,
+        });
+    }
+    let prompt = if input.retry {
+        "Extract all visible parts of the person, including any visible torso, arms, hands and legs, even if the head is outside the image. Keep the person fully opaque and the background fully transparent. Preserve the exact position and original framing."
+    } else {
+        "Extract the person from the photograph. Remove the background completely. The output image has an alpha channel and the background is transparent. Preserve the person, face, clothing, pose and exact position."
+    };
+    let result = send_edit(
+        &app.state::<AppState>().http,
+        infer_url(&settings, "/v1/images/edits")?,
+        key.as_deref(),
+        model.clone(),
+        Some(prompt.into()),
+        EditImages {
+            data: vec![png],
+            format: ReferenceFormat::Png,
+            size: Some(format!("{}x{}", source.width(), source.height())),
+        },
+        original.clone(),
+    )
+    .await?;
+    let output = portfolio_image(&result.image)?;
+    let mut reader = image::ImageReader::new(std::io::Cursor::new(output))
+        .with_guessed_format()
+        .map_err(|_| "Infer returned an invalid image")?;
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(source.width());
+    limits.max_image_height = Some(source.height());
+    limits.max_alloc = Some(32 * 1024 * 1024);
+    reader.limits(limits);
+    let generated = reader
+        .decode()
+        .map_err(|_| "Infer returned an invalid or oversized image")?;
+    let (cutout, composite) = compose_subject(&source, &generated)?;
+    let uri = |bytes| {
+        format!(
+            "data:image/png;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(bytes)
+        )
+    };
+    Ok(ExtractSubjectResult {
+        original,
+        cutout: uri(cutout),
+        composite: uri(composite),
+        model,
+        elapsed_ms: started.elapsed().as_millis() as u64,
+    })
+}
+
 fn edit_result(
     body: &str,
     original: String,
@@ -1408,6 +1830,7 @@ fn edit_result(
 struct EditImages {
     data: Vec<Vec<u8>>,
     format: ReferenceFormat,
+    size: Option<String>,
 }
 
 async fn send_edit(
@@ -1427,6 +1850,9 @@ async fn send_edit(
     let mut form = reqwest::multipart::Form::new()
         .text("model", model.clone())
         .text("response_format", "b64_json");
+    if let Some(size) = images.size {
+        form = form.text("size", size);
+    }
     let (extension, mime) = match images.format {
         ReferenceFormat::Jpeg => ("jpg", "image/jpeg"),
         ReferenceFormat::Png => ("png", "image/png"),
@@ -1494,6 +1920,7 @@ async fn edit(app: AppHandle, input: EditInput) -> Result<EditResult, String> {
         EditImages {
             data: vec![prepared.frame.jpeg],
             format: ReferenceFormat::Jpeg,
+            size: None,
         },
         original,
     )
@@ -1513,6 +1940,7 @@ async fn variation(app: AppHandle, input: VariationInput) -> Result<EditResult, 
         EditImages {
             data: vec![prepared.frame.jpeg],
             format: ReferenceFormat::Jpeg,
+            size: None,
         },
         original,
     )
@@ -1564,6 +1992,7 @@ async fn reference(app: AppHandle, input: ReferenceInput) -> Result<EditResult, 
         EditImages {
             data: images,
             format,
+            size: None,
         },
         original,
     )
@@ -1683,6 +2112,224 @@ async fn create(app: AppHandle, input: CreateInput) -> Result<CreateResult, Stri
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    #[ignore = "requires a local portrait PNG and running Infer with qwen-image-2.1"]
+    async fn real_qwen_subject_alpha_preserves_source_pixels() {
+        let path = std::env::var_os("PORTFOLIO_TEST_PNG").expect("set PORTFOLIO_TEST_PNG");
+        let bytes = std::fs::read(path).unwrap();
+        let source = image::load_from_memory(&bytes).unwrap();
+        let result = super::send_edit(&reqwest::Client::new(), reqwest::Url::parse("http://127.0.0.1:8080/v1/images/edits").unwrap(), None, "qwen-image-2.1".into(), Some("Extract the person from the photograph. Remove the background completely. The output image has an alpha channel and the background is transparent. Preserve the person, face, clothing, pose and exact position.".into()), super::EditImages { data: vec![bytes], format: super::ReferenceFormat::Png, size: Some(format!("{}x{}", source.width(), source.height())) }, String::new()).await.unwrap();
+        let output = super::portfolio_image(&result.image).unwrap();
+        let generated = image::load_from_memory(&output).unwrap();
+        let (cutout, _) = super::compose_subject(&source, &generated).unwrap();
+        let cutout = image::load_from_memory(&cutout).unwrap().to_rgba8();
+        for (original, output) in source.to_rgb8().pixels().zip(cutout.pixels()) {
+            assert_eq!(&original.0, &output.0[..3]);
+        }
+    }
+    #[test]
+    fn portfolio_preview_accepts_jpeg_and_rejects_mismatched_media() {
+        use base64::Engine;
+        let mut encoded = Vec::new();
+        image::codecs::jpeg::JpegEncoder::new(&mut encoded)
+            .encode(&[1, 2, 3], 1, 1, image::ExtendedColorType::Rgb8)
+            .unwrap();
+        let body = base64::engine::general_purpose::STANDARD.encode(&encoded);
+        assert_eq!(
+            super::portfolio_image(&format!("data:image/jpeg;base64,{body}")).unwrap(),
+            encoded
+        );
+        assert!(super::portfolio_image(&format!("data:image/png;base64,{body}")).is_err());
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PORTFOLIO_TEST_PNG and a running local Infer with birefnet-matting"]
+    async fn real_portrait_matte_composites_original_pixels() {
+        use base64::Engine;
+        let bytes = std::fs::read(std::env::var_os("PORTFOLIO_TEST_PNG").unwrap()).unwrap();
+        let source = image::load_from_memory(&bytes).unwrap().resize(
+            768,
+            768,
+            image::imageops::FilterType::Lanczos3,
+        );
+        let png = super::png_bytes(&source).unwrap();
+        let original = format!(
+            "data:image/png;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(png)
+        );
+        let response = super::post_json(
+            &reqwest::Client::new(),
+            None,
+            reqwest::Url::parse("http://127.0.0.1:8080/v1/images/portrait-mattings").unwrap(),
+            serde_json::json!({"model":"birefnet-matting","image":original}),
+            "portrait matting",
+        )
+        .await
+        .unwrap();
+        let matte =
+            super::decode_portrait_matte(&response, source.width(), source.height()).unwrap();
+        let (cutout, _) = super::compose_subject(&source, &matte).unwrap();
+        let cutout = image::load_from_memory(&cutout).unwrap().to_rgba8();
+        for (original, output) in source.to_rgb8().pixels().zip(cutout.pixels()) {
+            assert_eq!(original.0, output.0[..3]);
+        }
+    }
+
+    #[test]
+    fn portrait_matte_requires_grayscale_png_and_matching_dimensions() {
+        use base64::Engine;
+        let matte = image::DynamicImage::ImageLuma8(
+            image::GrayImage::from_raw(2, 1, vec![0, 255]).unwrap(),
+        );
+        let uri = format!(
+            "data:image/png;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(super::png_bytes(&matte).unwrap())
+        );
+        let body = serde_json::json!({"width":2,"height":1,"alpha_matte":uri}).to_string();
+        let result = super::decode_portrait_matte(&body, 2, 1)
+            .unwrap()
+            .to_rgba8();
+        assert_eq!(result.get_pixel(0, 0).0[3], 0);
+        assert_eq!(result.get_pixel(1, 0).0[3], 255);
+        assert!(super::decode_portrait_matte(&body, 1, 1).is_err());
+        let invalid =
+            serde_json::json!({"width":2,"height":1,"alpha_matte":"data:image/png;base64,YQ=="})
+                .to_string();
+        assert!(super::decode_portrait_matte(&invalid, 2, 1).is_err());
+    }
+
+    #[test]
+    fn portfolio_review_compares_original_and_candidate_and_checks_dimensions() {
+        use base64::Engine;
+        let uri = |width, color| {
+            let image = image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(
+                width,
+                1,
+                image::Rgb(color),
+            ));
+            let png = super::png_bytes(&image).unwrap();
+            format!(
+                "data:image/png;base64,{}",
+                base64::engine::general_purpose::STANDARD.encode(png)
+            )
+        };
+        let original = uri(2, [10, 20, 30]);
+        let candidate = uri(2, [40, 50, 60]);
+        let image =
+            image::load_from_memory(&super::portfolio_comparison(&original, &candidate).unwrap())
+                .unwrap()
+                .to_rgb8();
+        assert_eq!(image.dimensions(), (4, 1));
+        assert_eq!(image.get_pixel(0, 0).0, [10, 20, 30]);
+        assert_eq!(image.get_pixel(2, 0).0, [40, 50, 60]);
+        assert!(super::portfolio_comparison(&original, &uri(1, [0, 0, 0])).is_err());
+        assert!(super::portfolio_comparison(&original, "invalid").is_err());
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PORTFOLIO_REVIEW_TEST_PNG and a local Infer with qwen3.8-27b"]
+    async fn real_portfolio_review_returns_a_decision() {
+        let path = std::env::var_os("PORTFOLIO_REVIEW_TEST_PNG").unwrap();
+        let bytes = std::fs::read(path).unwrap();
+        let frame = crate::observe::screenshot::insight_image(&bytes, 1280, 1280).unwrap();
+        let http = reqwest::Client::new();
+        let profile = crate::model::profile::resolve_profile("qwen3.8-27b", None, None);
+        let client = crate::model::client::ChatClient {
+            app: None,
+            output_limit: None,
+            http: &http,
+            base_url: "http://127.0.0.1:8080",
+            api_key: None,
+            model: "qwen3.8-27b",
+            profile: Some(&profile),
+            sink: None,
+            no_swap: false,
+            on_loading: None,
+        };
+        let result = crate::analysis::run::analyze_with_client(
+            &client,
+            super::PORTFOLIO_REVIEW_PROMPT,
+            &frame.data_uri(),
+            &crate::exec::CancelToken::default(),
+            std::time::Duration::from_secs(180),
+        )
+        .await
+        .unwrap();
+        let answer = result.parsed.answer.trim();
+        println!("{answer}");
+        assert!(
+            ["DECISION: ACCEPT", "DECISION: RETRY", "DECISION: REVIEW"]
+                .iter()
+                .any(|prefix| answer.starts_with(prefix)),
+            "missing decision marker"
+        );
+    }
+    #[test]
+    fn subject_alpha_preserves_original_rgb_and_rejects_unusable_results() {
+        let source = image::DynamicImage::ImageRgb8(image::RgbImage::from_fn(2, 1, |x, _| {
+            if x == 0 {
+                image::Rgb([20, 40, 60])
+            } else {
+                image::Rgb([80, 100, 120])
+            }
+        }));
+        let generated = image::DynamicImage::ImageRgba8(image::RgbaImage::from_fn(2, 1, |x, _| {
+            image::Rgba([200, 201, 202, if x == 0 { 0 } else { 255 }])
+        }));
+        let (cutout, composite) = super::compose_subject(&source, &generated).unwrap();
+        let cutout = image::load_from_memory(&cutout).unwrap().to_rgba8();
+        assert_eq!(cutout.get_pixel(0, 0).0, [20, 40, 60, 0]);
+        assert_eq!(cutout.get_pixel(1, 0).0, [80, 100, 120, 255]);
+        let composite = image::load_from_memory(&composite).unwrap().to_rgb8();
+        assert_eq!(composite.get_pixel(1, 0).0, [80, 100, 120]);
+        assert!(super::compose_subject(&source, &source).is_err());
+        let opaque = image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+            2,
+            1,
+            image::Rgba([1, 2, 3, 255]),
+        ));
+        assert!(super::compose_subject(&source, &opaque).is_err());
+        let wrong_size = image::DynamicImage::ImageRgba8(image::RgbaImage::new(1, 1));
+        assert!(super::compose_subject(&source, &wrong_size).is_err());
+        let source = image::DynamicImage::ImageRgb8(image::RgbImage::new(12, 1));
+        let translucent =
+            image::DynamicImage::ImageRgba8(image::RgbaImage::from_fn(12, 1, |x, _| {
+                image::Rgba([
+                    0,
+                    0,
+                    0,
+                    if x == 0 {
+                        0
+                    } else if x == 1 {
+                        255
+                    } else {
+                        100
+                    },
+                ])
+            }));
+        assert!(
+            super::compose_subject(&source, &translucent)
+                .unwrap_err()
+                .contains("mostly translucent")
+        );
+    }
+
+    #[test]
+    #[ignore = "requires PORTFOLIO_TEST_PNG and PORTFOLIO_TEST_ALPHA_PNG"]
+    fn rejects_real_translucent_subject_mask() {
+        let source = image::open(std::env::var_os("PORTFOLIO_TEST_PNG").unwrap()).unwrap();
+        let mask = image::open(std::env::var_os("PORTFOLIO_TEST_ALPHA_PNG").unwrap()).unwrap();
+        let source = source.resize_exact(
+            mask.width(),
+            mask.height(),
+            image::imageops::FilterType::Lanczos3,
+        );
+        assert!(
+            super::compose_subject(&source, &mask)
+                .unwrap_err()
+                .contains("mostly translucent")
+        );
+    }
     #[test]
     fn visual_branch_contract_matches_infer_image_endpoints() {
         assert_eq!(
@@ -1975,6 +2622,7 @@ mod tests {
                         .chain((2..=count).map(|n| format!("reference-{n:02}").into_bytes()))
                         .collect(),
                     format,
+                    size: None,
                 },
                 "source".into(),
             )

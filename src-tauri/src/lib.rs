@@ -12,6 +12,10 @@ mod credentials;
 mod cursor;
 mod debug;
 mod domain;
+#[cfg(all(windows, feature = "embedded-infer"))]
+mod embedded_download;
+#[cfg(all(windows, feature = "embedded-infer"))]
+mod embedded_infer;
 mod error;
 #[cfg(feature = "eval")]
 mod eval;
@@ -30,9 +34,11 @@ mod kit;
 pub mod life;
 mod model;
 mod observe;
+mod onboarding;
 mod overlay;
 mod personalities;
 mod playground;
+mod portfolio;
 mod prompts;
 mod recording;
 mod reflect;
@@ -125,6 +131,11 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            #[cfg(all(windows, feature = "embedded-infer"))]
+            let show_onboarding = onboarding::prepare(app.handle()).unwrap_or_else(|error| {
+                log::error!("Could not open onboarding safely: {error}");
+                false
+            });
             cursor::reset();
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -185,6 +196,30 @@ pub fn run() {
                 ),
             });
             app.manage(playground::PlaygroundRuns::default());
+            #[cfg(all(windows, feature = "embedded-infer"))]
+            {
+                app.manage(embedded_infer::EmbeddedManager::default());
+                app.manage(embedded_download::Downloads::default());
+                let should_start = app
+                    .state::<AppState>()
+                    .settings
+                    .locked()
+                    .connections
+                    .iter()
+                    .any(|connection| connection.id == "studio-embedded-infer");
+                if should_start {
+                    let handle = app.handle().clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(error) = handle
+                            .state::<embedded_infer::EmbeddedManager>()
+                            .start(&handle, false)
+                            .await
+                        {
+                            log::error!("Could not start local Infer: {error}");
+                        }
+                    });
+                }
+            }
 
             {
                 let handle = app.handle().clone();
@@ -230,6 +265,11 @@ pub fn run() {
             }
             tray.build(app)?;
 
+            #[cfg(all(windows, feature = "embedded-infer"))]
+            if show_onboarding {
+                onboarding::open(app.handle())?;
+            }
+
             #[cfg(feature = "eval")]
             eval::start(app.handle());
 
@@ -256,6 +296,13 @@ pub fn run() {
             commands::has_api_key,
             commands::set_api_key,
             commands::check_backend,
+            commands::embedded_infer_available,
+            commands::start_embedded_infer,
+            commands::embedded_model_candidates,
+            commands::embedded_model_download,
+            commands::embedded_model_download_status,
+            commands::embedded_model_download_cancel,
+            commands::embedded_model_use,
             connections::connections_state,
             connections::connections_models_save,
             model::activity::model_activity,
@@ -290,9 +337,19 @@ pub fn run() {
             commands::get_control_label,
             commands::session_feedback,
             commands::open_settings_window,
+            onboarding::onboarding_complete,
             commands::open_workspace,
             playground::open_playground,
             playground::playground_start_run,
+            portfolio::portfolio_raw_preview,
+            portfolio::portfolio_develop_raw,
+            portfolio::portfolio_developed_preview,
+            portfolio::portfolio_suggest_look,
+            portfolio::portfolio_export_composite,
+            portfolio::portfolio_finish_preview,
+            playground::portfolio_classify,
+            playground::portfolio_review,
+            playground::playground_extract_subject,
             playground::playground_cancel_run,
             playground::playground_image_voice_flow,
             playground::playground_visual_plan,
@@ -358,8 +415,14 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|_, event| {
+        .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
+                #[cfg(all(windows, feature = "embedded-infer"))]
+                tauri::async_runtime::block_on(
+                    app.state::<embedded_infer::EmbeddedManager>().stop(),
+                );
+                #[cfg(not(all(windows, feature = "embedded-infer")))]
+                let _ = app;
                 cursor::reset();
             }
         });

@@ -122,7 +122,10 @@ pub fn fit_height(app: &AppHandle, height: f64) -> tauri::Result<()> {
             ))
         })
         .unwrap_or(1_200.0);
-    resize_keeping_corner(app, None, height.clamp(64.0, ceiling))
+    // The native resize requested when opening the pill may not have been
+    // applied yet (notably on Linux). Reading its current width here can
+    // therefore shrink the composer back to the 64px ambient window.
+    resize_keeping_corner(app, Some(Mode::Open.size().0), height.clamp(64.0, ceiling))
 }
 
 pub fn max_pill_height(work_area_physical: f64, scale: f64) -> f64 {

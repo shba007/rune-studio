@@ -67,7 +67,7 @@ pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
     }
     let stop_generation = STOPS.load(std::sync::atomic::Ordering::SeqCst);
     let (base_url, voice_model, api_key, output_limit) = {
-        let settings = state.settings.locked();
+        let (settings, _) = settings::snapshot_with_api_key(&state.settings);
         (
             settings.base_url.clone(),
             settings

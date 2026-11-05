@@ -213,6 +213,7 @@ onUnmounted(() => {
           label="Flow caption model"
           :options="captionOptions"
           :disabled="running"
+          model-icons
           menu
           floating
         />
@@ -233,6 +234,7 @@ onUnmounted(() => {
           label="Flow voice model"
           :options="speechOptions"
           :disabled="running"
+          model-icons
           menu
           floating
         />

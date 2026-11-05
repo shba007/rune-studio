@@ -5,6 +5,7 @@ import { computed, ref, useTemplateRef } from 'vue'
 import type { IconName } from '@/icons'
 
 import AppIcon from './AppIcon.vue'
+import ModelIcon from './ModelIcon.vue'
 import RuneSegment from './RuneSegment.vue'
 
 const props = defineProps<{
@@ -15,6 +16,7 @@ const props = defineProps<{
   segments?: boolean
   icon?: IconName
   floating?: boolean
+  modelIcons?: boolean
 }>()
 
 const model = defineModel<T>({ required: true })
@@ -112,8 +114,9 @@ function step(delta: number) {
       @keydown.down.prevent="step(1)"
       @keydown.up.prevent="step(-1)"
     >
+      <ModelIcon v-if="modelIcons && model" :model="String(model)" />
       <AppIcon
-        v-if="selectedOption()?.icon ?? icon"
+        v-else-if="selectedOption()?.icon ?? icon"
         :name="(selectedOption()?.icon ?? icon)!"
         size="sm"
         :class="selectedOption()?.iconClass ?? 'text-rune-text-3'"
@@ -150,8 +153,9 @@ function step(delta: number) {
           @click="pick(option.value)"
         >
           <span class="flex min-w-0 items-center gap-2" :class="floating && 'break-all'">
+            <ModelIcon v-if="modelIcons && option.value" :model="String(option.value)" />
             <AppIcon
-              v-if="option.icon"
+              v-else-if="option.icon"
               :name="option.icon"
               size="sm"
               :class="option.iconClass ?? 'text-rune-text-3'"
@@ -192,8 +196,9 @@ function step(delta: number) {
             @click="pick(option.value)"
           >
             <span class="flex min-w-0 items-center gap-2" :class="floating && 'break-all'">
+              <ModelIcon v-if="modelIcons && option.value" :model="String(option.value)" />
               <AppIcon
-                v-if="option.icon"
+                v-else-if="option.icon"
                 :name="option.icon"
                 size="sm"
                 :class="option.iconClass ?? 'text-rune-text-3'"

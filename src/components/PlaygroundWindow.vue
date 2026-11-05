@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { onKeyStroke } from '@vueuse/core'
 import { computed, onMounted, onUnmounted, ref, useTemplateRef, watch, type Ref } from 'vue'
+import type { Settings, VisualAnalysisModels } from '@/types/protocol'
 
 import { useAgent } from '@/composables/useAgent'
 import { useAnalysis } from '@/composables/useAnalysis'
@@ -64,6 +65,7 @@ import PlaygroundTranscript from './PlaygroundTranscript.vue'
 import PlaygroundCaption from './PlaygroundCaption.vue'
 import PlaygroundVisualResult from './PlaygroundVisualResult.vue'
 import PlaygroundFlows from './PlaygroundFlows.vue'
+import PlaygroundRawDevelop from './PlaygroundRawDevelop.vue'
 import PlaygroundSettingsPanel from './PlaygroundSettingsPanel.vue'
 import RuneButton from './RuneButton.vue'
 import RuneChip from './RuneChip.vue'
@@ -72,6 +74,14 @@ import RuneNavItem from './RuneNavItem.vue'
 import TitleBar from './TitleBar.vue'
 
 const agent = useAgent()
+async function saveVisualModels(models: VisualAnalysisModels) {
+  try {
+    const settings = await invoke<Settings>('get_settings')
+    return (await agent.saveSettings({ ...settings, visualAnalysisModels: models })) !== false
+  } catch {
+    return false
+  }
+}
 const analysis = useAnalysis()
 const history = usePlaygroundHistory()
 const windowRoot = useTemplateRef<HTMLElement>('windowRoot')
@@ -604,6 +614,7 @@ async function runModel(id: string, pipeline: ModelPipeline) {
 }
 
 function run() {
+  if (selectedId.value === 'develop-raw') return
   if (!canRun.value) return
   if (modelPipeline.value) {
     void runModel(selectedId.value, modelPipeline.value)
@@ -667,7 +678,7 @@ onKeyStroke('Enter', (event) => {
   run()
 })
 onKeyStroke('Escape', () => {
-  if (playgroundSection.value === 'flows') return
+  if (playgroundSection.value === 'flows' || selectedId.value === 'develop-raw') return
   if (isModelRun.value && loading.value) cancelModel(selectedId.value)
   else if (!isModelRun.value && analysis.busy.value) void analysis.cancel()
   else history.clearView()
@@ -711,6 +722,7 @@ onKeyStroke('Escape', () => {
       v-show="playgroundSection === 'flows'"
       :models="agent.backend.value?.models ?? []"
       :visual-models="agent.settings.value?.visualAnalysisModels"
+      :save-visual-models="saveVisualModels"
       :sidebar-open="sidebarOpen"
       :selected-flow="requestedFlow"
       :flow-request="flowRequest"
@@ -742,508 +754,517 @@ onKeyStroke('Escape', () => {
         </div>
       </nav>
 
-      <PlaygroundSettingsPanel aria-label="Settings" data-testid="playground-params">
-        <header data-tauri-drag-region class="flex h-12 shrink-0 items-center px-6">
-          <RuneChoice
-            v-model="headerModel"
-            :label="modelPipeline?.modelLabel ?? 'Analysis model'"
-            menu
-            icon="model"
-            :options="headerOptions"
-            :disabled="isSharedVisualModel && !!agent.settings.value?.visualAnalysisModels"
-          />
-        </header>
-        <div class="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-6 pb-4">
-          <header class="flex items-center gap-2">
-            <AppIcon :name="selected.icon" />
-            <h1 class="m-0 font-sans text-rune-title">{{ selected.label }}</h1>
+      <PlaygroundRawDevelop v-if="selectedId === 'develop-raw'" />
+      <template v-else>
+        <PlaygroundSettingsPanel aria-label="Settings" data-testid="playground-params">
+          <header data-tauri-drag-region class="flex h-12 shrink-0 items-center px-6">
+            <RuneChoice
+              v-model="headerModel"
+              :label="modelPipeline?.modelLabel ?? 'Analysis model'"
+              menu
+              icon="model"
+              :options="headerOptions"
+              :disabled="isSharedVisualModel && !!agent.settings.value?.visualAnalysisModels"
+            />
           </header>
-          <p class="m-0 text-rune-body text-rune-text-2">{{ selected.summary }}</p>
-          <p
-            v-if="isSharedVisualModel && agent.settings.value?.visualAnalysisModels"
-            class="m-0 text-rune-caption text-rune-text-3"
-          >
-            Configure this model in Settings → Capture & privacy.
-          </p>
-          <p
-            v-if="modelPipeline?.audioOperation && !activeTaskModel"
-            class="m-0 text-rune-caption text-rune-text-3"
-          >
-            Infer has not reported a model verified for this operation. Check the model's setup and
-            verification in Infer.
-          </p>
+          <div class="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-6 pb-4">
+            <header class="flex items-center gap-2">
+              <AppIcon :name="selected.icon" />
+              <h1 class="m-0 font-sans text-rune-title">{{ selected.label }}</h1>
+            </header>
+            <p class="m-0 text-rune-body text-rune-text-2">{{ selected.summary }}</p>
+            <p
+              v-if="isSharedVisualModel && agent.settings.value?.visualAnalysisModels"
+              class="m-0 text-rune-caption text-rune-text-3"
+            >
+              Configure this model in Settings → Capture & privacy.
+            </p>
+            <p
+              v-if="modelPipeline?.audioOperation && !activeTaskModel"
+              class="m-0 text-rune-caption text-rune-text-3"
+            >
+              Infer has not reported a model verified for this operation. Check the model's setup
+              and verification in Infer.
+            </p>
 
-          <template v-if="selected.ready">
-            <div v-if="isAudioText" class="flex flex-col gap-2">
-              <span class="text-rune-heading text-rune-text-3 uppercase">Audio file</span>
-              <input
-                ref="audioInput"
-                type="file"
-                accept=".wav,audio/wav"
-                class="hidden"
-                aria-label="WAV file"
-                @change="pickAudio"
-              />
-              <RuneButton size="sm" class="self-start" @click="audioInput?.click()"
-                >Choose WAV file</RuneButton
-              >
-              <span v-if="audioFile" class="break-all text-rune-caption text-rune-text-2">{{
-                audioFile.name
-              }}</span>
-              <p class="m-0 text-rune-caption text-rune-text-3">
-                16 kHz, mono, 16-bit PCM WAV, up to 25 MB.
-              </p>
-              <p v-if="isTranslate" class="m-0 text-rune-caption text-rune-text-3">
-                Only models verified by Infer for speech translation are listed. Output language
-                depends on the model.
-              </p>
-              <p v-if="audioNotice" role="alert" class="m-0 text-rune-caption text-error">
-                {{ audioNotice }}
-              </p>
-            </div>
-            <div v-if="isReference" class="flex flex-col gap-2">
-              <div class="flex items-baseline justify-between gap-2">
-                <span class="text-rune-heading text-rune-text-3 uppercase">Reference images</span>
-                <span class="text-rune-caption text-rune-text-3"
-                  >{{ referenceCount }} / {{ referenceLimit }}</span
+            <template v-if="selected.ready">
+              <div v-if="isAudioText" class="flex flex-col gap-2">
+                <span class="text-rune-heading text-rune-text-3 uppercase">Audio file</span>
+                <input
+                  ref="audioInput"
+                  type="file"
+                  accept=".wav,audio/wav"
+                  class="hidden"
+                  aria-label="WAV file"
+                  @change="pickAudio"
+                />
+                <RuneButton size="sm" class="self-start" @click="audioInput?.click()"
+                  >Choose WAV file</RuneButton
                 >
+                <span v-if="audioFile" class="break-all text-rune-caption text-rune-text-2">{{
+                  audioFile.name
+                }}</span>
+                <p class="m-0 text-rune-caption text-rune-text-3">
+                  16 kHz, mono, 16-bit PCM WAV, up to 25 MB.
+                </p>
+                <p v-if="isTranslate" class="m-0 text-rune-caption text-rune-text-3">
+                  Only models verified by Infer for speech translation are listed. Output language
+                  depends on the model.
+                </p>
+                <p v-if="audioNotice" role="alert" class="m-0 text-rune-caption text-error">
+                  {{ audioNotice }}
+                </p>
               </div>
-              <div class="grid grid-cols-2 gap-2">
-                <div
-                  v-for="index in referenceFiles.length"
-                  :key="index"
-                  class="min-w-0 text-rune-body text-rune-text-2"
-                >
-                  <span class="mb-1 block text-rune-caption text-rune-text-3"
-                    >Image {{ index }}</span
+              <div v-if="isReference" class="flex flex-col gap-2">
+                <div class="flex items-baseline justify-between gap-2">
+                  <span class="text-rune-heading text-rune-text-3 uppercase">Reference images</span>
+                  <span class="text-rune-caption text-rune-text-3"
+                    >{{ referenceCount }} / {{ referenceLimit }}</span
                   >
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                  <div
+                    v-for="index in referenceFiles.length"
+                    :key="index"
+                    class="min-w-0 text-rune-body text-rune-text-2"
+                  >
+                    <span class="mb-1 block text-rune-caption text-rune-text-3"
+                      >Image {{ index }}</span
+                    >
+                    <input
+                      :id="`reference-file-${index}`"
+                      type="file"
+                      accept="image/*"
+                      class="sr-only"
+                      :aria-label="`Image ${index}`"
+                      @change="pickReference($event, index - 1)"
+                    />
+                    <label
+                      :for="`reference-file-${index}`"
+                      class="grid aspect-square w-full cursor-pointer place-items-center overflow-hidden rounded-rune-tile bg-rune-surface text-rune-body text-rune-text-2"
+                      :class="referenceDragging === index - 1 && 'outline-2 outline-accent'"
+                      :data-testid="`reference-drop-${index}`"
+                      @dragover.prevent="referenceDragging = index - 1"
+                      @dragleave="referenceDragging = null"
+                      @drop.prevent="dropReference($event, index - 1)"
+                    >
+                      <img
+                        v-if="referenceFiles[index - 1]"
+                        :src="referenceFiles[index - 1]?.data"
+                        :alt="referenceFiles[index - 1]?.name"
+                        class="size-full object-contain"
+                      />
+                      <span
+                        v-else
+                        class="flex flex-col items-center gap-2 p-2 text-center text-rune-caption"
+                        ><AppIcon name="add" /> Add image</span
+                      >
+                    </label>
+                    <span
+                      v-if="referenceFiles[index - 1]"
+                      class="mt-1 block truncate text-rune-caption text-rune-text-2"
+                      :title="referenceFiles[index - 1]?.name"
+                      >{{ referenceFiles[index - 1]?.name }}</span
+                    >
+                    <RuneButton
+                      v-if="referenceFiles[index - 1] || referenceFiles.length > 2"
+                      variant="link"
+                      class="mt-1 p-0! text-rune-caption! normal-case! underline"
+                      :aria-label="`Remove image ${index}`"
+                      @click="removeReference(index - 1)"
+                    >
+                      Remove
+                    </RuneButton>
+                    <span v-if="referenceNotices[index - 1]" role="alert" class="text-error">{{
+                      referenceNotices[index - 1]
+                    }}</span>
+                  </div>
+                </div>
+                <RuneButton
+                  size="sm"
+                  class="self-start normal-case!"
+                  :disabled="referenceFiles.length >= referenceLimit"
+                  data-testid="reference-add"
+                  @click="addReference"
+                  >Add image</RuneButton
+                >
+                <p
+                  v-if="referenceCount > referenceLimit"
+                  role="alert"
+                  class="m-0 text-rune-caption text-error"
+                >
+                  This model supports up to {{ referenceLimit }} images. Remove images or select
+                  another model.
+                </p>
+                <p v-else class="m-0 text-rune-caption text-rune-text-3">
+                  Choose at least two images. This model supports up to {{ referenceLimit }}.
+                </p>
+                <details class="mt-2 text-rune-body text-rune-text-2">
+                  <summary class="cursor-pointer">Image input quality</summary>
+                  <div class="mt-3 flex flex-col items-start gap-3">
+                    <RuneChoice
+                      v-model="referenceFormat"
+                      label="Reference image format"
+                      :options="referenceFormatOptions"
+                    />
+                    <label v-if="referenceFormat === 'jpeg'" class="flex w-full flex-col gap-2">
+                      <span>JPEG quality: {{ referenceQuality }}</span>
+                      <input
+                        v-model.number="referenceQuality"
+                        type="range"
+                        min="1"
+                        max="100"
+                        aria-label="JPEG quality"
+                        class="w-full"
+                      />
+                    </label>
+                    <p class="m-0 text-rune-caption text-rune-text-3">
+                      {{
+                        referenceFormat === 'jpeg'
+                          ? 'JPEG uses the model image resolution setting. Higher quality produces larger files.'
+                          : 'PNG keeps the prepared reference image losslessly, including transparency. Larger files may take longer.'
+                      }}
+                    </p>
+                  </div>
+                </details>
+              </div>
+              <div
+                v-if="!isReference && !isCreate && !isSpeech && !isAudioText"
+                class="flex flex-col gap-2"
+              >
+                <span class="text-rune-heading text-rune-text-3 uppercase">Source</span>
+                <RuneChoice v-model="source" label="Source" :options="SOURCE_OPTIONS" />
+                <div
+                  v-if="source === 'file'"
+                  class="flex flex-col gap-2"
+                  data-testid="source-target"
+                  @dragover.prevent="dragging = true"
+                  @dragleave="dragging = false"
+                  @drop.prevent="onDrop"
+                >
                   <input
-                    :id="`reference-file-${index}`"
+                    ref="fileInput"
                     type="file"
                     accept="image/*"
-                    class="sr-only"
-                    :aria-label="`Image ${index}`"
-                    @change="pickReference($event, index - 1)"
+                    class="hidden"
+                    aria-label="Image file"
+                    @change="onPick"
                   />
-                  <label
-                    :for="`reference-file-${index}`"
-                    class="grid aspect-square w-full cursor-pointer place-items-center overflow-hidden rounded-rune-tile bg-rune-surface text-rune-body text-rune-text-2"
-                    :class="referenceDragging === index - 1 && 'outline-2 outline-accent'"
-                    :data-testid="`reference-drop-${index}`"
-                    @dragover.prevent="referenceDragging = index - 1"
-                    @dragleave="referenceDragging = null"
-                    @drop.prevent="dropReference($event, index - 1)"
+                  <div
+                    class="grid aspect-square w-full place-items-center overflow-hidden rounded-rune-tile bg-rune-surface text-rune-body text-rune-text-2"
+                    :class="dragging && 'outline-2 outline-accent'"
                   >
                     <img
-                      v-if="referenceFiles[index - 1]"
-                      :src="referenceFiles[index - 1]?.data"
-                      :alt="referenceFiles[index - 1]?.name"
+                      v-if="file"
+                      :src="file.data"
+                      :alt="file.name"
                       class="size-full object-contain"
+                      data-testid="file-preview"
                     />
-                    <span
-                      v-else
-                      class="flex flex-col items-center gap-2 p-2 text-center text-rune-caption"
-                      ><AppIcon name="add" /> Add image</span
-                    >
-                  </label>
-                  <span
-                    v-if="referenceFiles[index - 1]"
-                    class="mt-1 block truncate text-rune-caption text-rune-text-2"
-                    :title="referenceFiles[index - 1]?.name"
-                    >{{ referenceFiles[index - 1]?.name }}</span
-                  >
-                  <RuneButton
-                    v-if="referenceFiles[index - 1] || referenceFiles.length > 2"
-                    variant="link"
-                    class="mt-1 p-0! text-rune-caption! normal-case! underline"
-                    :aria-label="`Remove image ${index}`"
-                    @click="removeReference(index - 1)"
-                  >
-                    Remove
-                  </RuneButton>
-                  <span v-if="referenceNotices[index - 1]" role="alert" class="text-error">{{
-                    referenceNotices[index - 1]
-                  }}</span>
-                </div>
-              </div>
-              <RuneButton
-                size="sm"
-                class="self-start normal-case!"
-                :disabled="referenceFiles.length >= referenceLimit"
-                data-testid="reference-add"
-                @click="addReference"
-                >Add image</RuneButton
-              >
-              <p
-                v-if="referenceCount > referenceLimit"
-                role="alert"
-                class="m-0 text-rune-caption text-error"
-              >
-                This model supports up to {{ referenceLimit }} images. Remove images or select
-                another model.
-              </p>
-              <p v-else class="m-0 text-rune-caption text-rune-text-3">
-                Choose at least two images. This model supports up to {{ referenceLimit }}.
-              </p>
-              <details class="mt-2 text-rune-body text-rune-text-2">
-                <summary class="cursor-pointer">Image input quality</summary>
-                <div class="mt-3 flex flex-col items-start gap-3">
-                  <RuneChoice
-                    v-model="referenceFormat"
-                    label="Reference image format"
-                    :options="referenceFormatOptions"
-                  />
-                  <label v-if="referenceFormat === 'jpeg'" class="flex w-full flex-col gap-2">
-                    <span>JPEG quality: {{ referenceQuality }}</span>
-                    <input
-                      v-model.number="referenceQuality"
-                      type="range"
-                      min="1"
-                      max="100"
-                      aria-label="JPEG quality"
-                      class="w-full"
-                    />
-                  </label>
-                  <p class="m-0 text-rune-caption text-rune-text-3">
-                    {{
-                      referenceFormat === 'jpeg'
-                        ? 'JPEG uses the model image resolution setting. Higher quality produces larger files.'
-                        : 'PNG keeps the prepared reference image losslessly, including transparency. Larger files may take longer.'
-                    }}
+                    <span v-else class="flex items-center gap-2">
+                      <AppIcon name="add" /> Drop an image or choose one
+                    </span>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <RuneButton size="sm" @click="fileInput?.click()">Choose image</RuneButton>
+                    <span v-if="file" class="min-w-0 truncate text-rune-caption text-rune-text-2">
+                      {{ file.name }}
+                    </span>
+                  </div>
+                  <p v-if="fileNotice" role="alert" class="m-0 text-rune-caption text-error">
+                    {{ fileNotice }}
                   </p>
                 </div>
-              </details>
-            </div>
-            <div
-              v-if="!isReference && !isCreate && !isSpeech && !isAudioText"
-              class="flex flex-col gap-2"
-            >
-              <span class="text-rune-heading text-rune-text-3 uppercase">Source</span>
-              <RuneChoice v-model="source" label="Source" :options="SOURCE_OPTIONS" />
-              <div
-                v-if="source === 'file'"
-                class="flex flex-col gap-2"
-                data-testid="source-target"
-                @dragover.prevent="dragging = true"
-                @dragleave="dragging = false"
-                @drop.prevent="onDrop"
-              >
-                <input
-                  ref="fileInput"
-                  type="file"
-                  accept="image/*"
-                  class="hidden"
-                  aria-label="Image file"
-                  @change="onPick"
-                />
-                <div
-                  class="grid aspect-square w-full place-items-center overflow-hidden rounded-rune-tile bg-rune-surface text-rune-body text-rune-text-2"
-                  :class="dragging && 'outline-2 outline-accent'"
-                >
-                  <img
-                    v-if="file"
-                    :src="file.data"
-                    :alt="file.name"
-                    class="size-full object-contain"
-                    data-testid="file-preview"
+                <template v-else>
+                  <CaptureTargetPicker
+                    v-model="target"
+                    :options="options"
+                    :refreshing="refreshing"
+                    @refresh="loadTargets"
                   />
-                  <span v-else class="flex items-center gap-2">
-                    <AppIcon name="add" /> Drop an image or choose one
-                  </span>
-                </div>
-                <div class="flex items-center gap-2">
-                  <RuneButton size="sm" @click="fileInput?.click()">Choose image</RuneButton>
-                  <span v-if="file" class="min-w-0 truncate text-rune-caption text-rune-text-2">
-                    {{ file.name }}
-                  </span>
-                </div>
-                <p v-if="fileNotice" role="alert" class="m-0 text-rune-caption text-error">
-                  {{ fileNotice }}
-                </p>
+                  <p v-if="targetNotice" role="alert" class="m-0 text-rune-caption text-error">
+                    {{ targetNotice }}
+                  </p>
+                </template>
               </div>
-              <template v-else>
-                <CaptureTargetPicker
-                  v-model="target"
-                  :options="options"
-                  :refreshing="refreshing"
-                  @refresh="loadTargets"
+
+              <div v-if="isSpeech" class="flex flex-col gap-2">
+                <label for="speech-text" class="text-rune-heading text-rune-text-3 uppercase"
+                  >Text</label
+                >
+                <textarea
+                  id="speech-text"
+                  v-model="speechText"
+                  rows="6"
+                  placeholder="Type the text to speak…"
+                  class="w-full resize-none rounded-rune-tile bg-rune-surface p-4 text-rune-body text-rune-ink outline-none placeholder:text-rune-text-3 focus-visible:outline-2 focus-visible:outline-accent"
                 />
-                <p v-if="targetNotice" role="alert" class="m-0 text-rune-caption text-error">
-                  {{ targetNotice }}
+                <p
+                  :class="speechBytes > 4096 ? 'text-error' : 'text-rune-text-3'"
+                  class="m-0 text-rune-caption"
+                  aria-live="polite"
+                >
+                  {{ speechBytes }} / 4096 bytes
+                </p>
+                <div class="flex flex-wrap gap-2">
+                  <RuneButton
+                    v-for="hint in hints"
+                    :key="hint"
+                    size="sm"
+                    class="normal-case!"
+                    @click="speechText = hint"
+                  >
+                    {{ hint }}
+                  </RuneButton>
+                </div>
+              </div>
+              <div
+                v-if="!isModelRun || isCreate || isEdit || isReference"
+                class="flex flex-col gap-2"
+              >
+                <span class="text-rune-heading text-rune-text-3 uppercase">{{
+                  isCreate || isEdit || isReference ? 'Prompt' : 'Question'
+                }}</span>
+                <textarea
+                  v-model="question"
+                  rows="4"
+                  :maxlength="questionLimit(selectedId)"
+                  aria-label="Question"
+                  :placeholder="
+                    isReference
+                      ? 'Describe how to use the two images'
+                      : isEdit
+                        ? 'Describe the change to make'
+                        : isCreate
+                          ? 'Describe the image to create'
+                          : 'What do you want to know?'
+                  "
+                  class="w-full resize-none rounded-rune-tile bg-rune-surface p-4 text-rune-body text-rune-ink outline-none placeholder:text-rune-text-3 focus-visible:outline-2 focus-visible:outline-accent"
+                />
+                <div class="flex flex-wrap gap-2">
+                  <RuneButton
+                    v-for="(hint, index) in hints"
+                    :key="hint"
+                    size="sm"
+                    class="normal-case!"
+                    :title="isReference ? hint : undefined"
+                    @click="question = hint"
+                  >
+                    {{ isReference ? (referenceHintLabels[index] ?? 'Example') : hint }}
+                  </RuneButton>
+                </div>
+              </div>
+
+              <div v-if="!isModelRun" class="flex flex-col gap-2">
+                <span class="text-rune-heading text-rune-text-3 uppercase">Resolution</span>
+                <RuneChoice
+                  v-model="activeResolution"
+                  label="Resolution"
+                  menu
+                  :options="RESOLUTION_OPTIONS"
+                />
+              </div>
+
+              <div v-if="isCreate" class="flex flex-col gap-2">
+                <span class="text-rune-heading text-rune-text-3 uppercase">Resolution</span>
+                <RuneChoice
+                  v-model="createResolution"
+                  label="Resolution"
+                  menu
+                  :options="CREATE_RESOLUTIONS"
+                />
+              </div>
+              <div v-if="isCreate" class="flex flex-col gap-2">
+                <span class="text-rune-heading text-rune-text-3 uppercase">Aspect ratio</span>
+                <RuneChoice
+                  v-model="createAspect"
+                  label="Aspect ratio"
+                  menu
+                  :options="CREATE_ASPECTS"
+                />
+              </div>
+
+              <div v-if="selectedId === 'upscale'" class="flex flex-col gap-2">
+                <span class="text-rune-heading text-rune-text-3 uppercase">Scale</span>
+                <RuneChoice v-model="scale" label="Scale" :options="SCALE_OPTIONS" />
+              </div>
+              <div v-if="isCaption" class="flex flex-col gap-2">
+                <span class="text-rune-heading text-rune-text-3 uppercase">Detail</span>
+                <RuneChoice
+                  v-model="captionDetail"
+                  label="Detail"
+                  :options="captionDetailOptions"
+                />
+              </div>
+            </template>
+            <RuneChip v-else class="self-start">Coming later</RuneChip>
+          </div>
+          <div v-if="selected.ready" class="shrink-0 px-6 pb-6">
+            <RuneButton
+              variant="primary"
+              class="w-full"
+              :disabled="!canRun"
+              data-testid="playground-run"
+              @click="run"
+            >
+              Run
+            </RuneButton>
+          </div>
+        </PlaygroundSettingsPanel>
+
+        <div class="relative flex min-w-0 flex-1 flex-col">
+          <div
+            v-if="history.viewed.value"
+            class="flex max-h-28 shrink-0 items-start gap-4 overflow-auto bg-rune-sunken px-5 py-3"
+            data-testid="history-details"
+          >
+            <div class="min-w-0 flex-1 text-rune-caption text-rune-text-2">
+              <p class="m-0 font-semibold">
+                {{ findPipeline(history.viewed.value.pipeline)?.label ?? 'Run' }} · Saved run
+              </p>
+              <template v-if="history.viewed.value.pipeline !== 'reference'">
+                <p
+                  v-for="detail in history.viewed.value.details"
+                  :key="detail"
+                  class="m-0 whitespace-pre-wrap break-words"
+                >
+                  {{ detail }}
                 </p>
               </template>
-            </div>
-
-            <div v-if="isSpeech" class="flex flex-col gap-2">
-              <label for="speech-text" class="text-rune-heading text-rune-text-3 uppercase"
-                >Text</label
-              >
-              <textarea
-                id="speech-text"
-                v-model="speechText"
-                rows="6"
-                placeholder="Type the text to speak…"
-                class="w-full resize-none rounded-rune-tile bg-rune-surface p-4 text-rune-body text-rune-ink outline-none placeholder:text-rune-text-3 focus-visible:outline-2 focus-visible:outline-accent"
-              />
-              <p
-                :class="speechBytes > 4096 ? 'text-error' : 'text-rune-text-3'"
-                class="m-0 text-rune-caption"
-                aria-live="polite"
-              >
-                {{ speechBytes }} / 4096 bytes
-              </p>
-              <div class="flex flex-wrap gap-2">
-                <RuneButton
-                  v-for="hint in hints"
-                  :key="hint"
-                  size="sm"
-                  class="normal-case!"
-                  @click="speechText = hint"
+              <details v-if="history.viewed.value.pipeline === 'reference'" class="mt-1">
+                <summary class="cursor-pointer">View inputs and prompt</summary>
+                <p
+                  v-for="detail in history.viewed.value.details"
+                  :key="detail"
+                  class="m-0 whitespace-pre-wrap break-words"
                 >
-                  {{ hint }}
-                </RuneButton>
-              </div>
+                  {{ detail }}
+                </p>
+              </details>
             </div>
+            <RuneButton size="sm" @click="history.clearView()">Back to live</RuneButton>
+          </div>
+          <section
+            class="m-0 flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-rune-surface bg-[radial-gradient(circle,rgb(255_255_255/0.22)_1px,transparent_1.5px)] bg-size-[24px_24px]"
+            aria-label="Result"
+            data-testid="playground-canvas"
+          >
+            <PlaygroundLoading
+              v-if="loading"
+              :started-at="loadingStartedAt"
+              :label="loadingLabel"
+              :cancellable="true"
+              @cancel="isModelRun ? cancelModel(selectedId) : analysis.cancel()"
+            />
+            <PlaygroundDepth
+              v-else-if="selectedId === 'depth' && shownDepth.status !== 'idle'"
+              :state="shownDepth"
+            />
             <div
-              v-if="!isModelRun || isCreate || isEdit || isReference"
-              class="flex flex-col gap-2"
+              v-else-if="isVisualOperation && shownVisual.status !== 'idle'"
+              class="max-h-full w-full max-w-3xl overflow-auto p-6"
             >
-              <span class="text-rune-heading text-rune-text-3 uppercase">{{
-                isCreate || isEdit || isReference ? 'Prompt' : 'Question'
-              }}</span>
-              <textarea
-                v-model="question"
-                rows="4"
-                :maxlength="questionLimit(selectedId)"
-                aria-label="Question"
-                :placeholder="
-                  isReference
-                    ? 'Describe how to use the two images'
-                    : isEdit
-                      ? 'Describe the change to make'
-                      : isCreate
-                        ? 'Describe the image to create'
-                        : 'What do you want to know?'
-                "
-                class="w-full resize-none rounded-rune-tile bg-rune-surface p-4 text-rune-body text-rune-ink outline-none placeholder:text-rune-text-3 focus-visible:outline-2 focus-visible:outline-accent"
-              />
-              <div class="flex flex-wrap gap-2">
-                <RuneButton
-                  v-for="(hint, index) in hints"
-                  :key="hint"
-                  size="sm"
-                  class="normal-case!"
-                  :title="isReference ? hint : undefined"
-                  @click="question = hint"
-                >
-                  {{ isReference ? (referenceHintLabels[index] ?? 'Example') : hint }}
-                </RuneButton>
-              </div>
-            </div>
-
-            <div v-if="!isModelRun" class="flex flex-col gap-2">
-              <span class="text-rune-heading text-rune-text-3 uppercase">Resolution</span>
-              <RuneChoice
-                v-model="activeResolution"
-                label="Resolution"
-                menu
-                :options="RESOLUTION_OPTIONS"
-              />
-            </div>
-
-            <div v-if="isCreate" class="flex flex-col gap-2">
-              <span class="text-rune-heading text-rune-text-3 uppercase">Resolution</span>
-              <RuneChoice
-                v-model="createResolution"
-                label="Resolution"
-                menu
-                :options="CREATE_RESOLUTIONS"
-              />
-            </div>
-            <div v-if="isCreate" class="flex flex-col gap-2">
-              <span class="text-rune-heading text-rune-text-3 uppercase">Aspect ratio</span>
-              <RuneChoice
-                v-model="createAspect"
-                label="Aspect ratio"
-                menu
-                :options="CREATE_ASPECTS"
-              />
-            </div>
-
-            <div v-if="selectedId === 'upscale'" class="flex flex-col gap-2">
-              <span class="text-rune-heading text-rune-text-3 uppercase">Scale</span>
-              <RuneChoice v-model="scale" label="Scale" :options="SCALE_OPTIONS" />
-            </div>
-            <div v-if="isCaption" class="flex flex-col gap-2">
-              <span class="text-rune-heading text-rune-text-3 uppercase">Detail</span>
-              <RuneChoice v-model="captionDetail" label="Detail" :options="captionDetailOptions" />
-            </div>
-          </template>
-          <RuneChip v-else class="self-start">Coming later</RuneChip>
-        </div>
-        <div v-if="selected.ready" class="shrink-0 px-6 pb-6">
-          <RuneButton
-            variant="primary"
-            class="w-full"
-            :disabled="!canRun"
-            data-testid="playground-run"
-            @click="run"
-          >
-            Run
-          </RuneButton>
-        </div>
-      </PlaygroundSettingsPanel>
-
-      <div class="relative flex min-w-0 flex-1 flex-col">
-        <div
-          v-if="history.viewed.value"
-          class="flex max-h-28 shrink-0 items-start gap-4 overflow-auto bg-rune-sunken px-5 py-3"
-          data-testid="history-details"
-        >
-          <div class="min-w-0 flex-1 text-rune-caption text-rune-text-2">
-            <p class="m-0 font-semibold">
-              {{ findPipeline(history.viewed.value.pipeline)?.label ?? 'Run' }} · Saved run
-            </p>
-            <template v-if="history.viewed.value.pipeline !== 'reference'">
-              <p
-                v-for="detail in history.viewed.value.details"
-                :key="detail"
-                class="m-0 whitespace-pre-wrap break-words"
-              >
-                {{ detail }}
+              <p v-if="shownVisual.error" role="alert" class="text-error">
+                {{ shownVisual.error }}
               </p>
-            </template>
-            <details v-if="history.viewed.value.pipeline === 'reference'" class="mt-1">
-              <summary class="cursor-pointer">View inputs and prompt</summary>
-              <p
-                v-for="detail in history.viewed.value.details"
-                :key="detail"
-                class="m-0 whitespace-pre-wrap break-words"
-              >
-                {{ detail }}
+              <PlaygroundVisualResult
+                v-if="shownVisual.result"
+                :result="shownVisual.result.result"
+                :image="shownVisual.result.image"
+              />
+            </div>
+            <PlaygroundCaption
+              v-else-if="isCaption && shownCaption.status !== 'idle'"
+              :state="shownCaption"
+            />
+            <PlaygroundUpscale
+              v-else-if="selectedId === 'upscale' && shownUpscale.status !== 'idle'"
+              :state="shownUpscale"
+            />
+            <PlaygroundCreate
+              v-else-if="isCreate && shownCreate.status !== 'idle'"
+              :state="shownCreate"
+            />
+            <PlaygroundEdit v-else-if="isEdit && shownEdit.status !== 'idle'" :state="shownEdit" />
+            <PlaygroundEdit
+              v-else-if="isVariation && shownVariation.status !== 'idle'"
+              :state="shownVariation"
+              variation
+            />
+            <PlaygroundEdit
+              v-else-if="isReference && shownReference.status !== 'idle'"
+              :state="shownReference"
+              reference
+            />
+            <PlaygroundSpeech
+              v-else-if="isSpeech && shownSpeech.status !== 'idle'"
+              :state="shownSpeech"
+            />
+            <PlaygroundTranscript
+              v-else-if="isTranscribe && shownTranscript.status !== 'idle'"
+              :state="shownTranscript"
+            />
+            <PlaygroundTranscript
+              v-else-if="isTranslate && shownTranslation.status !== 'idle'"
+              :state="shownTranslation"
+            />
+            <PlaygroundResult
+              v-else-if="!isModelRun && hasResult && selected.ready"
+              :snapshot="display"
+              :live="live"
+              @cancel="analysis.cancel()"
+            />
+            <div v-else class="flex max-w-80 flex-col items-center gap-3 text-center">
+              <AppIcon :name="selected.icon" />
+              <p class="m-0 text-rune-body text-rune-text-2">
+                {{
+                  modelPipeline
+                    ? modelPipeline.idle
+                    : selected.ready
+                      ? 'Results land here. Pick a source, ask a question and press Run.'
+                      : `${selected.label} is planned for a later release.`
+                }}
               </p>
-            </details>
-          </div>
-          <RuneButton size="sm" @click="history.clearView()">Back to live</RuneButton>
-        </div>
-        <section
-          class="m-0 flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-rune-surface bg-[radial-gradient(circle,rgb(255_255_255/0.22)_1px,transparent_1.5px)] bg-size-[24px_24px]"
-          aria-label="Result"
-          data-testid="playground-canvas"
-        >
-          <PlaygroundLoading
-            v-if="loading"
-            :started-at="loadingStartedAt"
-            :label="loadingLabel"
-            :cancellable="true"
-            @cancel="isModelRun ? cancelModel(selectedId) : analysis.cancel()"
-          />
-          <PlaygroundDepth
-            v-else-if="selectedId === 'depth' && shownDepth.status !== 'idle'"
-            :state="shownDepth"
-          />
-          <div
-            v-else-if="isVisualOperation && shownVisual.status !== 'idle'"
-            class="max-h-full w-full max-w-3xl overflow-auto p-6"
-          >
-            <p v-if="shownVisual.error" role="alert" class="text-error">{{ shownVisual.error }}</p>
-            <PlaygroundVisualResult
-              v-if="shownVisual.result"
-              :result="shownVisual.result.result"
-              :image="shownVisual.result.image"
-            />
-          </div>
-          <PlaygroundCaption
-            v-else-if="isCaption && shownCaption.status !== 'idle'"
-            :state="shownCaption"
-          />
-          <PlaygroundUpscale
-            v-else-if="selectedId === 'upscale' && shownUpscale.status !== 'idle'"
-            :state="shownUpscale"
-          />
-          <PlaygroundCreate
-            v-else-if="isCreate && shownCreate.status !== 'idle'"
-            :state="shownCreate"
-          />
-          <PlaygroundEdit v-else-if="isEdit && shownEdit.status !== 'idle'" :state="shownEdit" />
-          <PlaygroundEdit
-            v-else-if="isVariation && shownVariation.status !== 'idle'"
-            :state="shownVariation"
-            variation
-          />
-          <PlaygroundEdit
-            v-else-if="isReference && shownReference.status !== 'idle'"
-            :state="shownReference"
-            reference
-          />
-          <PlaygroundSpeech
-            v-else-if="isSpeech && shownSpeech.status !== 'idle'"
-            :state="shownSpeech"
-          />
-          <PlaygroundTranscript
-            v-else-if="isTranscribe && shownTranscript.status !== 'idle'"
-            :state="shownTranscript"
-          />
-          <PlaygroundTranscript
-            v-else-if="isTranslate && shownTranslation.status !== 'idle'"
-            :state="shownTranslation"
-          />
-          <PlaygroundResult
-            v-else-if="!isModelRun && hasResult && selected.ready"
-            :snapshot="display"
-            :live="live"
-            @cancel="analysis.cancel()"
-          />
-          <div v-else class="flex max-w-80 flex-col items-center gap-3 text-center">
-            <AppIcon :name="selected.icon" />
-            <p class="m-0 text-rune-body text-rune-text-2">
-              {{
-                modelPipeline
-                  ? modelPipeline.idle
-                  : selected.ready
-                    ? 'Results land here. Pick a source, ask a question and press Run.'
-                    : `${selected.label} is planned for a later release.`
-              }}
-            </p>
-          </div>
-        </section>
+            </div>
+          </section>
 
-        <p
-          v-if="history.notice.value"
-          role="status"
-          class="m-0 shrink-0 bg-rune-sunken px-6 py-2 text-rune-caption text-rune-text-3"
-        >
-          {{ history.notice.value }}
-        </p>
-        <footer
-          class="flex h-24 shrink-0 items-center gap-2 overflow-x-auto bg-rune-sunken px-6"
-          aria-label="History"
-          data-testid="playground-history"
-        >
-          <span v-if="!history.runs.value.length" class="text-rune-caption text-rune-text-3">
-            This session's runs appear here.
-          </span>
-          <RuneButton
-            v-for="item in history.runs.value"
-            :key="item.id"
-            variant="ghost"
-            class="size-16 min-h-0 overflow-hidden rounded-rune-tile! p-0!"
-            :aria-label="`Open ${findPipeline(item.pipeline)?.label ?? 'Playground'} run`"
-            :title="findPipeline(item.pipeline)?.label ?? 'Playground run'"
-            :class="history.viewed.value?.id === item.id && 'outline-2 outline-accent'"
-            data-testid="history-run"
-            @click="openRun(item.id)"
+          <p
+            v-if="history.notice.value"
+            role="status"
+            class="m-0 shrink-0 bg-rune-sunken px-6 py-2 text-rune-caption text-rune-text-3"
           >
-            <img
-              v-if="runImage(item)"
-              :src="runImage(item)!"
-              alt=""
-              class="size-full object-cover"
-            />
-            <AppIcon v-else :name="findPipeline(item.pipeline)?.icon ?? 'image'" />
-          </RuneButton>
-        </footer>
-      </div>
+            {{ history.notice.value }}
+          </p>
+          <footer
+            class="flex h-24 shrink-0 items-center gap-2 overflow-x-auto bg-rune-sunken px-6"
+            aria-label="History"
+            data-testid="playground-history"
+          >
+            <span v-if="!history.runs.value.length" class="text-rune-caption text-rune-text-3">
+              This session's runs appear here.
+            </span>
+            <RuneButton
+              v-for="item in history.runs.value"
+              :key="item.id"
+              variant="ghost"
+              class="size-16 min-h-0 overflow-hidden rounded-rune-tile! p-0!"
+              :aria-label="`Open ${findPipeline(item.pipeline)?.label ?? 'Playground'} run`"
+              :title="findPipeline(item.pipeline)?.label ?? 'Playground run'"
+              :class="history.viewed.value?.id === item.id && 'outline-2 outline-accent'"
+              data-testid="history-run"
+              @click="openRun(item.id)"
+            >
+              <img
+                v-if="runImage(item)"
+                :src="runImage(item)!"
+                alt=""
+                class="size-full object-cover"
+              />
+              <AppIcon v-else :name="findPipeline(item.pipeline)?.icon ?? 'image'" />
+            </RuneButton>
+          </footer>
+        </div>
+      </template>
     </div>
   </main>
 </template>

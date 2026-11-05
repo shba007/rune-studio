@@ -28,4 +28,11 @@ export const FLOWS: FlowDefinition[] = [
     icon: 'scan',
     command: '#visual analysis',
   },
+  {
+    id: 'portfolio-studio',
+    name: 'Portfolio Studio',
+    description: 'Review RAW photographs and select portfolio views.',
+    icon: 'image',
+    command: '#portfolio studio',
+  },
 ]

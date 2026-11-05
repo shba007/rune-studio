@@ -5,6 +5,7 @@ import type { ModelCapabilities, VisualAnalysisModels } from '@/types/protocol'
 import AppIcon from './AppIcon.vue'
 import PlaygroundImageVoiceFlow from './PlaygroundImageVoiceFlow.vue'
 import PlaygroundVisualAnalysisFlow from './PlaygroundVisualAnalysisFlow.vue'
+import PlaygroundPortfolioFlow from './PlaygroundPortfolioFlow.vue'
 import RuneNavItem from './RuneNavItem.vue'
 
 const props = defineProps<{
@@ -13,6 +14,7 @@ const props = defineProps<{
   selectedFlow?: string
   flowRequest?: number
   visualModels?: VisualAnalysisModels
+  saveVisualModels?: (models: VisualAnalysisModels) => Promise<boolean>
 }>()
 const selected = ref(
   FLOWS.some((flow) => flow.id === props.selectedFlow) ? props.selectedFlow! : FLOWS[0]!.id,
@@ -25,6 +27,7 @@ watch(
   },
 )
 const flowComponents: Record<string, Component> = {
+  'portfolio-studio': PlaygroundPortfolioFlow,
   'image-voice': PlaygroundImageVoiceFlow,
   'screen-insight': PlaygroundVisualAnalysisFlow,
 }
@@ -54,6 +57,7 @@ const flowComponents: Record<string, Component> = {
         :key="selected"
         :models="models"
         :visual-models="visualModels"
+        :save-visual-models="saveVisualModels"
       />
     </KeepAlive>
   </div>

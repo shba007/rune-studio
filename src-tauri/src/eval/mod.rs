@@ -348,7 +348,7 @@ async fn execute(app: &AppHandle, suite_path: &Path, out: &Path) -> i32 {
         settings.max_steps = suite.defaults.max_steps;
         settings.verify_mode = suite.verify_mode();
     }
-    let effective = state.settings.locked().clone();
+    let (effective, _) = settings::snapshot_with_api_key(&state.settings);
 
     let running = match check::Machine::process_names(&windows::System) {
         Ok(running) => running,

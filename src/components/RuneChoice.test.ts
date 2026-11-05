@@ -47,3 +47,22 @@ it('skips disabled choices when using arrow keys', async () => {
   expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['model'])
   wrapper.unmount()
 })
+
+it('shows the model family icon for a selected LFM and its menu entry', async () => {
+  const wrapper = mount(RuneChoice, {
+    props: {
+      modelValue: 'lfm3-omni-2b',
+      label: 'Model',
+      menu: true,
+      modelIcons: true,
+      options: [{ value: 'lfm3-omni-2b', label: 'LFM3' }],
+    },
+  })
+  expect(
+    wrapper.get('button[aria-label="Model"] span[aria-hidden="true"]').attributes('style'),
+  ).toContain('/model/liquid.svg')
+  await wrapper.get('button[aria-label="Model"]').trigger('click')
+  expect(wrapper.get('[role="option"] span[aria-hidden="true"]').attributes('style')).toContain(
+    '/model/liquid.svg',
+  )
+})

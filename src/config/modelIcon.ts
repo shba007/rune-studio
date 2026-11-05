@@ -2,6 +2,7 @@ export function modelIcon(model: string) {
   const families: [RegExp, string][] = [
     [/qwen|qwq/i, 'qwen'],
     [/deepseek/i, 'deepseek'],
+    [/(?:^|[/_-])(?:lfm\d|liquid(?:ai)?(?:[-_/]|$))/i, 'liquid'],
     [/gemma/i, 'gemma'],
     [/gemini/i, 'gemini'],
     [/claude/i, 'claude'],

@@ -2,7 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { computed, ref } from 'vue'
 import { beforeEach, expect, it, vi } from 'vite-plus/test'
 import { EMPTY_SNAPSHOT } from '@/config/analysis'
-import type { AnalysisSnapshot, ModelCapabilities } from '@/types/protocol'
+import type { AnalysisSnapshot, ModelCapabilities, VisualAnalysisModels } from '@/types/protocol'
 import PlaygroundVisualAnalysisFlow from './PlaygroundVisualAnalysisFlow.vue'
 
 const snapshot = ref<AnalysisSnapshot>({ ...EMPTY_SNAPSHOT })
@@ -109,7 +109,7 @@ async function configure(wrapper: Awaited<ReturnType<typeof show>>) {
     await select(wrapper, name)
 }
 
-it('uses the shared Visual Analysis settings without changing them locally', async () => {
+it('uses the shared Visual Analysis settings and allows editing before a run', async () => {
   const wrapper = mount(PlaygroundVisualAnalysisFlow, {
     props: {
       models,
@@ -126,7 +126,7 @@ it('uses the shared Visual Analysis settings without changing them locally', asy
   await flushPromises()
   expect(wrapper.get('button[aria-label="Planning model"]').text()).toContain('vision-a')
   expect(wrapper.get('button[aria-label="Entities model"]').text()).toContain('detect-a')
-  expect(wrapper.get('button[aria-label="Planning model"]').attributes('disabled')).toBeDefined()
+  expect(wrapper.get('button[aria-label="Planning model"]').attributes('disabled')).toBeUndefined()
   expect(
     wrapper.get('button[aria-label="Enable Regions & Context"]').attributes('aria-checked'),
   ).toBe('false')
@@ -138,6 +138,70 @@ it('uses the shared Visual Analysis settings without changing them locally', asy
       input: { image: picture, model: 'detect-a', role: 'entities' },
     }),
   )
+  wrapper.unmount()
+})
+
+it('requires shared model changes to be applied before running', async () => {
+  const save = vi.fn<(models: VisualAnalysisModels) => Promise<boolean>>().mockResolvedValue(true)
+  const shared = {
+    planner: 'vision-a',
+    entities: 'detect-a',
+    regions: '',
+    structure: '',
+    depth: '',
+  }
+  const wrapper = mount(PlaygroundVisualAnalysisFlow, {
+    props: { models, visualModels: shared, saveVisualModels: save },
+    global: { stubs: { teleport: true } },
+  })
+  await flushPromises()
+  await wrapper.get('button[aria-label="Enable Regions & Context"]').trigger('click')
+  await select(wrapper, 'Regions & Context')
+  expect(runButton(wrapper).attributes('disabled')).toBeDefined()
+  await wrapper
+    .findAll('button')
+    .find((button) => button.text() === 'Apply shared models')!
+    .trigger('click')
+  await flushPromises()
+  expect(save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      planner: 'vision-a',
+      entities: 'detect-a',
+      regions: expect.any(String),
+    }),
+  )
+  expect(runButton(wrapper).attributes('disabled')).toBeDefined()
+  await wrapper.setProps({ visualModels: { ...shared, regions: save.mock.calls[0]![0].regions } })
+  expect(runButton(wrapper).attributes('disabled')).toBeUndefined()
+  wrapper.unmount()
+})
+
+it('does not run when applying shared model changes fails', async () => {
+  const save = vi.fn<(models: VisualAnalysisModels) => Promise<boolean>>().mockResolvedValue(false)
+  const wrapper = mount(PlaygroundVisualAnalysisFlow, {
+    props: {
+      models,
+      visualModels: {
+        planner: 'vision-a',
+        entities: 'detect-a',
+        regions: '',
+        structure: '',
+        depth: '',
+      },
+      saveVisualModels: save,
+    },
+    global: { stubs: { teleport: true } },
+  })
+  await flushPromises()
+  await wrapper.get('button[aria-label="Enable Regions & Context"]').trigger('click')
+  await select(wrapper, 'Regions & Context')
+  await wrapper
+    .findAll('button')
+    .find((button) => button.text() === 'Apply shared models')!
+    .trigger('click')
+  await flushPromises()
+  expect(wrapper.text()).toContain('Could not save shared models')
+  expect(runButton(wrapper).attributes('disabled')).toBeDefined()
   wrapper.unmount()
 })
 

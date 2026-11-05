@@ -328,7 +328,7 @@ pub async fn analyze_image(
     run_id: &str,
 ) -> Result<ModelAnalysis, AnalysisError> {
     let state = app.state::<AppState>();
-    let settings = state.settings.locked().clone();
+    let (settings, _) = settings::snapshot_with_api_key(&state.settings);
     analyze_image_with_settings(app, question, image, cancel, run_id, &settings).await
 }
 
@@ -398,7 +398,7 @@ pub(crate) async fn analyze_image_with_settings_timeout(
 }
 
 #[cfg(test)]
-async fn analyze_with_client(
+pub(crate) async fn analyze_with_client(
     client: &ChatClient<'_>,
     question: &str,
     image: &str,

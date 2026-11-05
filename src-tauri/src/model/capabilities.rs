@@ -103,6 +103,12 @@ pub struct ModelCapabilities {
     #[serde(default)]
     pub audio_operations: AudioOperations,
     #[serde(default)]
+    pub portrait_matting_verified: bool,
+    #[serde(default)]
+    pub portrait_matting_input_width: Option<u32>,
+    #[serde(default)]
+    pub portrait_matting_input_height: Option<u32>,
+    #[serde(default)]
     pub roles: Vec<String>,
     #[serde(default)]
     pub aliases: Vec<String>,
@@ -143,6 +149,9 @@ impl ModelCapabilities {
             raw_capabilities: Vec::new(),
             tasks: Vec::new(),
             audio_operations: AudioOperations::default(),
+            portrait_matting_verified: false,
+            portrait_matting_input_width: None,
+            portrait_matting_input_height: None,
             roles: Vec::new(),
             aliases: Vec::new(),
         }
@@ -375,6 +384,20 @@ pub fn parse_model_entry(entry: &Value) -> Option<ModelCapabilities> {
             speech_translation: operation_support(entry, "speech_translation"),
             speech_generation: operation_support(entry, "speech_generation"),
         },
+        portrait_matting_verified: entry
+            .pointer("/portrait_matting/status")
+            .and_then(Value::as_str)
+            == Some("verified"),
+        portrait_matting_input_width: entry
+            .pointer("/portrait_matting/input_width")
+            .and_then(Value::as_u64)
+            .and_then(|v| u32::try_from(v).ok())
+            .filter(|v| *v > 0),
+        portrait_matting_input_height: entry
+            .pointer("/portrait_matting/input_height")
+            .and_then(Value::as_u64)
+            .and_then(|v| u32::try_from(v).ok())
+            .filter(|v| *v > 0),
     })
 }
 
@@ -469,6 +492,35 @@ mod tests {
                 .unwrap()
                 .max_image_references,
             None
+        );
+    }
+
+    #[test]
+    fn portrait_matting_requires_verified_status() {
+        let verified = parse_model_entry(
+            &serde_json::json!({"id":"matte","portrait_matting":{"status":"verified", "input_width":1024, "input_height":1024}}),
+        )
+        .unwrap();
+        assert!(verified.portrait_matting_verified);
+        assert_eq!(verified.portrait_matting_input_width, Some(1024));
+        assert_eq!(verified.portrait_matting_input_height, Some(1024));
+        assert_eq!(
+            serde_json::to_value(verified).unwrap()["portraitMattingVerified"],
+            true
+        );
+        for status in ["unsupported", "unverified", "future"] {
+            assert!(
+                !parse_model_entry(
+                    &serde_json::json!({"id":"matte","portrait_matting":{"status":status}})
+                )
+                .unwrap()
+                .portrait_matting_verified
+            );
+        }
+        assert!(
+            !parse_model_entry(&serde_json::json!({"id":"old"}))
+                .unwrap()
+                .portrait_matting_verified
         );
     }
 

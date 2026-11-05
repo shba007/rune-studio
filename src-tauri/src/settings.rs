@@ -585,11 +585,47 @@ fn settings_path(app: &AppHandle) -> AppResult<PathBuf> {
 }
 
 pub fn load(app: &AppHandle) -> Settings {
-    settings_path(app)
-        .ok()
-        .and_then(|path| fs::read_to_string(path).ok())
-        .and_then(|text| serde_json::from_str(&text).ok())
-        .unwrap_or_default()
+    let mut settings =
+        match settings_path(app).and_then(|path| fs::read_to_string(path).map_err(Into::into)) {
+            Ok(text) => serde_json::from_str(&text).unwrap_or_default(),
+            Err(_) => {
+                let mut settings = Settings::default();
+                #[cfg(all(windows, feature = "embedded-infer"))]
+                if settings_path(app).is_ok_and(|path| !path.exists()) {
+                    use_local_infer_by_default(&mut settings);
+                }
+                settings
+            }
+        };
+    normalize_embedded_connection(&mut settings);
+    settings
+}
+
+#[cfg(any(all(windows, feature = "embedded-infer"), test))]
+fn use_local_infer_by_default(settings: &mut Settings) {
+    let local = Connection {
+        id: "studio-embedded-infer".into(),
+        name: "Studio local Infer".into(),
+        base_url: "http://127.0.0.1:0".into(),
+        credential_ref: None,
+        selected_models: None,
+        additional_models: Vec::new(),
+        output_limit: None,
+    };
+    settings.base_url = local.base_url.clone();
+    settings.active_connection_id = local.id.clone();
+    settings.connections.push(local);
+}
+
+fn normalize_embedded_connection(settings: &mut Settings) {
+    if let Some(connection) = settings.connections.iter_mut().find(|connection| {
+        connection.id == "studio-embedded-infer" && connection.name == "Studio local Infer"
+    }) {
+        connection.base_url = "http://127.0.0.1:0".into();
+        if settings.active_connection_id == connection.id {
+            settings.base_url = connection.base_url.clone();
+        }
+    }
 }
 
 fn atomic_save(path: &std::path::Path, settings: &Settings) -> AppResult<()> {
@@ -662,11 +698,12 @@ pub(crate) fn ensure_current(app: &AppHandle, current: &Settings) -> AppResult<(
     if !path.exists() {
         return Ok(());
     }
-    let disk: Settings = serde_json::from_slice(&fs::read(path)?).map_err(|_| {
+    let mut disk: Settings = serde_json::from_slice(&fs::read(path)?).map_err(|_| {
         crate::error::AppError::Invalid(
             "Existing settings cannot be read safely; they were not replaced".into(),
         )
     })?;
+    normalize_embedded_connection(&mut disk);
     if disk.connections_revision != current.connections_revision
         || disk.active_connection_id != current.active_connection_id
         || disk.connections != current.connections
@@ -697,10 +734,27 @@ pub fn api_key_for(settings: &Settings) -> Option<String> {
 }
 pub fn snapshot_with_api_key(settings: &std::sync::Mutex<Settings>) -> (Settings, Option<String>) {
     let current = settings.locked();
-    let key = api_key_for(&current);
-    (current.clone(), key)
+    let mut effective = current.clone();
+    if effective.active_connection_id == "studio-embedded-infer" {
+        // Never persist a live ephemeral port. If the owned runtime is absent,
+        // port zero cannot identify a different local service.
+        effective.base_url = "http://127.0.0.1:0".into();
+        #[cfg(all(windows, feature = "embedded-infer"))]
+        if let Some((url, key)) = crate::embedded_infer::route() {
+            effective.base_url = url;
+            return (effective, Some(key));
+        }
+        return (effective, None);
+    }
+    (effective, api_key_for(&current))
 }
 pub fn api_key_for_connection(connection: &Connection) -> Option<String> {
+    if connection.id == "studio-embedded-infer" {
+        #[cfg(all(windows, feature = "embedded-infer"))]
+        return crate::embedded_infer::route().map(|(_, key)| key);
+        #[cfg(not(all(windows, feature = "embedded-infer")))]
+        return None;
+    }
     let stored = connection.credential_ref.as_deref().and_then(|slot| {
         if slot == "legacy-env" {
             None
@@ -747,6 +801,33 @@ pub fn set_api_key_for_slot(id: &str, key: &str) -> AppResult<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn first_run_local_default_keeps_the_external_connection() {
+        use super::*;
+        let mut settings = Settings::default();
+        use_local_infer_by_default(&mut settings);
+        assert_eq!(settings.active_connection_id, "studio-embedded-infer");
+        assert_eq!(settings.base_url, "http://127.0.0.1:0");
+        assert!(
+            settings
+                .connections
+                .iter()
+                .any(|connection| connection.id == LEGACY_CONNECTION)
+        );
+    }
+    #[test]
+    fn saved_embedded_connection_never_retains_a_live_port() {
+        use super::*;
+        let mut settings = Settings::default();
+        settings.connections[0].id = "studio-embedded-infer".into();
+        settings.connections[0].name = "Studio local Infer".into();
+        settings.connections[0].base_url = "http://127.0.0.1:12345".into();
+        settings.active_connection_id = "studio-embedded-infer".into();
+        settings.base_url = "http://127.0.0.1:12345".into();
+        normalize_embedded_connection(&mut settings);
+        assert_eq!(settings.base_url, "http://127.0.0.1:0");
+        assert_eq!(settings.connections[0].base_url, settings.base_url);
+    }
     #[test]
     fn default_agent_model_applies_to_new_settings_and_empty_agent_role() {
         use super::*;

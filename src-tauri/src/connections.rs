@@ -113,6 +113,93 @@ fn next_id() -> AppResult<String> {
         bytes.iter().map(|b| format!("{b:02x}")).collect::<String>()
     ))
 }
+
+#[cfg(all(windows, feature = "embedded-infer"))]
+pub(crate) fn install_embedded_connection(
+    app: &AppHandle,
+    state: &AppState,
+    activate: bool,
+    model: Option<&str>,
+) -> AppResult<()> {
+    const ID: &str = "studio-embedded-infer";
+    let analysis = state.analysis.locked();
+    let mut current = state.settings.locked();
+    ensure_idle(app, state, analysis.status)?;
+    settings::ensure_current(app, &current)?;
+    let mut next = current.clone();
+    next.connections_revision = next
+        .connections_revision
+        .checked_add(1)
+        .ok_or_else(|| AppError::Invalid("Connection revision limit reached".into()))?;
+    if next.connections.len() >= 100 && !next.connections.iter().any(|c| c.id == ID) {
+        return Err(AppError::Invalid(
+            "At most 100 connections can be saved".into(),
+        ));
+    }
+    if next
+        .connections
+        .iter()
+        .any(|connection| connection.id == ID && connection.name != "Studio local Infer")
+    {
+        return Err(AppError::Invalid(
+            "The local Infer connection ID is already used; existing settings were preserved"
+                .into(),
+        ));
+    }
+    let old_slot = next
+        .connections
+        .iter()
+        .find(|c| c.id == ID)
+        .and_then(|c| c.credential_ref.clone());
+    if let Some(connection) = next.connections.iter_mut().find(|c| c.id == ID) {
+        connection.base_url = "http://127.0.0.1:0".into();
+        connection.credential_ref = None;
+    } else {
+        next.connections.push(Connection {
+            id: ID.into(),
+            name: "Studio local Infer".into(),
+            base_url: "http://127.0.0.1:0".into(),
+            credential_ref: None,
+            selected_models: None,
+            additional_models: Vec::new(),
+            output_limit: None,
+        });
+    }
+    if activate || next.active_connection_id == ID {
+        select_active(&mut next, ID)?;
+    }
+    if let Some(model) = model {
+        next.models.agent = model.into();
+        next.model = model.into();
+        if let Some(selected) = next
+            .connections
+            .iter_mut()
+            .find(|connection| connection.id == ID)
+            .and_then(|connection| connection.selected_models.as_mut())
+        {
+            if !selected.iter().any(|id| id == model) {
+                selected.push(model.into());
+            }
+        }
+    }
+    settings::save(app, &next)?;
+    let old_slot_in_use = old_slot.as_ref().is_some_and(|old| {
+        next.connections
+            .iter()
+            .any(|connection| connection.credential_ref.as_ref() == Some(old))
+    });
+    *current = next;
+    state.capabilities.invalidate();
+    drop(current);
+    drop(analysis);
+    crate::hub::changed(app);
+    if let Some(old) = old_slot.filter(|old| old != "legacy-env" && !old_slot_in_use) {
+        if let Err(error) = settings::set_api_key_for_slot(&old, "") {
+            log::warn!("Could not remove previous embedded Infer credential: {error}");
+        }
+    }
+    Ok(())
+}
 #[tauri::command]
 pub fn connections_state(state: State<'_, AppState>) -> Catalog {
     catalog(&state.settings.locked())
@@ -184,6 +271,11 @@ pub fn connections_save(
     key: Option<String>,
     clear_key: bool,
 ) -> AppResult<Catalog> {
+    if id.as_deref() == Some("studio-embedded-infer") {
+        return Err(AppError::Invalid(
+            "The local Infer connection is managed by Studio".into(),
+        ));
+    }
     settings::validate_connection(&name, &base_url)?;
     if clear_key && key.as_ref().is_some_and(|s| !s.trim().is_empty()) {
         return Err(AppError::Invalid(
@@ -398,7 +490,20 @@ pub async fn connections_test(
             .find(|c| c.id == id)
             .ok_or_else(|| AppError::Invalid("Connection no longer exists".into()))?;
         let mut probe = current.clone();
-        probe.base_url = connection.base_url.clone();
+        probe.base_url = if connection.id == "studio-embedded-infer" {
+            #[cfg(all(windows, feature = "embedded-infer"))]
+            {
+                crate::embedded_infer::route()
+                    .map(|(url, _)| url)
+                    .unwrap_or_else(|| "http://127.0.0.1:0".into())
+            }
+            #[cfg(not(all(windows, feature = "embedded-infer")))]
+            {
+                "http://127.0.0.1:0".into()
+            }
+        } else {
+            connection.base_url.clone()
+        };
         (probe, settings::api_key_for_connection(connection))
     };
     let client = reqwest::Client::builder()

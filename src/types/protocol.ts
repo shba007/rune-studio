@@ -39,6 +39,7 @@ export interface ModelCapabilities {
   rawCapabilities: string[]
   tasks?: string[]
   audioOperations?: Partial<Record<AudioOperation, AudioOperationSupport>>
+  portraitMattingVerified?: boolean
 }
 
 export interface ModelRoles {

@@ -13,6 +13,113 @@ use crate::{
 };
 
 #[tauri::command]
+pub fn embedded_infer_available() -> bool {
+    cfg!(all(windows, feature = "embedded-infer"))
+}
+
+#[tauri::command]
+pub async fn start_embedded_infer(app: AppHandle) -> Result<(), String> {
+    #[cfg(all(windows, feature = "embedded-infer"))]
+    {
+        app.state::<crate::embedded_infer::EmbeddedManager>()
+            .start(&app, true)
+            .await
+    }
+    #[cfg(not(all(windows, feature = "embedded-infer")))]
+    {
+        let _ = app;
+        Err("Local Infer is not included in this build".into())
+    }
+}
+
+#[tauri::command]
+pub async fn embedded_model_candidates() -> Result<serde_json::Value, String> {
+    #[cfg(all(windows, feature = "embedded-infer"))]
+    {
+        let candidates = tauri::async_runtime::spawn_blocking(crate::embedded_download::candidates)
+            .await
+            .map_err(|error| error.to_string())??;
+        serde_json::to_value(candidates).map_err(|error| error.to_string())
+    }
+    #[cfg(not(all(windows, feature = "embedded-infer")))]
+    {
+        Err("Local Infer is not included in this build".into())
+    }
+}
+
+#[tauri::command]
+pub fn embedded_model_download(
+    app: AppHandle,
+    id: String,
+    revision: String,
+    manifest: String,
+) -> Result<(), String> {
+    #[cfg(all(windows, feature = "embedded-infer"))]
+    {
+        app.state::<crate::embedded_download::Downloads>()
+            .start(id, revision, manifest)
+    }
+    #[cfg(not(all(windows, feature = "embedded-infer")))]
+    {
+        let _ = (app, id, revision, manifest);
+        Err("Local Infer is not included in this build".into())
+    }
+}
+
+#[tauri::command]
+pub fn embedded_model_download_status(app: AppHandle) -> Result<serde_json::Value, String> {
+    #[cfg(all(windows, feature = "embedded-infer"))]
+    {
+        let downloads = app.state::<crate::embedded_download::Downloads>();
+        let status = downloads.status();
+        downloads.acknowledge();
+        serde_json::to_value(status).map_err(|error| error.to_string())
+    }
+    #[cfg(not(all(windows, feature = "embedded-infer")))]
+    {
+        let _ = app;
+        Err("Local Infer is not included in this build".into())
+    }
+}
+
+#[tauri::command]
+pub fn embedded_model_download_cancel(app: AppHandle) -> Result<(), String> {
+    #[cfg(all(windows, feature = "embedded-infer"))]
+    {
+        app.state::<crate::embedded_download::Downloads>().cancel();
+        Ok(())
+    }
+    #[cfg(not(all(windows, feature = "embedded-infer")))]
+    {
+        let _ = app;
+        Err("Local Infer is not included in this build".into())
+    }
+}
+
+#[tauri::command]
+pub async fn embedded_model_use(app: AppHandle, id: String) -> Result<(), String> {
+    #[cfg(all(windows, feature = "embedded-infer"))]
+    {
+        if app
+            .state::<crate::embedded_download::Downloads>()
+            .completed_model()
+            .as_deref()
+            != Some(id.as_str())
+        {
+            return Err("Download the model before selecting it".into());
+        }
+        app.state::<crate::embedded_infer::EmbeddedManager>()
+            .start_model(&app, true, id, true)
+            .await
+    }
+    #[cfg(not(all(windows, feature = "embedded-infer")))]
+    {
+        let _ = (app, id);
+        Err("Local Infer is not included in this build".into())
+    }
+}
+
+#[tauri::command]
 pub async fn installed_versions() -> serde_json::Value {
     let cli = tauri::async_runtime::spawn_blocking(|| -> Option<String> {
         use std::{
@@ -237,6 +344,11 @@ pub fn save_settings(
     )?;
     let endpoint_changed = settings.base_url != current.base_url;
     if endpoint_changed {
+        if current.active_connection_id == "studio-embedded-infer" {
+            return Err(AppError::Invalid(
+                "The local Infer connection is managed by Studio".into(),
+            ));
+        }
         crate::connections::ensure_idle(&app, &state, analysis.status)?;
         let active = settings
             .connections
@@ -366,10 +478,11 @@ pub struct BackendProbe {
 pub async fn check_backend(app: AppHandle, state: State<'_, AppState>) -> AppResult<BackendProbe> {
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     let revision = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let displayed_url = state.settings.locked().base_url.clone();
     let (settings, api_key) = settings::snapshot_with_api_key(&state.settings);
     let probe = BackendProbe {
         revision,
-        base_url: settings.base_url.clone(),
+        base_url: displayed_url,
         connection_id: settings.active_connection_id.clone(),
         connection_revision: settings.connections_revision,
         status: backend::check(&state.http, &settings, api_key.as_deref()).await,

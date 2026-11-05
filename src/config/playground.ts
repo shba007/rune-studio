@@ -93,6 +93,13 @@ export const PLAYGROUND_GROUPS: PlaygroundGroup[] = [
         summary: 'Estimate relative depth with a dedicated depth model.',
       },
       {
+        id: 'develop-raw',
+        label: 'Develop RAW',
+        icon: 'image',
+        ready: true,
+        summary: 'Develop a camera-original ARW into a 16-bit PNG.',
+      },
+      {
         id: 'create',
         label: 'Create',
         icon: 'image',

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import RuneIconButton from './RuneIconButton.vue'
 import RuneButton from './RuneButton.vue'
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
 import type { Agent } from '@/composables/useAgent'
 import type { Settings } from '@/types/protocol'
 import BackendBadge from './BackendBadge.vue'
@@ -40,6 +41,122 @@ const selectedDraft = ref<string[]>([])
 const additionalDraft = ref('')
 const limitDraft = ref('')
 const modelError = ref('')
+const embeddedAvailable = ref(false)
+const embeddedStarting = ref(false)
+const embeddedError = ref('')
+type LocalCandidate = {
+  id: string
+  name: string
+  license: string
+  bytes: number
+  availableBytes?: number | null
+  revision: string
+  manifest: string
+}
+type DownloadStatus = {
+  phase: string
+  model?: string
+  filename?: string
+  downloaded: number
+  total?: number
+  error?: string
+}
+const candidates = ref<LocalCandidate[]>([])
+const candidatesLoaded = ref(false)
+const download = ref<DownloadStatus | null>(null)
+const loadingCandidates = ref(false)
+let poll: ReturnType<typeof setInterval> | undefined
+const downloading = computed(() =>
+  ['preparing', 'downloading', 'engine'].includes(download.value?.phase ?? ''),
+)
+onBeforeUnmount(() => {
+  if (poll) clearInterval(poll)
+})
+async function loadLocalModels() {
+  loadingCandidates.value = true
+  embeddedError.value = ''
+  try {
+    candidates.value = await invoke<LocalCandidate[]>('embedded_model_candidates')
+    candidatesLoaded.value = true
+  } catch (error) {
+    candidatesLoaded.value = false
+    embeddedError.value = String(error)
+  } finally {
+    loadingCandidates.value = false
+  }
+}
+async function refreshDownload() {
+  try {
+    download.value = await invoke<DownloadStatus>('embedded_model_download_status')
+    if (!downloading.value && poll) {
+      clearInterval(poll)
+      poll = undefined
+    }
+  } catch (error) {
+    embeddedError.value = String(error)
+    if (poll) clearInterval(poll)
+    poll = undefined
+  }
+}
+async function downloadLocalModel(model: LocalCandidate) {
+  embeddedError.value = ''
+  try {
+    await invoke('embedded_model_download', {
+      id: model.id,
+      revision: model.revision,
+      manifest: model.manifest,
+    })
+    await refreshDownload()
+    if (downloading.value && !poll) poll = setInterval(() => void refreshDownload(), 1000)
+  } catch (error) {
+    embeddedError.value = String(error)
+  }
+}
+async function cancelDownload() {
+  try {
+    await invoke('embedded_model_download_cancel')
+  } catch (error) {
+    embeddedError.value = String(error)
+  }
+}
+async function useDownloadedModel() {
+  if (!download.value?.model) return
+  embeddedStarting.value = true
+  embeddedError.value = ''
+  try {
+    await invoke('embedded_model_use', { id: download.value.model })
+    await connections.refresh()
+    await props.agent.refreshBackend()
+  } catch (error) {
+    embeddedError.value = String(error)
+  } finally {
+    embeddedStarting.value = false
+  }
+}
+onMounted(async () => {
+  try {
+    embeddedAvailable.value = await invoke<boolean>('embedded_infer_available')
+    if (embeddedAvailable.value) {
+      await refreshDownload()
+      if (downloading.value) poll = setInterval(() => void refreshDownload(), 1000)
+    }
+  } catch {
+    embeddedAvailable.value = false
+  }
+})
+async function startLocalInfer() {
+  embeddedStarting.value = true
+  embeddedError.value = ''
+  try {
+    await invoke('start_embedded_infer')
+    await connections.refresh()
+    await props.agent.refreshBackend()
+  } catch (error) {
+    embeddedError.value = String(error)
+  } finally {
+    embeddedStarting.value = false
+  }
+}
 const visibleStatus = computed(() =>
   props.draft.baseUrl === props.agent.settings.value?.baseUrl &&
   (!connections.catalog.value ||
@@ -138,6 +255,7 @@ async function removeConnection(id: string) {
 }
 function openConnection(connection: ConnectionView) {
   if (connection.active) detail.value = true
+  else if (connection.id === 'studio-embedded-infer') void startLocalInfer()
   else editing.value = connection
 }
 watch(
@@ -174,12 +292,93 @@ watch(
         <div class="flex flex-wrap items-center justify-between gap-rune-2 px-rune-2">
           <h3 class="m-0 font-sans text-rune-heading text-rune-text-3 uppercase">Connections</h3>
           <RuneButton
+            v-if="embeddedAvailable"
+            size="sm"
+            :disabled="embeddedStarting || connections.pending.value"
+            @click="startLocalInfer"
+          >
+            {{ embeddedStarting ? 'Starting local Infer…' : 'Use local Infer' }}
+          </RuneButton>
+          <RuneButton
             size="sm"
             :disabled="connections.pending.value || !connections.catalog.value"
             @click="editing = null"
           >
             + Add connection
           </RuneButton>
+        </div>
+        <p v-if="embeddedError" role="alert" class="px-rune-2 text-rune-body text-attention">
+          {{ embeddedError }}
+        </p>
+        <div
+          v-if="embeddedAvailable"
+          class="flex flex-col gap-rune-1 rounded-rune-tile bg-rune-surface p-rune-2"
+        >
+          <p class="m-0 text-rune-body">Download a local model</p>
+          <p class="m-0 text-rune-caption text-rune-text-3">
+            Models run on your computer. Download sizes exclude the engine and temporary files.
+            Qwen3.8 27B was tested with Studio; the smaller model still needs computer-use
+            validation.
+          </p>
+          <p
+            v-if="candidates[0]?.availableBytes != null"
+            class="m-0 text-rune-caption text-rune-text-3"
+          >
+            {{ (candidates[0].availableBytes / 1_000_000_000).toFixed(2) }} GB available on the
+            model drive.
+          </p>
+          <RuneButton
+            size="sm"
+            :disabled="loadingCandidates || downloading"
+            @click="loadLocalModels"
+            >{{ loadingCandidates ? 'Loading…' : 'Show models' }}</RuneButton
+          >
+          <p
+            v-if="candidatesLoaded && !candidates.length"
+            role="status"
+            class="m-0 text-rune-caption text-rune-text-3"
+          >
+            No compatible models are available in this build.
+          </p>
+          <div
+            v-for="model in candidates"
+            :key="model.id"
+            class="flex flex-wrap items-center gap-rune-2"
+          >
+            <span class="flex-1 text-rune-body"
+              >{{ model.name }} · {{ (model.bytes / 1_000_000_000).toFixed(2) }} GB ·
+              {{ model.license }}</span
+            >
+            <RuneButton size="sm" :disabled="downloading" @click="downloadLocalModel(model)"
+              >Download</RuneButton
+            >
+          </div>
+          <div
+            v-if="download?.phase && download.phase !== 'idle'"
+            role="status"
+            class="text-rune-caption text-rune-text-2"
+          >
+            <span v-if="downloading"
+              >{{ download.phase === 'engine' ? 'Preparing engine' : 'Downloading model'
+              }}<template v-if="download.filename"> · {{ download.filename }}</template
+              ><template v-if="download.total">
+                · {{ Math.round((download.downloaded / download.total) * 100) }}%</template
+              ></span
+            >
+            <span v-else-if="download.phase === 'complete'">Downloaded {{ download.model }}.</span>
+            <span v-else-if="download.phase === 'cancelled'"
+              >Download cancelled. You can retry later.</span
+            >
+            <span v-else>{{ download.error || 'Download failed.' }}</span>
+            <RuneButton v-if="downloading" size="sm" @click="cancelDownload">Cancel</RuneButton>
+            <RuneButton
+              v-if="download.phase === 'complete'"
+              size="sm"
+              :disabled="embeddedStarting || agent.isRunning?.value"
+              @click="useDownloadedModel"
+              >Use this model</RuneButton
+            >
+          </div>
         </div>
         <div class="flex flex-col gap-0.5">
           <div
@@ -200,7 +399,7 @@ watch(
                 ></span
               >
               <span class="mt-1 block break-all text-rune-caption text-rune-text-2">{{
-                connection.baseUrl
+                connection.id === 'studio-embedded-infer' ? 'Managed by Studio' : connection.baseUrl
               }}</span>
               <span
                 v-if="connection.active && listAvailable && discovered.length"
@@ -223,13 +422,22 @@ watch(
               >
                 <AppIcon name="refresh" size="sm" />
               </RuneIconButton>
-              <RuneButton size="sm" @click="editing = connection">Edit</RuneButton>
+              <RuneButton
+                v-if="connection.id !== 'studio-embedded-infer'"
+                size="sm"
+                @click="editing = connection"
+                >Edit</RuneButton
+              >
               <RuneButton
                 v-if="!connection.active"
                 variant="primary"
                 size="sm"
                 :disabled="connections.pending.value || agent.isRunning?.value"
-                @click="connections.activate(connection.id)"
+                @click="
+                  connection.id === 'studio-embedded-infer'
+                    ? startLocalInfer()
+                    : connections.activate(connection.id)
+                "
               >
                 Make active
               </RuneButton>

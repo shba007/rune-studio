@@ -99,6 +99,83 @@ it('shows the migrated connection and its actual discovered models', async () =>
   expect(refreshBackend).toHaveBeenCalledOnce()
   wrapper.unmount()
 })
+it('starts the bundled Infer connection and reports startup errors', async () => {
+  harness.invoke.mockImplementation(async (command) => {
+    if (command === 'embedded_infer_available') return true
+    if (command === 'connections_state') return initial()
+    if (command === 'start_embedded_infer') throw new Error('model missing')
+    return null
+  })
+  const { wrapper } = await setup()
+  await wrapper
+    .findAll('button')
+    .find((button) => button.text() === 'Use local Infer')!
+    .trigger('click')
+  await flushPromises()
+  expect(wrapper.get('[role="alert"]').text()).toContain('model missing')
+  expect(harness.invoke).toHaveBeenCalledWith('start_embedded_infer')
+  wrapper.unmount()
+})
+it('lets the user review and start a local model download', async () => {
+  const candidate = {
+    id: 'qwen3.8-27b',
+    name: 'Qwen 27B',
+    license: 'Test license',
+    bytes: 2_000_000_000,
+    revision: 'v1',
+    manifest: 'checked',
+  }
+  harness.invoke.mockImplementation(async (command) => {
+    if (command === 'embedded_infer_available') return true
+    if (command === 'connections_state') return initial()
+    if (command === 'embedded_model_candidates') return [candidate]
+    if (command === 'embedded_model_download_status')
+      return { phase: 'complete', model: candidate.id, downloaded: 0 }
+    return null
+  })
+  const { wrapper } = await setup()
+  await wrapper
+    .findAll('button')
+    .find((button) => button.text() === 'Show models')!
+    .trigger('click')
+  await flushPromises()
+  expect(wrapper.text()).toContain('Qwen 27B · 2.00 GB · Test license')
+  expect(harness.invoke.mock.calls.some(([name]) => name === 'embedded_model_download')).toBe(false)
+  await wrapper
+    .findAll('button')
+    .find((button) => button.text() === 'Download')!
+    .trigger('click')
+  await flushPromises()
+  expect(harness.invoke).toHaveBeenCalledWith('embedded_model_download', {
+    id: candidate.id,
+    revision: 'v1',
+    manifest: 'checked',
+  })
+  expect(wrapper.text()).toContain('Downloaded qwen3.8-27b')
+  await wrapper
+    .findAll('button')
+    .find((button) => button.text() === 'Use this model')!
+    .trigger('click')
+  await flushPromises()
+  expect(harness.invoke).toHaveBeenCalledWith('embedded_model_use', { id: 'qwen3.8-27b' })
+  wrapper.unmount()
+})
+it('explains an empty local model list', async () => {
+  harness.invoke.mockImplementation(async (command) => {
+    if (command === 'embedded_infer_available') return true
+    if (command === 'connections_state') return initial()
+    if (command === 'embedded_model_candidates') return []
+    return null
+  })
+  const { wrapper } = await setup()
+  await wrapper
+    .findAll('button')
+    .find((button) => button.text() === 'Show models')!
+    .trigger('click')
+  await flushPromises()
+  expect(wrapper.text()).toContain('No compatible models are available in this build.')
+  wrapper.unmount()
+})
 it('stages edits until Save and preserves shared model roles and Decision URL', async () => {
   const { wrapper, draft } = await setup()
   await wrapper

@@ -24,7 +24,11 @@ import RuneButton from './RuneButton.vue'
 import RuneChoice from './RuneChoice.vue'
 import RuneSwitch from './RuneSwitch.vue'
 
-const props = defineProps<{ models: ModelCapabilities[]; visualModels?: VisualAnalysisModels }>()
+const props = defineProps<{
+  models: ModelCapabilities[]
+  visualModels?: VisualAnalysisModels
+  saveVisualModels?: (models: VisualAnalysisModels) => Promise<boolean>
+}>()
 type RoleId = 'entities' | 'regions' | 'structure' | 'depth' | 'instances' | 'oriented'
 type QuestionRoleId = 'entities' | 'regions' | 'structure'
 type RoleState = {
@@ -108,6 +112,37 @@ const sources = [
 ]
 const mode = ref<'app' | 'graph'>('app')
 const plannerModel = ref('')
+const savingModels = ref(false)
+const modelSaveError = ref('')
+const draftModels = computed<VisualAnalysisModels>(() => ({
+  planner: plannerModel.value,
+  entities: roles.value.entities.enabled ? roles.value.entities.model : '',
+  instances: roles.value.instances.enabled ? roles.value.instances.model : '',
+  oriented: roles.value.oriented.enabled ? roles.value.oriented.model : '',
+  regions: roles.value.regions.enabled ? roles.value.regions.model : '',
+  structure: roles.value.structure.enabled ? roles.value.structure.model : '',
+  depth: roles.value.depth.enabled ? roles.value.depth.model : '',
+}))
+const modelsChanged = computed(() => {
+  if (!props.visualModels) return false
+  return (Object.keys(draftModels.value) as (keyof VisualAnalysisModels)[]).some(
+    (key) => (draftModels.value[key] ?? '') !== (props.visualModels?.[key] ?? ''),
+  )
+})
+async function applyModels() {
+  if (!props.saveVisualModels || savingModels.value || running.value) return
+  const draft = { ...draftModels.value }
+  savingModels.value = true
+  modelSaveError.value = ''
+  try {
+    if (!(await props.saveVisualModels(draft)))
+      modelSaveError.value = 'Could not save shared models. Try again.'
+  } catch {
+    modelSaveError.value = 'Could not save shared models. Try again.'
+  } finally {
+    savingModels.value = false
+  }
+}
 watch(
   () => props.visualModels,
   (settings) => {
@@ -176,6 +211,8 @@ const previousResult = computed(
 const canRun = computed(
   () =>
     !running.value &&
+    !savingModels.value &&
+    !modelsChanged.value &&
     !analysis.busy.value &&
     enabledRoles.value.length > 0 &&
     visionModels.value.includes(plannerModel.value) &&
@@ -415,13 +452,13 @@ const depthState = (state: RoleState): DepthState => ({
             { value: '', label: 'Select a model', disabled: true },
             ...visionModels.map((id) => ({ value: id, label: id })),
           ]"
-          :disabled="running || !!visualModels"
+          :disabled="running || savingModels"
+          model-icons
           menu
           floating
         />
         <p class="m-0 text-rune-caption text-rune-text-3">
-          {{ visualModels ? 'Configure models in Settings → Capture & privacy. ' : '' }}The planning
-          model suggests questions for context. The image models do not answer them.
+          The planning model suggests questions for context. The image models do not answer them.
         </p>
       </div>
       <div v-for="role in definitions" :key="role.id" class="flex flex-col gap-2">
@@ -430,7 +467,7 @@ const depthState = (state: RoleState): DepthState => ({
           ><RuneSwitch
             v-model="roles[role.id].enabled"
             :label="`Enable ${role.label}`"
-            :disabled="running || !!visualModels"
+            :disabled="running || savingModels"
           />
         </div>
         <RuneChoice
@@ -438,7 +475,8 @@ const depthState = (state: RoleState): DepthState => ({
           v-model="roles[role.id].model"
           :label="`${role.label} model`"
           :options="options(role.id)"
-          :disabled="running || !!visualModels"
+          :disabled="running || savingModels"
+          model-icons
           menu
           floating
         />
@@ -457,8 +495,7 @@ const depthState = (state: RoleState): DepthState => ({
           role="alert"
           class="m-0 text-rune-caption text-error"
         >
-          The configured model is unavailable or incompatible. Choose a compatible model in Settings
-          → Capture & privacy.
+          The configured model is unavailable or incompatible. Choose a compatible model.
         </p>
       </div>
       <p class="m-0 text-rune-caption text-rune-text-3">
@@ -467,6 +504,17 @@ const depthState = (state: RoleState): DepthState => ({
       <p v-if="!enabledRoles.length" class="m-0 text-rune-caption text-rune-text-3">
         Enable at least one role.
       </p>
+      <div v-if="visualModels && modelsChanged" class="flex flex-col gap-2">
+        <p class="m-0 text-rune-caption text-rune-text-3">
+          Apply these choices to the shared Visual Analysis settings before running.
+        </p>
+        <RuneButton :disabled="running || savingModels || !saveVisualModels" @click="applyModels">{{
+          savingModels ? 'Applying…' : 'Apply shared models'
+        }}</RuneButton>
+        <p v-if="modelSaveError" role="alert" class="m-0 text-rune-caption text-error">
+          {{ modelSaveError }}
+        </p>
+      </div>
       <RuneButton variant="primary" :disabled="!canRun" @click="run">Run Flow</RuneButton>
     </template>
     <template #graph>

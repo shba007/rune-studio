@@ -70,6 +70,7 @@ describe('playground registry', () => {
       'segment',
       'pose',
       'depth',
+      'develop-raw',
       'create',
       'edit',
       'variation',

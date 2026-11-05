@@ -686,7 +686,7 @@ describe('playground window', () => {
       'Pose',
       'Depth',
     ])
-    expect(labels).toHaveLength(26)
+    expect(labels).toHaveLength(27)
     expect(wrapper.findAll('[data-testid="playground-nav"] h2').map((h) => h.text())).toEqual([
       'Images',
       'Audio',

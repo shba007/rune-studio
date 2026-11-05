@@ -35,8 +35,14 @@ tauri-build = { version = "2.7", features = [] }
 agent-bridge = ["dep:axum"]
 # The evaluation harness (docs/ARCHITECTURE.md, "The evaluation harness"). Never in a release build.
 eval = []
+# Development integration; replace the local path with a pinned Infer revision
+# before enabling this feature in distributable builds.
+embedded-infer = ["dep:rune-infer"]
 
 [dependencies]
+rune-infer = { path = "../../code-infer", default-features = false, features = [
+  "cpu",
+], optional = true }
 dirs = "7"
 axum = { version = "0.8", optional = true, default-features = false, features = [
   "http1",
@@ -65,9 +71,11 @@ tokio = { version = "1.54", features = ["time", "macros", "rt", "net", "sync"] }
 aes-gcm = "0.11.1"
 tauri-plugin-notification = "2.8.0"
 tauri-plugin-autostart = "2.7.0"
+rawler = "=0.8.0"
+png = "=0.18.1"
+tempfile = "3"
 
 [dev-dependencies]
-tempfile = "3"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 
 [target.'cfg(windows)'.dependencies]
@@ -82,9 +90,11 @@ windows = { version = "0.62", features = [
   "Win32_Storage_FileSystem",
   "Win32_UI_Accessibility",
   "Win32_System_Com",
+  "Win32_System_Com_StructuredStorage",
   "Win32_System_Ole",
   "Win32_System_Variant",
   "Win32_Graphics_Gdi",
+  "Win32_Graphics_Imaging",
   "Win32_Foundation",
   "Win32_Security",
   # The session video (video/encode.rs): the Media Foundation H.264 sink writer, no extra binary.
@@ -97,6 +107,9 @@ tauri-plugin-updater = "2.14"
 tauri-plugin-single-instance = "2.5"
 
 [profile.dev.package.image]
+opt-level = 3
+
+[profile.dev.package.rawler]
 opt-level = 3
 
 [profile.dev.package.rune-studio]
