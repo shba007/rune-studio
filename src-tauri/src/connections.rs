@@ -176,10 +176,9 @@ pub(crate) fn install_embedded_connection(
             .iter_mut()
             .find(|connection| connection.id == ID)
             .and_then(|connection| connection.selected_models.as_mut())
+            && !selected.iter().any(|id| id == model)
         {
-            if !selected.iter().any(|id| id == model) {
-                selected.push(model.into());
-            }
+            selected.push(model.into());
         }
     }
     settings::save(app, &next)?;
@@ -193,10 +192,10 @@ pub(crate) fn install_embedded_connection(
     drop(current);
     drop(analysis);
     crate::hub::changed(app);
-    if let Some(old) = old_slot.filter(|old| old != "legacy-env" && !old_slot_in_use) {
-        if let Err(error) = settings::set_api_key_for_slot(&old, "") {
-            log::warn!("Could not remove previous embedded Infer credential: {error}");
-        }
+    if let Some(old) = old_slot.filter(|old| old != "legacy-env" && !old_slot_in_use)
+        && let Err(error) = settings::set_api_key_for_slot(&old, "")
+    {
+        log::warn!("Could not remove previous embedded Infer credential: {error}");
     }
     Ok(())
 }

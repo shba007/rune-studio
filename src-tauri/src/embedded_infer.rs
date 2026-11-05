@@ -125,10 +125,10 @@ impl EmbeddedManager {
     }
 
     pub async fn stop(&self) {
-        if let Some((_, server)) = self.0.lock().await.take() {
-            if let Err(error) = server.shutdown().await {
-                log::error!("{error}");
-            }
+        if let Some((_, server)) = self.0.lock().await.take()
+            && let Err(error) = server.shutdown().await
+        {
+            log::error!("{error}");
         }
     }
 }
@@ -165,12 +165,11 @@ impl EmbeddedInfer {
         let (stop, stopped) = tokio::sync::oneshot::channel();
         let task = tokio::spawn(async move {
             let _route = route_guard;
-            let result = rune_infer::server::serve(config, listener, async {
+            rune_infer::server::serve(config, listener, async {
                 let _ = stopped.await;
             })
             .await
-            .map_err(|error| format!("Local Infer stopped: {error:#}"));
-            result
+            .map_err(|error| format!("Local Infer stopped: {error:#}"))
         });
         Ok(Self {
             base_url,

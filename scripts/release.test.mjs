@@ -15,6 +15,16 @@ import {
   formatHistoricalRelease,
 } from './release.mjs'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+
+test('the Windows installer and its CI checks include embedded Infer', async () => {
+  const deploy = await readFile(join(root, '.github/workflows/deploy.yml'), 'utf8')
+  const windows = deploy.match(/- platform: 'windows-latest'\s*\n\s*args: '([^']+)'/)
+  assert.ok(windows, 'Windows release build is missing')
+  assert.match(windows[1], /--features\s+[^']*\bembedded-infer\b/)
+  const ci = await readFile(join(root, '.github/workflows/integrate.yml'), 'utf8')
+  assert.match(ci, /cargo test [^\n]*--features [^\n]*\bembedded-infer\b/)
+  assert.match(ci, /cargo clippy [^\n]*--features [^\n]*\bembedded-infer\b/)
+})
 const raw = (message, body = '', shortHash = 'abc1234') => ({
   message,
   body,
