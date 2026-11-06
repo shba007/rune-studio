@@ -56,8 +56,9 @@ pub fn embedded_model_download(
 ) -> Result<(), String> {
     #[cfg(all(windows, feature = "embedded-infer"))]
     {
+        let root = rune_infer::home::rune_home().map_err(|error| error.to_string())?;
         app.state::<crate::embedded_download::Downloads>()
-            .start(id, revision, manifest)
+            .start(root, id, revision, manifest)
     }
     #[cfg(not(all(windows, feature = "embedded-infer")))]
     {

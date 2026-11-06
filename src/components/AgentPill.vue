@@ -24,6 +24,7 @@ import HealthDots from './HealthDots.vue'
 import ProgressRing from './ProgressRing.vue'
 import TaskPanel from './TaskPanel.vue'
 import TaskBoard from './TaskBoard.vue'
+import IntakeStatus from './IntakeStatus.vue'
 import { useTaskBoard } from '@/composables/useTaskBoard'
 import { taskOrbState } from '@/config/taskActivity'
 import { useDecisions } from '@/composables/useDecisions'
@@ -368,6 +369,12 @@ function onOrb() {
             <div key="main" class="flex min-h-0 flex-col gap-2">
               <div class="min-h-0 overflow-y-auto">
                 <div ref="cards" class="flex flex-col gap-2">
+                  <IntakeStatus
+                    :classifying="
+                      decisions.entries.value.some((entry) => entry.status === 'classifying')
+                    "
+                    :error="decisions.current.value ? '' : decisions.error.value"
+                  />
                   <Transition name="page">
                     <TaskPanel v-if="shows('taskPanel')" :agent="agent" />
                   </Transition>

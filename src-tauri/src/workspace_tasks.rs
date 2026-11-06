@@ -37,8 +37,31 @@ pub async fn execution_profile(
     if protected_execution_context(app) {
         crate::model::protected::discover(&app.state::<AppState>().http, base, key, model).await
     } else {
-        Ok(crate::model::profile::resolve_profile(model, None, None))
+        let state = app.state::<AppState>();
+        let mut request = state
+            .http
+            .get(format!("{}/v1/models", base.trim_end_matches('/')))
+            .timeout(std::time::Duration::from_secs(4));
+        if let Some(key) = key {
+            request = request.bearer_auth(key);
+        }
+        let models = match request.send().await {
+            Ok(response) if response.status().is_success() => response
+                .text()
+                .await
+                .map(|body| crate::model::capabilities::parse_models_response(&body))
+                .unwrap_or_default(),
+            _ => Vec::new(),
+        };
+        Ok(execution_profile_from_models(model, &models))
     }
+}
+fn execution_profile_from_models(
+    model: &str,
+    models: &[crate::model::capabilities::ModelCapabilities],
+) -> crate::model::profile::ModelProfile {
+    let capabilities = models.iter().find(|entry| entry.id == model);
+    crate::model::profile::resolve_profile(model, None, capabilities)
 }
 fn now() -> u64 {
     SystemTime::now()
@@ -920,6 +943,18 @@ fn tick(app: &AppHandle) -> Result<Vec<WorkspaceTask>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn task_profile_uses_exact_advertised_tool_support() {
+        use crate::model::capabilities::{ModelCapabilities, TriState};
+        let mut holo = ModelCapabilities::unknown("holo3.1-0.8b-q4");
+        holo.tool_calls = TriState::Yes;
+        let profile = execution_profile_from_models("holo3.1-0.8b-q4", &[holo.clone()]);
+        let request = crate::model::client::Request::simple("Open Notepad");
+        let body = crate::model::client::chat_body("holo3.1-0.8b-q4", &profile, &request);
+        assert_eq!(body["tool_choice"], "required");
+        let unknown = execution_profile_from_models("another-model", &[holo]);
+        assert_eq!(unknown.tool_choice_required, TriState::Unknown);
+    }
     #[test]
     fn automatic_running_is_limited_to_scheduled_rune_tasks() {
         assert!(check_due_action("remind", "manual", false).is_ok());

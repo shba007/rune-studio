@@ -318,8 +318,8 @@ watch(
           <p class="m-0 text-rune-body">Download a local model</p>
           <p class="m-0 text-rune-caption text-rune-text-3">
             Models run on your computer. Download sizes exclude the engine and temporary files.
-            Qwen3.8 27B was tested with Studio; the smaller model still needs computer-use
-            validation.
+            Qwen3.8 27B was tested with Studio; the other models still need computer-use validation.
+            Holo4 27B is for non-commercial use only.
           </p>
           <p
             v-if="candidates[0]?.availableBytes != null"

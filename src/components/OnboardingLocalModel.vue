@@ -12,6 +12,9 @@ type Candidate = {
   availableBytes?: number | null
   revision: string
   manifest: string
+  sourceUrl?: string
+  recommended?: boolean
+  recommendationBasis?: string | null
 }
 type Status = {
   phase: string
@@ -23,6 +26,8 @@ type Status = {
 }
 const emit = defineEmits<{ ready: [] }>()
 const models = ref<Candidate[]>([])
+const selectedId = ref('')
+const selected = computed(() => models.value.find((model) => model.id === selectedId.value))
 const status = ref<Status | null>(null)
 const error = ref('')
 const loading = ref(true)
@@ -91,7 +96,10 @@ async function retryStart() {
 onMounted(async () => {
   try {
     const available = await invoke<Candidate[]>('embedded_model_candidates')
-    models.value = Array.isArray(available) ? available : []
+    models.value = Array.isArray(available)
+      ? available.filter((model) => model.id.startsWith('holo'))
+      : []
+    selectedId.value = models.value.find((model) => model.recommended)?.id ?? ''
     await refresh()
     if (active.value) poll()
   } catch (e) {
@@ -110,23 +118,60 @@ onBeforeUnmount(() => {
   <div class="local-setup">
     <p v-if="loading">Loading models…</p>
     <template v-else>
-      <p>Models run on your computer. Download sizes exclude the engine and temporary files.</p>
-      <p>
-        Qwen3.8 27B was tested with Studio; the smaller model still needs computer-use validation.
-      </p>
-      <p v-if="models[0]?.availableBytes != null">
-        {{ (models[0].availableBytes / 1_000_000_000).toFixed(2) }} GB available on the model drive.
-      </p>
-      <p v-if="!models.length && !error">No compatible models are available in this build.</p>
-      <div v-for="model in models" :key="model.id" class="model-row">
-        <span
-          >{{ model.name }} · {{ (model.bytes / 1_000_000_000).toFixed(2) }} GB ·
-          {{ model.license }}</span
-        >
-        <RuneButton size="sm" :disabled="active || starting" @click="download(model)"
-          >Download</RuneButton
+      <div class="model-heading">
+        <span>Local models</span>
+        <span v-if="models[0]?.availableBytes != null"
+          >{{ (models[0].availableBytes / 1_000_000_000).toFixed(2) }} GB available</span
         >
       </div>
+      <p v-if="!models.length && !error">No compatible models are available in this build.</p>
+      <div v-if="models.length" class="model-list" role="radiogroup" aria-label="Local model">
+        <label
+          v-for="model in models"
+          :key="model.id"
+          class="model-row"
+          :class="{ selected: selectedId === model.id }"
+        >
+          <input
+            v-model="selectedId"
+            type="radio"
+            name="local-model"
+            :value="model.id"
+            :disabled="active || starting"
+          />
+          <span class="selection-dot" aria-hidden="true" />
+          <span class="model-info">
+            <span class="model-title"
+              >{{ model.name }}
+              <strong v-if="model.recommended" class="recommended">Recommended</strong></span
+            >
+            <span class="model-meta">{{ model.license }}</span>
+          </span>
+          <span class="model-size">{{ (model.bytes / 1_000_000_000).toFixed(2) }} GB</span>
+        </label>
+      </div>
+      <div class="model-details">
+        <p v-if="!selectedId && models.length">
+          No reliable fit was detected. Select a model to continue.
+        </p>
+        <p v-if="selected?.sourceUrl" class="source">Source: {{ selected.sourceUrl }}</p>
+        <p v-if="models[0]?.recommendationBasis">
+          {{ models[0].recommendationBasis }}. Actual performance may vary.
+        </p>
+        <p>
+          Models run on your computer. These Holo models have not yet been validated with Studio.
+          Sizes exclude engine and temporary files.
+        </p>
+      </div>
+      <RuneButton
+        v-if="models.length"
+        size="sm"
+        variant="primary"
+        class="download-button"
+        :disabled="!selected || active || starting"
+        @click="selected && download(selected)"
+        >Download selected model</RuneButton
+      >
       <DownloadProgress v-if="active && status" v-bind="status" />
       <RuneButton v-if="active" size="sm" @click="cancel">Cancel</RuneButton>
       <p v-if="starting" role="status">Starting local Infer…</p>
@@ -151,8 +196,9 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 12px;
   min-width: 0;
-  max-height: 60vh;
+  max-height: 100%;
   overflow-y: auto;
+  padding: 2px 4px 2px 2px;
 }
 .local-setup p {
   margin: 0;
@@ -160,10 +206,114 @@ onBeforeUnmount(() => {
 .local-setup [role='alert'] {
   color: var(--color-error);
 }
+.model-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--color-rune-text-3);
+  font: 600 11px/1.4 var(--font-sans);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.model-list {
+  overflow: hidden;
+  border: 1px solid var(--color-rune-raised);
+  border-radius: var(--radius-rune-tile);
+  background: var(--color-rune-surface);
+}
 .model-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+.model-row + .model-row {
+  border-top: 1px solid var(--color-rune-raised);
+}
+.model-row:hover,
+.model-row.selected {
+  background: var(--color-rune-raised);
+}
+.model-row input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.selection-dot {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  border: 1px solid var(--color-rune-text-3);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+}
+.selected .selection-dot {
+  border-color: var(--accent);
+}
+.selected .selection-dot::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.model-row:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.model-row:has(input:disabled) {
+  cursor: default;
+}
+.model-row:has(input:disabled):not(.selected) {
+  opacity: 0.6;
+}
+.model-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font: 400 12px/1.4 var(--font-rune-reading);
+  color: var(--color-rune-text-3);
+}
+.model-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+  flex: 1;
+}
+.model-title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  font: 600 14px/1.4 var(--font-sans);
+  font-weight: 600;
+}
+.model-size,
+.model-meta {
+  color: var(--color-rune-text-2);
+  font: 400 12px/1.4 var(--font-rune-reading);
+}
+.model-size {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.recommended {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border-radius: 999px;
+  padding: 2px 7px;
+  font: 600 10px/1.4 var(--font-rune-reading);
+}
+.source {
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.download-button {
+  align-self: flex-start;
 }
 </style>

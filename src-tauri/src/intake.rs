@@ -307,6 +307,10 @@ async fn infer(
     let state = app.state::<AppState>();
     let (settings, key) = crate::settings::snapshot_with_api_key(&state.settings);
     let model = settings.model_for_role(crate::model::role::ModelRole::Agent);
+    let started = std::time::Instant::now();
+    if classification {
+        log::info!("Request classification: checking local model capabilities");
+    }
     let profile = if classification {
         crate::agent::unless_stopped(
             &e.token,
@@ -314,6 +318,10 @@ async fn infer(
                 &settings.base_url,
                 key.as_deref(),
                 model,
+                crate::model::protected::is_embedded_infer(
+                    &settings.active_connection_id,
+                    &settings.base_url,
+                ),
             ),
         )
         .await
@@ -355,12 +363,30 @@ async fn infer(
         ..Default::default()
     };
     if classification {
+        log::info!(
+            "Request classification: sending structured request after {} ms",
+            started.elapsed().as_millis()
+        );
+    }
+    let result = if classification {
         crate::agent::unless_stopped(&e.token, client.call_classification(&request, schema)).await
     } else {
         crate::agent::unless_stopped(&e.token, client.call_json_retrying(&request, schema)).await
     }
     .ok_or("Request interrupted")?
-    .map_err(|err| err.to_string())
+    .map_err(|err| err.to_string());
+    if classification {
+        log::info!(
+            "Request classification: {} after {} ms",
+            if result.is_ok() {
+                "completed"
+            } else {
+                "failed"
+            },
+            started.elapsed().as_millis()
+        );
+    }
+    result
 }
 async fn classify(app: &AppHandle, e: &mut Entry) -> Result<(), String> {
     e.persistable = false;
@@ -381,6 +407,10 @@ async fn classify(app: &AppHandle, e: &mut Entry) -> Result<(), String> {
         .as_str()
         .ok_or("Missing input classification")?
         .into();
+    let corrected_task = correct_direct_task(&e.kind, e.requested_kind.as_deref(), &e.text);
+    if corrected_task {
+        e.kind = "task".into();
+    }
     e.category = value["category"]
         .as_str()
         .unwrap_or("general")
@@ -401,7 +431,7 @@ async fn classify(app: &AppHandle, e: &mut Entry) -> Result<(), String> {
         .locked()
         .input_classification
         == crate::settings::InputClassification::AlwaysConfirm
-        || value["ambiguous"] != false;
+        || (!corrected_task && value["ambiguous"] != false);
     e.confirm_classification = confirm;
     if e.kind == "task" && !confirm {
         return dispatch(app, e, None);
@@ -426,6 +456,27 @@ async fn classify(app: &AppHandle, e: &mut Entry) -> Result<(), String> {
     } else {
         advance(app, e).await
     }
+}
+
+fn correct_direct_task(kind: &str, requested_kind: Option<&str>, text: &str) -> bool {
+    if kind != "goal" || requested_kind.is_some() {
+        return false;
+    }
+    let text = text.trim().to_lowercase();
+    let text = text
+        .strip_prefix("please ")
+        .or_else(|| text.strip_prefix("can you "))
+        .or_else(|| text.strip_prefix("could you "))
+        .unwrap_or(&text);
+    ["open ", "launch "]
+        .iter()
+        .filter_map(|prefix| text.strip_prefix(prefix))
+        .any(|action| {
+            [" and type ", " and write "]
+                .iter()
+                .filter_map(|separator| action.split_once(separator))
+                .any(|(target, content)| !target.trim().is_empty() && !content.trim().is_empty())
+        })
 }
 fn classification_question(e: &mut Entry, reason: &str) {
     let mut kinds = vec![e.kind.clone()];
@@ -1373,7 +1424,13 @@ fn submit_intent(
     let _ = app.emit("decisions_changed", ());
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
+        let queued_at = std::time::Instant::now();
+        log::info!("Request processing: waiting for earlier requests");
         let _serial = SERIAL.lock().await;
+        log::info!(
+            "Request processing: started after {} ms in queue",
+            queued_at.elapsed().as_millis()
+        );
         if !ENTRIES.locked().contains_key(&e.id) {
             return;
         }
@@ -1561,6 +1618,40 @@ fn validate_answer(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn explicit_open_and_type_commands_are_distinguished_from_goals_and_incomplete_requests() {
+        for text in [
+            "Open Notepad and type hello",
+            "Please open the editor and write a sentence",
+            "Can you launch a browser and type example.com",
+        ] {
+            assert!(correct_direct_task("goal", None, text), "{text}");
+        }
+        for text in [
+            "My goal is to learn to open Notepad and type",
+            "Become healthier this year",
+            "Open Notepad",
+            "Open Notepad and type ",
+            "Open and type hello",
+        ] {
+            assert!(!correct_direct_task("goal", None, text), "{text}");
+        }
+        assert!(!correct_direct_task(
+            "goal",
+            Some("goal"),
+            "Open Notepad and type hello"
+        ));
+        assert!(!correct_direct_task(
+            "task",
+            None,
+            "Open Notepad and type hello"
+        ));
+        assert!(!correct_direct_task(
+            "step",
+            None,
+            "Open Notepad and type hello"
+        ));
+    }
     fn sample(class: DataClass) -> Entry {
         Entry {
             id: "intake-test".into(),

@@ -145,30 +145,19 @@ impl EmbeddedInfer {
         if !root.is_absolute() {
             return Err("Infer home must be an absolute path".into());
         }
-        let mut config = rune_infer::embedding::load_local_model(root, model)
-            .map_err(|error| format!("Cannot load the local Infer model: {error:#}"))?;
-        let mut secret = [0u8; 32];
-        getrandom::fill(&mut secret).map_err(|error| format!("Cannot secure Infer: {error}"))?;
-        let api_key: String = secret.iter().map(|byte| format!("{byte:02x}")).collect();
-        config.server.api_key = Some(api_key.clone());
-        config.server.host = "127.0.0.1".into();
-        config.server.port = 0;
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .map_err(|error| format!("Cannot start local Infer: {error}"))?;
-        let address = listener.local_addr().map_err(|error| error.to_string())?;
-        rune_infer::embedding::initialize(root).map_err(str::to_owned)?;
-        let base_url = format!("http://{address}");
+        let server = rune_infer::embedding::LocalServer::start(root, model).await?;
+        let base_url = server.base_url.clone();
+        let api_key = server.api_key.clone();
         *ROUTE.locked() = Some((base_url.clone(), api_key.clone()));
         let route_guard = RouteGuard(base_url.clone());
         let (stop, stopped) = tokio::sync::oneshot::channel();
         let task = tokio::spawn(async move {
             let _route = route_guard;
-            rune_infer::server::serve(config, listener, async {
-                let _ = stopped.await;
-            })
-            .await
-            .map_err(|error| format!("Local Infer stopped: {error:#}"))
+            tokio::select! {
+                _ = stopped => {},
+                _ = async { while !server.is_finished() { tokio::time::sleep(Duration::from_millis(100)).await; } } => {},
+            }
+            server.shutdown().await
         });
         Ok(Self {
             base_url,

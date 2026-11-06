@@ -15,6 +15,19 @@ fn local_client(base: &str) -> Result<reqwest::Client, String> {
         .map_err(|e| e.to_string())
 }
 
+pub fn is_embedded_infer(connection_id: &str, base: &str) -> bool {
+    #[cfg(all(windows, feature = "embedded-infer"))]
+    {
+        connection_id == "studio-embedded-infer"
+            && crate::embedded_infer::route().is_some_and(|(url, _)| url == base)
+    }
+    #[cfg(not(all(windows, feature = "embedded-infer")))]
+    {
+        let _ = (connection_id, base);
+        false
+    }
+}
+
 fn supported_contract(value: &serde_json::Value) -> bool {
     let contract = &value["local_execution"];
     contract["version"] == 1
@@ -54,6 +67,7 @@ pub async fn discover_classification(
     base: &str,
     key: Option<&str>,
     model: &str,
+    embedded_infer: bool,
 ) -> Result<ModelProfile, String> {
     let http = local_client(base)?;
     let mut request = http.get(format!("{}/v1/models", base.trim_end_matches('/')));
@@ -65,12 +79,13 @@ pub async fn discover_classification(
         return Err("Could not verify the local model catalog".into());
     }
     let models = parse_models_response(&response.text().await.map_err(|e| e.to_string())?);
-    resolve_classification(model, &models)
+    resolve_classification(model, &models, embedded_infer)
 }
 
 fn resolve_classification(
     model: &str,
     models: &[ModelCapabilities],
+    embedded_infer: bool,
 ) -> Result<ModelProfile, String> {
     let caps = models
         .iter()
@@ -79,7 +94,7 @@ fn resolve_classification(
     if caps.locality != Locality::Local {
         return Err("Classification requires a model advertised as local".into());
     }
-    if !caps.supports_structured_output() {
+    if !caps.supports_structured_output() && !embedded_infer {
         return Err(format!(
             "Agent model '{model}' does not advertise structured output, which is required to process requests. In Settings > Models, select a local Agent model with structured output; you can keep this model as the Voice model."
         ));
@@ -160,14 +175,14 @@ mod tests {
     fn classification_requires_exact_id_and_explicit_locality() {
         let mut model = ModelCapabilities::unknown("gemma-4-12b-it");
         model.aliases = vec!["alias".into()];
-        assert!(resolve_classification("gemma-4-12b-it", &[model.clone()]).is_err());
+        assert!(resolve_classification("gemma-4-12b-it", &[model.clone()], false).is_err());
         model.locality = Locality::Local;
-        assert!(resolve_classification("alias", &[model.clone()]).is_err());
-        let error = resolve_classification("gemma-4-12b-it", &[model.clone()]).unwrap_err();
+        assert!(resolve_classification("alias", &[model.clone()], false).is_err());
+        let error = resolve_classification("gemma-4-12b-it", &[model.clone()], false).unwrap_err();
         assert!(error.contains("Settings > Models"));
         assert!(error.contains("structured output"));
         model.raw_capabilities.push("structured json".into());
-        assert!(resolve_classification("gemma-4-12b-it", &[model]).is_ok());
+        assert!(resolve_classification("gemma-4-12b-it", &[model], false).is_ok());
     }
     #[test]
     fn classification_accepts_infer_structured_capability_names() {
@@ -180,8 +195,19 @@ mod tests {
             let mut model = ModelCapabilities::unknown("agent");
             model.locality = Locality::Local;
             model.raw_capabilities.push(capability.into());
-            assert!(resolve_classification("agent", &[model]).is_ok());
+            assert!(resolve_classification("agent", &[model], false).is_ok());
         }
+    }
+    #[test]
+    fn embedded_infer_can_validate_unadvertised_output_but_still_requires_exact_local_model() {
+        let mut model = ModelCapabilities::unknown("holo");
+        model.locality = Locality::Local;
+        model.aliases = vec!["alias".into()];
+        assert!(resolve_classification("holo", &[model.clone()], false).is_err());
+        assert!(resolve_classification("holo", &[model.clone()], true).is_ok());
+        assert!(resolve_classification("alias", &[model.clone()], true).is_err());
+        model.locality = Locality::Cloud;
+        assert!(resolve_classification("holo", &[model], true).is_err());
     }
     #[test]
     fn local_unbundled_models_work_and_explicit_cloud_cannot_inherit_bundled_trust() {
