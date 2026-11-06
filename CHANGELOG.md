@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.10.0
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.9.0...v0.10.0)
+
+### 🚀 Enhancements
+
+- Add diagnostic script for local infer tool and update Cargo configuration ([0eb0165](https://github.com/shba007/rune-studio/commit/0eb0165))
+
+### 🩹 Fixes
+
+- Update dependencies and improve model handling in embedded components ([ee7f785](https://github.com/shba007/rune-studio/commit/ee7f785))
+- Remove unused Cargo configuration and update dependencies for rune-infer ([2d03695](https://github.com/shba007/rune-studio/commit/2d03695))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+
 ## v0.9.0
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.8.0...v0.9.0)
