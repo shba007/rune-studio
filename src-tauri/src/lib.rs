@@ -72,6 +72,7 @@ use tauri::{
     tray::TrayIconBuilder,
 };
 use tauri_plugin_global_shortcut::ShortcutState;
+use tauri_plugin_notification::NotificationExt;
 
 use events::{AgentState, AppState};
 use hotkeys::Hotkeys;
@@ -257,7 +258,19 @@ pub fn run() {
             #[cfg(all(feature = "agent-bridge", unix))]
             bridge::path_link::ensure();
 
-            let _ = hotkeys::apply(app.handle(), None, &hotkeys);
+            #[cfg(windows)]
+            if let Err(error) = hotkeys::start_escape_listener(app.handle()) {
+                log::warn!("Could not start Escape listener; trying global shortcut: {error}");
+            }
+            if let Err(error) = hotkeys::apply(app.handle(), None, &hotkeys) {
+                log::error!("Could not register Studio shortcuts: {error}");
+                let _ = app
+                    .notification()
+                    .builder()
+                    .title("Rune shortcut unavailable")
+                    .body("A shortcut could not be registered. Use Stop in the Rune tray menu and review your shortcuts in Settings.")
+                    .show();
+            }
 
             let show = MenuItem::with_id(app, "show", "Show / hide", true, None::<&str>)?;
             let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;

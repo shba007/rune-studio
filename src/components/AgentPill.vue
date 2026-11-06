@@ -187,12 +187,16 @@ const shows = (card: PillCard) => plan.value.cards.includes(card)
 
 if (import.meta.env.DEV) Object.assign(window, { __demoAgent: agent })
 
-const content = useTemplateRef<HTMLElement>('content')
-const { height: contentHeight } = useElementSize(content)
-const measuredHeight = () => content.value?.getBoundingClientRect().height ?? contentHeight.value
+const cards = useTemplateRef<HTMLElement>('cards')
+const composer = useTemplateRef<HTMLElement>('composer')
+const { height: cardsHeight } = useElementSize(cards)
+const { height: composerHeight } = useElementSize(composer)
+const measuredHeight = () =>
+  cardsHeight.value + composerHeight.value + (cardsHeight.value && composerHeight.value ? 8 : 0)
 agent.setHeightProbe(measuredHeight)
 onBeforeUnmount(() => agent.setHeightProbe(undefined))
-watch(contentHeight, (height) => {
+watch([cardsHeight, composerHeight], () => {
+  const height = measuredHeight()
   const available = Math.min(1200, Math.max(200, window.screen.availHeight * 0.9))
   if (height > available && decisionKey.value && !decisionInKnowledge.value) {
     expandedDecision.value = decisionKey.value
@@ -355,76 +359,87 @@ function onOrb() {
       class="h-full overflow-hidden transition-[width] duration-300 ease-out motion-reduce:transition-none"
       :style="{ width: isAmbient ? '0px' : `${PAGE_WIDTH + PAGE_GAP}px` }"
     >
-      <div class="ml-2 flex h-full flex-col justify-end" :style="{ width: `${PAGE_WIDTH}px` }">
-        <div ref="content" class="flex flex-col">
+      <div
+        class="ml-2 flex h-full min-h-0 flex-col justify-end"
+        :style="{ width: `${PAGE_WIDTH}px` }"
+      >
+        <div class="flex max-h-full min-h-0 flex-col">
           <Transition name="page" mode="out-in">
-            <div key="main" class="flex flex-col gap-2">
-              <Transition name="page">
-                <TaskPanel v-if="shows('taskPanel')" :agent="agent" />
-              </Transition>
-              <TaskBoard v-if="shows('board')" :board="taskBoard" />
-              <TaskReminder v-if="shows('reminder')" :agent="agent" />
-              <DecisionInbox v-if="shows('decision')" compact :model="decisions" />
-              <button
-                v-if="shows('decisionLink')"
-                class="rounded-rune-tile p-3 text-rune-caption text-rune-ink bg-rune-raised"
-                @click="
-                  agent.openWorkspace(decisions.current.value?.kind === 'goal' ? 'goals' : 'tasks')
-                "
-              >
-                Continue your request in Workspace
-              </button>
-              <AnalysisCard
-                v-if="shows('analysis')"
-                ref="analysisCard"
-                :analysis="analysis"
-                @close="agent.mode.value === 'analysis' && agent.setMode('open')"
-              />
-              <section
-                v-if="shows('update') && updater.latest.value"
-                class="flex w-full flex-col gap-2 rounded-rune-tile bg-rune-surface p-4 text-rune-ink"
-                role="alertdialog"
-                aria-label="Update available"
-              >
-                <header class="flex h-6 items-center gap-2">
-                  <span class="size-2 shrink-0 rounded-full bg-primary" />
-                  <span class="text-rune-heading text-rune-text-2 uppercase">Update available</span>
-                </header>
-                <p class="text-rune-body">
-                  Version {{ updater.latest.value.version }}
-                  <span class="text-rune-text-2">(you have {{ updater.version.value }})</span>
-                </p>
-                <div class="mt-1 flex gap-2">
-                  <RuneButton size="sm" class="flex-1" @click="updater.dismissPrompt()">
-                    Later
-                  </RuneButton>
-                  <RuneButton
-                    variant="primary"
-                    size="sm"
-                    class="flex-1"
-                    @click="updater.install(agent.isRunning.value)"
+            <div key="main" class="flex min-h-0 flex-col gap-2">
+              <div class="min-h-0 overflow-y-auto">
+                <div ref="cards" class="flex flex-col gap-2">
+                  <Transition name="page">
+                    <TaskPanel v-if="shows('taskPanel')" :agent="agent" />
+                  </Transition>
+                  <TaskBoard v-if="shows('board')" :board="taskBoard" />
+                  <TaskReminder v-if="shows('reminder')" :agent="agent" />
+                  <DecisionInbox v-if="shows('decision')" compact :model="decisions" />
+                  <button
+                    v-if="shows('decisionLink')"
+                    class="rounded-rune-tile p-3 text-rune-caption text-rune-ink bg-rune-raised"
+                    @click="
+                      agent.openWorkspace(
+                        decisions.current.value?.kind === 'goal' ? 'goals' : 'tasks',
+                      )
+                    "
                   >
-                    Update
-                  </RuneButton>
+                    Continue your request in Workspace
+                  </button>
+                  <AnalysisCard
+                    v-if="shows('analysis')"
+                    ref="analysisCard"
+                    :analysis="analysis"
+                    @close="agent.mode.value === 'analysis' && agent.setMode('open')"
+                  />
+                  <section
+                    v-if="shows('update') && updater.latest.value"
+                    class="flex w-full flex-col gap-2 rounded-rune-tile bg-rune-surface p-4 text-rune-ink"
+                    role="alertdialog"
+                    aria-label="Update available"
+                  >
+                    <header class="flex h-6 items-center gap-2">
+                      <span class="size-2 shrink-0 rounded-full bg-primary" />
+                      <span class="text-rune-heading text-rune-text-2 uppercase"
+                        >Update available</span
+                      >
+                    </header>
+                    <p class="text-rune-body">
+                      Version {{ updater.latest.value.version }}
+                      <span class="text-rune-text-2">(you have {{ updater.version.value }})</span>
+                    </p>
+                    <div class="mt-1 flex gap-2">
+                      <RuneButton size="sm" class="flex-1" @click="updater.dismissPrompt()">
+                        Later
+                      </RuneButton>
+                      <RuneButton
+                        variant="primary"
+                        size="sm"
+                        class="flex-1"
+                        @click="updater.install(agent.isRunning.value)"
+                      >
+                        Update
+                      </RuneButton>
+                    </div>
+                  </section>
+                  <ServerStatusCard v-if="shows('server')" :agent="agent" />
+                  <ReflectionCard v-if="shows('reflection')" :agent="agent" />
+                  <FeedbackCard v-if="shows('feedback')" :agent="agent" />
+                  <ReviewCard v-if="shows('review')" :agent="agent" />
+                  <p
+                    v-if="plan.more"
+                    role="status"
+                    class="m-0 px-rune-2 text-rune-caption text-rune-text-2 uppercase"
+                  >
+                    {{ plan.more }} more waiting
+                  </p>
+                  <ConfirmCard
+                    v-if="shows('confirm') && agent.question.value"
+                    :key="agent.question.value.id"
+                    :agent="agent"
+                  />
                 </div>
-              </section>
-              <ServerStatusCard v-if="shows('server')" :agent="agent" />
-              <ReflectionCard v-if="shows('reflection')" :agent="agent" />
-              <FeedbackCard v-if="shows('feedback')" :agent="agent" />
-              <ReviewCard v-if="shows('review')" :agent="agent" />
-              <p
-                v-if="plan.more"
-                role="status"
-                class="m-0 px-rune-2 text-rune-caption text-rune-text-2 uppercase"
-              >
-                {{ plan.more }} more waiting
-              </p>
-              <ConfirmCard
-                v-if="shows('confirm') && agent.question.value"
-                :key="agent.question.value.id"
-                :agent="agent"
-              />
-              <div class="flex flex-col">
+              </div>
+              <div ref="composer" class="flex shrink-0 flex-col">
                 <Composer
                   :attached="lifeActive"
                   :agent="agent"

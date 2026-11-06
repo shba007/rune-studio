@@ -5,6 +5,9 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
 use crate::settings::Settings;
 
+#[cfg(windows)]
+mod windows_escape;
+
 pub const DEFAULT_TOGGLE: &str = "Alt+Q";
 pub const DEFAULT_STOP: &str = "Escape";
 
@@ -50,12 +53,20 @@ pub fn apply(app: &AppHandle, previous: Option<&Hotkeys>, next: &Hotkeys) -> Res
     let shortcuts = app.global_shortcut();
     if let Some(previous) = previous {
         for shortcut in [previous.toggle, previous.stop] {
+            #[cfg(windows)]
+            if windows_escape::handles(shortcut) {
+                continue;
+            }
             let _ = shortcuts.unregister(shortcut);
         }
     }
 
     let mut failures = Vec::new();
     for shortcut in [next.toggle, next.stop] {
+        #[cfg(windows)]
+        if windows_escape::handles(shortcut) {
+            continue;
+        }
         if let Err(err) = shortcuts.register(shortcut) {
             log::warn!("could not register {shortcut}: {err}");
             failures.push(format!("{shortcut} is unavailable ({err})"));
@@ -66,4 +77,9 @@ pub fn apply(app: &AppHandle, previous: Option<&Hotkeys>, next: &Hotkeys) -> Res
     } else {
         Err(failures.join("; "))
     }
+}
+
+#[cfg(windows)]
+pub fn start_escape_listener(app: &AppHandle) -> Result<(), String> {
+    windows_escape::start(app)
 }

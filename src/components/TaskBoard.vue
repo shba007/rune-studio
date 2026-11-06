@@ -15,6 +15,7 @@ import {
   visibleGoal,
 } from '@/config/taskProgress'
 import AppIcon from './AppIcon.vue'
+import RuneLoader from './RuneLoader.vue'
 const props = defineProps<{ board: TaskBoardModel }>()
 const now = useNow({ scheduler: (update) => useIntervalFn(update, 1000) })
 const reduceMotion = usePreferredReducedMotion()
@@ -39,7 +40,10 @@ const etaText = computed(() => {
 const expanded = ref(new Set<number>())
 const collapsed = ref(new Set<number>())
 function isExpanded(task: IndependentTask) {
-  return expanded.value.has(task.id) || (task.phase === 'running' && !collapsed.value.has(task.id))
+  return (
+    expanded.value.has(task.id) ||
+    (['running', 'planning'].includes(task.phase) && !collapsed.value.has(task.id))
+  )
 }
 function toggle(task: IndependentTask) {
   if (isExpanded(task)) {
@@ -179,8 +183,8 @@ function stepLabel(phase: TaskPhase) {
       role="status"
       class="m-0 flex items-center gap-2 text-rune-body text-rune-text-2"
     >
-      <span class="activity-dots" aria-hidden="true">···</span
-      >{{ request.phase === 'planning' ? 'Planning tasks and steps…' : 'Waiting to start…' }}
+      <RuneLoader />
+      {{ request.phase === 'planning' ? 'Planning tasks and steps…' : 'Waiting to start…' }}
     </p>
     <p v-if="request.error" role="alert" class="m-0 text-rune-body text-error">
       {{ request.error }}
@@ -270,21 +274,32 @@ function stepLabel(phase: TaskPhase) {
           data-testid="task-detail"
           class="mt-rune-2"
         >
+          <p
+            v-if="task.phase === 'planning' && !task.steps.length"
+            role="status"
+            class="m-0 flex items-center gap-2 text-rune-caption text-rune-text-2"
+          >
+            <RuneLoader /> Planning steps…
+          </p>
           <ol class="step-path m-0 list-none p-0">
             <li
               v-for="(step, stepIndex) in task.steps"
               :key="stepIndex"
               :aria-current="step.phase === 'running' ? 'step' : undefined"
               class="step-node"
-              :class="{ 'current-step': step.phase === 'running' }"
+              :class="{
+                'current-step': step.phase === 'running',
+                'finished-step': step.phase === 'done',
+                'problem-step': step.phase === 'failed' || step.phase === 'blocked',
+              }"
             >
-              <span class="step-dot" aria-hidden="true" /><span
-                class="min-w-0 text-rune-body leading-relaxed [overflow-wrap:anywhere]"
-                >{{ stepIndex + 1 }}. {{ step.text
-                }}<span class="mt-0.5 block text-rune-caption text-rune-text-2">{{
-                  stepLabel(step.phase)
-                }}</span></span
-              >
+              <RuneLoader v-if="step.phase === 'planning'" class="step-loader" />
+              <AppIcon v-else-if="step.phase === 'done'" name="ok" size="sm" class="step-icon" />
+              <span v-else class="step-dot" aria-hidden="true" />
+              <span class="min-w-0 text-rune-body leading-relaxed [overflow-wrap:anywhere]">
+                {{ step.text }}
+                <span class="step-status">{{ stepLabel(step.phase) }}</span>
+              </span>
             </li>
           </ol>
         </div>
@@ -358,46 +373,45 @@ function stepLabel(phase: TaskPhase) {
   flex-direction: column;
 }
 .step-node {
-  position: relative;
   display: flex;
   gap: 8px;
-  padding-bottom: 16px;
-  color: #a1a1aa;
-}
-.step-node:not(:last-child)::after {
-  content: '';
-  position: absolute;
-  left: 2px;
-  top: 10px;
-  bottom: 3px;
-  border-left: 1px dotted rgb(255 255 255 / 0.2);
+  align-items: flex-start;
+  padding-bottom: 6px;
+  color: var(--color-rune-text-2);
 }
 .step-dot {
-  margin-top: 6px;
-  width: 5px;
-  height: 5px;
+  margin: 4px 1px 0;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
-  background: #52525b;
+  background: var(--color-rune-text-3);
+  opacity: 0.35;
   flex-shrink: 0;
 }
+.step-icon {
+  margin-top: 3px;
+  flex-shrink: 0;
+  color: var(--color-rune-ink);
+}
+.step-loader {
+  width: 14px;
+  margin: 4px 0 0 1px;
+}
 .current-step {
-  color: var(--color-primary);
+  color: var(--color-rune-ink);
 }
 .current-step .step-dot {
-  background: var(--color-primary);
+  opacity: 1;
+  background: var(--color-rune-text-2);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-rune-text-2) 25%, transparent);
 }
-.activity-dots {
-  letter-spacing: 4px;
-  animation: breathe 1.4s ease-in-out infinite;
+.problem-step .step-dot {
+  background: var(--color-attention);
+  opacity: 1;
 }
-@keyframes breathe {
-  50% {
-    opacity: 0.3;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .activity-dots {
-    animation: none;
-  }
+.step-status {
+  display: block;
+  font-size: 0.75em;
+  color: var(--color-rune-text-2);
 }
 </style>

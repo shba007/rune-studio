@@ -1315,14 +1315,25 @@ async fn run(
             } => Some(target.clone()),
             _ => None,
         };
-        if control_target
+        if let Some(target) = control_target
             .as_ref()
-            .is_some_and(|target| control_watch.should_stop(target))
+            .filter(|target| control_watch.should_stop(target))
         {
-            let message = "Stopped after clicking the same control twice. Check the result and clarify your request before trying again.";
-            row.fail(message);
-            trace.event(run_id, "repeated_control_stop", "{}");
-            return Outcome::Failed(message.into());
+            let question = stuck::ControlWatch::confirmation_question(target);
+            match gate::ask_question(app, &cancel, "Rune", &question).await {
+                Verdict::Allow => {
+                    trace.event(run_id, "repeated_control_confirmed", "{}");
+                    control_watch.record(None);
+                    watch = stuck::Watch::default();
+                }
+                Verdict::Stopped => return Outcome::Stopped,
+                Verdict::Denied(_) => {
+                    let message = "Stopped because repeating the click was not confirmed.";
+                    row.fail(message);
+                    trace.event(run_id, "repeated_control_stop", "{}");
+                    return Outcome::Failed(message.into());
+                }
+            }
         }
 
         let gating = Instant::now();

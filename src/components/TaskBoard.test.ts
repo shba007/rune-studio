@@ -66,6 +66,38 @@ function fixture(): TaskBoardModel {
   }
 }
 afterEach(() => vi.useRealTimers())
+it('shows the shared loader while planning and retains the request title and estimate', () => {
+  const board = fixture()
+  board.tasks.value = []
+  board.requests.value = [{ ...board.requests.value[0]!, phase: 'planning' }]
+  const wrapper = mount(TaskBoard, { props: { board } })
+  expect(wrapper.get('[role="status"]').text()).toContain('Planning tasks and steps')
+  expect(wrapper.findComponent({ name: 'RuneLoader' }).exists()).toBe(true)
+  expect(wrapper.get('[data-testid="goal-title"]').text()).toContain('Summarize')
+  expect(wrapper.get('[data-testid="goal-eta"]').text()).toBe('Estimating…')
+  wrapper.unmount()
+})
+it('keeps step status and cancellation available in the compact checklist', async () => {
+  const board = fixture()
+  board.tasks.value = [board.tasks.value[0]!]
+  const wrapper = mount(TaskBoard, { props: { board } })
+  const steps = wrapper.findAll('.step-node')
+  expect(steps[0]!.text()).toContain('Read input')
+  expect(steps[0]!.text()).toContain('Done')
+  expect(steps[1]!.attributes('aria-current')).toBe('step')
+  expect(steps[1]!.text()).toContain('Now')
+  await wrapper.get('[aria-label="Cancel task 1"]').trigger('click')
+  expect(board.cancel).toHaveBeenCalledExactlyOnceWith(1)
+  wrapper.unmount()
+})
+it('shows step planning inside the task without needing to expand it', () => {
+  const board = fixture()
+  board.tasks.value = [{ ...board.tasks.value[0]!, phase: 'planning', steps: [] }]
+  const wrapper = mount(TaskBoard, { props: { board } })
+  expect(wrapper.get('[data-testid="task-detail"]').text()).toContain('Planning steps')
+  expect(wrapper.find('[aria-label="Cancel task 1"]').exists()).toBe(true)
+  wrapper.unmount()
+})
 it('dismisses a completed request from the header and leaves its answer to the orb bubble', async () => {
   const board = fixture()
   board.requests.value = [{ ...board.requests.value[0]!, phase: 'done' }]

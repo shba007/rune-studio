@@ -58,6 +58,16 @@ impl ControlWatch {
     pub fn should_stop(&self, target: &crate::exec::uia::BoundTarget) -> bool {
         self.consecutive >= 2 && self.last.as_ref() == Some(&ControlKey::from(target))
     }
+
+    pub fn confirmation_question(target: &crate::exec::uia::BoundTarget) -> String {
+        let name = target.element.name.trim();
+        if name.is_empty() {
+            "I've clicked the same control twice. Would you like me to click it again?".into()
+        } else {
+            let name: String = name.chars().take(80).collect();
+            format!("I've clicked “{name}” twice. Would you like me to click it again?")
+        }
+    }
 }
 
 const WAIT_WARN_AFTER: u32 = 2;
@@ -231,6 +241,27 @@ mod tests {
         watch.record(Some(&first));
         watch.record(Some(&control(42, "e2", "Save")));
         assert!(!watch.should_stop(&first));
+    }
+
+    #[test]
+    fn confirmation_names_the_control_and_reset_requires_a_new_streak() {
+        let mut watch = ControlWatch::default();
+        let target = control(42, "e1", "Add New Tab");
+        watch.record(Some(&target));
+        watch.record(Some(&target));
+        assert_eq!(
+            ControlWatch::confirmation_question(&target),
+            "I've clicked “Add New Tab” twice. Would you like me to click it again?"
+        );
+        assert!(watch.should_stop(&target));
+        watch.record(None);
+        watch.record(Some(&target));
+        assert!(!watch.should_stop(&target));
+        watch.record(Some(&target));
+        assert!(watch.should_stop(&target));
+        assert!(
+            ControlWatch::confirmation_question(&control(42, "e2", "")).contains("same control")
+        );
     }
 
     #[test]
