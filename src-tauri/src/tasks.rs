@@ -889,6 +889,11 @@ pub fn validate_step(
     }
     Ok(())
 }
+
+pub fn completion_progress(current: usize, goal: Option<u32>, count: usize) -> Option<usize> {
+    let next = usize::try_from(goal?).ok()?.checked_sub(1)?;
+    (next == current.checked_add(1)? && next.checked_add(1)? < count).then_some(next)
+}
 pub fn recording_scope(task_id: u64) -> Option<crate::recording::Scope> {
     BOARD.locked().recording_scope(task_id)
 }
@@ -1440,6 +1445,17 @@ mod tests {
         assert!(validate_step(1, Some(3), 3, true).is_ok());
         assert!(validate_step(0, Some(3), 3, true).is_err());
         assert!(validate_step(0, Some(1), 1, true).is_ok());
+    }
+
+    #[test]
+    fn premature_done_can_advance_only_one_step_without_finishing() {
+        assert!(validate_step(1, Some(3), 4, true).is_err());
+        assert_eq!(completion_progress(1, Some(3), 4), Some(2));
+        assert!(validate_step(2, Some(4), 4, true).is_ok());
+        assert_eq!(completion_progress(1, Some(2), 4), None);
+        assert_eq!(completion_progress(1, Some(4), 4), None);
+        assert_eq!(completion_progress(1, Some(3), 3), None);
+        assert_eq!(completion_progress(1, None, 4), None);
     }
     #[test]
     fn independent_tasks_fill_parallel_slots_within_the_current_goal() {

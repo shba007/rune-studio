@@ -8,7 +8,6 @@ fn models(
     let ids = [
         "qwen3.8-27b",
         "qwen3.5-4b-q4",
-        "holo3.1-0.8b-q4",
         "holo3.1-4b-q4",
         "holo3.1-9b-q4",
         "holo4-27b-q4",
@@ -49,5 +48,26 @@ mod tests {
         let selected: Vec<_> = models.iter().filter(|model| model.recommended).collect();
         assert_eq!(selected.len(), 1);
         assert_eq!(selected[0].id, "holo4-27b-q4");
+    }
+
+    #[test]
+    fn offers_only_the_supported_local_candidates() {
+        let models = super::models(Some(8 * 1024 * 1024 * 1024), true, None).unwrap();
+        let mut ids: Vec<_> = models.iter().map(|model| model.id.as_str()).collect();
+        ids.sort_unstable();
+        assert_eq!(
+            ids,
+            [
+                "holo3.1-4b-q4",
+                "holo3.1-9b-q4",
+                "holo4-27b-q4",
+                "qwen3.5-4b-q4",
+                "qwen3.8-27b"
+            ]
+        );
+        assert_eq!(
+            models.iter().find(|model| model.recommended).unwrap().id,
+            "holo3.1-4b-q4"
+        );
     }
 }

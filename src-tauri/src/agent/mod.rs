@@ -1064,7 +1064,10 @@ async fn run(
                 );
                 if invalid_in_a_row >= MAX_INVALID_IN_A_ROW {
                     row.fail(&err.to_string());
-                    return Outcome::Failed(err.to_string());
+                    return Outcome::Failed(match err {
+                        ModelError::NoToolCall(_) => "The selected model couldn't provide an action after several attempts. Try again or select another model in Settings > Models & tools.".into(),
+                        _ => err.to_string(),
+                    });
                 }
                 row.rec.result = Some("skipped".into());
                 row.rec.error = Some(err.to_string());
@@ -1160,6 +1163,26 @@ async fn run(
                 matches!(action, Action::Done { success: true, .. }),
             )
         {
+            if matches!(action, Action::Done { success: true, .. })
+                && let Some(next) = crate::tasks::completion_progress(current, goal, plan.len())
+            {
+                current = next;
+                events::emit_plan(app, &plan, current, false);
+                if let Some(id) = handoff.locked().board_id {
+                    crate::tasks::step_started(app, id, current);
+                }
+                row.rec.result = Some("skipped".into());
+                row.rec.error = Some(problem);
+                history.push(Entry {
+                    action: "completion requested".into(),
+                    outcome: format!(
+                        "Advanced to step {}. Check this step and all remaining steps before finishing.",
+                        current + 1
+                    ),
+                });
+                invalid_in_a_row = 0;
+                continue;
+            }
             invalid_in_a_row += 1;
             row.rec.result = Some("skipped".into());
             row.rec.error = Some(problem.clone());

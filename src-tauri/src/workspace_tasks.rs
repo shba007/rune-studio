@@ -946,11 +946,11 @@ mod tests {
     #[test]
     fn task_profile_uses_exact_advertised_tool_support() {
         use crate::model::capabilities::{ModelCapabilities, TriState};
-        let mut holo = ModelCapabilities::unknown("holo3.1-0.8b-q4");
+        let mut holo = ModelCapabilities::unknown("holo3.1-4b-q4");
         holo.tool_calls = TriState::Yes;
-        let profile = execution_profile_from_models("holo3.1-0.8b-q4", &[holo.clone()]);
+        let profile = execution_profile_from_models("holo3.1-4b-q4", &[holo.clone()]);
         let request = crate::model::client::Request::simple("Open Notepad");
-        let body = crate::model::client::chat_body("holo3.1-0.8b-q4", &profile, &request);
+        let body = crate::model::client::chat_body("holo3.1-4b-q4", &profile, &request);
         assert_eq!(body["tool_choice"], "required");
         let unknown = execution_profile_from_models("another-model", &[holo]);
         assert_eq!(unknown.tool_choice_required, TriState::Unknown);

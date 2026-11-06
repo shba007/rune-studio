@@ -52,8 +52,8 @@ it('downloads and starts the selected model without opening Settings', async () 
     if (command === 'embedded_model_candidates')
       return [
         {
-          id: 'holo3.1-0.8b-q4',
-          name: 'Small',
+          id: 'holo3.1-4b-q4',
+          name: 'Holo3.1 4B',
           bytes: 1000000000,
           license: 'MIT',
           revision: 'v1',
@@ -66,7 +66,7 @@ it('downloads and starts the selected model without opening Settings', async () 
       return
     }
     if (command === 'embedded_model_download_status')
-      return { phase, model: 'holo3.1-0.8b-q4', downloaded: 0 }
+      return { phase, model: 'holo3.1-4b-q4', downloaded: 0 }
   })
   const wrapper = mount(OnboardingLocalModel)
   await flushPromises()
@@ -76,11 +76,11 @@ it('downloads and starts the selected model without opening Settings', async () 
     .trigger('click')
   await flushPromises()
   expect(harness.invoke).toHaveBeenCalledWith('embedded_model_download', {
-    id: 'holo3.1-0.8b-q4',
+    id: 'holo3.1-4b-q4',
     revision: 'v1',
     manifest: 'reviewed',
   })
-  expect(harness.invoke).toHaveBeenCalledWith('embedded_model_use', { id: 'holo3.1-0.8b-q4' })
+  expect(harness.invoke).toHaveBeenCalledWith('embedded_model_use', { id: 'holo3.1-4b-q4' })
   expect(wrapper.emitted('ready')).toHaveLength(1)
   expect(harness.invoke).not.toHaveBeenCalledWith('open_settings_window', expect.anything())
   wrapper.unmount()

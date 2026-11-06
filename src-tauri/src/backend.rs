@@ -126,6 +126,8 @@ pub async fn check(
         .map(|m| m.raw_capabilities.clone())
         .unwrap_or_default();
 
+    let models = studio_model_choices(models);
+
     BackendStatus {
         reachable: true,
         auth_ok: true,
@@ -136,6 +138,13 @@ pub async fn check(
         models,
         memory: crate::model::capabilities::parse_server_memory(&body),
     }
+}
+
+fn studio_model_choices(models: Vec<ModelCapabilities>) -> Vec<ModelCapabilities> {
+    models
+        .into_iter()
+        .filter(|model| !model.id.eq_ignore_ascii_case("holo3.1-0.8b-q4"))
+        .collect()
 }
 
 fn missing_models(settings: &Settings, models: &[ModelCapabilities]) -> Vec<String> {
@@ -160,6 +169,17 @@ fn missing_models(settings: &Settings, models: &[ModelCapabilities]) -> Vec<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn removed_model_is_not_offered_in_discovered_choices() {
+        let models = vec![
+            ModelCapabilities::unknown("HOLO3.1-0.8B-Q4"),
+            ModelCapabilities::unknown("holo3.1-4b-q4"),
+        ];
+        let visible = studio_model_choices(models);
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].id, "holo3.1-4b-q4");
+    }
 
     #[tokio::test]
     async fn stopped_local_infer_has_an_actionable_status() {
