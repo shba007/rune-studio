@@ -129,22 +129,9 @@ Voice input is abstracted through the `Transcriber` trait (`src-tauri/src/voice/
 
 ## 7. Calibrating a New Model
 
-To calibrate a new, unknown model without modifying source code:
-
-1. Ensure the model server (rune-infer) is running and serves the target model.
-2. Run the calibration probe in profile mode:
-
-   ```powershell
-   pwsh scripts/m15/run-probe.ps1 -Profile -Model <model-id>
-   ```
-
-3. The probe will:
-   - Test candidate pointing conventions against known synthetic targets and calculate hit rates.
-   - Test request styles (`thinking_type`, `chat_template_kwargs`, `budget_tokens`) to determine which switch off thinking.
-   - Measure tool call argument schema validity over repeated trials.
-   - Probe safe maximum image resolutions (1280 px vs 1920 px).
-   - Generate a suggested `ModelProfile` JSON at `temp/m15/<model-id>-profile.json`.
-4. Review the generated profile and add it to your `settings.json` or bundled profile definitions.
+The former calibration runner and scene generator have been retired. The test-only
+probe remains in `src-tauri/src/grounding_probe.rs`; live calibration requires
+independently prepared scenes and a running model server.
 
 ---
 

@@ -122,8 +122,8 @@ The owner's constraint: Vue code must not be written at runtime, because a model
 
 ## 6b. Studio's own handoffs (given directly to Studio's agents)
 
-- **M1 Model profiles and roles** (`rune-studio-M1-model-profiles.md`): Studio stops assuming one model.
-- **L0 Life foundations** (`rune-studio-L0-life-foundations.md`): consent, store, evidence record, local-only enforcement, wellbeing basics.
+- **M1 Model profiles and roles**: Studio stops assuming one model.
+- **L0 Life foundations**: consent, store, evidence record, local-only enforcement, wellbeing basics.
   Both are independent of each other except that L0's local-only check uses M1's locality field when it exists.
 
 ## 7. What Studio will not do

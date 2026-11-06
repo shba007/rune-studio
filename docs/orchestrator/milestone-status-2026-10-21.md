@@ -10,7 +10,7 @@ A milestone is **complete** only when its exit criterion has evidence. I use thr
 - **Tested:** automated tests pass (Studio's, re-run by me where noted).
 - **Seen:** observed working on a real Windows machine with a real model server. **The only such observation is the field test of 2026-10-19, which ran before the F1 fixes.** Nothing built after it, and none of the F1 fixes, has been seen on a real machine.
 
-Sources: the git history on `develop` (Studio at `0cb76b5`), `docs/handoff/M1-report.md`, `docs/handoff/R6b-report.md`, `docs/ROADMAP.md`, and code spot-checks. The ROADMAP status tables are stale (they predate the field test), so I did not rely on them.
+Sources: the git history on `develop` (Studio at `0cb76b5`), historical M1 and R6b reports, `docs/ROADMAP.md`, and code spot-checks. The ROADMAP status tables were stale at the time, so this audit did not rely on them.
 
 ## The one finding that matters most
 
@@ -45,7 +45,7 @@ Sources: the git history on `develop` (Studio at `0cb76b5`), `docs/handoff/M1-re
 
 **1. An agent can do now (no hardware needed)**
 
-- C1 close-out (`rune-studio-C1-closeout.md`): the M1 contract fix, the two R6b settings controls, refresh the stale ROADMAP statuses, commit or scaffold the wire-format table.
+- C1 close-out (historical; its completed handoff has since been removed): the M1 contract fix, the two R6b settings controls, refresh the stale ROADMAP statuses, commit or scaffold the wire-format table.
 - L0 WP4 to WP7 (the L0 agent, already running).
 - The three follow-up handoffs for rune-infer, rune-kit and rune-tools.
 

@@ -481,7 +481,7 @@ async fn post(
 
 fn load_scenes(dir: &Path, only: &Option<Vec<String>>) -> Vec<(SceneFile, PathBuf)> {
     let mut scenes: Vec<(SceneFile, PathBuf)> = fs::read_dir(dir)
-        .expect("scene directory not found; run scripts/m15/make-scenes.mjs")
+        .expect("scene directory not found; provide probe scenes through RUNE_PROBE_DIR")
         .filter_map(Result::ok)
         .map(|entry| entry.path())
         .filter(|path| {
@@ -503,7 +503,7 @@ fn load_scenes(dir: &Path, only: &Option<Vec<String>>) -> Vec<(SceneFile, PathBu
 }
 
 #[test]
-#[ignore = "talks to a local rune-infer server; run through scripts/m15/run-probe.ps1"]
+#[ignore = "talks to a local rune-infer server and requires externally prepared probe scenes"]
 fn m15_probe() {
     let dir = PathBuf::from(env::var("RUNE_PROBE_DIR").expect("RUNE_PROBE_DIR is not set"));
     let out_path = PathBuf::from(env::var("RUNE_PROBE_OUT").expect("RUNE_PROBE_OUT is not set"));
@@ -674,7 +674,7 @@ fn m15_probe() {
 }
 
 #[test]
-#[ignore = "talks to a local rune-infer server; run through scripts/m15/run-probe.ps1 -Profile"]
+#[ignore = "talks to a local rune-infer server and requires externally prepared probe scenes"]
 fn m15_calibrate_profile() {
     let dir = PathBuf::from(env::var("RUNE_PROBE_DIR").expect("RUNE_PROBE_DIR is not set"));
     let out_path = PathBuf::from(

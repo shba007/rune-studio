@@ -12,7 +12,6 @@ cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --features eval,
 cargo fmt --manifest-path src-tauri/Cargo.toml --check
 bun run test:unit -- --run
 bun run test:eval
-bun run test:m15
 vp lint
 vp fmt --check src/
 bun x --no-install vue-tsc --noEmit -p tsconfig.app.json
@@ -29,11 +28,11 @@ TypeScript 6 is retained for compatibility with the current vue-tsc/Volar checke
 Fake-server tests cover request headers, model attribution, swap/loading states,
 retry attempts and sensitive-response refusal. They do not establish real model
 quality, speech latency, grounding accuracy or co-residency. The maintained
-[model guide](models.md) describes profiles and the calibration probe.
+[model guide](models.md) describes model profiles.
 
-The probe implementation is `src-tauri/src/grounding_probe.rs`. Documented
-`m15_probe`, `m15_calibrate_profile`, `test:m15`, script paths and output formats
-remain unchanged. See [architecture](ARCHITECTURE.md) for grounding conventions.
+The test-only probe implementation is `src-tauri/src/grounding_probe.rs`; its
+former scene generator and runner have been retired. See [architecture](ARCHITECTURE.md)
+for historical grounding results.
 
 ## Life data
 
@@ -53,25 +52,10 @@ Historical field observations and unobserved fixes remain distinguished in the
 
 ## Live checks and historical evidence
 
-Ignored tests require a Windows desktop or a real model server. The system runner
-moves the real mouse and types; run it only in a suitable acceptance session:
-
-```text
-pwsh scripts/m1-system-test.ps1
-pwsh scripts/m15/run-probe.ps1
-```
-
-Keep the target-window script and probe/eval harnesses. The [evaluation guide](../scripts/eval/README.md)
+Ignored tests require a prepared Windows desktop or a real model server. Their former
+target-window and probe runners have been retired. The [evaluation guide](../scripts/eval/README.md)
 and [baseline convention](evals/README.md) describe separate real-desktop runs.
 No generated run is an approved baseline merely because it exists locally.
 
-Historical closeout reports are retained by the local Git archive tag
-`archive/milestone-docs-2026-10-21-cleanup`. For example:
-
-```text
-git show archive/milestone-docs-2026-10-21-cleanup:docs/handoff/C1-report.md
-```
-
-The other archived reports are L0-report.md, M1-report.md and R6b-report.md under
-the same historical directory. Architect working documents in `docs/orchestrator/`
-remain untouched and can refer to those historical paths.
+Historical closeout reports remain in Git history under the local archive tag
+`archive/milestone-docs-2026-10-21-cleanup`.

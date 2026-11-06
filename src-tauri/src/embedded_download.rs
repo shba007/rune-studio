@@ -216,7 +216,13 @@ fn install(
     if cancel.load(Ordering::Relaxed) {
         return Err("Installation cancelled".into());
     }
-    state.locked().phase = "engine".into();
+    {
+        let mut status = state.locked();
+        status.phase = "engine".into();
+        status.filename = None;
+        status.downloaded = 0;
+        status.total = None;
+    }
     rune_infer::embedding::install_llama_observed(&root, cancel, report(state))
         .map_err(|error| format!("Engine preparation failed: {error}"))?;
     Ok(())

@@ -65,7 +65,7 @@ Split any cycle further if its implementation cannot remain small and reviewable
 
 | Decision  | Choice                                                                                                         | Notes                                                                                            |
 | --------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| OS        | Windows 11 only                                                                                                | macOS/Linux bundles are built by CI, but the Windows-only layers are stubs (see 6)               |
+| OS        | Windows, macOS and Linux desktop are the product target                                                        | Windows computer use is validated; macOS/Linux have platform-specific gaps (see 6)               |
 | Brain     | One omni model, default `gemma-4-12b-it` (sees, hears, calls tools)                                            | Our own function-calling protocol, no vendor computer-use tool                                   |
 | Voice     | Hands-free: click the mic once to start a listening session, click again to stop                               | Energy-based VAD cuts utterances; no push-to-talk, no wake word                                  |
 | Autonomy  | Runs freely, confirms risky actions                                                                            | Confirm by button; a spoken "no" always works, a spoken "yes" only for the agent's own questions |
@@ -148,7 +148,7 @@ When switching models on a single-GPU server, a hot swap occurs. Studio handles 
 
 ### Model calibration probe
 
-New models can be calibrated using the built-in probe (`scripts/m15/run-probe.ps1 -Profile -Model <name>`). The probe runs small synthetic test scenes, scores candidate pointing conventions, tests thinking switch styles, verifies tool calling reliability, determines safe resolution limits, and outputs a suggested `ModelProfile` JSON.
+The test-only model calibration probe scores pointing conventions, thinking settings, tool calls and image sizes. Its former scene generator and runner have been retired; live calibration requires independently prepared scenes.
 
 ### Model server integration
 
@@ -361,7 +361,7 @@ A feature separate from the agent loop: the **scan button in the pill** captures
 
 **What it does not do.** No file input or drag and drop, no MCP tool, no hotkey, no voice trigger, one monitor only (the primary one), no idle or background analysis. rune-infer's `/v1/images/grounding`, `/detections`, `/captions` and `/v1/ocr` are **not used** (the chat path is): they are the option if the chat boxes turn out poor.
 
-**Status: built; unit tested; not run end to end. Box accuracy of the chat path is unmeasured** until the maintainer runs the probe (`pwsh scripts/m15/run-probe.ps1 -Modes "gemma-4-12b-it:box"`).
+**Status: built; unit tested; not run end to end. Box accuracy of the chat path remains unmeasured.** The former probe runner has been retired.
 
 ### Session video, the review prompt and the Flight Player (R6b)
 
@@ -398,7 +398,7 @@ Nothing risky runs without the user's yes, whoever chose the action. Every actio
 
 Design language: Nothing-phone inspired. Monochrome, a circular dot-matrix glyph, one red accent (needs attention, recording, Stop), **Oxanium as the only typeface** (bundled locally via `@fontsource-variable/oxanium` and `unplugin-fonts`; Tailwind's `font-sans` and `font-mono` both resolve to it). Frameless, transparent, always-on-top, skip-taskbar window **anchored to the bottom-right of the primary monitor's work area** (16 px margin) and draggable. The position is not remembered between runs. Vue devtools are on in development only.
 
-**Logo.** The mark is the orb itself: a 9x9 dot-matrix disc of dark dots on a white circle. `scripts/make-logo.mjs` draws `public/logo.svg` and `src/assets/icons/rune-mark.svg`; `bun run tauri icon public/logo.svg` makes the icon set. The same SVG is the favicon and the README logo.
+**Logo.** The mark is the orb itself: a 9x9 dot-matrix disc of dark dots on a white circle. The assets are `public/logo.svg` and `src/assets/icons/rune-mark.svg`; `bun run tauri icon public/logo.svg` makes the icon set. The same SVG is the favicon and the README logo.
 
 A single **bot glyph** (an 11x11 dot orb on a white disc, **64 px** in total) is the whole app at rest. When opened, the card grows to its right while the orb stays at the left, bottom-aligned.
 
@@ -555,7 +555,7 @@ An outside agent can use Rune Studio's eyes and hands directly, skipping the loc
 
 ## 13. Build, test and release
 
-- **Rust tests:** `cd src-tauri && cargo test --lib` (add `--features agent-bridge` for bridge, CLI and skill tests). `#[ignore]`d tests need a Windows desktop (`system_tests.rs`, via `pwsh scripts/m1-system-test.ps1`, which moves the real mouse) or a live rune-infer (`agent::live`, `grounding_probe.rs`, via `pwsh scripts/m15/run-probe.ps1`). The dev profile optimises the `image` crate (`opt-level = 3`) and this crate lightly (`opt-level = 1`) because unoptimised image code made dev-build capture about 1 s.
+- **Rust tests:** `cd src-tauri && cargo test --lib` (add `--features agent-bridge` for bridge, CLI and skill tests). `#[ignore]`d tests need a prepared Windows desktop (`system_tests.rs`) or a live rune-infer (`agent::live`, `grounding_probe.rs`). The former desktop and probe runners have been retired. The dev profile optimises the `image` crate (`opt-level = 3`) and this crate lightly (`opt-level = 1`) because unoptimised image code made dev-build capture about 1 s.
 - **Evaluation harness tests:** `cd src-tauri && cargo test --lib --features eval,agent-bridge` (the suite, jail, checkers and run decisions) and `bun run test:eval` (the report and the gate). CI does not run them.
 - **Frontend:** `bun run lint`, `bun run format`, `bun run test:unit` (Vitest, currently `useUpdater.test.ts`), `bun run build`.
 - **CI** (`.github/workflows/`): `integrate.yml` (push to `develop`) builds the frontend, runs lint (failures ignored), formats, auto-commits, bumps the version with changelogen and opens a release PR; it runs **no tests and no Rust checks** (the test step is commented out; a Rust test workflow was tried and removed on 2026-10-19 because its queued runs were not wanted). `release.yml` (push to `main` with a `ci(release):` message) creates the release notes. `deploy.yml` (release published) builds the desktop app on Windows, Ubuntu and macOS (both architectures) with `--features agent-bridge`, signs updater artifacts and uploads the CLI. The web-container and Android jobs are commented out; `Dockerfile` and `nginx.conf` are unused leftovers.
@@ -595,7 +595,7 @@ These are properties of the current code, not plans:
 
 ## 16. Risks
 
-1. **Local-model click accuracy** is the biggest unknown for any new default model. The M1.5 probe (`scripts/m15`) measures it; UI Automation ids are the precision path.
+1. **Local-model click accuracy** is the biggest unknown for any new default model. The historical M1.5 probe measured it; its runner has been retired. UI Automation ids are the precision path.
 2. **Latency per step:** each turn ships a screenshot to a large model; the decision-model checks add serial round trips when on. Levers: smaller screenshots, element-only turns.
 3. **Prompt injection from on-screen text:** the system prompt treats it as data, and the gate checks actions, not intent (gap 5).
 4. **DPI / multi-monitor bugs:** isolated by the no-AI M1 tests; 125% / 150% scaling and a second monitor are covered only by unit tests on the mapping.
@@ -647,7 +647,7 @@ Live runs (earlier model builds): "Open Notepad and write hello" ran end to end 
 
 ### M1.5: grounding probe (final)
 
-120 + 80 requests over 10 synthetic scenes (generated by `scripts/m15/make-scenes.mjs` with headless Chrome, ground truth from the DOM), 40 targets, normalized 0..1000 coordinates through a `click` tool, `temperature 0`. "Hit" = inside the element; "near" = within 12 px. "Thinking off" was `reasoning_effort: "none"` at the time (the app now uses `chat_template_kwargs.enable_thinking`).
+120 + 80 requests over 10 synthetic scenes (generated by the former scene generator with headless Chrome, ground truth from the DOM), 40 targets, normalized 0..1000 coordinates through a `click` tool, `temperature 0`. "Hit" = inside the element; "near" = within 12 px. "Thinking off" was `reasoning_effort: "none"` at the time (the app now uses `chat_template_kwargs.enable_thinking`).
 
 | Model / setting                                | Hit     | Hit or near | Median latency | Small targets (<24 px) |
 | ---------------------------------------------- | ------- | ----------- | -------------- | ---------------------- |
@@ -657,7 +657,7 @@ Live runs (earlier model builds): "Open Notepad and write hello" ran end to end 
 | `ornith-1.5-9b`, thinking off                  | 58%     | 85%         | 1.8 s          | 71%                    |
 | `qwen3.8-27b`, thinking off, 768 px screenshot | 63%     | 90%         | 5.1 s          | 29%                    |
 
-Findings: raw model coordinates are good enough for medium and large targets; small icon buttons are the weak spot for every model (hence UI Automation ids); downscaling to 768 px costs a lot of accuracy, so the screenshot stays at 1280 px; latency on the 27B models is dominated by image prefill; a 1280x720 screenshot is about 880 image tokens; `/v1/images/grounding` returned `[500, 500]` every time and is not used. Tooling: `pwsh scripts/m15/run-probe.ps1` runs `grounding_probe.rs` (which encodes through the same `observe::screenshot::prepare` the app uses) and `scripts/m15/report.mjs` summarises hit rate, near-miss rate and latency; modes are `model:convention[@edge]` with conventions `norm`, `brief`, `px` and `ground`.
+Findings: raw model coordinates are good enough for medium and large targets; small icon buttons are the weak spot for every model (hence UI Automation ids); downscaling to 768 px costs a lot of accuracy, so the screenshot stays at 1280 px; latency on the 27B models is dominated by image prefill; a 1280x720 screenshot is about 880 image tokens; `/v1/images/grounding` returned `[500, 500]` every time and is not used. The former probe runner and report tool have been retired; these measurements are historical.
 
 ## Screen Insight implementation
 

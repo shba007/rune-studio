@@ -36,7 +36,7 @@ Problem found: only 1 of 8 boxes was in the right place. Before the F1 fixes the
 
 - Current screen only. No files, no drag and drop, no voice or outside-agent trigger.
 - After a cancel the server may keep working for a while (a rune-infer issue).
-- **The boxes cannot be turned off, and their accuracy is unmeasured.** In the field test 1 of 8 was right. The guard removes boxes that are plainly implausible but cannot know a plausible one is wrong. Run `pwsh scripts/m15/run-probe.ps1 -Modes "gemma-4-12b-it:analysis,gemma-4-12b-it:analysis-point"` to measure it.
+- **The boxes cannot be turned off, and their accuracy is unmeasured.** In the field test 1 of 8 was right. The guard removes boxes that are plainly implausible but cannot know a plausible one is wrong. The former probe runner has been retired.
 - Boxes are drawn on the primary monitor only.
 
 ## Where it can grow

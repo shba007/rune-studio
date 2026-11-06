@@ -1,12 +1,17 @@
 //! First-run onboarding state, separate from the user's connection settings.
 use std::io::Write;
 use tauri::{AppHandle, Manager};
-#[cfg(all(windows, feature = "embedded-infer"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 
-#[cfg(all(windows, feature = "embedded-infer"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 const WINDOW: &str = "onboarding";
 const MARKER: &[u8] = b"Rune Studio onboarding v1\n";
+
+#[tauri::command]
+pub fn onboarding_platform() -> &'static str {
+    std::env::consts::OS
+}
 
 fn marker_exists(path: &std::path::Path) -> Result<bool, String> {
     match std::fs::symlink_metadata(path) {
@@ -24,7 +29,7 @@ fn marker_exists(path: &std::path::Path) -> Result<bool, String> {
     }
 }
 
-#[cfg(all(windows, feature = "embedded-infer"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub fn prepare(app: &AppHandle) -> Result<bool, String> {
     let dir = app
         .path()
@@ -33,7 +38,7 @@ pub fn prepare(app: &AppHandle) -> Result<bool, String> {
     prepare_in(&dir)
 }
 
-#[cfg(any(all(windows, feature = "embedded-infer"), test))]
+#[cfg(any(not(any(target_os = "android", target_os = "ios")), test))]
 fn prepare_in(dir: &std::path::Path) -> Result<bool, String> {
     let pending = dir.join("onboarding.pending");
     let complete = dir.join("onboarding.complete");
@@ -99,7 +104,7 @@ mod tests {
     }
 }
 
-#[cfg(all(windows, feature = "embedded-infer"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub fn open(app: &AppHandle) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window(WINDOW) {
         window.show()?;

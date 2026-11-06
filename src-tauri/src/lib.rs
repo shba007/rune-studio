@@ -90,6 +90,12 @@ pub fn run() {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if onboarding::prepare(app).unwrap_or(false) {
+                if let Err(error) = onboarding::open(app) {
+                    log::error!("Could not reopen onboarding: {error}");
+                }
+                return;
+            }
             window::summon(app)
         }));
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
@@ -131,7 +137,7 @@ pub fn run() {
             }
         })
         .setup(|app| {
-            #[cfg(all(windows, feature = "embedded-infer"))]
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
             let show_onboarding = onboarding::prepare(app.handle()).unwrap_or_else(|error| {
                 log::error!("Could not open onboarding safely: {error}");
                 false
@@ -265,7 +271,7 @@ pub fn run() {
             }
             tray.build(app)?;
 
-            #[cfg(all(windows, feature = "embedded-infer"))]
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
             if show_onboarding {
                 onboarding::open(app.handle())?;
             }
@@ -338,6 +344,7 @@ pub fn run() {
             commands::session_feedback,
             commands::open_settings_window,
             onboarding::onboarding_complete,
+            onboarding::onboarding_platform,
             commands::open_workspace,
             playground::open_playground,
             playground::playground_start_run,

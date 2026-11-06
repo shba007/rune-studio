@@ -6,7 +6,7 @@
 
 # Rune Studio
 
-**A desktop harness that controls your PC through a local model server (rune-infer)**
+**A desktop harness for computer use with local or configured model servers**
 
 <p align="center">
   <a href="https://github.com/shba007/rune-studio/actions/workflows/deploy.yml"><img src="https://github.com/shba007/rune-studio/actions/workflows/deploy.yml/badge.svg" alt="Vue CD Pipeline"></a>
@@ -30,8 +30,8 @@
 
 Rune Studio is a small floating desktop app. You give it a command by typing or speaking, and it carries the command out on your PC: it looks at the screen, picks **one** action, performs it with the real mouse and keyboard, checks the result and repeats until the task is done.
 
-- **Windows 11 is the supported platform.** Screen capture, input, UI Automation, app launching, foreground-window detection and the pointer effects are implemented for Windows only. The release workflow also builds macOS and Linux bundles, but on those systems the Windows-only parts are empty stubs (see [Platform support](#platform-support)).
-- **All AI inference goes to rune-infer**, a local OpenAI-compatible model server that you run yourself. The app never talks to a cloud model directly.
+- **Desktop platform goal:** support Windows, macOS and Linux. Windows is currently the validated computer-use platform; macOS and Linux builds have significant gaps, including app launching and foreground-window context. See [Platform support](#platform-support) for the current state.
+- **Model connection:** Studio can use its embedded local Infer on supported builds or a configured compatible server. A cloud server receives the task data and screen content needed for its requests.
 - **The model only proposes actions.** Nothing reaches the OS except through the [safety gate](#safety) and the executor.
 - **Everything the agent sees or hears is recorded** on your disk, and this cannot be switched off (see [Privacy and the record](#privacy-and-the-record)).
 
@@ -219,6 +219,11 @@ One agent holds control at a time (the "lease"). It ends on `rune_done`, on Stop
 
 ## Platform support
 
+Rune Studio aims to support Windows, macOS and Linux desktop. The following table
+describes implementation status, not a promise that every platform is ready for
+computer use. Platform permissions, local inference and end-to-end behavior must
+be validated separately on each system.
+
 | Capability                                    | Windows                                                | macOS / Linux builds              |
 | --------------------------------------------- | ------------------------------------------------------ | --------------------------------- |
 | Screenshot (`xcap`), mouse/keyboard (`enigo`) | yes                                                    | compiled; not a supported target  |
@@ -284,8 +289,6 @@ Git hooks (husky): `pre-commit` runs gitleaks (if installed), lint and format on
 cargo test --manifest-path src-tauri/Cargo.toml --lib                          # unit tests (pure logic: lease, rules, parsers, VAD, protocol)
 cargo test --manifest-path src-tauri/Cargo.toml --lib --features agent-bridge  # also the bridge, CLI, skill and agent tests
 cargo test --manifest-path src-tauri/Cargo.toml --lib -- --ignored             # need a Windows desktop or a live rune-infer server
-pwsh scripts/m1-system-test.ps1           # end to end: real mouse, keyboard and capture (moves your mouse!)
-pwsh scripts/m15/run-probe.ps1            # grounding probe against a local rune-infer (see ARCHITECTURE.md)
 bun run test:unit                         # frontend
 ```
 
@@ -334,7 +337,7 @@ src-tauri/src/
   system_tests.rs, grounding_probe.rs   test-only (#[ignore]d)
   bin/rune-studio-cli.rs     console CLI (feature agent-bridge)
 docs/                        ARCHITECTURE.md, AGENT-GUIDE.md
-scripts/                     m1-system-test.ps1, m15/ (grounding probe), make-logo.mjs
+scripts/                     release, evaluation, wire-audit and onboarding test tools
 ```
 
 ---

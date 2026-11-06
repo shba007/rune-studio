@@ -17,6 +17,7 @@ withDefaults(
     canBack?: boolean
     canForward?: boolean
     menu?: { id: string; label: string }[]
+    closeAction?: () => void | Promise<void>
   }>(),
   {
     controls: 'all',
@@ -165,7 +166,7 @@ const button =
         type="button"
         :class="[button, 'hover:bg-attention! hover:text-white!']"
         aria-label="Close"
-        @click="win()?.close()"
+        @click="closeAction ? closeAction() : win()?.close()"
       >
         <AppIcon name="close" />
       </button>

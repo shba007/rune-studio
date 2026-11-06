@@ -90,7 +90,8 @@ const SHELL_DANGER: &[&str] = &[
 ];
 
 const POWER_TOOLS_HIGH: &[&str] = &[
-    "regedit", "diskpart", "format", "msiexec", "bcdedit", "gpedit", "secpol", "wmic",
+    "regedit", "diskpart", "format", "msiexec", "bcdedit", "gpedit", "secpol", "wmic", "sudo",
+    "doas", "diskutil", "fdisk", "mkfs",
 ];
 const POWER_TOOLS_MEDIUM: &[&str] = &[
     "cmd",
@@ -102,6 +103,15 @@ const POWER_TOOLS_MEDIUM: &[&str] = &[
     "services",
     "diskmgmt",
     "compmgmt",
+    "sh",
+    "bash",
+    "zsh",
+    "fish",
+    "osascript",
+    "gnome-terminal",
+    "konsole",
+    "xterm",
+    "iterm2",
 ];
 
 fn words(text: &str) -> Vec<String> {
@@ -258,6 +268,7 @@ fn assess_launch(name: &str, result: &mut Assessment) {
         .next()
         .unwrap_or(&lowered)
         .trim_end_matches(".exe")
+        .trim_end_matches(".app")
         .to_string();
     if POWER_TOOLS_HIGH.contains(&stem.as_str()) {
         result.raise(Risk::High, format!("{stem} can change the whole system"));
@@ -606,6 +617,13 @@ mod tests {
         assert_eq!(launch("REGEDIT.EXE"), Risk::High);
         assert_eq!(launch("cmd"), Risk::Medium);
         assert_eq!(launch("powershell"), Risk::Medium);
+        assert_eq!(launch("/bin/bash"), Risk::Medium);
+        assert_eq!(launch("zsh"), Risk::Medium);
+        assert_eq!(launch("osascript"), Risk::Medium);
+        assert_eq!(launch("gnome-terminal"), Risk::Medium);
+        assert_eq!(launch("/Applications/Utilities/Terminal.app"), Risk::Medium);
+        assert_eq!(launch("sudo"), Risk::High);
+        assert_eq!(launch("diskutil"), Risk::High);
         assert_eq!(launch(r"C:\Users\me\Downloads\setup.exe"), Risk::High);
         assert_eq!(launch("setup.exe"), Risk::Low);
         assert_eq!(launch("calc"), Risk::Low);

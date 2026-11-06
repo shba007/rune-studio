@@ -30,9 +30,7 @@ fn make_dpi_aware() {
 
 fn number(name: &str) -> f64 {
     env::var(name)
-        .unwrap_or_else(|_| {
-            panic!("{name} is not set; run these through scripts/m1-system-test.ps1")
-        })
+        .unwrap_or_else(|_| panic!("{name} is not set; provide a prepared desktop test target"))
         .parse()
         .unwrap_or_else(|_| panic!("{name} is not a number"))
 }

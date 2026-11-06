@@ -14,6 +14,7 @@ import RuneSwitch from './RuneSwitch.vue'
 import ModelRoleRow from './ModelRoleRow.vue'
 import AppIcon from './AppIcon.vue'
 import ConnectionEditor from './ConnectionEditor.vue'
+import DownloadProgress from './DownloadProgress.vue'
 import {
   useConnections,
   type ConnectionEdit,
@@ -358,13 +359,7 @@ watch(
             role="status"
             class="text-rune-caption text-rune-text-2"
           >
-            <span v-if="downloading"
-              >{{ download.phase === 'engine' ? 'Preparing engine' : 'Downloading model'
-              }}<template v-if="download.filename"> · {{ download.filename }}</template
-              ><template v-if="download.total">
-                · {{ Math.round((download.downloaded / download.total) * 100) }}%</template
-              ></span
-            >
+            <DownloadProgress v-if="downloading" v-bind="download" />
             <span v-else-if="download.phase === 'complete'">Downloaded {{ download.model }}.</span>
             <span v-else-if="download.phase === 'cancelled'"
               >Download cancelled. You can retry later.</span

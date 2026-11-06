@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import type { BackendProbe, Settings } from '@/types/protocol'
 import RuneButton from './RuneButton.vue'
+import OnboardingLocalModel from './OnboardingLocalModel.vue'
+import OnboardingCloudModel from './OnboardingCloudModel.vue'
+import TitleBar from './TitleBar.vue'
 
 type Choice = 'local' | 'cloud'
 const logo = '/logo.svg'
@@ -16,7 +19,25 @@ const choice = ref<Choice>(savedChoice === 'cloud' ? 'cloud' : 'local')
 const busy = ref(false)
 const message = ref('')
 const capabilityWarning = ref('')
+const stopShortcut = ref('Escape')
+const localAvailable = ref<boolean | null>(null)
+const platform = ref('')
 const nextLabel = computed(() => (step.value === 3 ? 'Open Rune' : 'Continue'))
+
+onMounted(async () => {
+  void Promise.resolve(invoke<string>('onboarding_platform'))
+    .then((value) => {
+      platform.value = value
+    })
+    .catch(() => {})
+  try {
+    localAvailable.value = await invoke<boolean>('embedded_infer_available')
+    if (localAvailable.value === false) choose('cloud')
+  } catch {
+    localAvailable.value = false
+    choose('cloud')
+  }
+})
 
 function move(next: number) {
   step.value = next
@@ -27,13 +48,6 @@ function choose(value: Choice) {
   choice.value = value
   localStorage.setItem('rune-onboarding-choice', value)
   message.value = ''
-}
-async function openSetup() {
-  try {
-    await invoke('open_settings_window', { section: 'models' })
-  } catch (error) {
-    message.value = String(error)
-  }
 }
 async function closeSetup() {
   try {
@@ -47,12 +61,13 @@ async function checkSetup(): Promise<boolean> {
   message.value = ''
   try {
     const settings = await invoke<Settings>('get_settings')
+    stopShortcut.value = settings.stopHotkey?.trim() || 'Escape'
     const local = settings.activeConnectionId === 'studio-embedded-infer'
     if ((choice.value === 'local') !== local) {
       message.value =
         choice.value === 'local'
-          ? 'Select Studio local Infer in Models & tools, then check again.'
-          : 'Add and activate your cloud or other model server in Models & tools, then check again.'
+          ? 'Select a local model below, then check again.'
+          : 'Connect your model server below, then check again.'
       return false
     }
     const probe = await invoke<BackendProbe>('check_backend')
@@ -68,7 +83,7 @@ async function checkSetup(): Promise<boolean> {
       message.value = probe.status.error || 'The selected model server is not ready yet.'
       return false
     } else if (!model || !probe.status.models?.some((entry) => entry.id === model)) {
-      message.value = 'Select an available Agent model in Models & tools, then check again.'
+      message.value = 'Select an available Agent model below, then check again.'
       return false
     } else {
       const selected = probe.status.models!.find((entry) => entry.id === model)!
@@ -100,6 +115,7 @@ async function proceed() {
     await getCurrentWindow().close()
     localStorage.removeItem('rune-onboarding-step')
     localStorage.removeItem('rune-onboarding-choice')
+    localStorage.removeItem('rune-onboarding-cloud-connection')
   } catch (error) {
     message.value = String(error)
   } finally {
@@ -110,12 +126,7 @@ async function proceed() {
 
 <template>
   <main class="setup-shell">
-    <header data-tauri-drag-region class="setup-header">
-      <span>RUNE STUDIO</span>
-      <RuneButton variant="link" type="button" aria-label="Close setup" @click="closeSetup"
-        >×</RuneButton
-      >
-    </header>
+    <TitleBar title="Rune Studio" controls="close" :close-action="closeSetup" />
     <section v-if="step === 0" class="setup-center">
       <img :src="logo" alt="" class="setup-logo" />
       <p class="setup-tag">YOUR COMPUTER ASSISTANT</p>
@@ -123,6 +134,9 @@ async function proceed() {
       <p>
         Ask Rune to help with a task. It can look at your screen, use your computer, and show you
         what it is doing.
+      </p>
+      <p v-if="platform === 'linux' || platform === 'macos'" role="status">
+        Computer-use support on this platform is still in development. Some actions are unavailable.
       </p>
     </section>
     <section v-else-if="step === 1" class="setup-content">
@@ -134,12 +148,17 @@ async function proceed() {
       <div class="setup-choices">
         <RuneButton
           type="button"
+          :disabled="localAvailable !== true"
           :aria-pressed="choice === 'local'"
           :class="{ selected: choice === 'local' }"
           @click="choose('local')"
         >
           <strong>On this computer</strong
-          ><span>Download a model and run it with local Infer.</span>
+          ><span>{{
+            localAvailable === false
+              ? 'Local setup is not available in this build.'
+              : 'Download a model and run it with local Infer.'
+          }}</span>
         </RuneButton>
         <RuneButton
           type="button"
@@ -159,32 +178,28 @@ async function proceed() {
         <p>
           {{
             choice === 'local'
-              ? 'Choose and download a model, then select Use this model.'
-              : 'Add your server, activate the connection, and choose its Agent model.'
+              ? 'Choose and download a model. Rune will prepare it for you.'
+              : 'Connect your server and choose its Agent model.'
           }}
         </p>
-        <RuneButton class="setup-button" type="button" @click="openSetup"
-          >Open Models & tools</RuneButton
-        >
       </div>
-      <div class="setup-note">
-        <strong>Close Settings and come back when you are ready.</strong>
-        <p>Rune will check the connection and selected model before continuing.</p>
-        <p v-if="choice === 'cloud'">
-          Screen content and task data will be sent to the server you choose.
-        </p>
-      </div>
+      <OnboardingLocalModel v-if="choice === 'local'" @ready="checkSetup" />
+      <OnboardingCloudModel v-else @ready="checkSetup" @cancel="move(1)" />
     </section>
     <section v-else class="setup-center">
       <img :src="logo" alt="" class="setup-logo small" />
       <p class="setup-tag">READY TO TRY</p>
       <h1>Start with a small task</h1>
-      <p>Open the Rune composer and try: <strong>“Open Notepad and type hello.”</strong></p>
+      <p>Open the Rune composer and try: <strong>“Open a text editor and type hello.”</strong></p>
       <p>
         Rune captures your screen and stores task screenshots and details on this computer. Review
-        its actions, approve requests when asked, and use <strong>Ctrl+Alt+Esc</strong> to stop.
+        its actions, approve requests when asked, and use <strong>{{ stopShortcut }}</strong> to
+        stop.
       </p>
       <p v-if="capabilityWarning" role="status">{{ capabilityWarning }}</p>
+      <p v-if="platform === 'linux' || platform === 'macos'" role="status">
+        Computer-use support on this platform is still in development. Some actions are unavailable.
+      </p>
     </section>
     <p v-if="message" role="alert" class="setup-error">{{ message }}</p>
     <footer class="setup-footer">
@@ -206,7 +221,12 @@ async function proceed() {
         @click="move(step - 1)"
         >Back</RuneButton
       >
-      <RuneButton class="setup-button" type="button" :disabled="busy" @click="proceed">
+      <RuneButton
+        class="setup-button"
+        type="button"
+        :disabled="busy || (step === 1 && localAvailable === null)"
+        @click="proceed"
+      >
         {{ busy ? 'Checking…' : step === 2 ? 'Check setup' : nextLabel }}
       </RuneButton>
     </footer>
