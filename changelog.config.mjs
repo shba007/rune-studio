@@ -1,12 +1,9 @@
-// changelogen is the only commit parser, bump calculator and Markdown renderer.
 export const releasePolicy = {
   preOneFeatures: 'minor',
   preOneBreaking: 'minor',
   stableFeatures: 'minor',
   stableBreaking: 'major',
   maintenance: 'patch',
-  // Existing Git signatures and historical contributor links identify this account.
-  // Keep attribution deterministic without exposing email addresses in new notes.
   authorHandles: {
     'shirsendu2001@gmail.com': 'shba007',
     '48382105+shba007@users.noreply.github.com': 'shba007',

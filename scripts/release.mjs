@@ -1,4 +1,3 @@
-// Package adapter and release-state orchestration. No custom bump algorithm or renderer.
 import { readFile, writeFile, mkdir, mkdtemp, rm, realpath } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join, resolve, dirname, basename } from 'node:path'
@@ -15,8 +14,6 @@ const privateLabel =
   /\b(?:cycle|milestone)\s*[-#]?\s*\d+\b|\b(?:M|K|L|R|INF|KF|WP)[- ]?\d+\b|\b(?:TODO|TBD|placeholder)\b/i
 let packagePromise
 async function generator() {
-  // changelogen's optional contributor lookup is resolved offline from reviewed
-  // configuration. Package rendering still owns the Contributors section.
   if (!packagePromise) {
     if (process.env.FORCE_NODE_FETCH)
       throw new Error(
@@ -84,8 +81,6 @@ async function scratch(job) {
 export async function parsedCommits(raw, baseline) {
   const pkg = await generator()
   const types = structuredClone(defaults.types)
-  // changelogen 0.6.2 maps a pre-1.0 major to minor, and minor to patch.
-  // Explicitly configure pre-1.0 features as package-major, producing policy-minor.
   const preOne = semver.major(version(baseline)) === 0
   if (releasePolicy.preOneBreaking !== 'minor' || releasePolicy.stableBreaking !== 'major')
     throw new Error('Pinned changelogen supports the agreed breaking-change policy only')
@@ -155,9 +150,6 @@ export async function extract(changelog, next) {
   })
 }
 
-// Fixed-version history migration. This deliberately does not apply the policy
-// that excludes internal labels from newly generated notes: old wording is kept.
-// Rust imports legacy structure; changelogen alone formats the resulting notes.
 export async function formatHistoricalRelease(release, authorForHash) {
   const pkg = await generator()
   const config = await pkg.loadChangelogConfig(home, {
@@ -168,8 +160,6 @@ export async function formatHistoricalRelease(release, authorForHash) {
     output: false,
     tokens: {},
   })
-  // Config resolution fills an empty baseline with the latest tag. Historical
-  // sections without a baseline must retain that absence, not compare backwards.
   config.from = release.compareFrom || ''
   if (release.compareFrom) git(home, ['rev-parse', '--verify', `refs/tags/${release.compareFrom}`])
   const authorLookup =
@@ -236,8 +226,6 @@ export async function formatHistoricalRelease(release, authorForHash) {
     records.push(commit)
   }
   const descriptions = records.map((commit) => commit.description.toLowerCase())
-  // Package rendering reverses each type group. Reverse the imported entries so
-  // historical order remains unchanged within each group.
   const section = await pkg.generateMarkDown(records.reverse(), config)
   if (descriptions.some((description) => !section.toLowerCase().includes(description)))
     throw new Error(`Historical wording was lost while rendering ${release.version}`)
@@ -249,7 +237,6 @@ export async function formatHistoricalRelease(release, authorForHash) {
   })
 }
 export function assemble(history, current, baseline, generated) {
-  // Only replace an unpublished generated section. The historical suffix remains byte-for-byte.
   const headings = [...history.matchAll(/^## v?(\d+\.\d+\.\d+)\r?$/gm)]
   const first = headings[0]
   if (!first || first[1] !== current)
@@ -341,7 +328,6 @@ export async function applyPlan(root, prepared) {
     baseTag: prepared.baseTag,
     notesHash: prepared.notesHash,
   }
-  // The actual section was rendered by changelogen above, never handwritten.
   rust(['sync', prepared.version], root)
   await writeFile(join(root, 'CHANGELOG.md'), prepared.changelog)
   await mkdir(join(root, '.release'), { recursive: true })
@@ -350,7 +336,7 @@ export async function applyPlan(root, prepared) {
     throw new Error('Applied notes do not match the generated preview')
 }
 export async function eligibility(root, history = rawHistory) {
-  const notes = rust(['notes'], root) // Validate versions/notes once, including no-op pushes.
+  const notes = rust(['notes'], root)
   const data = await snapshot(root)
   if (data.current === data.baseline)
     return {

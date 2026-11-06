@@ -1,4 +1,3 @@
-//! LLM-planned goal/task DAG. Tasks overlap; steps inside each task are serial.
 mod plan;
 use crate::{events::AppState, exec::CancelToken, sync::LockExt};
 use serde::{Deserialize, Serialize};
@@ -722,8 +721,6 @@ pub fn tasks_state() -> Snapshot {
     }
 }
 
-// Connection changes may already hold the analysis/settings locks. Never wait
-// for the board here: a task starting under the board lock needs those locks.
 pub(crate) fn connection_change_blocked() -> bool {
     let Ok(board) = BOARD.try_lock() else {
         return true;
@@ -1436,7 +1433,6 @@ mod tests {
     fn missing_progress_is_actionable_and_a_final_condition_needs_no_fake_action() {
         let missing = validate_step(0, None, 3, false).unwrap_err();
         assert!(missing.contains("goal=1") && missing.contains("goal=2"));
-        // Recorded failure: open Notepad, focus, type, then done without metadata.
         assert!(validate_step(0, Some(1), 3, false).is_ok());
         assert!(validate_step(0, Some(1), 3, false).is_ok());
         assert!(validate_step(0, Some(2), 3, false).is_ok());
@@ -1684,7 +1680,6 @@ mod tests {
             description: name.into(),
             input_schema: json!({"type":"object"}),
         };
-        // Inputs here represent discovery already validated by the Kit client.
         let tools = background_tools(
             &[
                 make("filesystem__read_text_file"),

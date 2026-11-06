@@ -154,9 +154,7 @@ describe('ModelRoleRow', () => {
         models: fakeModels,
       },
     })
-    // Since fallback is local-omni (which has imageIn yes), no warning should appear
     expect(wrapper.text()).not.toContain('lacks image input')
-    // Caps should show for local-omni
     expect(wrapper.text()).toContain('Model capabilities')
   })
 })

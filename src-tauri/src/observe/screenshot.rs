@@ -435,8 +435,6 @@ fn capture_target(
             (rgba, monitor)
         }
     };
-    // A window capture already excludes other windows. Painting their desktop
-    // rectangles over it would erase the selected window's own content.
     if mask_for_model && screen_capture {
         super::mask::apply(&mut rgba, &super::mask::current(), monitor.x, monitor.y);
     }
@@ -525,7 +523,6 @@ mod tests {
         assert_eq!((model.width, model.height), (720, 405));
         let native = capture_png(&rgb, u32::MAX).unwrap();
         assert_eq!(image::load_from_memory(&native).unwrap().width(), 1600);
-        // Generating a smaller saved capture never changes the model source.
         let detailed_model = prepare(source, u32::MAX, MODEL_JPEG_QUALITY).unwrap();
         assert_eq!((detailed_model.width, detailed_model.height), (1600, 900));
         assert_eq!(image::load_from_memory(&saved).unwrap().width(), 1280);

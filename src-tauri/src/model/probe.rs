@@ -6,16 +6,13 @@ use crate::model::{
     profile::{ModelProfile, PointingConvention, ThinkingStyle, ThinkingSwitch},
 };
 
-/// An observed point response for a known target box on a rendered scene.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PointObservation {
     pub raw_point: (f64, f64),
     pub image_dims: (u32, u32),
-    pub target_norm1000: [f64; 4], // [l, t, r, b] in Studio's 0..1000 space
+    pub target_norm1000: [f64; 4],
 }
 
-/// Evaluates which candidate pointing convention (norm1000, pixels, norm1)
-/// best explains the observed points against known targets.
 pub fn score_pointing_conventions(observations: &[PointObservation]) -> PointingConvention {
     if observations.is_empty() {
         return PointingConvention::Unknown;
@@ -41,7 +38,6 @@ pub fn score_pointing_conventions(observations: &[PointObservation]) -> Pointing
                 obs.image_dims.1,
             );
             let [l, t, r, b] = obs.target_norm1000;
-            // Near margin of 15 units in 0..1000 coordinate space
             let margin = 15.0;
             if nx >= l - margin && nx <= r + margin && ny >= t - margin && ny <= b + margin {
                 hits += 1;
@@ -60,7 +56,6 @@ pub fn score_pointing_conventions(observations: &[PointObservation]) -> Pointing
     }
 }
 
-/// An observation of a thinking probe run with a given request style.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ThinkingProbeObservation {
     pub style: ThinkingStyle,
@@ -68,8 +63,6 @@ pub struct ThinkingProbeObservation {
     pub reasoning_chars: usize,
 }
 
-/// Evaluates which request styles successfully disable or switch thinking,
-/// comparing duration and presence of reasoning against a baseline with thinking on.
 pub fn score_thinking_styles(
     baseline_on_duration: Duration,
     baseline_on_reasoning_chars: usize,
@@ -84,7 +77,6 @@ pub fn score_thinking_styles(
             probe.reasoning_chars == 0
         };
 
-        // Noticeable duration reduction (at least 20% faster than baseline with thinking on)
         let faster = probe.duration.as_millis() * 10 <= baseline_on_duration.as_millis() * 8;
 
         if reasoning_suppressed && (probe.reasoning_chars == 0 || faster) {
@@ -99,14 +91,12 @@ pub fn score_thinking_styles(
     }
 }
 
-/// An observation of a forced tool-call attempt.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ToolCallObservation {
     pub called: bool,
     pub valid_arguments: bool,
 }
 
-/// Counts valid vs malformed tool call arguments over N tries.
 pub fn score_tool_choice(observations: &[ToolCallObservation]) -> TriState {
     if observations.is_empty() {
         return TriState::Unknown;
@@ -130,7 +120,6 @@ pub fn score_tool_choice(observations: &[ToolCallObservation]) -> TriState {
     }
 }
 
-/// An observation of an image resolution probe trial.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ImageResolutionObservation {
     pub max_edge: u32,
@@ -138,7 +127,6 @@ pub struct ImageResolutionObservation {
     pub latency: Duration,
 }
 
-/// Suggests a safe maximum image edge based on tested resolutions.
 pub fn score_max_image_edge(observations: &[ImageResolutionObservation]) -> u32 {
     let mut highest_successful = 1280;
     for obs in observations {
@@ -149,7 +137,6 @@ pub fn score_max_image_edge(observations: &[ImageResolutionObservation]) -> u32 
     highest_successful
 }
 
-/// Constructs a suggested ModelProfile from the scored probe results.
 pub fn build_suggested_profile(
     model_id: &str,
     thinking: ThinkingSwitch,
@@ -173,12 +160,12 @@ mod tests {
     fn test_score_pointing_conventions_norm1000() {
         let obs = vec![
             PointObservation {
-                raw_point: (150.0, 150.0), // Norm1000 coordinates
+                raw_point: (150.0, 150.0),
                 image_dims: (1280, 720),
                 target_norm1000: [100.0, 100.0, 200.0, 200.0],
             },
             PointObservation {
-                raw_point: (500.0, 500.0), // Norm1000 coordinates
+                raw_point: (500.0, 500.0),
                 image_dims: (1280, 720),
                 target_norm1000: [480.0, 480.0, 520.0, 520.0],
             },
@@ -198,7 +185,7 @@ mod tests {
                 target_norm1000: [500.0, 500.0, 600.0, 600.0],
             },
             PointObservation {
-                raw_point: (320.0, 180.0), // ~250 norm
+                raw_point: (320.0, 180.0),
                 image_dims: (1280, 720),
                 target_norm1000: [200.0, 200.0, 300.0, 300.0],
             },

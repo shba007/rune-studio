@@ -168,6 +168,16 @@ pub fn run() {
             };
 
             let loaded = settings::load(app.handle());
+            #[cfg(debug_assertions)]
+            let loaded = {
+                let mut loaded = loaded;
+                if std::env::var_os("RUNE_STUDIO_ONBOARDING_TEST_SHOW_RECORDINGS")
+                    .is_some_and(|value| value == "1")
+                {
+                    loaded.demo_mode = true;
+                }
+                loaded
+            };
             let hotkeys = Hotkeys::from_settings(&loaded);
             let keep_days = loaded.archive_keep_days;
             let retention_trace = trace.clone();

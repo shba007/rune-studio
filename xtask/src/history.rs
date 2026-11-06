@@ -1,4 +1,3 @@
-//! Lossless structural import of historical notes. Changelogen renders Markdown.
 use crate::{Result, canonical_notes};
 use semver::Version;
 use serde::Serialize;

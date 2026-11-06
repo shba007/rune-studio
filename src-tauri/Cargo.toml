@@ -9,16 +9,11 @@ edition = "2024"
 default-run = "rune-studio"
 rust-version = "1.98.1"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-# The windowed app. Windows starts a program like this without a console, so it cannot be a
-# command-line tool: that is the job of the second binary below.
 [[bin]]
 name = "rune-studio"
 path = "src/main.rs"
 
-# The `rune-studio-cli` command: a console program (so a terminal waits for it and shows its output)
-# that opens the app, connects agents and answers `status`. Only in agent-bridge builds.
 [[bin]]
 name = "rune-studio-cli"
 path = "src/bin/rune-studio-cli.rs"
@@ -33,9 +28,7 @@ tauri-build = { version = "2.7", features = [] }
 
 [features]
 agent-bridge = ["dep:axum"]
-# The evaluation harness (docs/ARCHITECTURE.md, "The evaluation harness"). Never in a release build.
 eval = []
-# Pin the embedded Infer implementation so clean checkouts resolve it reproducibly.
 embedded-infer = ["dep:rune-infer"]
 
 [dependencies]
@@ -96,7 +89,6 @@ windows = { version = "0.62", features = [
   "Win32_Graphics_Imaging",
   "Win32_Foundation",
   "Win32_Security",
-  # The session video (video/encode.rs): the Media Foundation H.264 sink writer, no extra binary.
   "Win32_Media",
   "Win32_Media_MediaFoundation",
 ] }

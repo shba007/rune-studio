@@ -1,4 +1,3 @@
-//! Calendar recurrence in the timezone captured at creation; never fixed 24-hour UTC intervals.
 use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Civil {
@@ -254,7 +253,6 @@ pub fn to_utc(c: Civil, key: &str) -> Result<u64, String> {
     let ms = (ticks / 10000)
         .checked_sub(11_644_473_600_000)
         .ok_or("Choose a date after the Unix epoch")?;
-    // Reject repeated wall-clock times instead of silently choosing an occurrence.
     let delta = (z.DaylightBias - z.StandardBias).unsigned_abs() as u64 * 60_000;
     if delta > 0 {
         for candidate in [ms.checked_add(delta), ms.checked_sub(delta)]

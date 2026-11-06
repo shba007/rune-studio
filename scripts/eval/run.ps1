@@ -1,23 +1,3 @@
-# Runs the evaluation suite on this machine and writes a report.
-#
-#   pwsh scripts/eval/run.ps1 -Repeats 3 -FastChecks off
-#   pwsh scripts/eval/run.ps1 -DryRun                      # only validates the suite and prints the plan
-#
-# Read scripts/eval/README.md first: it MOVES THE REAL MOUSE, TYPES, OPENS APPS AND PAGES, and closes a
-# few programs (Notepad, Calculator, Settings, Paint) while it runs. Needs Windows 11, a clean desktop,
-# a running rune-infer, and Rune Studio itself closed.
-#
-# -Suite       the suite file (default scripts/eval/suite.desktop-15.json)
-# -Out         the output folder (default eval-out/<timestamp> under the repository)
-# -Repeats     overrides the suite's repeats
-# -FastChecks  on | off | suite  (suite keeps what the suite file says; default)
-# -NoBuild     use the eval build that is already in src-tauri/target/debug
-# -DryRun      validate and print the plan, change nothing
-#
-# It builds the app with `--features eval,agent-bridge`, runs it with RUNE_EVAL_SUITE and
-# RUNE_EVAL_OUT set (the app exits by itself when done), then runs report.mjs. The eval feature is
-# never part of a release build.
-
 param(
     [string]$Suite = (Join-Path $PSScriptRoot 'suite.desktop-15.json'),
     [string]$Out = '',
@@ -34,7 +14,6 @@ $allowedToClose = @('notepad.exe', 'calculatorapp.exe', 'calculator.exe', 'syste
 if (-not (Test-Path $Suite)) { throw "No suite at $Suite" }
 $spec = Get-Content $Suite -Raw | ConvertFrom-Json
 
-# The app checks the suite itself (and refuses to start on a bad one); this catches the common mistakes early.
 function Test-Suite($spec) {
     if ($spec.version -ne 1) { throw "The suite is version $($spec.version); this runner reads version 1" }
     if (-not $spec.tasks -or $spec.tasks.Count -eq 0) { throw 'The suite has no tasks' }
@@ -71,7 +50,6 @@ if (-not $Out) { $Out = Join-Path $root ('eval-out\' + (Get-Date -Format 'yyyyMM
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
 $Out = (Resolve-Path $Out).Path
 
-# The app reads its fixture pages from next to the suite file, so the run's copy of both goes in the output folder.
 $spec | Add-Member -NotePropertyName repeats -NotePropertyValue $repeats -Force
 if ($FastChecks -ne 'suite') {
     if (-not $spec.config) { $spec | Add-Member -NotePropertyName config -NotePropertyValue ([pscustomobject]@{}) }

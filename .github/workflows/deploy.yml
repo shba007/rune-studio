@@ -20,7 +20,6 @@ concurrency:
 env:
   REPO: ${{ github.repository }}
   VERSION: ${{ github.ref_name }}
-  # VITE_APP_BASE_URL: '/vuetemplate'
 
 jobs:
   build-desktop:
@@ -32,18 +31,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The rune-studio-cli command only exists in agent-bridge builds, and it talks to the app
-          # over that bridge, so every app is built with the feature. Tauri bundles every binary the
-          # package builds, so the installers carry the CLI next to the app by themselves (Windows
-          # installer and macOS bundle: next to the app; deb/rpm: /usr/bin). `target` is the Rust
-          # target, `cli` the CLI's file name on this OS and `asset` its name on the release.
-          - platform: 'macos-latest' # for Arm based macs (M1 and above).
+          - platform: 'macos-latest'
             args: '--target aarch64-apple-darwin --features agent-bridge'
             target: 'aarch64-apple-darwin'
             cli: 'rune-studio-cli'
             asset: 'macos_aarch64'
 
-          - platform: 'macos-latest' # for Intel based macs.
+          - platform: 'macos-latest'
             args: '--target x86_64-apple-darwin --features agent-bridge'
             target: 'x86_64-apple-darwin'
             cli: 'rune-studio-cli'
@@ -70,7 +64,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install OS Dependencies (Ubuntu only)
-        if: matrix.platform == 'ubuntu-latest' # This must match the platform value defined above.
+        if: matrix.platform == 'ubuntu-latest'
         run: |
           sudo apt-get update
           sudo apt-get install -y pkg-config libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
@@ -79,7 +73,6 @@ jobs:
       - name: 🛠️ Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          # Those targets are only used on macos runners so it's in an `if` to slightly speed up windows and linux builds.
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: 🛠️ Setup Vite-Plus

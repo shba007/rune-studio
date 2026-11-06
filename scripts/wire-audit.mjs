@@ -1,13 +1,3 @@
-// Captures what a live rune-infer really accepts and returns, so the wire format Studio relies on
-// can be checked against the server instead of against docs.
-//
-//   RUNE_BASE_URL=http://127.0.0.1:8080 RUNE_API_KEY=sk-... node scripts/wire-audit.mjs
-//
-// Environment: RUNE_BASE_URL (default http://127.0.0.1:8080), RUNE_API_KEY, RUNE_MODEL (the omni
-// model, default gemma-4-12b-it), RUNE_DECISION_MODEL (default liquid-d1-3b).
-// Writes docs/wire-audit-<YYYY-MM-DD>.md and prints the same table. Exits 1 when no server answers.
-// No dependencies; the API key is only ever sent as a header and is scrubbed from all output.
-
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -19,8 +9,6 @@ const MODEL = process.env.RUNE_MODEL || 'gemma-4-12b-it'
 const DECISION_MODEL = process.env.RUNE_DECISION_MODEL || 'liquid-d1-3b'
 const TIMEOUT_MS = 120_000
 const RAW_LIMIT = 1500
-
-// ---------------------------------------------------------------- images and sound, no libraries
 
 const CRC_TABLE = (() => {
   const table = new Uint32Array(256)
@@ -47,12 +35,11 @@ function chunk(type, data) {
   return out
 }
 
-/** An 8-bit RGB PNG. `pixel(x, y)` returns [r, g, b]. */
 function png(width, height, pixel) {
   const raw = Buffer.alloc((width * 3 + 1) * height)
   for (let y = 0; y < height; y++) {
     const row = y * (width * 3 + 1)
-    raw[row] = 0 // filter: none
+    raw[row] = 0
     for (let x = 0; x < width; x++) {
       const [r, g, b] = pixel(x, y)
       raw[row + 1 + x * 3] = r
@@ -63,8 +50,8 @@ function png(width, height, pixel) {
   const header = Buffer.alloc(13)
   header.writeUInt32BE(width, 0)
   header.writeUInt32BE(height, 4)
-  header[8] = 8 // bit depth
-  header[9] = 2 // colour type: RGB
+  header[8] = 8
+  header[9] = 2
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     chunk('IHDR', header),
@@ -73,7 +60,6 @@ function png(width, height, pixel) {
   ])
 }
 
-/** 16 kHz mono 16-bit WAV: one second of a quiet 440 Hz tone. */
 function wav() {
   const rate = 16000
   const samples = rate
@@ -85,8 +71,8 @@ function wav() {
   header.writeUInt32LE(36 + data.length, 4)
   header.write('WAVEfmt ', 8, 'ascii')
   header.writeUInt32LE(16, 16)
-  header.writeUInt16LE(1, 20) // PCM
-  header.writeUInt16LE(1, 22) // mono
+  header.writeUInt16LE(1, 20)
+  header.writeUInt16LE(1, 22)
   header.writeUInt32LE(rate, 24)
   header.writeUInt32LE(rate * 2, 28)
   header.writeUInt16LE(2, 32)
@@ -99,7 +85,6 @@ function wav() {
 const dataUri = (mime, bytes) => `data:${mime};base64,${bytes.toString('base64')}`
 
 const RED = png(128, 128, () => [220, 20, 20])
-// White 320x240 picture with one blue 60x60 square, left edge x=200, top edge y=60.
 const SQUARE = { x: 200, y: 60, size: 60, width: 320, height: 240 }
 const SQUARE_PNG = png(SQUARE.width, SQUARE.height, (x, y) =>
   x >= SQUARE.x && x < SQUARE.x + SQUARE.size && y >= SQUARE.y && y < SQUARE.y + SQUARE.size
@@ -108,11 +93,8 @@ const SQUARE_PNG = png(SQUARE.width, SQUARE.height, (x, y) =>
 )
 const WAV = wav()
 
-// ---------------------------------------------------------------- requests and the report
-
 const rows = []
 
-/** What goes into the report: no base64, no key, cut to RAW_LIMIT characters. */
 function scrub(text) {
   let out = String(text)
     .replace(/data:[a-z]+\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+/gi, '<base64 removed>')
@@ -143,7 +125,6 @@ async function send(method, path, body) {
   return { status: response.status, ok: response.ok, text, json }
 }
 
-/** Runs one request, records a row, never throws once the server has been reached. */
 async function record(name, sent, method, path, body, note) {
   let result
   try {
@@ -210,7 +191,6 @@ function chat(extra, content, tools = CLICK_TOOL) {
 }
 
 async function main() {
-  // Reachability first: with no server there is nothing to audit.
   try {
     await send('GET', '/health')
   } catch (error) {
@@ -220,13 +200,11 @@ async function main() {
     process.exit(1)
   }
 
-  // 1. Discovery.
   await record('health', 'GET /health', 'GET', '/health')
   await record('readyz', 'GET /readyz', 'GET', '/readyz')
   await record('models', 'GET /v1/models', 'GET', '/v1/models')
   await record('model', `GET /v1/models/${MODEL}`, 'GET', `/v1/models/${encodeURIComponent(MODEL)}`)
 
-  // 2. Chat with an image and one tool.
   const screenshot = [
     { type: 'image_url', image_url: { url: dataUri('image/png', RED) } },
     { type: 'text', text: 'Click the middle of the picture.' },
@@ -242,7 +220,6 @@ async function main() {
     )
   }
 
-  // 3. The thinking switch: three spellings, off and on, same prompt, no tools so the text is visible.
   const prompt = 'What is 17 times 23? Answer with the number only.'
   const switches = [
     {
@@ -283,7 +260,6 @@ async function main() {
     )
   }
 
-  // 4. Audio, two spellings of the same one-second clip.
   const audioText = { type: 'text', text: 'What do you hear? Answer in a few words.' }
   await record(
     'audio: audio_url (Studio)',
@@ -311,7 +287,6 @@ async function main() {
     ),
   )
 
-  // 5. Decisions, with and without the picture. The raw answer shows which shape the server uses.
   const question = { name: 'red', type: 'noul', instruction: 'Is this image mostly red?' }
   await record(
     'decisions with image',
@@ -340,7 +315,6 @@ async function main() {
         : '',
   )
 
-  // 6. Grounding: one blue square on white. Read the fields against the known square to learn units and axis order.
   const [left, top, size] = [SQUARE.x, SQUARE.y, SQUARE.size].map(String)
   const [cx, cy] = [SQUARE.x + SQUARE.size / 2, SQUARE.y + SQUARE.size / 2]
   const [nx, ny] = [

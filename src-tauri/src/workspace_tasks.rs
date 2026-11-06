@@ -1,4 +1,3 @@
-//! Durable user-managed tasks. The scheduler creates reminders, never execution.
 use crate::{
     events::AppState,
     intake,
@@ -19,8 +18,6 @@ fn enter_private_context() {
     PRIVATE_EXECUTION.store(true, std::sync::atomic::Ordering::SeqCst);
 }
 pub fn protected_execution_context(app: &AppHandle) -> bool {
-    // Dependency snapshots and delayed verifier evidence outlive board dismissal.
-    // Keep this process local-only once a protected workspace run enters it.
     let _ = app;
     if crate::tasks::tasks_state()
         .requests
@@ -673,7 +670,6 @@ pub async fn workspace_task_action(
     revision: u64,
     action: String,
 ) -> Result<(), String> {
-    // A click on Run is required even after the due time; existing task safety gates still apply.
     if action == "run" {
         let state = app.state::<AppState>();
         let (settings, key) = crate::settings::snapshot_with_api_key(&state.settings);

@@ -122,9 +122,6 @@ pub fn fit_height(app: &AppHandle, height: f64) -> tauri::Result<()> {
             ))
         })
         .unwrap_or(1_200.0);
-    // The native resize requested when opening the pill may not have been
-    // applied yet (notably on Linux). Reading its current width here can
-    // therefore shrink the composer back to the 64px ambient window.
     resize_keeping_corner(app, Some(Mode::Open.size().0), height.clamp(64.0, ceiling))
 }
 
@@ -169,8 +166,6 @@ fn resize_keeping_corner(app: &AppHandle, width: Option<f64>, height: f64) -> ta
     #[cfg(windows)]
     {
         use windows::Win32::UI::WindowsAndMessaging::{SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos};
-        // Move and resize together so the bottom-right anchor never jumps
-        // between two separately presented native window updates.
         unsafe {
             SetWindowPos(
                 window.hwnd()?,

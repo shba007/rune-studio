@@ -373,8 +373,6 @@ async fn begin(app: &AppHandle, arguments: &Value) -> Reply {
     let agent = who.name.clone();
     let task = clip(arguments["task"].as_str().unwrap_or(""), 200);
     let request = {
-        // Use the same analysis -> lease lock order as standalone analysis.
-        // This makes refusing concurrent ownership symmetric in both directions.
         let analysis = state.analysis.locked();
         if !state.settings.locked().external_agent {
             return Reply::error(
@@ -399,8 +397,6 @@ async fn begin(app: &AppHandle, arguments: &Value) -> Reply {
     };
     let mut restart_scope = None;
     if let BeginRequest::ConfirmRestart(ticket) = request {
-        // Stop cancelled the old scope. This fresh scope is only for the prompt;
-        // the lease remains revoked until the user explicitly approves.
         let prompt_scope = state.begin_run();
         let verdict = gate::ask_restart(app, &prompt_scope.token, &agent, &task).await;
         let enabled = crate::settings::load(app).external_agent;
@@ -433,8 +429,6 @@ async fn begin(app: &AppHandle, arguments: &Value) -> Reply {
                 error.into()
             };
         }
-        // Keep Stop effective if it races with the answer; never replace this
-        // prompt's cancelled token with another fresh scope after approval.
         restart_scope = Some(prompt_scope);
     }
     let scope = restart_scope.unwrap_or_else(|| state.begin_run());
@@ -716,7 +710,6 @@ async fn analyze(app: &AppHandle, arguments: &Value) -> Reply {
     row.rec.observe_ms = millis(started);
     row.rec.observation_path = Some(frame.path.display().to_string());
     let front = foreground::remember();
-    // The external agent will analyze this captured image, not necessarily the current screen.
     let live = crate::agent::unless_stopped(
         &scope.token,
         tokio::time::timeout(

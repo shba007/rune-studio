@@ -57,7 +57,6 @@ pub fn unlink_task_run(db: &Connection, run_id: &str) -> rusqlite::Result<()> {
     Ok(())
 }
 
-/// Return ordered snapshots for a linked request/task run. Legacy sessions have none.
 pub fn task_history(path: &Path, run_id: &str) -> Result<Vec<serde_json::Value>, StoreError> {
     let db = open_read(path)?;
     let exists: bool = db.query_row(

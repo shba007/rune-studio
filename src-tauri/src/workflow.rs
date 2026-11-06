@@ -1,4 +1,3 @@
-//! Small static workflow registry. No scheduler, graph or process ownership.
 use crate::{
     analysis::{
         run::{

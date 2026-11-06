@@ -15,16 +15,6 @@ impl PolicyDecision {
     }
 }
 
-/// Checks whether a request with an optional data class is allowed to be transmitted to the given endpoint.
-///
-/// Rules:
-/// 1. Untagged requests and `general` class data may go to any endpoint the user has configured.
-/// 2. Sensitive classes (`health`, `mind`, `finance`) may go ONLY to an endpoint that is local.
-///
-/// Local is decided in this order:
-/// (1) Model profile `locality` (when present): `local` allows, `cloud` and `lan` deny, `unknown` denies.
-/// (2) Otherwise, fallback by address: base URL host is a loopback address (`127.0.0.0/8`, `::1`, `localhost`).
-///     Anything else denies. Never decide by model name.
 pub fn may_send(
     class: Option<DataClass>,
     endpoint: &str,
@@ -38,7 +28,6 @@ pub fn may_send(
         return PolicyDecision::Allow;
     }
 
-    // Step 1: Check model profile locality if present
     if let Some(locality) = model_locality {
         match locality.trim().to_ascii_lowercase().as_str() {
             "local" => return PolicyDecision::Allow,
@@ -60,7 +49,6 @@ pub fn may_send(
         }
     }
 
-    // Step 2: Fallback by address
     match parse_and_validate_loopback_host(endpoint) {
         Ok(true) => PolicyDecision::Allow,
         Ok(false) => PolicyDecision::Deny(format!(
@@ -70,8 +58,6 @@ pub fn may_send(
     }
 }
 
-/// Tagged non-chat routes lack authoritative response attribution today.
-/// They require a loopback endpoint as well as the normal model-locality check.
 pub fn may_send_to_route(
     class: Option<DataClass>,
     endpoint: &str,
@@ -84,7 +70,6 @@ pub fn may_send_to_route(
     may_send(class, endpoint, model_locality)
 }
 
-/// The canonical header wins over any legacy aliases, including for a local reply.
 pub fn response_is_cloud(headers: &reqwest::header::HeaderMap) -> bool {
     for name in ["x-model-locality", "x-rune-locality", "x-infer-locality"] {
         if let Some(value) = headers.get(name) {
@@ -99,8 +84,6 @@ pub fn response_is_cloud(headers: &reqwest::header::HeaderMap) -> bool {
     false
 }
 
-/// Robust URL host parser that strictly prevents substring attacks, userinfo injection,
-/// port tricks, and non-loopback domains.
 pub fn parse_and_validate_loopback_host(endpoint: &str) -> Result<bool, String> {
     let url = Url::parse(endpoint).map_err(|e| e.to_string())?;
 
@@ -111,18 +94,15 @@ pub fn parse_and_validate_loopback_host(endpoint: &str) -> Result<bool, String> 
         return Ok(false);
     };
 
-    // 1. Check localhost domain (RFC 6761)
     let host_lower = host_str.to_ascii_lowercase();
     if host_lower == "localhost" {
         return Ok(true);
     }
 
-    // 2. Check IP addresses
     if let Ok(ip) = host_str.parse::<IpAddr>() {
         return Ok(is_loopback_ip(&ip));
     }
 
-    // Handle bracketed IPv6 if not stripped by url
     let unbracketed = host_str.trim_start_matches('[').trim_end_matches(']');
     if let Ok(ip) = unbracketed.parse::<IpAddr>() {
         return Ok(is_loopback_ip(&ip));
@@ -133,12 +113,11 @@ pub fn parse_and_validate_loopback_host(endpoint: &str) -> Result<bool, String> 
 
 fn is_loopback_ip(ip: &IpAddr) -> bool {
     match ip {
-        IpAddr::V4(v4) => v4.is_loopback(), // 127.0.0.0/8
+        IpAddr::V4(v4) => v4.is_loopback(),
         IpAddr::V6(v6) => {
             if v6.is_loopback() {
                 return true;
             }
-            // Check for IPv4-mapped IPv6 loopback (::ffff:127.0.0.1)
             if let Some(v4) = v6.to_ipv4_mapped() {
                 return v4.is_loopback();
             }
@@ -173,7 +152,6 @@ mod tests {
 
     #[test]
     fn sensitive_class_honors_model_locality() {
-        // Local allows
         assert_eq!(
             may_send(
                 Some(DataClass::Finance),
@@ -182,7 +160,6 @@ mod tests {
             ),
             PolicyDecision::Allow
         );
-        // Cloud denies
         assert!(matches!(
             may_send(
                 Some(DataClass::Health),
@@ -191,12 +168,10 @@ mod tests {
             ),
             PolicyDecision::Deny(_)
         ));
-        // Lan denies
         assert!(matches!(
             may_send(Some(DataClass::Mind), "http://127.0.0.1:8080", Some("lan")),
             PolicyDecision::Deny(_)
         ));
-        // Unknown denies
         assert!(matches!(
             may_send(
                 Some(DataClass::Finance),
@@ -235,29 +210,21 @@ mod tests {
         let denied_endpoints = [
             "http://test.localhost:8080",
             "ftp://localhost",
-            // Substring attacks
             "http://127.0.0.1.evil.com",
             "http://127.0.0.1.attacker.net:8080",
             "http://localhost.evil.com",
-            // Userinfo tricks
             "http://localhost@evil.com",
             "http://127.0.0.1:password@attacker.org:8080",
             "http://localhost:8080@attacker.org",
-            // Port number trick
             "http://evil.com:12701",
-            // LAN and private networks
             "http://192.168.1.1:8080",
             "http://10.0.0.1:8080",
             "http://172.16.0.1:8080",
-            // Public cloud IP
             "http://93.184.216.34:8080",
-            // IPv6 non-loopback
             "http://[2001:db8::1]:8080",
             "http://[fe80::1]:8080",
-            // Cloud domains
             "https://api.openai.com/v1",
             "https://api.together.xyz/v1",
-            // Malformed
             "not a url",
             "http://",
         ];

@@ -1,4 +1,3 @@
-//! Compiled goal taxonomy shared with Studio; labels may evolve, stored IDs stay stable.
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::LazyLock;

@@ -1,7 +1,5 @@
-//! Selected Kit integration boundaries. Discovery never grants execution authority.
 use serde_json::Value;
 
-/// Exact gateway identities only; names containing an approved suffix are not approved.
 pub fn approved_identity(name: &str) -> bool {
     matches!(
         name,
@@ -18,7 +16,6 @@ pub fn approved_identity(name: &str) -> bool {
     )
 }
 
-/// Unknown or contradictory metadata is unavailable in the read-only release slice.
 pub fn read_only_facts(tool: &Value) -> bool {
     let annotations = &tool["annotations"];
     let rules = &tool["inputSchema"]["x-rune-rules"];

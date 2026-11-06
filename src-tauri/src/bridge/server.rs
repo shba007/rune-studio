@@ -81,7 +81,6 @@ fn switch_is_on(app: &AppHandle) -> bool {
         || state.mic.locked().is_some()
         || crate::analysis::state::in_flight(analysis.status)
     {
-        // CLI/file setting edits take effect between sessions, never during one.
         return state.settings.locked().external_agent;
     }
     let settings = crate::settings::load(app);

@@ -1,4 +1,3 @@
-//! Production credentials use the OS keyring. Unit tests never touch it.
 #[cfg(not(test))]
 pub use keyring::Entry;
 

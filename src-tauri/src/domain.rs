@@ -1,4 +1,3 @@
-//! Durable product identities backed by existing stored execution records.
 use std::path::Path;
 
 use rusqlite::OptionalExtension;
@@ -55,7 +54,6 @@ pub fn link_attempt(db: &Path, task: &str, run: &str) -> Result<(), StoreError> 
     Ok(())
 }
 
-/// An execution reference resolves to its owning task; legacy tasks retain their ID.
 pub fn task_id(db: &Path, execution_id: &str) -> Result<String, StoreError> {
     let conn = store::open_read(db)?;
     let linked: bool = conn.query_row(

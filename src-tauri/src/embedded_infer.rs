@@ -1,4 +1,3 @@
-//! Local Infer server lifecycle. The connection is private to this Studio run.
 use crate::sync::LockExt;
 use std::{path::Path, time::Duration};
 use tauri::Manager;

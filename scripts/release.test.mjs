@@ -92,8 +92,6 @@ async function fixture(job) {
     )
     await writeFile(join(directory, 'src-tauri/tauri.conf.json'), '{"version":"../package.json"}')
     await writeFile(join(directory, 'CHANGELOG.md'), history)
-    // Read-only access to existing repository objects; tests create no Git commits,
-    // branches, tags or index changes.
     await writeFile(
       join(directory, '.git'),
       `gitdir: ${git(['rev-parse', '--absolute-git-dir'])}\n`,

@@ -1,4 +1,3 @@
-//! Resolve server attribution before sending an input that may contain sensitive data.
 use super::{
     capabilities::{Locality, ModelCapabilities, parse_models_response},
     profile::{ModelProfile, resolve_profile},
@@ -94,7 +93,6 @@ pub fn resolve(model: &str, models: &[ModelCapabilities]) -> Result<ModelProfile
         .find(|c| c.id == model || c.aliases.iter().any(|alias| alias == model))
         .ok_or("The selected model was not advertised by Infer")?;
     let mut profile = resolve_profile(model, None, Some(caps));
-    // Explicit attribution must win over a bundled profile for another deployment.
     if caps.locality != Locality::Unknown {
         profile.locality = caps.locality;
     }

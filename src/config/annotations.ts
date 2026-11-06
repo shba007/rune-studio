@@ -1,7 +1,5 @@
 import type { CssRect } from './analysis'
 
-// Keep callouts separate from their target geometry. Coordinates are CSS pixels
-// so the same layout serves desktop overlays and resized session captures.
 export function annotationLayout(
   rects: CssRect[],
   width: number,
@@ -55,7 +53,7 @@ export function annotationLayout(
           candidate.top + candidate.height + 6 <= other.top,
       ),
     )
-    if (!label) return null // A tiny viewport cannot fit every callout safely.
+    if (!label) return null
     placed.push(label)
     const labelOnLeft = label.left + label.width / 2 < anchor.x
     const startX = labelOnLeft ? label.left : label.left + label.width

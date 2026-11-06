@@ -252,7 +252,6 @@ impl ChatClient<'_> {
             .await
     }
 
-    /// Only classification may use the negotiated local-execution cold-start contract.
     pub async fn call_classification(
         &self,
         request: &Request<'_>,

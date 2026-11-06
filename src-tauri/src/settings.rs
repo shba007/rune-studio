@@ -316,7 +316,6 @@ impl<'de> Deserialize<'de> for Settings {
         {
             return Err(serde::de::Error::custom("Invalid saved model connections"));
         }
-        // Legacy tools may still update baseUrl directly. Keep the active record in sync.
         if let Some(active) = connections
             .iter_mut()
             .find(|c| c.id == active_connection_id)
@@ -739,8 +738,6 @@ pub fn snapshot_with_api_key(settings: &std::sync::Mutex<Settings>) -> (Settings
     let current = settings.locked();
     let mut effective = current.clone();
     if effective.active_connection_id == "studio-embedded-infer" {
-        // Never persist a live ephemeral port. If the owned runtime is absent,
-        // port zero cannot identify a different local service.
         effective.base_url = "http://127.0.0.1:0".into();
         #[cfg(all(windows, feature = "embedded-infer"))]
         if let Some((url, key)) = crate::embedded_infer::route() {
@@ -1182,7 +1179,6 @@ mod tests {
     }
 }
 
-/// Model choices for the Visual Analysis workflow; an empty operation is disabled.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct VisualAnalysisModels {
@@ -1195,7 +1191,6 @@ pub struct VisualAnalysisModels {
     pub oriented: String,
 }
 
-/// Display preferences only: never remove findings from requests or history.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct VisualAnalysis {

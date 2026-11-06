@@ -1,4 +1,3 @@
-/** A stable, high-contrast color for each class ID in Infer's grayscale map. */
 export function classColor(id: number): [number, number, number] {
   const hue = ((id * 137.508 + 195) % 360) / 60
   const chroma = 0.68

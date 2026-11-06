@@ -1,4 +1,3 @@
-//! Alarm delivery for scheduled reminders: Windows toast while the orb is hidden and a tray summary.
 use crate::sync::LockExt;
 use crate::workspace_tasks::WorkspaceTask;
 use std::{collections::HashSet, sync::Mutex};

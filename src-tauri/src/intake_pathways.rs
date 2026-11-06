@@ -39,7 +39,6 @@ pub fn schema() -> Value {
         "required":["title","summary","rationale","pros","cons","duration","resources","feasibility","missingInformation"]}}},"required":["assessment","similarOutcome","options"]})
 }
 pub fn parse(value: Value, goal: &Value) -> Result<PathwaySet, String> {
-    // Model output cannot preselect a route or replace its approved goal.
     let object = value.as_object().ok_or("Invalid pathway response")?;
     if object
         .keys()

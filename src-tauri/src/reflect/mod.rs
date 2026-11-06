@@ -19,7 +19,6 @@ use crate::{
 use idle::{IdleClock, Input};
 use prompt::{ANSWER_SECS, Do, Phase};
 
-/// No real reflection job is implemented in this release.
 pub const AVAILABLE: bool = false;
 
 pub const PROMPT: &str = "reflection_prompt";

@@ -91,11 +91,11 @@ fn request_history_round_trips_all_tasks_and_cancellation_in_revision_order() {
         {"id":3,"kind":"desktop","phase":"running","steps":[{"text":"type","phase":"running","startedAt":150}]}
     ]});
     recorder.task_history("parent", 1, 100, &snapshot);
-    recorder.task_history("parent", 2, 110, &snapshot); // unchanged snapshots are not duplicated
+    recorder.task_history("parent", 2, 110, &snapshot);
     let mut cancelled = snapshot.clone();
     cancelled["tasks"][2]["phase"] = serde_json::json!("cancelled");
     recorder.task_history("parent", 4, 200, &cancelled);
-    recorder.task_history("parent", 3, 180, &snapshot); // deliberately out-of-order delivery
+    recorder.task_history("parent", 3, 180, &snapshot);
     recorder.flush();
     let history = task_history(&dir.db(), "desktop").unwrap();
     assert_eq!(history.len(), 3);

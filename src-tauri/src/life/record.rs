@@ -4,16 +4,12 @@ use std::str::FromStr;
 
 use super::LifeError;
 
-/// Grade 0: Your word only ("I went to the gym").
 pub const GRADE_0_WORD_ONLY: u8 = 0;
 
-/// Grade 1: Your word with a specific checkable detail ("Back and biceps, 50 min, ended 7:10").
 pub const GRADE_1_CHECKABLE_DETAIL: u8 = 1;
 
-/// Grade 2: Observed by a tool or imported data the user did not type (commits in repo, wearable export).
 pub const GRADE_2_OBSERVED: u8 = 2;
 
-/// Grade 3: Independent and hard to fake (bank statement, measured result over time).
 pub const GRADE_3_INDEPENDENT: u8 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -44,8 +40,6 @@ impl DataClass {
         }
     }
 
-    /// Whether this data class contains sensitive personal information
-    /// and therefore MUST be strictly local-only and encrypted at rest.
     pub fn is_sensitive(&self) -> bool {
         match self {
             DataClass::General => false,
@@ -157,11 +151,6 @@ impl FromStr for RecordSource {
     }
 }
 
-/// Checks that a record's source and grade are consistent.
-/// - a `user_said` record can never be grade 2 or 3
-/// - a `user_detail` record can never be grade 2 or 3
-/// - a `tool` or `import` record cannot be grade 0
-/// - grade must be in range 0..=3
 pub fn validate_source_grade(source: &RecordSource, grade: u8) -> Result<(), LifeError> {
     if grade > 3 {
         return Err(LifeError::InvalidGrade(grade));

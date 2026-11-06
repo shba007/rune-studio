@@ -9,7 +9,6 @@ use crate::{
 };
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 
-/// Seam abstraction for turning speech into text or structured voice intent.
 pub trait Transcriber: Send + Sync {
     fn transcribe(
         &self,
@@ -18,7 +17,6 @@ pub trait Transcriber: Send + Sync {
     ) -> impl std::future::Future<Output = Result<Option<Listened>, String>> + Send;
 }
 
-/// The default transcriber: sends the WAV audio to the chat model via `input_audio`.
 pub struct ChatModelAudio<'a> {
     pub client: &'a ChatClient<'a>,
 }
@@ -166,7 +164,6 @@ impl Transcriber for VerifiedTranscriber<'_> {
     }
 }
 
-/// Supported dedicated voice transcription engines.
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DedicatedEngine {
@@ -175,7 +172,6 @@ pub enum DedicatedEngine {
     LocalEngine(String),
 }
 
-/// A place for a future dedicated transcriber engine without hardcoding or requiring it today.
 #[allow(dead_code)]
 pub struct DedicatedTranscriber {
     pub engine: DedicatedEngine,
@@ -202,12 +198,10 @@ impl Transcriber for DedicatedTranscriber {
     }
 }
 
-/// Checks whether voice should be disabled for the given model profile.
 pub fn is_voice_disabled_for_profile(profile: &ModelProfile) -> bool {
     profile.audio_in.supported == TriState::No
 }
 
-/// Returns a human-readable explanation if voice is disabled for the model.
 pub fn voice_disabled_reason(model_id: &str, profile: &ModelProfile) -> Option<String> {
     if is_voice_disabled_for_profile(profile) {
         Some(format!(
@@ -366,7 +360,6 @@ mod tests {
         assert!(request.windows(4).any(|chunk| chunk == b"RIFF"));
     }
 
-    /// Fake transcriber for testing the seam abstraction.
     struct FakeTranscriber {
         simulated_result: Option<Listened>,
     }
@@ -443,7 +436,6 @@ mod tests {
         assert_eq!(&wav_data[..4], b"RIFF");
         assert_eq!(&wav_data[8..16], b"WAVEfmt ");
         assert_eq!(&wav_data[36..40], b"data");
-        // 44-byte WAV header + 4 samples * 2 bytes = 52 bytes
         assert_eq!(wav_data.len(), 44 + samples.len() * 2);
     }
 }

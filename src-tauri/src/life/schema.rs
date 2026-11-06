@@ -102,7 +102,6 @@ pub fn open_or_create(db: &mut Connection, key_id: &str) -> Result<Opened, LifeE
             rusqlite::params![VERSION, now, key_id],
         )?;
 
-        // Default: all classes consent OFF
         for class in ["general", "health", "mind", "finance"] {
             tx.execute(
                 "INSERT OR IGNORE INTO consent (class, enabled, changed_utc) VALUES (?1, 0, ?2)",
@@ -156,7 +155,6 @@ mod tests {
             .unwrap();
         assert_eq!(consent_count, 4);
 
-        // Opening twice is idempotent
         let second_open = open_or_create(&mut conn, "test-key-id").unwrap();
         assert_eq!(second_open, Opened::Ready);
     }

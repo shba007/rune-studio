@@ -297,8 +297,6 @@ pub fn parse(arguments: &Value) -> ParsedReport {
 
 fn answer_text(arguments: &Value) -> String {
     let raw = arguments["answer"].as_str().unwrap_or_default();
-    // Some model replies embed a second copy of the report's findings in the
-    // answer string. Remove only a complete, demonstrably duplicated suffix.
     for (at, _) in raw.match_indices("\",") {
         if raw[..at].contains('{') {
             continue;

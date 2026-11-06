@@ -1,4 +1,3 @@
-//! A bounded, in-memory inbox for user-initiated screen requests.
 use serde::Serialize;
 use std::time::{Duration, Instant};
 

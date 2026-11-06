@@ -1,4 +1,3 @@
-//! Tracks in-flight model requests for the orb without exposing prompts or keys.
 use serde::Serialize;
 use std::sync::{
     Mutex,

@@ -203,9 +203,7 @@ onMounted(async () => {
     )
     if (disposed) off()
     else unlisten = off
-  } catch {
-    // The workspace still supports local navigation if event registration fails.
-  }
+  } catch {}
 })
 onBeforeUnmount(() => {
   disposed = true

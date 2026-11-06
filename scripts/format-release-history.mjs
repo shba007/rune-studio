@@ -1,4 +1,3 @@
-// Owner-authorized formatting migration; never changes versions, tags or Git.
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { resolve, dirname, join, relative, isAbsolute } from 'node:path'
 import { fileURLToPath } from 'node:url'

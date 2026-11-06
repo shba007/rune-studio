@@ -1,5 +1,4 @@
 use serde_json::Value;
-// Reject constructs outside the explicitly checked subset.
 pub fn supported(schema: &Value) -> bool {
     let Some(obj) = schema.as_object() else {
         return false;

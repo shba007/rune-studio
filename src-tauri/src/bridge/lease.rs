@@ -113,7 +113,6 @@ impl LeaseBook {
         Ok(BeginRequest::Begun)
     }
 
-    /// Approval belongs only to this retry. Stop/settings changes invalidate it.
     pub fn resolve_restart(
         &mut self,
         ticket: u64,

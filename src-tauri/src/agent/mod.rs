@@ -1143,8 +1143,6 @@ async fn run(
         let planned = handoff.locked().board_id.is_some();
         let goal = if planned {
             if matches!(action, Action::External { .. }) {
-                // Kit parameters retain their exact schema. A read-only Kit call
-                // belongs to the current step and cannot silently advance it.
                 Some(current as u32 + 1)
             } else {
                 reply.call.arguments["goal"]

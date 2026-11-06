@@ -80,9 +80,7 @@ watch(
           pickedSubdomains.value = ids
           text.value = ''
         }
-      } catch {
-        /* Keep an ordinary freeform draft as text. */
-      }
+      } catch {}
     }
     domainChoice.value =
       props.question.kind === 'domain' && DOMAINS.some((d) => d.id === text.value) ? text.value : ''

@@ -1,4 +1,3 @@
-//! Text-free Auto discovery: models propose questions and drafts, never approvals.
 use crate::{
     goal_domains::SubDomainSelection,
     intake_subdomains::{Choice, MAX_QUESTIONS, valid_question},

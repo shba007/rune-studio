@@ -1,4 +1,3 @@
-//! Resumable input decisions. Bodies live only in the consented, protected Life store.
 use crate::{
     events::AppState,
     exec::CancelToken,
@@ -1046,7 +1045,6 @@ fn subdomain_reply(e: &mut Entry, q: &Question, choice: &str, text: &str) -> Res
                 .unwrap_or(text.trim());
             let answer = json!({"kind":"subdomain_detail","subDomain":id,"question":q.title,"answer":reply,"source":"user"});
             selected.answers.push(answer);
-            // Keep the reply once in subDomains; the conversation history links to it.
             e.answers
                 .push(json!({"kind":"subdomain_detail","subDomain":id,"source":"user"}));
             e.persistable = false;
@@ -1102,7 +1100,6 @@ async fn suggest_domain(app: &AppHandle, e: &mut Entry) -> Result<(), String> {
     }
     e.status = "domain_planning".into();
     e.question = None;
-    // Only already-classified context may be checkpointed; new freeform replies stay in memory.
     commit(app, e)?;
     e.persistable = false;
     let value = tokio::time::timeout(std::time::Duration::from_secs(90), infer(
@@ -1139,8 +1136,6 @@ fn domain_reply(e: &mut Entry, q: &Question, choice: &str, text: &str) -> Result
     if !choice.is_empty() && chosen.is_none() {
         return Err("Choose a supported goal domain".into());
     }
-    // New answers may disclose a different sensitive class. Reclassify via protected inference
-    // before saving them, whether proceeding to clarification or asking for another suggestion.
     e.persistable = false;
     e.answers
         .push(json!({"kind":"domain","question":q.title,"answer":reply,"source":"user"}));
@@ -1379,7 +1374,6 @@ fn submit_intent(
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let _serial = SERIAL.lock().await;
-        // A goal can be deleted while its first inference is still queued.
         if !ENTRIES.locked().contains_key(&e.id) {
             return;
         }
@@ -1427,8 +1421,6 @@ fn new_entry(
             .as_ref()
             .and_then(|s| s.domain.as_ref())
             .map(|_| "user".into()),
-        // Mark new intake at creation so goals reached through the composer also confirm a domain.
-        // Older stored entries retain None and are never enrolled by a load or retry.
         domain_mode: Some(mode.as_str().into()),
         domain: selection.as_ref().and_then(|s| s.domain.clone()),
         sub_domains: selection.map(|s| s.sub_domains).unwrap_or_default(),
@@ -1614,7 +1606,7 @@ mod tests {
     #[test]
     fn only_new_unassigned_goals_enter_domain_confirmation() {
         let mut e = sample(DataClass::General);
-        assert!(!needs_domain(&e)); // Legacy entries are not migrated.
+        assert!(!needs_domain(&e));
         e.domain_mode = Some("manual".into());
         assert!(needs_domain(&e));
         e.goal = Some(json!({"outcome":"An existing draft"}));
@@ -1657,12 +1649,11 @@ mod tests {
         assert!(validate_answer(&e, e.revision, Some("physical"), "").is_err());
         for domain in crate::goal_domains::REGISTRY.iter() {
             let mut selected = e.clone();
-            // The all-domain picker travels through the existing freeform answer contract.
             let q = validate_answer(&selected, selected.revision, None, &domain.id).unwrap();
             assert!(domain_reply(&mut selected, &q, "", &domain.id).unwrap());
             assert_eq!(selected.domain.as_deref(), Some(domain.id.as_str()));
             assert_eq!(selected.domain_source.as_deref(), Some("user"));
-            assert!(!selected.persistable); // Classified before newly disclosed content is saved.
+            assert!(!selected.persistable);
             assert!(selected.question.is_none());
             assert!(validate_answer(&selected, selected.revision, None, &domain.id).is_err());
             let saved = selected.answers.clone();
@@ -1733,7 +1724,7 @@ mod tests {
         let mut e = sample(DataClass::General);
         e.domain = Some("environment".into());
         e.domain_mode = Some("manual".into());
-        assert!(!needs_subdomains(&e)); // Stored conversations without progress are not enrolled.
+        assert!(!needs_subdomains(&e));
         e.subdomain_progress = Some(crate::intake_subdomains::Progress::new(false));
         assert!(needs_subdomains(&e));
         question(
@@ -1993,7 +1984,7 @@ mod tests {
         assert_eq!(q.domain.as_deref(), Some("physical"));
         assert!(validate_answer(&e, e.revision + 1, Some("mixed"), "").is_err());
         assert!(validate_answer(&e, e.revision, Some("approve"), "").is_err());
-        e.persistable = true; // The actual runner checks class consent before exposing questions.
+        e.persistable = true;
         discovery_reply(&mut e, &q, "mixed", "").unwrap();
         assert!(!e.persistable);
         assert!(e.text.is_empty());
@@ -2114,7 +2105,7 @@ mod tests {
         store.set_consent(DataClass::Health, true, "test").unwrap();
         let q = e.question.clone().unwrap();
         discovery_reply(&mut e, &q, "", "PRIVATE_DISCOVERY_CANARY").unwrap();
-        e.persistable = true; // Represents a successful protected reclassification of the answer.
+        e.persistable = true;
         e.status = "discovery_planning".into();
         store_entry(&store, &e).unwrap();
         let saved = store.get_record("intake-auto-0").unwrap().unwrap();
@@ -2287,7 +2278,6 @@ mod tests {
             other.id = id.into();
             store_entry(&store, &other).unwrap();
         }
-        // Older revisions must stay deleted even if their class consent is later enabled again.
         store
             .set_consent(DataClass::General, false, "test")
             .unwrap();
@@ -2475,7 +2465,7 @@ pub fn workspace_new_goal(
     Ok(id)
 }
 #[tauri::command]
-#[allow(clippy::too_many_arguments)] // Tauri command arguments are the explicit measurement fields.
+#[allow(clippy::too_many_arguments)]
 pub async fn goal_measurement(
     app: AppHandle,
     id: String,

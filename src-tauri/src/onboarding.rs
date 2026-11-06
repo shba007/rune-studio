@@ -1,4 +1,3 @@
-//! First-run onboarding state, separate from the user's connection settings.
 use std::io::Write;
 use tauri::{AppHandle, Manager};
 #[cfg(not(any(target_os = "android", target_os = "ios")))]

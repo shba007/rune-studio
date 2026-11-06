@@ -1,13 +1,9 @@
-//! Minimal release integration: manifest synchronization and one exact note extractor.
-//! Conventional-commit parsing, version decisions and rendering belong to pinned changelogen.
 use semver::Version;
 use std::{fs, path::Path};
 use toml_edit::{DocumentMut, value};
 pub mod history;
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-/// Only CRLF/LF and surrounding blank newline delimiters are transport-normalized.
-/// Markdown, contributor links, spaces and wording remain significant.
 pub fn canonical_notes(text: &str) -> String {
     text.replace("\r\n", "\n").trim_matches('\n').to_string()
 }
@@ -55,8 +51,6 @@ pub fn release_notes(changelog: &str, version: &Version) -> Result<String> {
     section_notes(changelog, version, true)
 }
 
-/// One-time historical formatting retains reviewed wording, including old IDs.
-/// Normal preparation/publication continues to use the strict release_notes API.
 pub fn historical_release_notes(changelog: &str, version: &Version) -> Result<String> {
     section_notes(changelog, version, false)
 }
@@ -102,7 +96,6 @@ pub fn sync_manifests(root: &Path, next: &Version) -> Result<()> {
     let text = fs::read_to_string(root.join("package.json"))?;
     let mut json: serde_json::Value = serde_json::from_str(&text)?;
     json["version"] = serde_json::Value::String(next.to_string());
-    // Preserve source order and all unrelated JSON formatting.
     let old = version(root)?.to_string();
     let package = text.replacen(
         &format!("\"version\": \"{old}\""),

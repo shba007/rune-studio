@@ -1,4 +1,3 @@
-//! A single, user-started local model installation backed by Infer's registry.
 use crate::sync::LockExt;
 use serde::Serialize;
 use std::sync::{
@@ -71,7 +70,6 @@ impl Downloads {
             ..Status::default()
         };
         let state = self.state.clone();
-        // The marker is cleared by the completion command once the worker reports a terminal state.
         std::thread::spawn(move || {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 install(

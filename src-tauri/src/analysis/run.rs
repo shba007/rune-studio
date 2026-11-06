@@ -319,7 +319,6 @@ fn parse_visual_questions(value: serde_json::Value) -> Result<VisualQuestions, S
     Ok(questions)
 }
 
-/// Shared inference only: never begins/ends an archive session or changes UI state.
 pub async fn analyze_image(
     app: &AppHandle,
     question: &str,

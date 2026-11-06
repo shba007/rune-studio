@@ -1,4 +1,3 @@
-//! First-week work proposals are protected drafts, never executable model output.
 use crate::{intake_pathways::Pathway, task_calendar, workspace_tasks::ScheduleInput};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};

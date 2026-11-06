@@ -1,4 +1,3 @@
-//! Explicit, bounded recordings. Separate from Insight frames and session video.
 use crate::{
     exec::CancelToken,
     model::coords::Monitor,

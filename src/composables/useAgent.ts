@@ -214,7 +214,6 @@ export function useAgent() {
     if (mode.value === 'open' || mode.value === 'task' || mode.value === 'analysis') {
       if (!fitting) {
         fitting = (async () => {
-          // Collect measurements from the same render before crossing IPC.
           await Promise.resolve()
           while (mode.value !== 'ambient' && fittedHeight !== wantedHeight) {
             const next = wantedHeight

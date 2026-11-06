@@ -117,9 +117,7 @@ jobs:
       - uses: peter-evans/create-pull-request@v8
         if: steps.preparation.outputs.prepared == 'true' && steps.fresh.outputs.current == 'true'
         with:
-          # Use the job's granted PR permission, not the narrower branch PAT.
           token: ${{ github.token }}
-          # Release branch pushes do not trigger another Vue CI run.
           branch-token: ${{ secrets.GH_TOKEN }}
           branch: release/update-version
           base: develop

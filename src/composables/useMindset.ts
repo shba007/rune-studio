@@ -21,9 +21,7 @@ export function useMindset() {
       const before = revision
       const catalog = await invoke<MindsetCatalog>('personalities_state')
       if (!disposed && revision === before && catalog?.active) active.value = catalog.active
-    } catch {
-      /* The base mark remains available when initialization fails. */
-    }
+    } catch {}
   })
   onBeforeUnmount(() => {
     disposed = true

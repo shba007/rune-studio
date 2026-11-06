@@ -1,4 +1,3 @@
-//! Validate domain suggestions as proposals; only a user's answer assigns a domain.
 use crate::{goal_domains, life::DataClass};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -33,7 +32,6 @@ pub fn schema() -> Value {
 }
 
 pub fn parse(value: Value) -> Result<Suggestion, String> {
-    // Do not expose model response bodies in errors or logs.
     let suggestion: Suggestion = serde_json::from_value(value)
         .map_err(|_| "Invalid domain suggestion response".to_string())?;
     let mut ids = std::collections::HashSet::new();

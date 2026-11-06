@@ -139,7 +139,6 @@ test('a line that is not JSON is reported with its number', () => {
 test('the verifier is compared with the checkers: the matrix and the four numbers', async () => {
   const { VERDICTS, verifierStats } = await import('../report.mjs')
   const stats = verifierStats(load('verdicts.jsonl'))
-  // 13 rows: one has no verdict (check off) and one should fail, so 11 count.
   assert.equal(stats.runs, 11)
   assert.deepEqual(stats.matrix.verified, { pass: 2, fail: 1 })
   assert.deepEqual(stats.matrix.contradicted, { pass: 1, fail: 2 })
@@ -171,7 +170,6 @@ test('without verdicts the verifier numbers are empty, not zero', async () => {
   assert.equal(stats.unsureRate, null)
   assert.equal(stats.falseContradictions, 0)
   assert.match(render(load('base.jsonl'), null).markdown, /No verdicts recorded/)
-  // Only a decided mix has an agreement; a file of "unsure" alone has none.
   assert.equal(
     verifierStats(load('verdicts.jsonl').filter((row) => row.verdict === 'unsure')).agreement,
     null,
@@ -257,7 +255,6 @@ test('comparing different models outputs a model comparison table and never a pa
   assert.match(markdown, /\| completion tokens \| 340 \| 520 \|/)
   assert.match(markdown, /\| boxes quality \| 0\.95 \| 0\.82 \|/)
 
-  // CLI exit code test: comparison exits with code 0, not 1
   const run = (...args) => spawnSync(process.execPath, [script, ...args], { encoding: 'utf8' })
   const result = run(here + 'model-alpha.jsonl', '--compare', here + 'model-beta.jsonl')
   assert.equal(result.status, 0)

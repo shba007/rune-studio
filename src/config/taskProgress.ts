@@ -7,8 +7,6 @@ export function visibleGoal(requests: PlannedRequest[]): PlannedRequest | undefi
     requests.at(-1)
   )
 }
-// Each task contributes its actual completed steps. A task with no plan yet
-// contributes one pending unit so it cannot make a request look complete.
 export function requestProgress(tasks: IndependentTask[]): number | null {
   if (!tasks.length) return null
   let total = 0
@@ -38,7 +36,6 @@ export function taskPosition(tasks: IndependentTask[]): string {
     : String(tasks.filter((t) => t.phase === 'done').length)
   return `${numerator}/${tasks.length}`
 }
-// Estimated remaining execution time from observed, completed steps; never invent an initial duration.
 export function estimateRemaining(tasks: IndependentTask[], now: number): number | null {
   const remaining = tasks.filter((t) => isTaskActive(t.phase))
   if (!remaining.length) return 0
@@ -66,7 +63,7 @@ export function estimateRemaining(tasks: IndependentTask[], now: number): number
         ? Math.max(0, now - task.stepStartedAt)
         : 0
     const left = average * (task.steps.length - done) - elapsed
-    if (left <= 0) return null // Re-estimate after new progress, instead of showing a false zero.
+    if (left <= 0) return null
     longest = Math.max(longest, left)
     if (task.kind === 'desktop') desktop += left
     else background += left

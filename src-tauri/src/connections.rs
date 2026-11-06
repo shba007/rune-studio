@@ -1,4 +1,3 @@
-//! Saved model endpoints. Credentials are stored in the system keyring by stable ID.
 use crate::{
     backend,
     error::{AppError, AppResult},
@@ -259,7 +258,7 @@ pub fn connections_models_save(
 }
 
 #[tauri::command]
-#[allow(clippy::too_many_arguments)] // Tauri exposes these as individual command fields.
+#[allow(clippy::too_many_arguments)]
 pub fn connections_save(
     app: AppHandle,
     state: State<'_, AppState>,

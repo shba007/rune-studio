@@ -8,13 +8,12 @@
 
   --text-*: initial;
 
-  /* Pilot tokens for the floating interface; existing surfaces keep their scale. */
   --font-rune-reading: 'Figtree Variable', sans-serif;
   --spacing-rune-detail: 0.25rem;
   --spacing-rune-1: 0.5rem;
   --spacing-rune-2: 1rem;
   --spacing-rune-3: 1.5rem;
-  /* Glass: translucent fills over the ambient backdrop; blur is added by the glass utility. */
+
   --color-rune-surface: rgb(255 255 255 / 0.055);
   --color-rune-raised: rgb(255 255 255 / 0.1);
   --color-rune-ink: #f1f1ef;
@@ -135,7 +134,7 @@ input {
 .overlay-view #__vue-devtools-container__ {
   display: none !important;
 }
-/* The floating pill window is transparent over the desktop, so its glass needs denser tints to stay legible. */
+
 html:not(.flight-view) {
   --color-rune-surface: rgb(24 24 28 / 0.94);
   --color-rune-raised: rgb(38 38 44 / 0.94);

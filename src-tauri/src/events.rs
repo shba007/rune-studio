@@ -117,7 +117,6 @@ pub fn set_agent_state(app: &AppHandle, state: AgentState) {
 }
 
 pub fn preview_agent_state(app: &AppHandle, state: AgentState) {
-    // Animation previews never take execution ownership or change the real state.
     overlay::sync(app, state);
     let _ = app.emit(STATE_CHANGED, StateChanged { state });
 }

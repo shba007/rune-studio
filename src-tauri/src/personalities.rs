@@ -1,4 +1,3 @@
-//! User-approved style profiles. Categories are labels, never privacy classes or permissions.
 use crate::sync::LockExt;
 use serde::{Deserialize, Serialize};
 use std::{

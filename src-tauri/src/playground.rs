@@ -659,7 +659,6 @@ pub async fn open_playground(app: AppHandle, flow: Option<String>) -> Result<(),
 
 const DEPTH_TASK: &str = "image-to-depth";
 const CAPTION_TASK: &str = "image-to-text";
-// Some vision models spend part of their output budget on reasoning before the caption.
 const CAPTION_MAX_TOKENS: u32 = 1024;
 const UPSCALE_TASK: &str = "image-upscale";
 const CREATE_TASK: &str = "text-to-image";

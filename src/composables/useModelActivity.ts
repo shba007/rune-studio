@@ -30,9 +30,7 @@ export function useModelActivity() {
       const before = revision
       const snapshot = await invoke<ModelActivity[]>('model_activity')
       if (!disposed && revision === before && Array.isArray(snapshot)) active.value = snapshot
-    } catch {
-      /* Model identity remains unavailable. */
-    }
+    } catch {}
   })
   onBeforeUnmount(() => {
     disposed = true

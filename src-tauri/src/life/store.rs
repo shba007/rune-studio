@@ -28,7 +28,6 @@ pub struct LifeStore {
 }
 
 impl LifeStore {
-    /// Open or create a life database at the given path.
     pub fn open(path: &Path, crypto: LifeCrypto) -> Result<Self, LifeError> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
@@ -52,8 +51,6 @@ impl LifeStore {
         }
     }
 
-    /// Recovery action when encryption key is lost:
-    /// Re-initializes the life store from scratch ONLY if explicit confirmation "START FRESH" is provided.
     pub fn reset_start_fresh(path: &Path, confirmation: &str) -> Result<Self, LifeError> {
         if confirmation != "START FRESH" {
             return Err(LifeError::Crypto(
@@ -79,7 +76,6 @@ impl LifeStore {
         Self::open(path, crypto)
     }
 
-    /// Open an in-memory life database with the provided crypto.
     pub fn in_memory(crypto: LifeCrypto) -> Result<Self, LifeError> {
         let mut conn = Connection::open_in_memory()?;
         match schema::open_or_create(&mut conn, crypto.key_id())? {
@@ -92,7 +88,6 @@ impl LifeStore {
         }
     }
 
-    /// Open an in-memory life database with random test crypto.
     pub fn in_memory_random() -> Result<Self, LifeError> {
         Self::in_memory(LifeCrypto::in_memory_random())
     }
@@ -167,7 +162,6 @@ impl LifeStore {
 
         let conn = self.conn.lock().unwrap();
 
-        // 1. Consent check: write refused if consent is off
         let consent_enabled: i64 = conn
             .query_row(
                 "SELECT enabled FROM consent WHERE class = ?1",
@@ -184,7 +178,6 @@ impl LifeStore {
         let id = new_record.id.unwrap_or_else(|| generate_id("rec"));
         let occurred_utc = new_record.occurred_utc.unwrap_or_else(|| now.clone());
 
-        // 2. Encrypt body if sensitive class
         let stored_body = if new_record.class.is_sensitive() {
             self.crypto.encrypt(&new_record.body)?
         } else {
@@ -207,7 +200,6 @@ impl LifeStore {
             ],
         )?;
 
-        // 3. Audit log (never log content of record body!)
         let audit_detail = format!(
             "class={}, kind={}, grade={}, source={}",
             new_record.class.as_str(),
@@ -228,7 +220,7 @@ impl LifeStore {
             id,
             class: new_record.class,
             kind: new_record.kind,
-            body: new_record.body, // return plaintext to caller
+            body: new_record.body,
             source: new_record.source,
             grade: new_record.grade,
             occurred_utc,
@@ -316,7 +308,6 @@ impl LifeStore {
         }
     }
 
-    /// Tombstone every numeric revision of one record series without decrypting other classes.
     pub fn soft_delete_record_series(&self, id: &str, actor: &str) -> Result<usize, LifeError> {
         let conn = self.conn.lock().unwrap();
         let tx = conn.unchecked_transaction()?;
@@ -343,7 +334,6 @@ impl LifeStore {
         Ok(count)
     }
 
-    /// Delete records older than cutoff_utc for the given class, and prune related audit entries.
     pub fn purge_retention(
         &self,
         class: DataClass,
@@ -382,8 +372,6 @@ impl LifeStore {
         Ok(count)
     }
 
-    /// Permanently delete a class (or all classes), including tombstones, audit rows referencing content,
-    /// and vacuum the SQLite database so no data remains on disk.
     pub fn hard_delete_class(
         &self,
         class: Option<DataClass>,
@@ -433,7 +421,6 @@ impl LifeStore {
         Ok(count)
     }
 
-    /// Checkpoint WAL and VACUUM the database file.
     pub fn checkpoint_and_vacuum(&self) -> Result<(), LifeError> {
         let conn = self.conn.lock().unwrap();
         self.checkpoint_and_vacuum_locked(&conn)
@@ -872,7 +859,6 @@ mod tests {
             .set_consent(DataClass::General, true, "test_user")
             .unwrap();
 
-        // Write plaintext general record with canary
         let canary = "GENERAL_PURGED_CANARY_ABCD1234XYZ";
         store
             .write_record(
@@ -1027,7 +1013,6 @@ mod tests {
         let backup_path = temp_dir.path().join("backup_life.sqlite3");
         fs::copy(&db_path, &backup_path).unwrap();
 
-        // Attempt to open backup with DIFFERENT crypto key (simulating thief or missing keyring)
         let crypto_other = LifeCrypto::in_memory_random();
         let backup_store = LifeStore::open(&backup_path, crypto_other).unwrap();
 
@@ -1050,7 +1035,6 @@ mod tests {
         store.set_consent(DataClass::Health, true, "test").unwrap();
         drop(store);
 
-        // Refusing confirmation preserves the key and existing store.
         let fail = LifeStore::reset_start_fresh(&db_path, "no");
         assert!(fail.is_err());
         assert_eq!(
@@ -1062,7 +1046,6 @@ mod tests {
         );
         assert!(db_path.exists());
 
-        // Simulate actual key loss in the in-memory test keyring.
         LifeCrypto::delete_keyring_key().unwrap();
         assert!(matches!(
             LifeCrypto::from_keyring_existing(),

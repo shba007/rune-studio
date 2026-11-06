@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Run with Git Bash on Windows. Each invocation gets an independent Studio
-# profile and Infer home; installed models and settings are never modified.
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*) ;;
   *) echo 'This onboarding test requires Windows and Git Bash.' >&2; exit 1 ;;
@@ -29,9 +27,21 @@ identifier="dev.shirsendu-bairagi.rune-studio.onboarding${token}"
 
 bun -e 'const [file, root, identifier] = process.argv.slice(1); await Bun.write(file, JSON.stringify({ identifier, app: { appDirectoriesOverride: root } }, null, 2));' -- "$config_native" "$profile_native" "$identifier"
 
+show_recordings="$(bun -e 'import { join } from "node:path"; try { const path = join(process.env.APPDATA || "", "dev.shirsendu-bairagi.rune-studio", "settings.json"); const settings = await Bun.file(path).json(); console.log(settings.demoMode === true ? "1" : "0"); } catch { console.log("0"); }')"
+if [[ "$show_recordings" == '1' ]]; then
+  export RUNE_STUDIO_ONBOARDING_TEST_SHOW_RECORDINGS=1
+else
+  unset RUNE_STUDIO_ONBOARDING_TEST_SHOW_RECORDINGS
+fi
+
 echo "Isolated test profile: $profile_native"
 echo "Isolated Infer home: $RUNE_HOME"
 echo "Test app identifier: $identifier"
+if [[ "$show_recordings" == '1' ]]; then
+  echo 'Screen-recording visibility is enabled, matching your normal Studio preference.'
+else
+  echo 'Screen-recording visibility is disabled for this test profile.'
+fi
 echo 'Close other Studio instances first to avoid conflicts with their local services and hotkeys.'
 echo 'The test folder is kept after exit; model downloads can be large.'
 

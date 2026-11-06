@@ -1,15 +1,6 @@
-// Turns one or two results.jsonl files from an eval run into a report, and judges a change against a
-// baseline with one rule: success rate not lower, median task time within +10%.
-//
-//   node scripts/eval/report.mjs <results.jsonl> [--compare <baseline.jsonl>] [--out report.md]
-//
-// The first file is the run being judged; --compare names the baseline it is judged against. Exit
-// code 1 when a comparison's verdict is FAIL. No dependencies.
-
 import { readFileSync, writeFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 
-/** The gate's tolerance on the median task duration: more than this much slower fails. */
 export const MAX_SLOWER_PERCENT = 10
 
 export function parseResults(text) {
@@ -25,7 +16,6 @@ export function parseResults(text) {
     })
 }
 
-/** The middle value (the mean of the two middle ones for an even count); null for none. */
 export function median(numbers) {
   if (numbers.length === 0) return null
   const sorted = [...numbers].sort((a, b) => a - b)
@@ -37,7 +27,6 @@ function sum(numbers) {
   return numbers.reduce((total, value) => total + value, 0)
 }
 
-/** Extracts the model name from a list of runs, or 'unknown'. */
 export function modelOf(rows) {
   for (const row of rows) {
     if (row.model) return row.model
@@ -45,7 +34,6 @@ export function modelOf(rows) {
   return 'unknown'
 }
 
-/** Extracts the profile from a list of runs, or null. */
 export function profileOf(rows) {
   for (const row of rows) {
     if (row.profile) return row.profile
@@ -53,7 +41,6 @@ export function profileOf(rows) {
   return null
 }
 
-/** Checks whether two sets of runs share the exact same model and profile. */
 export function sameModelAndProfile(current, baseline) {
   const modelA = modelOf(current)
   const modelB = modelOf(baseline)
@@ -65,7 +52,6 @@ export function sameModelAndProfile(current, baseline) {
   return JSON.stringify(profileA) === JSON.stringify(profileB)
 }
 
-/** Aggregates one group of runs. */
 export function summarize(rows) {
   const passes = rows.filter((row) => row.passed).length
   const perStepDecide = rows
@@ -87,7 +73,6 @@ export function summarize(rows) {
   }
 }
 
-/** Per-task summaries in the order the tasks first appear, plus the overall summary. */
 export function aggregate(rows) {
   const order = []
   const byTask = new Map()
@@ -104,11 +89,6 @@ export function aggregate(rows) {
   }
 }
 
-/**
- * Where the model's own claim and the check differ. For a task that should succeed, `self_reported_success`
- * is compared with `check_passed`. For a task that should fail, `check_passed` only means nothing bad
- * happened, so what is listed is the model claiming success on it.
- */
 export function disagreements(rows) {
   const ordinary = rows.filter((row) => row.expect !== 'failure')
   return {
@@ -124,11 +104,6 @@ export function disagreements(rows) {
   }
 }
 
-/**
- * The gate. `current` and `baseline` are lists of runs. PASS when the success rate is not lower than the
- * baseline's by more than one run's worth (1 / the current number of runs) and the median task duration is
- * not more than 10% higher. With this few repeats it is indicative, not a statistical test.
- */
 export function gate(current, baseline) {
   if (!sameModelAndProfile(current, baseline)) {
     return {
@@ -144,14 +119,12 @@ export function gate(current, baseline) {
     return { verdict: 'FAIL', reasons: ['one of the two result files has no runs'], now, before }
   }
   const reasons = []
-  // passes/runs >= basePasses/baseRuns - 1/runs, kept in integers: passes * baseRuns >= basePasses * runs - baseRuns
   if (now.passes * before.runs < before.passes * now.runs - before.runs) {
     const lost = (before.rate - now.rate) * 100
     reasons.push(
       `success rate ${pct(now.rate)} is lower than the baseline's ${pct(before.rate)} by more than one run's worth (${lost.toFixed(1)} points, one run is ${(100 / now.runs).toFixed(1)} points)`,
     )
   }
-  // median > baseline * 1.10, in integers: median * 100 > baseline * (100 + 10)
   if (
     before.medianDuration !== null &&
     now.medianDuration * 100 > before.medianDuration * (100 + MAX_SLOWER_PERCENT)
@@ -164,18 +137,8 @@ export function gate(current, baseline) {
   return { verdict: reasons.length === 0 ? 'PASS' : 'FAIL', reasons, now, before }
 }
 
-/** The words a run's `verdict` can hold, in the order the matrix lists them. */
 export const VERDICTS = ['verified', 'contradicted', 'unsure', 'error', 'skipped', 'timeout']
 
-/**
- * The independent check against the machine's checkers. Only runs that have a verdict and should
- * succeed count (a task that should fail has no "check passed" to compare with). Returns the confusion
- * matrix (verdict by `check_passed`) and four numbers:
- *  - agreement among decisive verdicts: (verified and the check passed, or contradicted and it failed) over verified plus contradicted;
- *  - false contradictions: contradicted while the check passed;
- *  - missed failures: verified while the check failed;
- *  - unsure rate: unsure over verified plus contradicted plus unsure (runs that were really checked).
- */
 export function verifierStats(rows) {
   const counted = rows.filter(
     (row) => row.verdict !== undefined && row.verdict !== null && row.expect !== 'failure',
@@ -201,17 +164,12 @@ export function verifierStats(rows) {
   }
 }
 
-/** Which check modes a file's runs were made in (a file from before the verifier has none: that is `off`). */
 export function modesOf(rows) {
   return [...new Set(rows.map((row) => row.verify_mode ?? 'off'))].sort((a, b) =>
     a.localeCompare(b),
   )
 }
 
-/**
- * What the check cost in time: the median task duration and median steps now against the baseline.
- * Blocking mode's check happens inside the task, so it is in `duration_ms`; a background check is not.
- */
 export function overhead(current, baseline) {
   const now = summarize(current)
   const before = summarize(baseline)
@@ -269,7 +227,6 @@ function runList(rows) {
   )
 }
 
-/** The whole report as Markdown. */
 export function render(current, baseline) {
   const now = aggregate(current)
   const base = baseline ? aggregate(baseline) : null

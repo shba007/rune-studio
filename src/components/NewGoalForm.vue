@@ -53,7 +53,6 @@ const field =
   'min-w-0 rounded-rune-tile bg-rune-sunken px-rune-2 font-rune-reading text-rune-body text-rune-ink placeholder:text-rune-text-3 [color-scheme:dark]'
 
 function toggle(id: string, on: boolean) {
-  // Selecting a sub-domain explicitly accepts its displayed parent domain.
   if (on && !domain.value && effective.value) domain.value = effective.value.id
   picked.value = on ? [...new Set([...picked.value, id])] : picked.value.filter((x) => x !== id)
 }

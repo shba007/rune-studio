@@ -76,9 +76,7 @@ onMounted(async () => {
       const off = await listen(name, () => void scheduleRefresh())
       if (disposed) off()
       else unlisten.push(off)
-    } catch {
-      /* Manual refresh remains available. */
-    }
+    } catch {}
   }
 })
 onBeforeUnmount(() => {

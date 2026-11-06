@@ -1,4 +1,3 @@
-//! Bounded, user-selected Manual context gathering. Models never select or skip for the user.
 use crate::{
     goal_domains::{Domain, SubDomainSelection},
     life::DataClass,

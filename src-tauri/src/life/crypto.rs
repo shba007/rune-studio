@@ -34,7 +34,6 @@ pub struct LifeCrypto {
 }
 
 impl LifeCrypto {
-    /// Create a crypto handler from an explicit 32-byte key (used for tests or memory instances).
     pub fn from_key(key: [u8; 32], key_id: impl Into<String>) -> Self {
         let cipher = Aes256Gcm::new_from_slice(&key).expect("32-byte key is valid for AES-256");
         Self {
@@ -43,14 +42,12 @@ impl LifeCrypto {
         }
     }
 
-    /// Generate an in-memory random instance (for tests and temporary stores).
     pub fn in_memory_random() -> Self {
         let mut key_bytes = [0u8; 32];
         getrandom::fill(&mut key_bytes).expect("OS random generation should succeed");
         Self::from_key(key_bytes, "in-memory-test-key")
     }
 
-    /// Load or create the life encryption key in the OS keyring.
     pub fn from_keyring_or_create() -> Result<Self, CryptoError> {
         let entry = crate::credentials::Entry::new(KEYRING_SERVICE, KEYRING_LIFE_USER)
             .map_err(|e| CryptoError::Keyring(e.to_string()))?;
@@ -73,7 +70,6 @@ impl LifeCrypto {
         }
     }
 
-    /// Attempt to load the key without creating a new one (detecting key loss).
     pub fn from_keyring_existing() -> Result<Self, CryptoError> {
         let entry = crate::credentials::Entry::new(KEYRING_SERVICE, KEYRING_LIFE_USER)
             .map_err(|e| CryptoError::Keyring(e.to_string()))?;
@@ -90,7 +86,6 @@ impl LifeCrypto {
         }
     }
 
-    /// Delete the key from the OS keyring (for fresh resets).
     pub fn delete_keyring_key() -> Result<(), CryptoError> {
         let entry = crate::credentials::Entry::new(KEYRING_SERVICE, KEYRING_LIFE_USER)
             .map_err(|e| CryptoError::Keyring(e.to_string()))?;
@@ -104,7 +99,6 @@ impl LifeCrypto {
         &self.key_id
     }
 
-    /// Encrypt plaintext into an authenticated `enc:v1:<base64>` envelope.
     pub fn encrypt(&self, plaintext: &str) -> Result<String, CryptoError> {
         let mut nonce_bytes = [0u8; NONCE_LEN];
         getrandom::fill(&mut nonce_bytes).map_err(|e| CryptoError::Random(e.to_string()))?;
@@ -123,7 +117,6 @@ impl LifeCrypto {
         Ok(format!("{ENCRYPTED_PREFIX}{b64}"))
     }
 
-    /// Decrypt an authenticated `enc:v1:<base64>` envelope, or return non-encrypted strings as is.
     pub fn decrypt(&self, input: &str) -> Result<String, CryptoError> {
         if !input.starts_with(ENCRYPTED_PREFIX) {
             return Ok(input.to_string());
@@ -151,7 +144,6 @@ impl LifeCrypto {
         String::from_utf8(decrypted_bytes).map_err(|_| CryptoError::InvalidUtf8)
     }
 
-    /// Check if a string is in encrypted envelope format.
     pub fn is_encrypted(text: &str) -> bool {
         text.starts_with(ENCRYPTED_PREFIX)
     }
