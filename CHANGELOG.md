@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.9.0
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.8.0...v0.9.0)
+
+### 🚀 Enhancements
+
+- Implement runeloader component and integrate it into taskboard and playgroundloading ([a9b6dc4](https://github.com/shba007/rune-studio/commit/a9b6dc4))
+
+### 💅 Refactors
+
+- Onboarding and model download components ([b651df9](https://github.com/shba007/rune-studio/commit/b651df9))
+- Remove redundant comments and improve code clarity across multiple files ([fdb7c96](https://github.com/shba007/rune-studio/commit/fdb7c96))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+
 ## v0.8.0
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.7.0...v0.8.0)
