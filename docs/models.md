@@ -111,7 +111,7 @@ When running multiple models on a single-GPU server, switching roles triggers a 
 - **Trace Separation**: Call latency in `trace.sqlite3` records `swap_ms` separately from inference `decide_ms`.
 - **First Call Allowance**: Initial calls after idle apply `first_call_idle_allowance_secs` (default 30 s) to prevent premature client timeouts while a model is loading into VRAM.
 - **Optional Role Skipping**: When `skip_swap_for_optional_roles` is enabled (default `true`), optional roles (`decision`, `verifier`) skip execution if their model is not resident, avoiding unnecessary 7–16 second swap stalls.
-- **Served Model Tracking**: Every API response records the actual `served_model`. Mismatches between requested and served models produce a warning and are highlighted in Flight Player's API tab.
+- **Served Model Tracking**: Every API response records the actual `served_model`. Mismatches between requested and served models produce a warning and are highlighted in Preview's API tab.
 
 ---
 

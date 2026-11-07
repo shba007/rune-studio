@@ -246,8 +246,8 @@ pub fn parse(name: &str, arguments: &Value) -> Result<Decision, String> {
         }
         name if name.starts_with("kit__") => {
             let exact = name.strip_prefix("kit__").unwrap_or("");
-            if !crate::kit::approved_identity(exact) {
-                return Err("Unapproved Kit tool".into());
+            if exact.is_empty() || exact.len() > 256 || exact.chars().any(char::is_control) {
+                return Err("Invalid Kit tool identity".into());
             }
             Action::External {
                 name: exact.into(),

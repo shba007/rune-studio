@@ -29,7 +29,7 @@ const idle: ScreenRecording = {
 it('requires a selected target, supports save/discard, and presents the completed file', async () => {
   harness.invoke.mockImplementation(async (command: string) => {
     if (command === 'screen_recording_state') return idle
-    if (command === 'screen_insight_targets')
+    if (command === 'visual_analysis_targets')
       return [{ target: { kind: 'window', id: 42 }, label: 'Window — Safe fixture' }]
     if (command === 'start_screen_recording') return { ...idle, id: 1, phase: 'recording' }
     return null
@@ -70,7 +70,7 @@ it('refresh closes the target list, shows progress, and clears a stale selection
   let calls = 0
   harness.invoke.mockImplementation(async (command: string) => {
     if (command === 'screen_recording_state') return idle
-    if (command === 'screen_insight_targets') {
+    if (command === 'visual_analysis_targets') {
       calls++
       if (calls === 1) return [{ target: { kind: 'window', id: 42 }, label: 'Window — Notepad' }]
       return new Promise((resolve) => {

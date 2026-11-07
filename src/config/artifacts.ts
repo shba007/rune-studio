@@ -1,4 +1,4 @@
-import type { FlightRun } from '@/config/flight'
+import type { PreviewRun } from '@/config/preview'
 
 export function timingText(milliseconds: number): string {
   const ms = Number.isFinite(milliseconds) ? Math.max(0, milliseconds) : 0
@@ -17,7 +17,7 @@ export function durationText(totalSeconds: number): string {
   return minutes % 60 === 0 ? `${hours} h` : `${hours} h ${minutes % 60} min`
 }
 
-export function lengthText(run: Pick<FlightRun, 'startedUtc' | 'endedUtc'>): string {
+export function lengthText(run: Pick<PreviewRun, 'startedUtc' | 'endedUtc'>): string {
   const start = run.startedUtc ? Date.parse(run.startedUtc) : Number.NaN
   const end = run.endedUtc ? Date.parse(run.endedUtc) : Number.NaN
   if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return ''

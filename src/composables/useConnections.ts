@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import type { BackendStatus } from '@/types/protocol'
-import { problemText } from './useFlight'
+import { problemText } from './usePreview'
 
 export interface ConnectionView {
   id: string
@@ -116,12 +116,6 @@ export function useConnections() {
     check,
     save: (edit: ConnectionEdit) =>
       change('connections_save', { ...edit, key: edit.key.trim() || null }),
-    saveModels: (
-      id: string,
-      selectedModels: string[],
-      additionalModels: string[],
-      outputLimit: number | null,
-    ) => change('connections_models_save', { id, selectedModels, additionalModels, outputLimit }),
     activate: (id: string) => change('connections_activate', { id }),
     remove: (id: string) => change('connections_delete', { id }),
   }

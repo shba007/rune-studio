@@ -4,17 +4,17 @@ import { useIntersectionObserver } from '@vueuse/core'
 import { ref, useTemplateRef } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 
-import { problemText, useFlight } from '@/composables/useFlight'
+import { problemText, usePreview } from '@/composables/usePreview'
 import { lengthText, toneOf } from '@/config/artifacts'
-import type { FlightRun } from '@/config/flight'
+import type { PreviewRun } from '@/config/preview'
 
 import AppIcon from './AppIcon.vue'
 import WhenText from './WhenText.vue'
 
-const props = defineProps<{ run: FlightRun; deleting?: boolean; deleteDisabled?: boolean }>()
+const props = defineProps<{ run: PreviewRun; deleting?: boolean; deleteDisabled?: boolean }>()
 defineEmits<{ open: []; remove: [] }>()
 
-const flight = useFlight()
+const preview = usePreview()
 const card = useTemplateRef<HTMLElement>('card')
 const picture = ref<string | null>(null)
 const failed = ref(false)
@@ -25,7 +25,7 @@ async function copyPrompt() {
   copying.value = true
   notice.value = null
   try {
-    const prompt = await invoke<string>('flight_original_prompt', { id: props.run.id })
+    const prompt = await invoke<string>('preview_original_prompt', { id: props.run.id })
     await navigator.clipboard.writeText(prompt)
     notice.value = 'Prompt copied'
   } catch (error) {
@@ -38,7 +38,7 @@ async function copyPrompt() {
 const { stop } = useIntersectionObserver(card, async ([entry]) => {
   if (!entry?.isIntersecting) return
   stop()
-  picture.value = await flight.fileOf(props.run.thumb, props.run.thumbRun ?? props.run.id)
+  picture.value = await preview.fileOf(props.run.thumb, props.run.thumbRun ?? props.run.id)
   failed.value = picture.value === null
 })
 

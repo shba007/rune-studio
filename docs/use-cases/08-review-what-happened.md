@@ -42,4 +42,4 @@ Hiding secrets, export and delete, automatic post-mortems.
 
 ## Features used
 
-Session folders, the SQLite trace, the command-line tool, the Flight Player.
+Session folders, the SQLite trace, the command-line tool, the Preview.

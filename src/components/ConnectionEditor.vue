@@ -7,14 +7,13 @@ const emit = defineEmits<{ cancel: []; save: [edit: ConnectionEdit] }>()
 const name = ref(props.connection?.name ?? '')
 const baseUrl = ref(props.connection?.baseUrl ?? '')
 const key = ref('')
-const clearKey = ref(false)
 function submit() {
   emit('save', {
     id: props.connection?.id ?? null,
     name: name.value,
     baseUrl: baseUrl.value,
     key: key.value,
-    clearKey: clearKey.value,
+    clearKey: false,
   })
 }
 </script>
@@ -53,32 +52,20 @@ function submit() {
         <span class="text-rune-heading text-rune-text-2">{{
           connection
             ? 'Leave blank to keep the current key.'
-            : 'Optional. Stored in the system keyring.'
+            : 'Required. Stored in the system keyring.'
         }}</span
         ><input
           v-model="key"
           type="password"
           autocomplete="off"
-          :disabled="clearKey"
+          :required="!connection?.hasApiKey"
           class="rounded-rune-tile bg-rune-surface p-3 text-rune-ink"
       /></label>
       <p
-        v-if="
-          connection?.hasApiKey && baseUrl.trim() !== connection.baseUrl && !clearKey && !key.trim()
-        "
+        v-if="connection?.hasApiKey && baseUrl.trim() !== connection.baseUrl && !key.trim()"
         class="m-0 text-rune-heading text-rune-text-2"
       >
         Saving will use the current API key with the new address.
-      </p>
-      <label v-if="connection?.hasApiKey" class="flex items-center gap-2 text-rune-text-2"
-        ><input v-model="clearKey" type="checkbox" :disabled="!!key.trim()" /> Remove the stored
-        key</label
-      >
-      <p
-        v-if="connection?.id === 'legacy' && clearKey"
-        class="m-0 text-rune-heading text-rune-text-2"
-      >
-        A separately configured RUNE_API_KEY environment value can still apply to this connection.
       </p>
       <div class="flex flex-wrap gap-3 pt-2">
         <RuneButton variant="primary" type="submit">

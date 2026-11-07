@@ -69,6 +69,7 @@ pub async fn discover_classification(
     model: &str,
     embedded_infer: bool,
 ) -> Result<ModelProfile, String> {
+    crate::infer_catalog::verify_infer(base, key).await?;
     let http = local_client(base)?;
     let mut request = http.get(format!("{}/v1/models", base.trim_end_matches('/')));
     if let Some(key) = key {
@@ -134,6 +135,7 @@ pub async fn discover_with_capabilities(
     key: Option<&str>,
     model: &str,
 ) -> Result<(ModelProfile, ModelCapabilities), String> {
+    crate::infer_catalog::verify_infer(base, key).await?;
     let mut request = http
         .get(format!("{}/v1/models", base.trim_end_matches('/')))
         .timeout(std::time::Duration::from_secs(4));

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { FlightRun } from '@/config/flight'
+import type { PreviewRun } from '@/config/preview'
 import RuneDot from './RuneDot.vue'
 import TaskPreview from './TaskPreview.vue'
 
@@ -8,7 +8,7 @@ withDefaults(
     title: string
     meta?: string
     state?: 'idle' | 'ok' | 'warn' | 'down' | 'busy'
-    run?: FlightRun | null
+    run?: PreviewRun | null
     progress?: number | null
     selected?: boolean
   }>(),

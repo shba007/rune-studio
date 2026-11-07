@@ -32,8 +32,8 @@ beforeEach(() => {
 
 async function show(failure = false) {
   invoke.mockImplementation(async (command) => {
-    if (command === 'flight_runs') return rows
-    if (command === 'flight_delete' && failure) throw 'Deletion refused: finish this session first'
+    if (command === 'preview_runs') return rows
+    if (command === 'preview_delete' && failure) throw 'Deletion refused: finish this session first'
     return null
   })
   const wrapper = mount(TaskHistory, { props: { agent: { openReview } as unknown as Agent } })
@@ -57,7 +57,7 @@ describe('task history', () => {
     const wrapper = await show()
     await wrapper.findAll('button[aria-label="Delete task"]')[0]!.trigger('click')
     await flushPromises()
-    expect(invoke).toHaveBeenCalledWith('flight_delete', { id: '0' })
+    expect(invoke).toHaveBeenCalledWith('preview_delete', { id: '0' })
     expect(wrapper.findAll('[data-testid="artifact"]')).toHaveLength(1)
     expect(wrapper.text()).toContain('Second session')
     expect(openReview).not.toHaveBeenCalled()

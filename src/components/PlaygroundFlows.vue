@@ -29,7 +29,7 @@ watch(
 const flowComponents: Record<string, Component> = {
   'portfolio-studio': PlaygroundPortfolioFlow,
   'image-voice': PlaygroundImageVoiceFlow,
-  'screen-insight': PlaygroundVisualAnalysisFlow,
+  'visual-analysis': PlaygroundVisualAnalysisFlow,
 }
 </script>
 

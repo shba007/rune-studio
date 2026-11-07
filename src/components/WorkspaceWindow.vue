@@ -11,7 +11,7 @@ import TaskHistory from './TaskHistory.vue'
 import { useNativeBlur } from '@/composables/useNativeBlur'
 import { useSectionHistory } from '@/composables/useSectionHistory'
 import TitleBar from './TitleBar.vue'
-import FlightPlayer from './FlightPlayer.vue'
+import PreviewPlayer from './PreviewPlayer.vue'
 import DecisionInbox from './DecisionInbox.vue'
 import GoalsTable from './GoalsTable.vue'
 import LifeGraph from './LifeGraph.vue'
@@ -30,7 +30,7 @@ import NewGoalForm from './NewGoalForm.vue'
 import LifeSetup from './LifeSetup.vue'
 import type { IntakeEntry } from '@/types/decisions'
 import type { WorkspaceTask } from '@/types/workspace'
-import type { FlightRun } from '@/config/flight'
+import type { PreviewRun } from '@/config/preview'
 
 type Section = Exclude<KnowledgeSection, 'overview'>
 const resolveSection = (value: string | null | undefined): Section | null => {
@@ -116,7 +116,7 @@ const creation = ref<{
   kind: 'goal' | 'task'
   parent?: string | null
   task?: WorkspaceTask
-  run?: FlightRun
+  run?: PreviewRun
 } | null>(null)
 function openGoal(id: string) {
   section.value = 'goals'
@@ -229,7 +229,7 @@ onBeforeUnmount(() => {
       @forward="((previewTask = null), history.forward())"
       @select="navigate($event as KnowledgeSection)"
     />
-    <FlightPlayer
+    <PreviewPlayer
       v-if="previewTask"
       :key="previewTask"
       embedded

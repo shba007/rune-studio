@@ -1,10 +1,10 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it } from 'vite-plus/test'
 
-import { segments, stepStarts } from '@/config/flight'
+import { segments, stepStarts } from '@/config/preview'
 
-import FlightTimeline from './FlightTimeline.vue'
-import { START, makeStep, stubResizeObserver } from './flightTestKit'
+import PreviewTimeline from './PreviewTimeline.vue'
+import { START, makeStep, stubResizeObserver } from './previewTestKit'
 
 beforeEach(() => stubResizeObserver(800, 80))
 
@@ -25,9 +25,9 @@ function props(count: number, extra: Record<string, unknown> = {}) {
   }
 }
 
-describe('FlightTimeline', () => {
+describe('PreviewTimeline', () => {
   it('draws one segment per step for a short run, and marks the current time', async () => {
-    const wrapper = mount(FlightTimeline, { props: props(6, { timeMs: 2500 }) })
+    const wrapper = mount(PreviewTimeline, { props: props(6, { timeMs: 2500 }) })
     await flushPromises()
     expect(wrapper.findAll('[data-testid="segment"]')).toHaveLength(6)
     expect(wrapper.findAll('[data-step-duration]').map((node) => node.text())).toEqual([
@@ -44,7 +44,7 @@ describe('FlightTimeline', () => {
   })
 
   it('draws only the segments in view when a long run is zoomed in', async () => {
-    const wrapper = mount(FlightTimeline, { props: props(200) })
+    const wrapper = mount(PreviewTimeline, { props: props(200) })
     await flushPromises()
     const track = wrapper.find('[data-testid="track"]')
     for (let notch = 0; notch < 12; notch++) await track.trigger('wheel', { deltaY: -100 })
@@ -54,7 +54,7 @@ describe('FlightTimeline', () => {
   })
 
   it('seeks when the track is clicked', async () => {
-    const wrapper = mount(FlightTimeline, { props: props(4) })
+    const wrapper = mount(PreviewTimeline, { props: props(4) })
     await flushPromises()
     const track = wrapper.find('[data-testid="track"]')
     ;(track.element as HTMLElement).getBoundingClientRect = () =>
@@ -66,7 +66,7 @@ describe('FlightTimeline', () => {
   })
 
   it('marks a retried step, draws event markers and shows errors in red only', async () => {
-    const wrapper = mount(FlightTimeline, {
+    const wrapper = mount(PreviewTimeline, {
       props: props(4, {
         retried: new Set([1]),
         events: [
@@ -84,7 +84,7 @@ describe('FlightTimeline', () => {
   })
   it('ignores a segment without a corresponding step', async () => {
     const input = props(2)
-    const wrapper = mount(FlightTimeline, { props: { ...input, steps: input.steps.slice(0, 1) } })
+    const wrapper = mount(PreviewTimeline, { props: { ...input, steps: input.steps.slice(0, 1) } })
     await flushPromises()
     expect(wrapper.findAll('[data-testid="segment"]')).toHaveLength(1)
   })

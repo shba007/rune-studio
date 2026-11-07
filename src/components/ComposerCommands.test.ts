@@ -4,6 +4,7 @@ import { expect, it, vi } from 'vite-plus/test'
 import type { Agent } from '@/composables/useAgent'
 import type { TaskBoardModel } from '@/composables/useTaskBoard'
 import Composer from './Composer.vue'
+import AppIcon from './AppIcon.vue'
 const invoke = vi.hoisted(() => vi.fn<(command: string, args?: unknown) => Promise<string>>())
 vi.mock('@tauri-apps/api/core', () => ({ invoke }))
 
@@ -40,6 +41,20 @@ function show(externalAgent = false, running = false) {
   const wrapper = mount(Composer, { props: { agent, board } })
   return { wrapper, agent, analyzeScreen, openWorkspace, openSettings, openPlayground, submit }
 }
+
+it('keeps the voice button blue and exposes the listening state', async () => {
+  const { wrapper, agent } = show()
+  const button = wrapper.get('button[aria-label="Listen"]')
+  expect(button.classes()).toContain('bg-voice')
+  expect(button.attributes('aria-pressed')).toBe('false')
+  expect(button.findComponent(AppIcon).props('name')).toBe('voice-input')
+  await button.trigger('click')
+  expect(agent.toggleListening).toHaveBeenCalledOnce()
+  agent.state.value = 'listening'
+  await flushPromises()
+  expect(wrapper.get('button[aria-label="Stop listening"]').attributes('aria-pressed')).toBe('true')
+  wrapper.unmount()
+})
 
 it('suggests local commands and opens Goals using keyboard selection without planning a task', async () => {
   const { wrapper, openWorkspace, submit } = show()

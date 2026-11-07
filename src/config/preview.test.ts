@@ -26,8 +26,8 @@ import {
   timeOfStep,
   totalMs,
   visibleRows,
-  type FlightStep,
-} from './flight'
+  type PreviewStep,
+} from './preview'
 
 it('keeps request and background history in API mode while retaining external-agent identity', () => {
   expect(isOutsideAgent('task-request')).toBe(false)
@@ -35,7 +35,7 @@ it('keeps request and background history in API mode while retaining external-ag
   expect(isOutsideAgent('codex')).toBe(true)
 })
 
-function step(n: number, at: string | null, extra: Partial<FlightStep> = {}): FlightStep {
+function step(n: number, at: string | null, extra: Partial<PreviewStep> = {}): PreviewStep {
   return {
     step: n,
     startedUtc: at,
@@ -295,14 +295,14 @@ describe('long lists and events', () => {
 
 describe('the picture and the track', () => {
   it('fits a box inside a space without changing its shape', async () => {
-    const { fitBox } = await import('./flight')
+    const { fitBox } = await import('./preview')
     expect(fitBox(1000, 500, 16 / 9)).toEqual({ width: 888, height: 500 })
     expect(fitBox(400, 900, 16 / 9)).toEqual({ width: 400, height: 225 })
     expect(fitBox(0, 500, 1.5)).toEqual({ width: 0, height: 0 })
   })
 
   it('draws only the segments near the visible part of a long run', async () => {
-    const { visibleSegments, segments: build } = await import('./flight')
+    const { visibleSegments, segments: build } = await import('./preview')
     const starts = Array.from({ length: 200 }, (_, index) => index * 1000)
     const all = build(starts, 200_000)
     const shown = visibleSegments(all, 0.1, 5000, 600)
@@ -313,21 +313,21 @@ describe('the picture and the track', () => {
   })
 
   it('turns a pixel into a time and clamps it', async () => {
-    const { timeAtPixel } = await import('./flight')
+    const { timeAtPixel } = await import('./preview')
     expect(timeAtPixel(100, 300, 0.1, 10_000)).toBe(4000)
     expect(timeAtPixel(-50, 0, 0.1, 10_000)).toBe(0)
     expect(timeAtPixel(5000, 0, 0.1, 10_000)).toBe(10_000)
   })
 
   it('zooms within limits', async () => {
-    const { zoomed, ZOOM_MAX, ZOOM_MIN } = await import('./flight')
+    const { zoomed, ZOOM_MAX, ZOOM_MIN } = await import('./preview')
     expect(zoomed(1, 1)).toBe(ZOOM_MIN)
     expect(zoomed(ZOOM_MAX, -1)).toBe(ZOOM_MAX)
     expect(zoomed(2, -1)).toBeGreaterThan(2)
   })
 
   it('picks icons, finds failures and outside agents', async () => {
-    const { toolIcon, failedStep, isOutsideAgent } = await import('./flight')
+    const { toolIcon, failedStep, isOutsideAgent } = await import('./preview')
     expect(toolIcon('type_text')).toBe('keyboard')
     expect(toolIcon(null)).toBe('scan')
     expect(failedStep(step(1, null, { result: 'failed' }))).toBe(true)
@@ -346,12 +346,12 @@ describe('typed text across the whole record', () => {
   ]
 
   it('collects what was typed, longest first', async () => {
-    const { typedTexts } = await import('./flight')
+    const { typedTexts } = await import('./preview')
     expect(typedTexts(steps)).toEqual(['pass"word', 'hi'])
   })
 
   it('masks it anywhere in a body, escaped or not, until shown', async () => {
-    const { typedTexts, maskTyped } = await import('./flight')
+    const { typedTexts, maskTyped } = await import('./preview')
     const typed = typedTexts(steps)
     const body = '{"history":"typed pass\\"word then hi"}'
     expect(maskTyped(body, typed, false)).not.toContain('pass')
@@ -359,7 +359,7 @@ describe('typed text across the whole record', () => {
   })
 
   it('reads reasoning from a stored reply and lays out JSON', async () => {
-    const { reasoningOf, pretty } = await import('./flight')
+    const { reasoningOf, pretty } = await import('./preview')
     expect(reasoningOf('{"choices":[{"message":{"reasoning_content":"think"}}]}')).toBe('think')
     expect(reasoningOf('{"choices":[{"message":{"content":"x"}}]}')).toBeNull()
     expect(reasoningOf('nope')).toBeNull()

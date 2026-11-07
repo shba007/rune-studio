@@ -32,7 +32,7 @@ eval = []
 embedded-infer = ["dep:rune-infer"]
 
 [dependencies]
-rune-infer = { git = "https://github.com/shba007/rune-infer.git", rev = "745e86380427a9d1bbf6399be7fe8f620724093e", default-features = false, features = [
+rune-infer = { git = "https://github.com/shba007/rune-infer.git", rev = "d5bd9796fce1f74d04b397de967c31252eecc31c", default-features = false, features = [
   "cpu",
 ], optional = true }
 dirs = "7"

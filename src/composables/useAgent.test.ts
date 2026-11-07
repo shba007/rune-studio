@@ -55,6 +55,7 @@ it('shares connectivity between Settings and composer, rejects stale results, an
   const probe = (rev: number, reachable: boolean): BackendProbe => ({
     revision: rev,
     status: {
+      agentModel: 'vision',
       reachable,
       authOk: true,
       missingModels: [],
@@ -123,6 +124,7 @@ it('clears the old endpoint and ignores its late status after settings change', 
     revision,
     baseUrl,
     status: {
+      agentModel: 'vision',
       reachable,
       authOk: true,
       missingModels: [],
@@ -167,6 +169,39 @@ it('clears the old endpoint and ignores its late status after settings change', 
   finishNew(status(3, currentUrl, true))
   await flushPromises()
   expect(agent.health.value.tone).toBe('ok')
+  wrapper.unmount()
+})
+it('does not report an obsolete Studio model when Infer has no Agent role', async () => {
+  harness.invoke.mockImplementation(async (command) => {
+    if (command === 'get_settings') return { externalAgent: false, model: 'stale-local-model' }
+    if (command === 'check_backend')
+      return {
+        revision: 1,
+        status: {
+          reachable: true,
+          authOk: true,
+          agentModel: null,
+          missingModels: [],
+          modelCapabilities: [],
+          latencyMs: 1,
+          error: null,
+        },
+      }
+    return null
+  })
+  let agent!: Agent
+  const wrapper = mount(
+    defineComponent({
+      setup() {
+        agent = useAgent()
+        return () => null
+      },
+    }),
+  )
+  await flushPromises()
+  expect(agent.health.value.tone).toBe('warn')
+  expect(agent.health.value.title).toContain('Configure an Agent model in the Infer catalog')
+  expect(agent.health.value.title).not.toContain('stale-local-model')
   wrapper.unmount()
 })
 it('serializes window resizing and skips superseded and duplicate measurements', async () => {

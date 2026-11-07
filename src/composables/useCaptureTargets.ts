@@ -18,7 +18,7 @@ export function useCaptureTargets(emptyMessage: string) {
     refreshing.value = true
     notice.value = ''
     try {
-      const found = await invoke<unknown>('screen_insight_targets')
+      const found = await invoke<unknown>('visual_analysis_targets')
       targets.value = Array.isArray(found) ? (found as CaptureTargetOption[]) : []
       if (!targets.value.length) notice.value = emptyMessage
       return 'loaded'

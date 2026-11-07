@@ -10,7 +10,7 @@ impl TempDir {
     fn new() -> Self {
         static COUNTER: AtomicU32 = AtomicU32::new(0);
         let dir = std::env::temp_dir().join(format!(
-            "rune-flight-test-{}-{}",
+            "rune-preview-test-{}-{}",
             std::process::id(),
             COUNTER.fetch_add(1, Ordering::Relaxed)
         ));

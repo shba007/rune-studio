@@ -12,6 +12,7 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(4);
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BackendStatus {
+    pub agent_model: Option<String>,
     pub reachable: bool,
     pub auth_ok: bool,
     pub missing_models: Vec<String>,
@@ -26,6 +27,7 @@ pub struct BackendStatus {
 impl BackendStatus {
     fn unreachable(error: String) -> Self {
         Self {
+            agent_model: None,
             reachable: false,
             auth_ok: false,
             missing_models: Vec::new(),
@@ -57,6 +59,9 @@ pub async fn check(
             "Local Infer is not running. Download or select a model, then start it.".into(),
         );
     }
+    if api_key.is_none_or(|key| key.trim().is_empty()) {
+        return BackendStatus::unreachable("An Infer API key is required".into());
+    }
     let base = settings.base_url.trim_end_matches('/');
 
     let started = Instant::now();
@@ -77,6 +82,11 @@ pub async fn check(
         Err(err) => return BackendStatus::unreachable(format!("cannot reach {base}: {err}")),
     }
 
+    let catalog = match crate::infer_catalog::read_roles(&settings.base_url, api_key).await {
+        Ok(catalog) => catalog,
+        Err(error) => return BackendStatus::unreachable(format!("Cannot verify Infer: {error}")),
+    };
+
     let mut request = client
         .get(format!("{base}/v1/models"))
         .timeout(PROBE_TIMEOUT);
@@ -91,6 +101,7 @@ pub async fn check(
     let status = response.status();
     if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
         return BackendStatus {
+            agent_model: None,
             reachable: true,
             auth_ok: false,
             missing_models: Vec::new(),
@@ -103,6 +114,7 @@ pub async fn check(
     }
     if !status.is_success() {
         return BackendStatus {
+            agent_model: None,
             reachable: true,
             auth_ok: true,
             missing_models: Vec::new(),
@@ -117,18 +129,19 @@ pub async fn check(
     let body = response.text().await.unwrap_or_default();
     let models = parse_models_response(&body);
 
-    let missing_models = missing_models(settings, &models);
+    let missing_models = missing_models(&catalog, &models);
 
-    let agent_model = settings.model_for_role(crate::model::role::ModelRole::Agent);
+    let agent_model = crate::infer_catalog::configured_role(&catalog, "agent");
     let model_capabilities = models
         .iter()
-        .find(|m| m.id == agent_model)
+        .find(|m| Some(m.id.as_str()) == agent_model.as_deref())
         .map(|m| m.raw_capabilities.clone())
         .unwrap_or_default();
 
     let models = studio_model_choices(models);
 
     BackendStatus {
+        agent_model,
         reachable: true,
         auth_ok: true,
         missing_models,
@@ -147,20 +160,11 @@ fn studio_model_choices(models: Vec<ModelCapabilities>) -> Vec<ModelCapabilities
         .collect()
 }
 
-fn missing_models(settings: &Settings, models: &[ModelCapabilities]) -> Vec<String> {
-    let mut configured_roles = vec![
-        settings.model_for_role(crate::model::role::ModelRole::Agent),
-        settings.model_for_role(crate::model::role::ModelRole::Verifier),
-        settings.model_for_role(crate::model::role::ModelRole::Analysis),
-        settings.model_for_role(crate::model::role::ModelRole::Voice),
-    ];
-    if settings.fast_checks && settings.decision_url.trim().is_empty() {
-        configured_roles.push(settings.model_for_role(crate::model::role::ModelRole::Decision));
-    }
-    configured_roles
+fn missing_models(catalog: &serde_json::Value, models: &[ModelCapabilities]) -> Vec<String> {
+    ["agent", "verifier", "analysis"]
         .into_iter()
-        .filter(|wanted| !wanted.is_empty() && !models.iter().any(|m| m.id == *wanted))
-        .map(|s| s.to_string())
+        .filter_map(|role| crate::infer_catalog::configured_role(catalog, role))
+        .filter(|wanted| !models.iter().any(|m| m.id == *wanted))
         .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
         .collect()
@@ -193,15 +197,18 @@ mod tests {
         assert!(status.error.unwrap().contains("Download or select a model"));
     }
 
+    #[tokio::test]
+    async fn connection_requires_an_api_key() {
+        let status = check(&reqwest::Client::new(), &Settings::default(), None).await;
+        assert!(!status.reachable);
+        assert!(status.error.unwrap().contains("API key is required"));
+    }
+
     #[test]
-    fn optional_decision_model_is_only_required_when_fast_checks_use_this_server() {
-        let mut settings = Settings::default();
-        let models = vec![ModelCapabilities::unknown(&settings.models.agent)];
-        assert!(missing_models(&settings, &models).is_empty());
-        settings.fast_checks = true;
-        assert_eq!(missing_models(&settings, &models), ["liquid-d1-3b"]);
-        settings.decision_url = "http://127.0.0.1:9999".into();
-        assert!(missing_models(&settings, &models).is_empty());
+    fn decision_model_is_not_required_for_backend_readiness() {
+        let catalog = serde_json::json!({"models":[{"id":"agent"},{"id":"decision"}], "roles":{"agent":"agent", "decision":"decision"}});
+        let models = vec![ModelCapabilities::unknown("agent")];
+        assert!(missing_models(&catalog, &models).is_empty());
     }
 
     fn capabilities_of(json: &str, model: &str) -> Vec<String> {

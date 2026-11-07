@@ -22,7 +22,7 @@ export const FLOWS: FlowDefinition[] = [
     command: '#image to voice',
   },
   {
-    id: 'screen-insight',
+    id: 'visual-analysis',
     name: 'Visual Analysis',
     description: 'Analyze a selected screen, window or image.',
     icon: 'scan',

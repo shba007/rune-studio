@@ -5,12 +5,12 @@ import {
   segments as segmentsOf,
   stepStarts,
   totalMs,
-  type FlightCall,
-  type FlightEvent,
-  type FlightHeader,
-  type FlightRun,
-  type FlightStep,
-} from '@/config/flight'
+  type PreviewCall,
+  type PreviewEvent,
+  type PreviewHeader,
+  type PreviewRun,
+  type PreviewStep,
+} from '@/config/preview'
 import { taskTimeline } from '@/config/taskTimeline'
 
 export function fileUrl(path: string): string {
@@ -23,14 +23,14 @@ export function problemText(error: unknown): string {
   return text.trim() === '' ? 'Something went wrong while reading the record.' : text
 }
 
-export function useFlight() {
-  const runs = ref<FlightRun[]>([])
+export function usePreview() {
+  const runs = ref<PreviewRun[]>([])
   const runsLoaded = ref(false)
   const runId = ref<string | null>(null)
-  const header = shallowRef<FlightHeader | null>(null)
-  const steps = shallowRef<FlightStep[]>([])
-  const events = shallowRef<FlightEvent[]>([])
-  const calls = shallowRef<FlightCall[]>([])
+  const header = shallowRef<PreviewHeader | null>(null)
+  const steps = shallowRef<PreviewStep[]>([])
+  const events = shallowRef<PreviewEvent[]>([])
+  const calls = shallowRef<PreviewCall[]>([])
   const loading = ref(false)
   const problem = ref<string | null>(null)
   const videoUrl = ref<string | null>(null)
@@ -38,15 +38,15 @@ export function useFlight() {
   const history = shallowRef<unknown>(null)
   const timeline = computed(() => taskTimeline(history.value))
   type Media = {
-    head: FlightHeader
-    steps: FlightStep[]
-    events: FlightEvent[]
-    calls: FlightCall[]
+    head: PreviewHeader
+    steps: PreviewStep[]
+    events: PreviewEvent[]
+    calls: PreviewCall[]
     url: string | null
     note: string | null
   }
   let mediaRuns: Media[] = []
-  const mediaHeader = shallowRef<FlightHeader | null>(null)
+  const mediaHeader = shallowRef<PreviewHeader | null>(null)
   const mediaOffset = computed(() =>
     timeline.value && mediaHeader.value
       ? Math.max(0, Date.parse(mediaHeader.value.startedUtc) - timeline.value.origin)
@@ -90,7 +90,7 @@ export function useFlight() {
 
   async function loadRuns(): Promise<void> {
     try {
-      runs.value = await invoke<FlightRun[]>('flight_runs', { limit: 60 })
+      runs.value = await invoke<PreviewRun[]>('preview_runs', { limit: 60 })
       problem.value = null
     } catch (error) {
       runs.value = []
@@ -101,7 +101,7 @@ export function useFlight() {
   }
 
   async function resolveVideo(
-    head: FlightHeader,
+    head: PreviewHeader,
   ): Promise<{ url: string | null; note: string | null }> {
     const video = head.video
     if (!video) {
@@ -115,7 +115,7 @@ export function useFlight() {
     }
     try {
       const url = fileUrl(
-        await invoke<string>('flight_file', { id: head.id, relative: video.file }),
+        await invoke<string>('preview_file', { id: head.id, relative: video.file }),
       )
       return { url, note: null }
     } catch (error) {
@@ -127,7 +127,7 @@ export function useFlight() {
   }
 
   async function remove(id: string): Promise<void> {
-    const warning = await invoke<string | null>('flight_delete', { id })
+    const warning = await invoke<string | null>('preview_delete', { id })
     runs.value = runs.value.filter((run) => run.id !== id)
     problem.value = warning
   }
@@ -144,7 +144,7 @@ export function useFlight() {
     events.value = []
     calls.value = []
     try {
-      const head = await invoke<FlightHeader | null>('flight_run', { id })
+      const head = await invoke<PreviewHeader | null>('preview_run', { id })
       if (runId.value !== id) return
       if (!head) {
         header.value = null
@@ -154,7 +154,7 @@ export function useFlight() {
         problem.value = 'There is no such run in the record.'
         return
       }
-      const records = await invoke<unknown>('flight_task_history', { id })
+      const records = await invoke<unknown>('preview_task_history', { id })
       if (runId.value !== id) return
       history.value = records
       const desktopIds =
@@ -167,17 +167,17 @@ export function useFlight() {
               [...new Set(desktopIds)].map((runId) =>
                 runId === id
                   ? Promise.resolve(head)
-                  : invoke<FlightHeader | null>('flight_run', { id: runId }),
+                  : invoke<PreviewHeader | null>('preview_run', { id: runId }),
               ),
             )
-          ).filter((item): item is FlightHeader => item !== null)
+          ).filter((item): item is PreviewHeader => item !== null)
         : [head]
       const loaded = await Promise.all(
         heads.map(async (mediaHead) => {
           const [stepList, eventList, callList, video] = await Promise.all([
-            invoke<FlightStep[]>('flight_steps', { id: mediaHead.id }),
-            invoke<FlightEvent[]>('flight_events', { id: mediaHead.id }),
-            invoke<FlightCall[]>('flight_calls', { id: mediaHead.id }),
+            invoke<PreviewStep[]>('preview_steps', { id: mediaHead.id }),
+            invoke<PreviewEvent[]>('preview_events', { id: mediaHead.id }),
+            invoke<PreviewCall[]>('preview_calls', { id: mediaHead.id }),
             resolveVideo(mediaHead),
           ])
           return { head: mediaHead, steps: stepList, events: eventList, calls: callList, ...video }
@@ -206,7 +206,7 @@ export function useFlight() {
   ): Promise<string | null> {
     if (!relative || !id) return null
     try {
-      return fileUrl(await invoke<string>('flight_file', { id, relative }))
+      return fileUrl(await invoke<string>('preview_file', { id, relative }))
     } catch {
       return null
     }
@@ -214,7 +214,7 @@ export function useFlight() {
 
   async function bodies(callId: number): Promise<{ request: string; response: string } | null> {
     try {
-      const pair = await invoke<[string, string] | null>('flight_call_body', { callId })
+      const pair = await invoke<[string, string] | null>('preview_call_body', { callId })
       return pair ? { request: pair[0], response: pair[1] } : null
     } catch {
       return null
@@ -224,7 +224,7 @@ export function useFlight() {
   async function reveal(): Promise<string | null> {
     if (!runId.value) return null
     try {
-      await invoke('flight_reveal', { id: mediaHeader.value?.id ?? runId.value })
+      await invoke('preview_reveal', { id: mediaHeader.value?.id ?? runId.value })
       return null
     } catch (error) {
       return problemText(error)
@@ -261,4 +261,4 @@ export function useFlight() {
   }
 }
 
-export type Flight = ReturnType<typeof useFlight>
+export type Preview = ReturnType<typeof usePreview>

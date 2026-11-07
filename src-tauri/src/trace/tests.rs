@@ -53,6 +53,30 @@ fn version_of(path: &std::path::Path) -> i64 {
 }
 
 #[test]
+fn older_and_unversioned_databases_are_preserved_and_not_opened_for_recording() {
+    for version in [0, 8] {
+        let dir = TempDir::new();
+        {
+            let db = Connection::open(dir.db()).unwrap();
+            db.execute_batch(&format!("CREATE TABLE prior_data (value TEXT); INSERT INTO prior_data VALUES ('keep'); PRAGMA user_version = {version};")).unwrap();
+        }
+        let before = std::fs::read(dir.db()).unwrap();
+        let recorder = Recorder::start(&dir.db());
+        recorder.begin_run(run("new", "2026-01-01"));
+        assert!(recorder.tx.is_none());
+        drop(recorder);
+        assert_eq!(std::fs::read(dir.db()).unwrap(), before);
+        assert_eq!(version_of(&dir.db()), version);
+        assert_eq!(list_runs(&dir.db(), 5), Err(StoreError::Older(version)));
+        assert_eq!(
+            crate::preview::delete_record(&dir.db(), "new"),
+            Err(StoreError::Older(version))
+        );
+        assert_eq!(std::fs::read(dir.db()).unwrap(), before);
+    }
+}
+
+#[test]
 fn concurrent_task_runs_do_not_replace_each_other_or_the_desktop() {
     let dir = TempDir::new();
     let recorder = Recorder::start(&dir.db());
@@ -111,10 +135,10 @@ fn request_history_round_trips_all_tasks_and_cancellation_in_revision_order() {
     reopened.flush();
     assert_eq!(task_history(&dir.db(), "translation").unwrap(), history);
     assert!(task_history(&dir.db(), "legacy").unwrap().is_empty());
-    crate::flight::delete_record(&dir.db(), "desktop").unwrap();
+    crate::preview::delete_record(&dir.db(), "desktop").unwrap();
     assert_eq!(task_history(&dir.db(), "calculation").unwrap(), history);
     for id in ["calculation", "translation", "parent"] {
-        crate::flight::delete_record(&dir.db(), id).unwrap();
+        crate::preview::delete_record(&dir.db(), id).unwrap();
     }
     let db = Connection::open(dir.db()).unwrap();
     assert_eq!(
@@ -122,23 +146,6 @@ fn request_history_round_trips_all_tasks_and_cancellation_in_revision_order() {
             .get::<_, i64>(0))
             .unwrap(),
         0
-    );
-}
-
-#[test]
-fn version_eight_migrates_without_changing_legacy_sessions() {
-    let dir = TempDir::new();
-    let db = Connection::open(dir.db()).unwrap();
-    schema::open(&db).unwrap();
-    db.execute_batch("DROP TABLE task_attempts; DROP TABLE task_links; DROP TABLE task_history; PRAGMA user_version=8; INSERT INTO runs(id,task) VALUES('old','keep this');").unwrap();
-    drop(db);
-    let recorder = Recorder::start(&dir.db());
-    recorder.flush();
-    assert_eq!(version_of(&dir.db()), schema::VERSION);
-    assert!(task_history(&dir.db(), "old").unwrap().is_empty());
-    assert_eq!(
-        get_run(&dir.db(), "old").unwrap().unwrap().run.info.task,
-        "keep this"
     );
 }
 
@@ -568,53 +575,6 @@ fn verdict(run_id: &str, mode: &str, result: &str) -> VerdictRecord {
 }
 
 #[test]
-fn a_version_1_database_is_migrated_without_losing_a_run() {
-    let dir = TempDir::new();
-    {
-        let db = Connection::open(dir.db()).unwrap();
-        db.execute_batch(&format!("{} PRAGMA user_version = 1;", schema::CREATE_V1))
-            .unwrap();
-        db.execute("INSERT INTO runs (id, task, source, started_utc, outcome) VALUES ('old', 'open notepad', 'built-in', '2026-10-01T09:00:00Z', 'succeeded')", []).unwrap();
-        db.execute(
-            "INSERT INTO steps (run_id, step, tool, result) VALUES ('old', 1, 'click', 'ok')",
-            [],
-        )
-        .unwrap();
-    }
-    let before = get_run(&dir.db(), "old")
-        .unwrap()
-        .expect("the old run reads");
-    assert_eq!((before.steps.len(), before.verdict.clone()), (1, None));
-    assert_eq!(list_runs(&dir.db(), 5).unwrap()[0].verdict, None);
-
-    let recorder = Recorder::start(&dir.db());
-    recorder.flush();
-    assert_eq!(version_of(&dir.db()), schema::VERSION);
-    assert!(tables_of(&dir.db()).contains(&"verdicts".to_string()));
-    let after = get_run(&dir.db(), "old").unwrap().expect("and still reads");
-    assert_eq!(
-        (
-            after.run.info.task.as_str(),
-            after.steps.len(),
-            after.verdict
-        ),
-        ("open notepad", 1, None),
-        "a run without a verdict reads as before"
-    );
-    recorder.verdict(verdict("old", "background", "verified"));
-    recorder.flush();
-    assert_eq!(
-        get_run(&dir.db(), "old")
-            .unwrap()
-            .unwrap()
-            .verdict
-            .unwrap()
-            .result,
-        "verified"
-    );
-}
-
-#[test]
 fn a_verdict_round_trips_and_shows_in_the_list() {
     let dir = TempDir::new();
     let recorder = Recorder::start(&dir.db());
@@ -727,39 +687,6 @@ fn analysis(id: &str, created: &str) -> AnalysisRecord {
 }
 
 #[test]
-fn a_version_2_database_is_migrated_and_reads_as_having_no_analyses() {
-    let dir = TempDir::new();
-    {
-        let db = Connection::open(dir.db()).unwrap();
-        db.execute_batch(&format!(
-            "{} {} PRAGMA user_version = 2;",
-            schema::CREATE_V1,
-            schema::CREATE_V2
-        ))
-        .unwrap();
-        db.execute("INSERT INTO runs (id, task) VALUES ('old', 'x')", [])
-            .unwrap();
-    }
-    assert_eq!(list_analyses(&dir.db(), 5).unwrap(), vec![]);
-    assert_eq!(get_analysis(&dir.db(), "any").unwrap(), None);
-    let recorder = Recorder::start(&dir.db());
-    recorder.flush();
-    assert_eq!(version_of(&dir.db()), schema::VERSION);
-    assert!(tables_of(&dir.db()).contains(&"analyses".to_string()));
-    assert_eq!(
-        list_runs(&dir.db(), 5).unwrap().len(),
-        1,
-        "the run survives"
-    );
-    recorder.analysis(analysis("a1", "2026-10-19T10:00:00Z"));
-    recorder.flush();
-    assert_eq!(
-        get_analysis(&dir.db(), "a1").unwrap().unwrap().answer,
-        "a settings window"
-    );
-}
-
-#[test]
 fn an_analysis_round_trips_and_the_same_id_replaces_it() {
     let dir = TempDir::new();
     let recorder = Recorder::start(&dir.db());
@@ -836,36 +763,6 @@ fn reflection(id: &str, started: &str, outcome: &str) -> ReflectionRecord {
 }
 
 #[test]
-fn a_version_3_database_is_migrated_to_4_and_reads_as_having_no_reflections() {
-    let dir = TempDir::new();
-    {
-        let db = Connection::open(dir.db()).unwrap();
-        db.execute_batch(&format!(
-            "{} {} {} PRAGMA user_version = 3;",
-            schema::CREATE_V1,
-            schema::CREATE_V2,
-            schema::CREATE_V3
-        ))
-        .unwrap();
-        db.execute("INSERT INTO runs (id, task) VALUES ('old', 'x')", [])
-            .unwrap();
-    }
-    assert_eq!(list_reflections(&dir.db(), 5).unwrap(), vec![]);
-    let recorder = Recorder::start(&dir.db());
-    recorder.flush();
-    assert_eq!(version_of(&dir.db()), schema::VERSION);
-    assert!(tables_of(&dir.db()).contains(&"reflections".to_string()));
-    assert_eq!(
-        list_runs(&dir.db(), 5).unwrap().len(),
-        1,
-        "the run survives"
-    );
-    recorder.reflection(reflection("r1", "2026-10-19T10:00:00Z", "completed"));
-    recorder.flush();
-    assert_eq!(list_reflections(&dir.db(), 5).unwrap().len(), 1);
-}
-
-#[test]
 fn reflections_round_trip_replace_by_id_and_list_newest_first() {
     let dir = TempDir::new();
     let recorder = Recorder::start(&dir.db());
@@ -880,53 +777,6 @@ fn reflections_round_trip_replace_by_id_and_list_newest_first() {
         .collect();
     assert_eq!(shown, [("b", "preempted"), ("a", "preempted")]);
     assert_eq!(list_reflections(&dir.db(), 1).unwrap().len(), 1);
-}
-
-#[test]
-fn a_version_4_database_gains_boxes_rejected_and_old_rows_read_as_zero() {
-    let dir = TempDir::new();
-    {
-        let db = Connection::open(dir.db()).unwrap();
-        db.execute_batch(&format!(
-            "{} {} {} {} PRAGMA user_version = 4;",
-            schema::CREATE_V1,
-            schema::CREATE_V2,
-            schema::CREATE_V3,
-            schema::CREATE_V4
-        ))
-        .unwrap();
-        db.execute("INSERT INTO analyses (id, created_utc, question, status) VALUES ('old', '2026-10-01T00:00:00Z', 'q', 'ok')", []).unwrap();
-    }
-    assert_eq!(
-        get_analysis(&dir.db(), "old")
-            .unwrap()
-            .unwrap()
-            .boxes_rejected,
-        0,
-        "an unmigrated file reads as 0"
-    );
-    let recorder = Recorder::start(&dir.db());
-    recorder.flush();
-    assert_eq!(version_of(&dir.db()), schema::VERSION);
-    assert_eq!(
-        get_analysis(&dir.db(), "old")
-            .unwrap()
-            .unwrap()
-            .boxes_rejected,
-        0
-    );
-    recorder.analysis(AnalysisRecord {
-        boxes_rejected: 3,
-        ..analysis("new", "2026-10-19T10:00:00Z")
-    });
-    recorder.flush();
-    assert_eq!(
-        get_analysis(&dir.db(), "new")
-            .unwrap()
-            .unwrap()
-            .boxes_rejected,
-        3
-    );
 }
 
 fn call(run_id: &str, step: Option<i64>, attempt: i64, outcome: &str) -> CallRecord {
@@ -957,70 +807,6 @@ fn calls_in(path: &std::path::Path, run_id: &str) -> Vec<(i64, String, i64)> {
         .unwrap()
         .map(Result::unwrap)
         .collect()
-}
-
-#[test]
-fn a_version_5_database_gets_calls_and_the_run_counters() {
-    let dir = TempDir::new();
-    {
-        let db = Connection::open(dir.db()).unwrap();
-        db.execute_batch(&format!(
-            "{} {} {} {} {} PRAGMA user_version = 5;",
-            schema::CREATE_V1,
-            schema::CREATE_V2,
-            schema::CREATE_V3,
-            schema::CREATE_V4,
-            schema::CREATE_V5
-        ))
-        .unwrap();
-        db.execute("INSERT INTO runs (id, task, started_utc, ended_utc, outcome) VALUES ('old', 'x', '2026-10-01T09:00:00Z', '2026-10-01T09:01:00Z', 'succeeded')", []).unwrap();
-    }
-    let recorder = Recorder::start(&dir.db());
-    recorder.flush();
-    assert_eq!(version_of(&dir.db()), schema::VERSION);
-    assert!(tables_of(&dir.db()).contains(&"calls".to_string()));
-    let db = Connection::open(dir.db()).unwrap();
-    let old: (Option<i64>, Option<i64>) = db
-        .query_row(
-            "SELECT step_count, duration_ms FROM runs WHERE id = 'old'",
-            [],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .unwrap();
-    assert_eq!(old, (None, None), "older runs are not backfilled");
-}
-
-#[test]
-fn a_version_6_database_gains_served_model_and_swap_ms() {
-    let dir = TempDir::new();
-    {
-        let db = Connection::open(dir.db()).unwrap();
-        db.execute_batch(&format!(
-            "{}; {}; {}; {}; {}; {}; PRAGMA user_version = 6;",
-            schema::CREATE_V1,
-            schema::CREATE_V2,
-            schema::CREATE_V3,
-            schema::CREATE_V4,
-            schema::CREATE_V5,
-            schema::CREATE_V6
-        ))
-        .unwrap();
-        db.execute("INSERT INTO runs (id, task, started_utc) VALUES ('r6', 'task', '2026-10-01T09:00:00Z')", []).unwrap();
-        db.execute("INSERT INTO steps (run_id, step, started_utc) VALUES ('r6', 1, '2026-10-01T09:00:01Z')", []).unwrap();
-        db.execute("INSERT INTO calls (run_id, step, kind, attempt, model) VALUES ('r6', 1, 'decide', 1, 'gemma-4-12b-it')", []).unwrap();
-    }
-    let recorder = Recorder::start(&dir.db());
-    recorder.flush();
-    assert_eq!(version_of(&dir.db()), schema::VERSION);
-    let run = get_run(&dir.db(), "r6")
-        .unwrap()
-        .expect("reads migrated run");
-    assert_eq!(run.steps.len(), 1);
-    assert_eq!(run.steps[0].served_model, None);
-    let calls = crate::flight::calls(&dir.db(), "r6", None).unwrap();
-    assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].served_model, None);
-    assert_eq!(calls[0].swap_ms, None);
 }
 
 #[test]
@@ -1162,33 +948,4 @@ fn the_pointer_is_added_to_the_arguments_and_nothing_else_changes() {
     assert_eq!(with_pointer(None, None), None);
     let bare = with_pointer(None, Some([1.0, 2.0])).unwrap();
     assert!(bare.contains("_pointer"));
-}
-
-#[test]
-fn version_7_calls_gain_locality_and_round_trip() {
-    let dir = TempDir::new();
-    {
-        let db = Connection::open(dir.db()).unwrap();
-        assert_eq!(schema::open(&db).unwrap(), schema::Opened::Ready);
-        db.execute_batch("DROP TABLE task_attempts; ALTER TABLE calls DROP COLUMN locality; PRAGMA user_version = 7;")
-            .unwrap();
-        db.execute("INSERT INTO runs (id, task) VALUES ('r7', 'task')", [])
-            .unwrap();
-        db.execute(
-            "INSERT INTO calls (run_id, model, served_model) VALUES ('r7','role','canonical')",
-            [],
-        )
-        .unwrap();
-    }
-    let recorder = Recorder::start(&dir.db());
-    let mut record = call("r7", None, 1, "ok");
-    record.locality = Some("local".into());
-    record.served_model = Some("canonical".into());
-    recorder.call(record);
-    recorder.flush();
-    let calls = crate::flight::calls(&dir.db(), "r7", None).unwrap();
-    assert_eq!(version_of(&dir.db()), schema::VERSION);
-    assert_eq!(calls[0].locality, None);
-    assert_eq!(calls[0].served_model.as_deref(), Some("canonical"));
-    assert_eq!(calls[1].locality.as_deref(), Some("local"));
 }

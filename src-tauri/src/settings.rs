@@ -8,8 +8,7 @@ use tauri::{AppHandle, Manager};
 use crate::{error::AppResult, hotkeys, model::role::ModelRole};
 
 pub(crate) const KEYRING_SERVICE: &str = "dev.shirsendu-bairagi.rune-studio";
-const KEYRING_USER: &str = "rune-infer-api-key";
-pub const LEGACY_CONNECTION: &str = "legacy";
+pub const DEFAULT_CONNECTION: &str = "default";
 const DEFAULT_AGENT_MODEL: &str = "qwen3.5-4b-q4";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -27,12 +26,12 @@ pub struct Connection {
     #[serde(default)]
     pub output_limit: Option<u32>,
 }
-fn legacy_connection(base_url: &str) -> Connection {
+fn default_connection(base_url: &str) -> Connection {
     Connection {
-        id: LEGACY_CONNECTION.into(),
+        id: DEFAULT_CONNECTION.into(),
         name: "Model connection".into(),
         base_url: base_url.into(),
-        credential_ref: Some(LEGACY_CONNECTION.into()),
+        credential_ref: None,
         selected_models: None,
         additional_models: Vec::new(),
         output_limit: None,
@@ -172,7 +171,6 @@ struct SettingsDeHelper {
     pub connections: Option<Vec<Connection>>,
     pub active_connection_id: Option<String>,
     pub connections_revision: u64,
-    pub model: Option<String>,
     pub models: Option<ModelRoles>,
     pub max_steps: u32,
     pub toggle_hotkey: String,
@@ -184,7 +182,6 @@ struct SettingsDeHelper {
     pub input_classification: InputClassification,
     pub developer_mode: bool,
     pub fast_checks: bool,
-    pub decision_model: Option<String>,
     pub decision_url: String,
     pub archive_keep_days: u32,
     pub verify_mode: VerifyMode,
@@ -212,7 +209,6 @@ impl Default for SettingsDeHelper {
             connections: None,
             active_connection_id: None,
             connections_revision: 0,
-            model: None,
             models: None,
             max_steps: def.max_steps,
             toggle_hotkey: def.toggle_hotkey,
@@ -224,7 +220,6 @@ impl Default for SettingsDeHelper {
             input_classification: def.input_classification,
             developer_mode: def.developer_mode,
             fast_checks: def.fast_checks,
-            decision_model: None,
             decision_url: def.decision_url,
             archive_keep_days: def.archive_keep_days,
             verify_mode: def.verify_mode,
@@ -252,33 +247,17 @@ impl<'de> Deserialize<'de> for Settings {
         D: serde::Deserializer<'de>,
     {
         let helper = SettingsDeHelper::deserialize(deserializer)?;
-        let no_roles = helper.models.is_none();
-        let mut models = helper.models.unwrap_or_default();
-        if let Some(ref m) = helper.model
-            && !m.is_empty()
-            && (no_roles || models.agent.is_empty() || models.agent == "gemma-4-12b-it")
-        {
-            models.agent = m.clone();
-        }
-        if let Some(ref d) = helper.decision_model
-            && !d.is_empty()
-            && (models.decision.is_empty() || models.decision == "liquid-d1-3b")
-        {
-            models.decision = d.clone();
-        }
+        let models = helper.models.ok_or_else(|| {
+            serde::de::Error::custom("Unsupported settings format: missing model roles")
+        })?;
         let synced_model = models.agent.clone();
         let synced_decision = models.decision.clone();
-        let mut connections = helper
-            .connections
-            .unwrap_or_else(|| vec![legacy_connection(&helper.base_url)]);
-        let active_connection_id = helper
-            .active_connection_id
-            .unwrap_or_else(|| LEGACY_CONNECTION.into());
-        for connection in &mut connections {
-            if connection.id == LEGACY_CONNECTION && connection.credential_ref.is_none() {
-                connection.credential_ref = Some(LEGACY_CONNECTION.into());
-            }
-        }
+        let mut connections = helper.connections.ok_or_else(|| {
+            serde::de::Error::custom("Unsupported settings format: missing connections")
+        })?;
+        let active_connection_id = helper.active_connection_id.ok_or_else(|| {
+            serde::de::Error::custom("Unsupported settings format: missing active connection")
+        })?;
         if connections.is_empty()
             || connections.len() > 100
             || connections.iter().any(|c| {
@@ -291,11 +270,9 @@ impl<'de> Deserialize<'de> for Settings {
                     || c.selected_models
                         .as_ref()
                         .is_some_and(|ids| ids.len() > 1000)
-                    || c.credential_ref.as_ref().is_some_and(|key| {
-                        !valid_connection_id(key)
-                            || (c.id != LEGACY_CONNECTION
-                                && (key == LEGACY_CONNECTION || key == "legacy-env"))
-                    })
+                    || c.credential_ref
+                        .as_ref()
+                        .is_some_and(|key| !valid_connection_id(key))
             })
             || connections
                 .iter()
@@ -331,14 +308,7 @@ impl<'de> Deserialize<'de> for Settings {
             models,
             max_steps: helper.max_steps,
             toggle_hotkey: helper.toggle_hotkey,
-            stop_hotkey: if matches!(
-                helper.stop_hotkey.to_ascii_lowercase().as_str(),
-                "ctrl+alt+escape" | "ctrl+alt+esc"
-            ) {
-                hotkeys::DEFAULT_STOP.into()
-            } else {
-                helper.stop_hotkey
-            },
+            stop_hotkey: helper.stop_hotkey,
             external_agent: helper.external_agent,
             external_agent_since: helper.external_agent_since,
             show_thinking: helper.show_thinking,
@@ -369,14 +339,8 @@ impl<'de> Deserialize<'de> for Settings {
 }
 
 impl Settings {
-    pub fn active_connection(&self) -> Option<&Connection> {
-        self.connections
-            .iter()
-            .find(|c| c.id == self.active_connection_id)
-    }
-
     pub fn output_limit(&self) -> Option<u32> {
-        self.active_connection().and_then(|c| c.output_limit)
+        None
     }
 
     pub fn model_for_role(&self, role: ModelRole) -> &str {
@@ -488,8 +452,8 @@ impl Default for Settings {
         let models = ModelRoles::default();
         Self {
             base_url: "http://127.0.0.1:8080".into(),
-            connections: vec![legacy_connection("http://127.0.0.1:8080")],
-            active_connection_id: LEGACY_CONNECTION.into(),
+            connections: vec![default_connection("http://127.0.0.1:8080")],
+            active_connection_id: DEFAULT_CONNECTION.into(),
             connections_revision: 0,
             model: models.agent.clone(),
             models,
@@ -717,14 +681,7 @@ pub(crate) fn ensure_current(app: &AppHandle, current: &Settings) -> AppResult<(
     Ok(())
 }
 
-fn key_entry() -> keyring::Result<crate::credentials::Entry> {
-    crate::credentials::Entry::new(KEYRING_SERVICE, KEYRING_USER)
-}
-
 fn connection_key_entry(id: &str) -> keyring::Result<crate::credentials::Entry> {
-    if id == LEGACY_CONNECTION {
-        return key_entry();
-    }
     crate::credentials::Entry::new(KEYRING_SERVICE, &format!("rune-model-connection-{id}"))
 }
 pub fn api_key_for(settings: &Settings) -> Option<String> {
@@ -755,22 +712,13 @@ pub fn api_key_for_connection(connection: &Connection) -> Option<String> {
         #[cfg(not(all(windows, feature = "embedded-infer")))]
         return None;
     }
-    let stored = connection.credential_ref.as_deref().and_then(|slot| {
-        if slot == "legacy-env" {
-            None
-        } else {
+    connection
+        .credential_ref
+        .as_deref()
+        .and_then(|slot| {
             connection_key_entry(slot)
                 .and_then(|entry| entry.get_password())
                 .ok()
-        }
-    });
-    stored
-        .or_else(|| {
-            if connection.id == LEGACY_CONNECTION {
-                std::env::var("RUNE_API_KEY").ok()
-            } else {
-                None
-            }
         })
         .filter(|key| !key.is_empty())
 }
@@ -800,7 +748,36 @@ pub fn set_api_key_for_slot(id: &str, key: &str) -> AppResult<()> {
 }
 
 #[cfg(test)]
+fn settings_fixture_value(overrides: serde_json::Value) -> Result<Settings, serde_json::Error> {
+    let mut value = serde_json::to_value(Settings::default())?;
+    if let Some(fields) = overrides.as_object() {
+        value
+            .as_object_mut()
+            .expect("settings object")
+            .extend(fields.clone());
+    }
+    serde_json::from_value(value)
+}
+
+#[cfg(test)]
+fn settings_fixture(text: &str) -> Result<Settings, serde_json::Error> {
+    settings_fixture_value(serde_json::from_str(text)?)
+}
+
+#[cfg(test)]
 mod tests {
+    #[test]
+    fn old_connection_output_caps_do_not_override_infer_configuration() {
+        let mut settings = super::Settings::default();
+        settings.connections[0].output_limit = Some(123);
+        assert_eq!(settings.output_limit(), None);
+    }
+
+    #[test]
+    fn unsupported_settings_are_rejected_without_migration() {
+        let old = r#"{"baseUrl":"http://127.0.0.1:8080","model":"old"}"#;
+        assert!(serde_json::from_str::<super::Settings>(old).is_err());
+    }
     #[test]
     fn first_run_local_default_keeps_the_external_connection() {
         use super::*;
@@ -812,7 +789,7 @@ mod tests {
             settings
                 .connections
                 .iter()
-                .any(|connection| connection.id == LEGACY_CONNECTION)
+                .any(|connection| connection.id == DEFAULT_CONNECTION)
         );
     }
     #[test]
@@ -840,41 +817,12 @@ mod tests {
         };
         assert_eq!(empty.model_for_role(ModelRole::Agent), "qwen3.5-4b-q4");
         let saved: Settings =
-            serde_json::from_str(r#"{"model":"custom","models":{"agent":"custom"}}"#).unwrap();
+            settings_fixture(r#"{"model":"custom","models":{"agent":"custom"}}"#).unwrap();
         assert_eq!(saved.models.agent, "custom");
         let selected: Settings =
-            serde_json::from_str(r#"{"model":"old-legacy","models":{"agent":"qwen3.5-4b-q4"}}"#)
+            settings_fixture(r#"{"model":"old-legacy","models":{"agent":"qwen3.5-4b-q4"}}"#)
                 .unwrap();
         assert_eq!(selected.models.agent, "qwen3.5-4b-q4");
-    }
-    #[test]
-    fn legacy_migration_preserves_model_roles_and_isolates_credentials() {
-        use super::*;
-        let mut current: Settings = serde_json::from_str(r#"{"baseUrl":"http://127.0.0.1:7777","model":"legacy-model","decisionUrl":"http://127.0.0.1:8888"}"#).unwrap();
-        assert_eq!(current.active_connection_id, LEGACY_CONNECTION);
-        assert_eq!(current.connections[0].base_url, "http://127.0.0.1:7777");
-        assert_eq!(current.models.agent, "legacy-model");
-        assert_eq!(current.decision_url, "http://127.0.0.1:8888");
-        set_api_key_for_slot(LEGACY_CONNECTION, "legacy-secret").unwrap();
-        assert_eq!(api_key_for(&current).as_deref(), Some("legacy-secret"));
-        set_api_key_for_slot("conn-secret-test", "other-secret").unwrap();
-        current.connections.push(Connection {
-            id: "conn-two".into(),
-            name: "Second".into(),
-            base_url: "http://127.0.0.1:7777".into(),
-            credential_ref: Some("conn-secret-test".into()),
-            selected_models: None,
-            additional_models: Vec::new(),
-            output_limit: None,
-        });
-        current.active_connection_id = "conn-two".into();
-        assert_eq!(api_key_for(&current).as_deref(), Some("other-secret"));
-        let saved = serde_json::to_string(&current).unwrap();
-        assert!(!saved.contains("legacy-secret") && !saved.contains("other-secret"));
-        let restored: Settings = serde_json::from_str(&saved).unwrap();
-        assert_eq!(api_key_for(&restored).as_deref(), Some("other-secret"));
-        set_api_key_for_slot("conn-secret-test", "").unwrap();
-        set_api_key_for_slot(LEGACY_CONNECTION, "").unwrap();
     }
     #[test]
     fn invalid_settings_are_never_overwritten_and_staged_credentials_leave_old_key_intact() {
@@ -882,18 +830,18 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("settings.json");
         fs::write(&path, b"{broken").unwrap();
-        set_api_key_for_slot(LEGACY_CONNECTION, "original-secret").unwrap();
+        set_api_key_for_slot(DEFAULT_CONNECTION, "original-secret").unwrap();
         set_api_key_for_slot("conn-staged-test", "new-secret").unwrap();
         assert!(atomic_save(&path, &Settings::default()).is_err());
         assert_eq!(fs::read(&path).unwrap(), b"{broken");
         assert_eq!(
-            stored_api_key_for_slot(LEGACY_CONNECTION)
+            stored_api_key_for_slot(DEFAULT_CONNECTION)
                 .unwrap()
                 .as_deref(),
             Some("original-secret")
         );
         set_api_key_for_slot("conn-staged-test", "").unwrap();
-        set_api_key_for_slot(LEGACY_CONNECTION, "").unwrap();
+        set_api_key_for_slot(DEFAULT_CONNECTION, "").unwrap();
     }
     #[test]
     fn connection_validation_rejects_credentials_and_invalid_registry() {
@@ -915,22 +863,22 @@ mod tests {
     fn classification_preference_defaults_and_round_trips() {
         use super::{InputClassification, Settings};
         for json in ["{}", r#"{"inputClassification":"unknown"}"#] {
-            let settings: Settings = serde_json::from_str(json).unwrap();
+            let settings: Settings = settings_fixture(json).unwrap();
             assert_eq!(
                 settings.input_classification,
                 InputClassification::Automatic
             );
         }
         let settings: Settings =
-            serde_json::from_str(r#"{"inputClassification":"always_confirm"}"#).unwrap();
+            settings_fixture(r#"{"inputClassification":"always_confirm"}"#).unwrap();
         let encoded = serde_json::to_value(&settings).unwrap();
         assert_eq!(encoded["inputClassification"], "always_confirm");
     }
     use super::*;
 
     #[test]
-    fn capture_resolution_defaults_migrate_and_separate_settings_round_trip() {
-        let old: Settings = serde_json::from_str("{}").unwrap();
+    fn capture_resolution_defaults_and_separate_settings_round_trip() {
+        let old: Settings = settings_fixture("{}").unwrap();
         assert_eq!(old.model_image_resolution.max_edge(), 1920);
         assert_eq!(old.recording_resolution, ImageResolution::Native);
         for (name, edge) in [
@@ -940,7 +888,7 @@ mod tests {
             ("2560", 2560),
             ("native", u32::MAX),
         ] {
-            let settings: Settings = serde_json::from_value(serde_json::json!({
+            let settings: Settings = settings_fixture_value(serde_json::json!({
                 "modelImageResolution": name, "recordingResolution": "720"
             }))
             .unwrap();
@@ -950,58 +898,8 @@ mod tests {
             assert_eq!(saved["modelImageResolution"], name);
             assert_eq!(saved["recordingResolution"], "720");
         }
-        let invalid: Settings =
-            serde_json::from_str(r#"{"modelImageResolution":"invalid"}"#).unwrap();
+        let invalid: Settings = settings_fixture(r#"{"modelImageResolution":"invalid"}"#).unwrap();
         assert_eq!(invalid.model_image_resolution.max_edge(), 1920);
-    }
-
-    #[test]
-    fn old_stop_shortcut_migrates_to_escape_and_custom_shortcuts_survive() {
-        for old in ["Ctrl+Alt+Escape", "Ctrl+Alt+Esc"] {
-            let settings: Settings =
-                serde_json::from_value(serde_json::json!({"stopHotkey":old})).unwrap();
-            assert_eq!(settings.stop_hotkey, "Escape");
-        }
-        let settings: Settings =
-            serde_json::from_value(serde_json::json!({"stopHotkey":"Ctrl+Shift+S"})).unwrap();
-        assert_eq!(settings.stop_hotkey, "Ctrl+Shift+S");
-    }
-
-    #[test]
-    fn migration_from_old_settings_with_model_and_decision_model() {
-        let old_fixture = r#"{
-            "baseUrl": "http://127.0.0.1:8080",
-            "model": "my-custom-agent",
-            "decisionModel": "my-custom-decision",
-            "maxSteps": 25,
-            "fastChecks": true
-        }"#;
-
-        let settings: Settings = serde_json::from_str(old_fixture).unwrap();
-        assert_eq!(settings.models.agent, "my-custom-agent");
-        assert_eq!(settings.models.decision, "my-custom-decision");
-        assert_eq!(settings.model, "my-custom-agent");
-        assert_eq!(settings.decision_model, "my-custom-decision");
-        assert_eq!(settings.model_for_role(ModelRole::Agent), "my-custom-agent");
-        assert_eq!(
-            settings.model_for_role(ModelRole::Decision),
-            "my-custom-decision"
-        );
-        assert_eq!(
-            settings.model_for_role(ModelRole::Verifier),
-            "my-custom-agent"
-        );
-        assert_eq!(
-            settings.model_for_role(ModelRole::Analysis),
-            "my-custom-agent"
-        );
-        assert_eq!(settings.model_for_role(ModelRole::Voice), "my-custom-agent");
-
-        let serialized = serde_json::to_string(&settings).unwrap();
-        let json_val: serde_json::Value = serde_json::from_str(&serialized).unwrap();
-        assert_eq!(json_val["model"], "my-custom-agent");
-        assert_eq!(json_val["decisionModel"], "my-custom-decision");
-        assert_eq!(json_val["models"]["agent"], "my-custom-agent");
     }
 
     #[test]
@@ -1017,7 +915,7 @@ mod tests {
             }
         }"#;
 
-        let settings: Settings = serde_json::from_str(new_fixture).unwrap();
+        let settings: Settings = settings_fixture(new_fixture).unwrap();
         assert_eq!(settings.model_for_role(ModelRole::Agent), "agent-model");
         assert_eq!(
             settings.model_for_role(ModelRole::Verifier),
@@ -1035,20 +933,17 @@ mod tests {
         assert!(defaults.reflection_enabled);
         assert_eq!(defaults.idle_minutes, 10);
         let loaded: Settings =
-            serde_json::from_str(r#"{ "reflectionEnabled": false, "idleMinutes": 3 }"#).unwrap();
+            settings_fixture(r#"{ "reflectionEnabled": false, "idleMinutes": 3 }"#).unwrap();
         assert!(!loaded.reflection_enabled);
         assert_eq!(loaded.idle_minutes, 3);
-        assert_eq!(
-            serde_json::from_str::<Settings>("{}").unwrap().idle_minutes,
-            10
-        );
+        assert_eq!(settings_fixture("{}").unwrap().idle_minutes, 10);
     }
 
     #[test]
     fn demo_mode_is_off_by_default_and_saved_preferences_are_preserved() {
         assert!(!Settings::default().demo_mode);
-        assert!(!serde_json::from_str::<Settings>("{}").unwrap().demo_mode);
-        let saved = serde_json::from_str::<Settings>(
+        assert!(!settings_fixture("{}").unwrap().demo_mode);
+        let saved = settings_fixture(
             r#"{"demoMode":true,"modelImageResolution":"720","recordingResolution":"1280"}"#,
         )
         .unwrap();
@@ -1056,21 +951,9 @@ mod tests {
         assert_eq!(saved.model_image_resolution, ImageResolution::Small);
         assert_eq!(saved.recording_resolution, ImageResolution::Balanced);
         assert!(
-            !serde_json::from_str::<Settings>(r#"{ "demoMode": false }"#)
+            !settings_fixture(r#"{ "demoMode": false }"#)
                 .unwrap()
                 .demo_mode
-        );
-    }
-
-    #[test]
-    fn an_old_file_with_analysis_boxes_still_loads_and_the_key_is_ignored() {
-        let loaded: Settings =
-            serde_json::from_str(r#"{ "analysisBoxes": true, "maxSteps": 7 }"#).unwrap();
-        assert_eq!(loaded.max_steps, 7);
-        let value = serde_json::to_value(Settings::default()).unwrap();
-        assert!(
-            value.get("analysisBoxes").is_none(),
-            "it is no longer written back"
         );
     }
 
@@ -1081,17 +964,16 @@ mod tests {
             (defaults.record_session_video, defaults.offer_review),
             (RecordVideo::Off, OfferReview::Always)
         );
-        let set: Settings = serde_json::from_str(
-            r#"{ "recordSessionVideo": "motion", "offerReview": "failures" }"#,
-        )
-        .unwrap();
+        let set: Settings =
+            settings_fixture(r#"{ "recordSessionVideo": "motion", "offerReview": "failures" }"#)
+                .unwrap();
         assert_eq!(
             (set.record_session_video, set.offer_review),
             (RecordVideo::Motion, OfferReview::Failures)
         );
-        let never: Settings = serde_json::from_str(r#"{ "offerReview": "never" }"#).unwrap();
+        let never: Settings = settings_fixture(r#"{ "offerReview": "never" }"#).unwrap();
         assert_eq!(never.offer_review, OfferReview::Never);
-        let typo: Settings = serde_json::from_str(
+        let typo: Settings = settings_fixture(
             r#"{ "recordSessionVideo": "alwayz", "offerReview": "sometimes", "maxSteps": 7 }"#,
         )
         .unwrap();
@@ -1108,26 +990,6 @@ mod tests {
     }
 
     #[test]
-    fn a_settings_file_without_verify_mode_still_loads_with_background() {
-        let old = r#"{ "baseUrl": "http://127.0.0.1:9", "model": "m", "maxSteps": 12, "askEveryAction": true }"#;
-        let settings: Settings = serde_json::from_str(old).expect("an older settings file loads");
-        assert_eq!(settings.verify_mode, VerifyMode::Background);
-        assert_eq!(
-            (
-                settings.base_url.as_str(),
-                settings.max_steps,
-                settings.ask_every_action
-            ),
-            ("http://127.0.0.1:9", 12, true),
-            "the rest of the file is kept"
-        );
-        assert_eq!(
-            serde_json::from_str::<Settings>("{}").unwrap().verify_mode,
-            VerifyMode::Background
-        );
-    }
-
-    #[test]
     fn the_three_modes_are_spelled_in_lower_case_and_an_unknown_word_reads_as_background() {
         for (text, mode) in [
             ("off", VerifyMode::Off),
@@ -1135,11 +997,11 @@ mod tests {
             ("blocking", VerifyMode::Blocking),
         ] {
             let settings: Settings =
-                serde_json::from_str(&format!(r#"{{ "verifyMode": "{text}" }}"#)).unwrap();
+                settings_fixture(&format!(r#"{{ "verifyMode": "{text}" }}"#)).unwrap();
             assert_eq!(settings.verify_mode, mode, "{text}");
             assert_eq!(serde_json::to_value(mode).unwrap(), text);
         }
-        let typo: Settings = serde_json::from_str(r#"{ "verifyMode": "blokcing", "maxSteps": 7 }"#)
+        let typo: Settings = settings_fixture(r#"{ "verifyMode": "blokcing", "maxSteps": 7 }"#)
             .expect("still loads");
         assert_eq!(
             (typo.verify_mode, typo.max_steps),
@@ -1152,14 +1014,13 @@ mod tests {
     }
 
     #[test]
-    fn life_settings_defaults_and_backward_compatibility() {
+    fn life_settings_defaults_and_configuration() {
         let defaults = Settings::default();
         assert!(!defaults.life_enabled);
         assert!(!defaults.life_consent("health"));
         assert_eq!(defaults.retention_days_for("health"), 0);
 
-        let old_json = r#"{ "baseUrl": "http://127.0.0.1:8080", "model": "gemma" }"#;
-        let loaded: Settings = serde_json::from_str(old_json).unwrap();
+        let loaded: Settings = settings_fixture("{}").unwrap();
         assert!(!loaded.life_enabled);
         assert!(!loaded.life_consent("general"));
         assert!(!loaded.life_consent("finance"));
@@ -1170,7 +1031,7 @@ mod tests {
             "lifeConsents": { "health": true, "mind": false },
             "retentionDays": { "health": 30, "mind": 90 }
         }"#;
-        let custom: Settings = serde_json::from_str(custom_json).unwrap();
+        let custom: Settings = settings_fixture(custom_json).unwrap();
         assert!(custom.life_enabled);
         assert!(custom.life_consent("health"));
         assert!(!custom.life_consent("mind"));
@@ -1226,7 +1087,7 @@ mod visual_analysis_tests {
     use super::*;
     #[test]
     fn visual_analysis_models_default_empty_and_round_trip() {
-        let mut settings: Settings = serde_json::from_str("{}").unwrap();
+        let mut settings: Settings = settings_fixture("{}").unwrap();
         assert_eq!(
             settings.visual_analysis_models,
             VisualAnalysisModels::default()
@@ -1234,19 +1095,19 @@ mod visual_analysis_tests {
         settings.visual_analysis_models.planner = "vision-model".into();
         settings.visual_analysis_models.entities = "detector".into();
         let restored: Settings =
-            serde_json::from_str(&serde_json::to_string(&settings).unwrap()).unwrap();
+            settings_fixture(&serde_json::to_string(&settings).unwrap()).unwrap();
         assert_eq!(
             restored.visual_analysis_models,
             settings.visual_analysis_models
         );
     }
     #[test]
-    fn old_settings_show_all_groups_and_hidden_preferences_round_trip() {
-        let mut settings: Settings = serde_json::from_str("{}").unwrap();
+    fn default_settings_show_all_groups_and_hidden_preferences_round_trip() {
+        let mut settings: Settings = settings_fixture("{}").unwrap();
         assert_eq!(settings.visual_analysis, VisualAnalysis::default());
         settings.visual_analysis.depth = false;
         let saved = serde_json::to_string(&settings).unwrap();
-        let restored: Settings = serde_json::from_str(&saved).unwrap();
+        let restored: Settings = settings_fixture(&saved).unwrap();
         assert!(
             !restored
                 .visual_analysis

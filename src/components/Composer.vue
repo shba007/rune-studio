@@ -81,7 +81,7 @@ watch(command, () => {
   commandNotice.value = ''
 })
 function unavailableReason(item: ComposerCommand) {
-  if (item.id !== 'screen-insight') return ''
+  if (item.id !== 'visual-analysis') return ''
   if (offline.value) return 'Needs the model server'
   if (!external.value && agent.isRunning.value) return 'Finish or stop the current task first'
   return ''
@@ -103,7 +103,7 @@ async function runCommand(item: ComposerCommand) {
   }
   commandPending.value = true
   try {
-    if (item.id === 'screen-insight') await agent.analyzeScreen()
+    if (item.id === 'visual-analysis') await agent.analyzeScreen()
     else if (item.command.startsWith('#')) await agent.openPlayground(item.id)
     else if (item.id === 'settings') await agent.openSettings()
     else if (item.id === 'playground') await agent.openPlayground()
@@ -165,7 +165,7 @@ const action = computed(() => {
     return { icon: 'stop', label: 'Stop', tone: 'red', run: () => agent.stop() } as const
   if (hasText.value) return { icon: 'send', label: 'Send', tone: 'dark', run: submit } as const
   return {
-    icon: 'mic',
+    icon: 'voice-input',
     label: isListening.value ? 'Stop listening' : 'Listen',
     tone: 'blue',
     run: () => agent.toggleListening(),
@@ -429,7 +429,7 @@ async function submit() {
               (!commandInput && !inlineReminder && !analysisSubmit && board?.pending.value) ||
               (offline && !commandInput && !inlineReminder && action.icon !== 'stop')
             "
-            :aria-pressed="action.icon === 'mic' ? isListening : undefined"
+            :aria-pressed="action.icon === 'voice-input' ? isListening : undefined"
             @click="action.run()"
           >
             <AppIcon :name="action.icon" />

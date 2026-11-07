@@ -55,8 +55,8 @@ const message = computed(() => {
     ? {
         label: agent.settings.value?.externalAgent
           ? 'External agent'
-          : agent.settings.value?.models?.agent
-            ? agent.settings.value.models.agent
+          : agent.backend.value?.agentModel
+            ? agent.backend.value.agentModel
             : 'Rune',
         text: response,
         live: false,
@@ -65,7 +65,7 @@ const message = computed(() => {
 })
 
 const modelCaveat = computed(() =>
-  message.value?.label === agent.settings.value?.models?.agent
+  message.value?.label === agent.backend.value?.agentModel
     ? 'Configured model; serving model not confirmed'
     : undefined,
 )

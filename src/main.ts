@@ -19,15 +19,15 @@ const view = new URLSearchParams(location.search).get('view')
 const overlay = view === 'overlay'
 if (overlay) document.documentElement.classList.add('overlay-view')
 
-if (['flight', 'settings', 'workspace', 'playground', 'onboarding'].includes(view ?? ''))
-  document.documentElement.classList.add('flight-view')
+if (['preview', 'settings', 'workspace', 'playground', 'onboarding'].includes(view ?? ''))
+  document.documentElement.classList.add('window-view')
 
 const root =
   view === 'onboarding'
     ? OnboardingWindow
     : view === 'overlay'
       ? ControlOverlay
-      : view === 'flight'
+      : view === 'preview'
         ? WorkspaceWindow
         : view === 'settings'
           ? SettingsWindow

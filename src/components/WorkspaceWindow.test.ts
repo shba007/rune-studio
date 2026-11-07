@@ -4,7 +4,7 @@ import { ref } from 'vue'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import WorkspaceWindow from './WorkspaceWindow.vue'
 import TaskHistory from './TaskHistory.vue'
-import FlightPlayer from './FlightPlayer.vue'
+import PreviewPlayer from './PreviewPlayer.vue'
 import DecisionInbox from './DecisionInbox.vue'
 import GoalsTable from './GoalsTable.vue'
 import LifeGraph from './LifeGraph.vue'
@@ -120,25 +120,25 @@ it('opens Preview inside Workspace and returns to the same task history', async 
   const openTask = history.props('openTask') as (id: string) => void
   openTask('task-1')
   await flushPromises()
-  const preview = wrapper.getComponent(FlightPlayer)
+  const preview = wrapper.getComponent(PreviewPlayer)
   expect(preview.props()).toMatchObject({ embedded: true, taskId: 'task-1' })
   expect(history.props('active')).toBe(false)
   preview.vm.$emit('back')
   await flushPromises()
-  expect(wrapper.findComponent(FlightPlayer).exists()).toBe(false)
+  expect(wrapper.findComponent(PreviewPlayer).exists()).toBe(false)
   expect(wrapper.getComponent(TaskHistory).vm).toBe(history.vm)
   expect(history.props('active')).toBe(true)
   harness.handler!({ payload: { section: 'tasks', runId: 'task-2' } })
   await flushPromises()
-  expect(wrapper.getComponent(FlightPlayer).props('taskId')).toBe('task-2')
+  expect(wrapper.getComponent(PreviewPlayer).props('taskId')).toBe('task-2')
   wrapper.unmount()
 })
 
 it('preserves old Preview links as embedded task previews', async () => {
-  window.history.replaceState({}, '', '/?view=flight&run=legacy-task')
+  window.history.replaceState({}, '', '/?view=preview&run=legacy-task')
   const wrapper = shallowMount(WorkspaceWindow, { global: { stubs: { RuneNavItem } } })
   await flushPromises()
-  expect(wrapper.getComponent(FlightPlayer).props()).toMatchObject({
+  expect(wrapper.getComponent(PreviewPlayer).props()).toMatchObject({
     embedded: true,
     taskId: 'legacy-task',
   })

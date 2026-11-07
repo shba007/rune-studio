@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { DecisionAnswer, IntakeEntry, TaskApproval } from '@/types/decisions'
-import { problemText } from './useFlight'
+import { problemText } from './usePreview'
 export type DecisionModel = ReturnType<typeof useDecisions>
 
 export function useDecisions() {

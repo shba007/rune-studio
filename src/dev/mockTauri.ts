@@ -2,12 +2,12 @@ import { mockIPC } from '@tauri-apps/api/mocks'
 
 import {
   drawnShot,
-  flightCalls,
-  flightEvents,
-  flightHeader,
-  flightRuns,
-  flightSteps,
-} from './flightFixture'
+  previewCalls,
+  previewEvents,
+  previewHeader,
+  previewRuns,
+  previewSteps,
+} from './previewFixture'
 
 const removedGoals = new Set<string>()
 const monitor = () => ({
@@ -104,32 +104,32 @@ export function installTauriMock() {
                 declared: agentParam,
               }
             : null
-        case 'flight_runs':
-          return flightRuns
-        case 'flight_run':
-          return flightRuns.some((run) => run.id === given.id)
-            ? flightHeader(String(given.id), withVideo)
+        case 'preview_runs':
+          return previewRuns
+        case 'preview_run':
+          return previewRuns.some((run) => run.id === given.id)
+            ? previewHeader(String(given.id), withVideo)
             : null
-        case 'flight_steps':
-          return flightSteps
-        case 'flight_events':
-          return flightEvents
-        case 'flight_calls':
-          return flightCalls.filter((item) => given.step == null || item.step === given.step)
-        case 'flight_call_body':
+        case 'preview_steps':
+          return previewSteps
+        case 'preview_events':
+          return previewEvents
+        case 'preview_calls':
+          return previewCalls.filter((item) => given.step == null || item.step === given.step)
+        case 'preview_call_body':
           return [
             '{"messages":[{"role":"user","content":"typed Buy milk and call Sam"}]}',
             '{"choices":[{"message":{"reasoning_content":"The menu is open, so type the name."}}]}',
           ]
-        case 'flight_file': {
+        case 'preview_file': {
           const file = String(given.relative)
           if (file.endsWith('.mp4'))
-            return videoParam === 'webm' ? '/dev/flight.webm' : '/dev/flight.mp4'
+            return videoParam === 'webm' ? '/dev/preview.webm' : '/dev/preview.mp4'
           const n = Number(/(\d+)\.jpg$/.exec(file)?.[1] ?? 0)
           return n > 0 ? drawnShot(n) : file
         }
-        case 'flight_reveal':
-        case 'open_flight':
+        case 'preview_reveal':
+        case 'open_preview':
           return null
         case 'get_settings':
           return {
@@ -329,13 +329,12 @@ export function installTauriMock() {
                 name: 'Model connection',
                 baseUrl: 'http://127.0.0.1:8080',
                 active: true,
-                hasApiKey: false,
-                selectedModels: ['gemma-4-12b-it', 'qwen3-vl'],
+                hasApiKey: true,
               },
               {
                 id: 'cloud',
-                name: 'Cloud provider',
-                baseUrl: 'https://api.example.com/v1',
+                name: 'Remote Infer',
+                baseUrl: 'https://infer.example.com',
                 active: false,
                 hasApiKey: true,
               },
@@ -343,10 +342,24 @@ export function installTauriMock() {
           }
         case 'get_control_label':
           return null
+        case 'infer_agent_role':
+        case 'infer_analysis_role':
+          return 'gemma-4-12b-it'
+        case 'infer_visual_roles':
+          return {
+            planner: '',
+            entities: '',
+            regions: '',
+            structure: '',
+            depth: '',
+            instances: '',
+            oriented: '',
+          }
         case 'check_backend':
           return {
             revision: Date.now(),
             status: {
+              agentModel: 'gemma-4-12b-it',
               reachable: true,
               authOk: true,
               missingModels: [],
@@ -369,7 +382,7 @@ export function installTauriMock() {
           return new URLSearchParams(location.search).get('demo') === 'recording'
         case 'screen_recording_state':
           return { id: 0, phase: 'idle', seconds: 0, monitor: null, path: null, error: null }
-        case 'screen_insight_targets':
+        case 'visual_analysis_targets':
           return [
             { target: { kind: 'screen', id: 1 }, label: 'Screen 1 — 1920×1080 (primary)' },
             { target: { kind: 'window', id: 2 }, label: 'Window — Project notes' },

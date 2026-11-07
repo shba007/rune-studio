@@ -6,7 +6,7 @@ import { useElementSize } from '@vueuse/core'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 import CursorGlyph from './CursorGlyph.vue'
-import { fitBox, type ActionLayer } from '@/config/flight'
+import { fitBox, type ActionLayer } from '@/config/preview'
 
 const props = defineProps<{
   videoSrc: string | null

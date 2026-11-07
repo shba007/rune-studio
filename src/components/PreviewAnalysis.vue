@@ -3,10 +3,10 @@ import ModelIcon from './ModelIcon.vue'
 import { computed, ref, watch } from 'vue'
 import { useElementSize } from '@vueuse/core'
 import { invoke } from '@tauri-apps/api/core'
-import type { FlightAnalysis } from '@/config/flight'
+import type { PreviewAnalysis } from '@/config/preview'
 import { EMPTY_SNAPSHOT } from '@/config/analysis'
 import type { AnalysisGroup, VisualAnalysisVisibility } from '@/types/protocol'
-import { fileUrl } from '@/composables/useFlight'
+import { fileUrl } from '@/composables/usePreview'
 import AnalysisLayer from './AnalysisLayer.vue'
 import WhenText from './WhenText.vue'
 import HubGroup from './HubGroup.vue'
@@ -16,7 +16,7 @@ import RuneSwitch from './RuneSwitch.vue'
 
 const props = defineProps<{
   id: string
-  analysis?: FlightAnalysis | null
+  analysis?: PreviewAnalysis | null
   summary: string | null
 }>()
 const capture = ref<string | null>(null)
@@ -56,7 +56,7 @@ watch(
     loading.value = Boolean(relative)
     if (!relative) return
     try {
-      const path = await invoke<string>('flight_file', { id, relative })
+      const path = await invoke<string>('preview_file', { id, relative })
       if (current) capture.value = fileUrl(path)
     } catch {
       if (current) missing.value = true

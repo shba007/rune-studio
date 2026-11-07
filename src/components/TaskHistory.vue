@@ -8,18 +8,18 @@ import { useDebounceFn, useEventListener } from '@vueuse/core'
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import type { Agent } from '@/composables/useAgent'
-import { problemText, useFlight } from '@/composables/useFlight'
+import { problemText, usePreview } from '@/composables/usePreview'
 
 import ArtifactCard from './ArtifactCard.vue'
 import WorkspaceTaskTimeline from './WorkspaceTaskTimeline.vue'
 import type { WorkspaceTasksModel } from '@/composables/useWorkspaceTasks'
 import type { IntakeEntry } from '@/types/decisions'
 import type { WorkspaceTask } from '@/types/workspace'
-import type { FlightRun } from '@/config/flight'
+import type { PreviewRun } from '@/config/preview'
 const emit = defineEmits<{
   goal: [id: string]
   schedule: [task: WorkspaceTask]
-  organize: [run: FlightRun]
+  organize: [run: PreviewRun]
   clear: []
 }>()
 
@@ -35,7 +35,7 @@ const props = withDefaults(
   }>(),
   { active: true, goals: () => [] },
 )
-const flight = useFlight()
+const preview = usePreview()
 const deleting = ref<string | null>(null)
 const refreshing = ref(false)
 let disposed = false
@@ -44,7 +44,7 @@ async function refresh() {
   if (disposed || props.active === false || deleting.value || refreshing.value) return
   refreshing.value = true
   try {
-    await flight.loadRuns()
+    await preview.loadRuns()
   } finally {
     refreshing.value = false
   }
@@ -61,9 +61,9 @@ async function remove(id: string) {
   if (deleting.value || refreshing.value) return
   deleting.value = id
   try {
-    await flight.remove(id)
+    await preview.remove(id)
   } catch (error) {
-    flight.problem.value = problemText(error)
+    preview.problem.value = problemText(error)
   } finally {
     deleting.value = null
   }
@@ -98,9 +98,9 @@ onBeforeUnmount(() => {
         <AppIcon name="refresh" size="sm" :class="refreshing && 'motion-safe:animate-spin'" />
       </RuneIconButton>
     </div>
-    <RuneNotice v-if="flight.problem.value" tone="error">{{ flight.problem.value }}</RuneNotice>
+    <RuneNotice v-if="preview.problem.value" tone="error">{{ preview.problem.value }}</RuneNotice>
     <WorkEmpty
-      v-else-if="!workspace && flight.runsLoaded.value && flight.runs.value.length === 0"
+      v-else-if="!workspace && preview.runsLoaded.value && preview.runs.value.length === 0"
       data-testid="empty"
       title="Nothing recorded yet"
       hint="Run a task and it shows up here."
@@ -108,7 +108,7 @@ onBeforeUnmount(() => {
     <WorkspaceTaskTimeline
       v-if="workspace"
       :workspace="workspace"
-      :history="flight.runs.value"
+      :history="preview.runs.value"
       :goals="goals"
       :active="active"
       :parent-filter="parentFilter"
@@ -134,7 +134,7 @@ onBeforeUnmount(() => {
     </WorkspaceTaskTimeline>
     <div v-else class="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
       <ArtifactCard
-        v-for="run in flight.runs.value"
+        v-for="run in preview.runs.value"
         :key="run.id"
         :run="run"
         :deleting="deleting === run.id"

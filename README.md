@@ -39,16 +39,16 @@ Rust owns capture, input, UI Automation, audio and the agent loop (`src-tauri/`)
 
 ### What it can do
 
-| Area                | Behaviour                                                                                                                                                                                                                                                                                                                               |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Actions**         | `click`, `click_element` (by UI Automation id), `type_text`, `press_keys`, `scroll`, `drag`, `open_app`, `wait`, `ask_user`, `done`. One action per model turn.                                                                                                                                                                         |
-| **Planning**        | A short planning call splits a task into one to six goals, shown as arcs around the orb. A simple task can skip the plan (needs the optional decision model).                                                                                                                                                                           |
-| **Voice**           | Hands-free: click the mic once and talk. An energy-based detector cuts utterances; the omni model hears the audio directly (there is no separate speech-to-text model).                                                                                                                                                                 |
-| **Safety gate**     | Every action is assessed; high-risk ones wait for your Yes. "Ask before every action" asks about everything. See [Safety](#safety).                                                                                                                                                                                                     |
-| **Stuck detection** | If the screen is unchanged after two actions the model is warned; after five the run stops.                                                                                                                                                                                                                                             |
-| **Outside agents**  | In builds with the `agent-bridge` feature, an MCP server on `127.0.0.1:47600` lets agents such as Claude Code use the same eyes and hands, behind the same gate. See [Outside agents](#outside-agents-mcp-bridge).                                                                                                                      |
-| **Review**          | When a task ends the pill offers Review, which opens the **Flight Player**: the session as a video (built after the task from the step screenshots), a timeline of steps, and the details of each step (prompt, safety decision, every model attempt with its retries, timings). See [Privacy and the record](#privacy-and-the-record). |
-| **Auto-update**     | Checks GitHub releases (signed with the Tauri updater key) 5 s after launch and offers an Update / Later prompt. Never interrupts a running task.                                                                                                                                                                                       |
+| Area                | Behaviour                                                                                                                                                                                                                                                                                                                         |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Actions**         | `click`, `click_element` (by UI Automation id), `type_text`, `press_keys`, `scroll`, `drag`, `open_app`, `wait`, `ask_user`, `done`. One action per model turn.                                                                                                                                                                   |
+| **Planning**        | A short planning call splits a task into one to six goals, shown as arcs around the orb. A simple task can skip the plan (needs the optional decision model).                                                                                                                                                                     |
+| **Voice**           | Hands-free: click the mic once and talk. An energy-based detector cuts utterances; the omni model hears the audio directly (there is no separate speech-to-text model).                                                                                                                                                           |
+| **Safety gate**     | Every action is assessed; high-risk ones wait for your Yes. "Ask before every action" asks about everything. See [Safety](#safety).                                                                                                                                                                                               |
+| **Stuck detection** | If the screen is unchanged after two actions the model is warned; after five the run stops.                                                                                                                                                                                                                                       |
+| **Outside agents**  | In builds with the `agent-bridge` feature, an MCP server on `127.0.0.1:47600` lets agents such as Claude Code use the same eyes and hands, behind the same gate. See [Outside agents](#outside-agents-mcp-bridge).                                                                                                                |
+| **Review**          | When a task ends the pill offers Review, which opens the **Preview**: the session as a video (built after the task from the step screenshots), a timeline of steps, and the details of each step (prompt, safety decision, every model attempt with its retries, timings). See [Privacy and the record](#privacy-and-the-record). |
+| **Auto-update**     | Checks GitHub releases (signed with the Tauri updater key) 5 s after launch and offers an Update / Later prompt. Never interrupts a running task.                                                                                                                                                                                 |
 
 ---
 
@@ -140,7 +140,7 @@ Settings are saved to `settings.json` in the app config folder (identifier `dev.
 | Models          | Decision model / URL           | `liquid-d1-3b` / empty (= the model server above)   |
 | Models          | Show thinking                  | off                                                 |
 | Safety          | Ask before every action        | off                                                 |
-| Screen analysis | Show boxes (unreliable)        | off                                                 |
+| Visual Analysis | Show boxes (unreliable)        | off                                                 |
 | Recording       | Show Rune in screen recordings | off                                                 |
 | Idle review     | Offer to review tasks          | off (`idleMinutes`, default 10, in `settings.json`) |
 | Shortcuts       | Open and close / Stop          | `Alt+Q` / `Ctrl+Alt+Escape`                         |
@@ -186,7 +186,7 @@ Everything the agent sees or hears is stored under `Documents/Rune Studio/`, **o
 
 **The trace database.** Alongside the files, every run (built-in or outside agent) is written to `trace.sqlite3` in the app data folder (the folder that holds `audit.log`; on Windows `%APPDATA%\dev.shirsendu-bairagi.rune-studio\`): what was asked, each step (the prompt text the model saw, the tool and its arguments, the safety decision, the result, how long each phase took, the path of the screenshot) and how the run ended. It stores paths to the screenshots, not the images. It holds the **task text, the model's prompts and the arguments of typed text**, so it is as sensitive as the screenshots. It never stores the API key, the base URL, the bridge token or image data. Unlike the screenshots it is best-effort: if it cannot be written, the task goes on. With `archiveKeepDays` set, the rows of deleted session folders are removed too. The audio and screenshots are sent only to the configured model server.
 
-**Model calls and the session video.** The record also keeps the **raw request and response of every model call** (one row per attempt, so retries show), with images and audio replaced by their size, credential-looking keys removed and each body cut at 64 KB, in the table `calls`. After a task, a video `session.mp4` is made from the step screenshots and stored in the session folder (set `recordSessionVideo` to `motion` in `settings.json` to capture the screen at 2 frames per second as well; it is off by default). Both are covered by the same retention (`archiveKeepDays`) and the same sensitivity as the screenshots: they can show whatever was on your screen and whatever you typed. The Flight Player hides typed text until you choose Show and is excluded from screen capture. Set `offerReview` to `failures` or `never` in `settings.json` to change when the review card appears.
+**Model calls and the session video.** The record also keeps the **raw request and response of every model call** (one row per attempt, so retries show), with images and audio replaced by their size, credential-looking keys removed and each body cut at 64 KB, in the table `calls`. After a task, a video `session.mp4` is made from the step screenshots and stored in the session folder (set `recordSessionVideo` to `motion` in `settings.json` to capture the screen at 2 frames per second as well; it is off by default). Both are covered by the same retention (`archiveKeepDays`) and the same sensitivity as the screenshots: they can show whatever was on your screen and whatever you typed. The Preview hides typed text until you choose Show and is excluded from screen capture. Set `offerReview` to `failures` or `never` in `settings.json` to change when the review card appears.
 
 ---
 
@@ -208,7 +208,7 @@ rune-studio-cli status              # is the app running, are outside agents all
 rune-studio-cli runs [--limit N]    # the newest recorded runs (default 20), read from trace.sqlite3
 rune-studio-cli run <id>            # one recorded run: its steps and events
 rune-studio-cli analyses [--limit N] # the newest screen analyses (default 20)
-rune-studio-cli analysis <id>       # one screen analysis: question, answer, findings with boxes and evidence
+rune-studio-cli analysis <id>       # one visual analysis: question, answer, findings with boxes and evidence
 rune-studio-cli guide               # print the guide an agent reads
 rune-studio-cli mcp                 # what agents run: MCP over stdio, starts the app if needed
 ```
@@ -237,7 +237,7 @@ be validated separately on each system.
 
 ## Related projects
 
-Rune Studio is one of four projects. **rune-infer** is the model server it calls; **rune-kit** (the `rune` CLI, an MCP package manager and gateway) and **rune-tools** (its plugin registry) are intended to own MCP servers, skills, plugins and external tools so the app does not. The app does not use kit or tools yet. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) section 18 and the plan in [`docs/ROADMAP.md`](docs/ROADMAP.md) (flight recorder, verifier and visual analysis are built, unmeasured; idle reflection mode is not built).
+Rune Studio is one of four projects. **rune-infer** is the model server it calls; **rune-kit** (the `rune` CLI, an MCP package manager and gateway) and **rune-tools** (its plugin registry) are intended to own MCP servers, skills, plugins and external tools so the app does not. The app does not use kit or tools yet. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) section 18 and the plan in [`docs/ROADMAP.md`](docs/ROADMAP.md) (Preview, verifier and visual analysis are built, unmeasured; idle reflection mode is not built).
 
 ---
 
@@ -329,9 +329,9 @@ src-tauri/src/
   bridge/                    lease (always compiled); server, mcp, token, cli, agents, skill, path_link (feature agent-bridge)
   archive.rs                 the record of screenshots/voice
   video/                     session.mp4: frame schedule, Media Foundation encoder, worker
-  flight/                    read-only access to the record for the Flight Player, safe file paths
+  preview/                    read-only access to the record for the Preview, safe file paths
   review.rs                  the review offer when a task ends
-  trace/                     the flight recorder: trace.sqlite3 (writer thread, schema, read API)
+  trace/                     the Preview: trace.sqlite3 (writer thread, schema, read API)
   settings.rs, hotkeys.rs, backend.rs, events.rs, commands.rs, window.rs, overlay.rs, cursor.rs, error.rs
   debug.rs                   debug builds only
   system_tests.rs, grounding_probe.rs   test-only (#[ignore]d)
@@ -374,6 +374,6 @@ Copyright &copy; 2024 Shirsendu Bairagi.
 
 Settings → Tools supports selected time, commit-message validation and bounded file read/list tools through a separately running rune-kit HTTP server (minimum release 0.6.0, MCP 2026-07-28). Configure its loopback endpoint in Tools settings. Kit/plugin installation and filesystem roots remain server-owned. File tools require filesystem 0.4.1+. See [setup, permissions and verification](docs/kit.md).
 
-### Screen Insight
+### Visual Analysis
 
-In API mode, click Screen Analysis, select a screen/window and optionally enter a question. Screen Insight captures one frame and sends it to an explicitly configured vision-capable Analysis model in Infer. The result includes the captured image, model and capture time; images remain in memory. See [Screen Insight](docs/SCREEN-INSIGHT.md).
+In API mode, click Visual Analysis, select a screen/window and optionally enter a question. Visual Analysis captures one frame and sends it to an explicitly configured vision-capable Analysis model in Infer. The result includes the captured image, model and capture time; images remain in memory. See [Visual Analysis](docs/VISUAL-ANALYSIS.md).

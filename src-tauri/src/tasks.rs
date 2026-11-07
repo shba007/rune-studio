@@ -1011,13 +1011,6 @@ async fn schedule(app: AppHandle) {
                             task: task.text.clone(),
                             source: "background-task".into(),
                             started_utc: crate::trace::now_utc(),
-                            model: Some(
-                                app.state::<AppState>()
-                                    .settings
-                                    .locked()
-                                    .model_for_role(crate::model::role::ModelRole::Agent)
-                                    .into(),
-                            ),
                             app_version: Some(crate::VERSION.into()),
                             ..Default::default()
                         });
@@ -1080,7 +1073,7 @@ async fn make_plan(
     cancel: &CancelToken,
 ) -> Result<plan::Plan, String> {
     let state = app.state::<AppState>();
-    let (settings, key) = crate::settings::snapshot_with_api_key(&state.settings);
+    let (settings, key) = crate::infer_catalog::agent_settings(&state).await?;
     let model = settings.model_for_role(crate::model::role::ModelRole::Agent);
     let profile =
         crate::workspace_tasks::execution_profile(app, &settings.base_url, key.as_deref(), model)
@@ -1152,10 +1145,7 @@ fn background_tools(discovery: &[crate::kit::client::Tool], selected: &[String])
     let mut tools = vec![
         json!({"type":"function","function":{"name":"done","description":"Finish the current sequential step with an answer grounded in the available data. Report unavailable information honestly.","parameters":{"type":"object","properties":{"summary":{"type":"string"},"success":{"type":"boolean"}},"required":["summary","success"]}}}),
     ];
-    for tool in discovery
-        .iter()
-        .filter(|t| selected.contains(&t.name) && crate::kit::approved_identity(&t.name))
-    {
+    for tool in discovery.iter().filter(|t| selected.contains(&t.name)) {
         tools.push(json!({"type":"function","function":{"name":format!("kit__{}",tool.name),"description":tool.description,"parameters":tool.input_schema}}));
     }
     Value::Array(tools)
@@ -1178,7 +1168,7 @@ async fn background(
     run_id: &str,
 ) -> Result<String, String> {
     let state = app.state::<AppState>();
-    let (settings, key) = crate::settings::snapshot_with_api_key(&state.settings);
+    let (settings, key) = crate::infer_catalog::agent_settings(&state).await?;
     let config = crate::kit::client::load(app);
     let mut history = String::new();
     let mut discovered = Vec::new();
@@ -1702,10 +1692,7 @@ mod tests {
                 make("filesystem__write_file"),
                 make("time__get_current_time"),
             ],
-            &[
-                "filesystem__read_text_file".into(),
-                "filesystem__write_file".into(),
-            ],
+            &["filesystem__read_text_file".into()],
         );
         let names = tools
             .as_array()

@@ -113,12 +113,18 @@ fn next_id() -> AppResult<String> {
     ))
 }
 
+fn validate_connection_key(has_key: bool, replacement: Option<&str>, clear: bool) -> AppResult<()> {
+    if clear || (!has_key && replacement.is_none_or(|key| key.trim().is_empty())) {
+        return Err(AppError::Invalid("An Infer API key is required".into()));
+    }
+    Ok(())
+}
+
 #[cfg(all(windows, feature = "embedded-infer"))]
 pub(crate) fn install_embedded_connection(
     app: &AppHandle,
     state: &AppState,
     activate: bool,
-    model: Option<&str>,
 ) -> AppResult<()> {
     const ID: &str = "studio-embedded-infer";
     let analysis = state.analysis.locked();
@@ -167,19 +173,6 @@ pub(crate) fn install_embedded_connection(
     if activate || next.active_connection_id == ID {
         select_active(&mut next, ID)?;
     }
-    if let Some(model) = model {
-        next.models.agent = model.into();
-        next.model = model.into();
-        if let Some(selected) = next
-            .connections
-            .iter_mut()
-            .find(|connection| connection.id == ID)
-            .and_then(|connection| connection.selected_models.as_mut())
-            && !selected.iter().any(|id| id == model)
-        {
-            selected.push(model.into());
-        }
-    }
     settings::save(app, &next)?;
     let old_slot_in_use = old_slot.as_ref().is_some_and(|old| {
         next.connections
@@ -191,7 +184,7 @@ pub(crate) fn install_embedded_connection(
     drop(current);
     drop(analysis);
     crate::hub::changed(app);
-    if let Some(old) = old_slot.filter(|old| old != "legacy-env" && !old_slot_in_use)
+    if let Some(old) = old_slot.filter(|_| !old_slot_in_use)
         && let Err(error) = settings::set_api_key_for_slot(&old, "")
     {
         log::warn!("Could not remove previous embedded Infer credential: {error}");
@@ -201,60 +194,6 @@ pub(crate) fn install_embedded_connection(
 #[tauri::command]
 pub fn connections_state(state: State<'_, AppState>) -> Catalog {
     catalog(&state.settings.locked())
-}
-
-#[tauri::command]
-pub fn connections_models_save(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    revision: u64,
-    id: String,
-    selected_models: Vec<String>,
-    additional_models: Vec<String>,
-    output_limit: Option<u32>,
-) -> AppResult<Catalog> {
-    let valid_ids = |ids: &[String]| {
-        ids.len() <= 1000
-            && ids
-                .iter()
-                .all(|id| !id.trim().is_empty() && id.len() <= 256 && id.trim() == id)
-    };
-    if output_limit == Some(0)
-        || output_limit.is_some_and(|n| n > 1_000_000)
-        || !valid_ids(&additional_models)
-        || !valid_ids(&selected_models)
-    {
-        return Err(AppError::Invalid(
-            "Invalid model IDs or output limit".into(),
-        ));
-    }
-    let analysis = state.analysis.locked();
-    let mut current = state.settings.locked();
-    check_revision(&current, revision)?;
-    settings::ensure_current(&app, &current)?;
-    if current.active_connection_id == id {
-        ensure_idle(&app, &state, analysis.status)?;
-    }
-    let mut next = current.clone();
-    let connection = next
-        .connections
-        .iter_mut()
-        .find(|c| c.id == id)
-        .ok_or_else(|| AppError::Invalid("Connection no longer exists".into()))?;
-    connection.selected_models = Some(selected_models);
-    connection.additional_models = additional_models;
-    connection.output_limit = output_limit;
-    next.connections_revision = next
-        .connections_revision
-        .checked_add(1)
-        .ok_or_else(|| AppError::Invalid("Connection revision limit reached".into()))?;
-    settings::save(&app, &next)?;
-    *current = next;
-    let view = catalog(&current);
-    drop(current);
-    drop(analysis);
-    crate::hub::changed(&app);
-    Ok(view)
 }
 
 #[tauri::command]
@@ -298,6 +237,13 @@ pub fn connections_save(
         .iter()
         .find(|c| c.id == id)
         .and_then(|c| c.credential_ref.clone());
+    let has_key = current
+        .connections
+        .iter()
+        .find(|c| c.id == id)
+        .and_then(settings::api_key_for_connection)
+        .is_some();
+    validate_connection_key(has_key, key.as_deref(), clear_key)?;
     if !settings::valid_connection_id(&id) {
         return Err(AppError::Invalid("Invalid connection ID".into()));
     }
@@ -360,11 +306,7 @@ pub fn connections_save(
             .iter_mut()
             .find(|c| c.id == id)
             .expect("validated connection exists");
-        item.credential_ref = if clear_key && id == settings::LEGACY_CONNECTION {
-            Some("legacy-env".into())
-        } else {
-            new_slot.clone()
-        };
+        item.credential_ref = new_slot.clone();
     }
     if let Err(error) = settings::save(&app, &next) {
         if let Some(slot) = &new_slot
@@ -385,7 +327,7 @@ pub fn connections_save(
     drop(analysis);
     crate::hub::changed(&app);
     if (clear_key || new_slot.is_some())
-        && let Some(slot) = old_slot.filter(|slot| slot != "legacy-env")
+        && let Some(slot) = old_slot
         && let Err(error) = settings::set_api_key_for_slot(&slot, "")
     {
         return Err(AppError::Invalid(format!(
@@ -463,7 +405,7 @@ pub fn connections_delete(
     drop(current);
     drop(analysis);
     crate::hub::changed(&app);
-    if let Some(slot) = slot.filter(|slot| slot != "legacy-env")
+    if let Some(slot) = slot
         && let Err(error) = settings::set_api_key_for_slot(&slot, "")
     {
         return Err(AppError::Invalid(format!(
@@ -515,6 +457,14 @@ pub async fn connections_test(
 mod tests {
     use super::*;
     #[test]
+    fn infer_connection_requires_a_stored_or_new_key() {
+        assert!(validate_connection_key(false, None, false).is_err());
+        assert!(validate_connection_key(false, Some("  "), false).is_err());
+        assert!(validate_connection_key(true, None, true).is_err());
+        assert!(validate_connection_key(true, None, false).is_ok());
+        assert!(validate_connection_key(false, Some("key"), false).is_ok());
+    }
+    #[test]
     fn switch_and_active_deletion_preserve_shared_roles_and_choose_remaining_connection() {
         let mut s = Settings::default();
         s.models.agent = "shared-model".into();
@@ -531,10 +481,10 @@ mod tests {
         assert_eq!(s.base_url, "http://127.0.0.1:9000");
         assert_eq!(s.models.agent, "shared-model");
         remove_from_catalog(&mut s, "conn-two").unwrap();
-        assert_eq!(s.active_connection_id, settings::LEGACY_CONNECTION);
+        assert_eq!(s.active_connection_id, settings::DEFAULT_CONNECTION);
         assert_eq!(s.base_url, "http://127.0.0.1:8080");
         assert_eq!(s.models.agent, "shared-model");
-        assert!(remove_from_catalog(&mut s, settings::LEGACY_CONNECTION).is_err());
+        assert!(remove_from_catalog(&mut s, settings::DEFAULT_CONNECTION).is_err());
         assert!(select_active(&mut s, "missing").is_err());
         assert!(check_revision(&s, 1).is_err());
     }

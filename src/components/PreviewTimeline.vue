@@ -14,18 +14,18 @@ import {
   toolIcon,
   visibleSegments,
   zoomed,
-  type FlightEvent,
-  type FlightStep,
+  type PreviewEvent,
+  type PreviewStep,
   type Segment,
-} from '@/config/flight'
+} from '@/config/preview'
 
 const props = defineProps<{
   segments: Segment[]
-  steps: FlightStep[]
+  steps: PreviewStep[]
   starts: number[]
   total: number
   timeMs: number
-  events: FlightEvent[]
+  events: PreviewEvent[]
   runStartedUtc: string | null
   retried: ReadonlySet<number>
 }>()

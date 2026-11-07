@@ -5252,8 +5252,8 @@ checksum = "3582f63211428f83597b51b2ddb88e2a91a9d52d12831f9d08f5e624e8977422"
 
 [[package]]
 name = "rune-infer"
-version = "0.18.0"
-source = "git+https://github.com/shba007/rune-infer.git?rev=745e86380427a9d1bbf6399be7fe8f620724093e#745e86380427a9d1bbf6399be7fe8f620724093e"
+version = "0.19.0"
+source = "git+https://github.com/shba007/rune-infer.git?rev=d5bd9796fce1f74d04b397de967c31252eecc31c#d5bd9796fce1f74d04b397de967c31252eecc31c"
 dependencies = [
  "anyhow",
  "async-stream",

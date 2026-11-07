@@ -34,9 +34,13 @@ pub async fn execution_profile(
     key: Option<&str>,
     model: &str,
 ) -> Result<crate::model::profile::ModelProfile, String> {
+    if key.is_none_or(|key| key.trim().is_empty()) {
+        return Err("An Infer API key is required".into());
+    }
     if protected_execution_context(app) {
         crate::model::protected::discover(&app.state::<AppState>().http, base, key, model).await
     } else {
+        crate::infer_catalog::verify_infer(base, key).await?;
         let state = app.state::<AppState>();
         let mut request = state
             .http
@@ -292,7 +296,7 @@ pub fn workspace_task_import(
             existing.id
         ));
     }
-    let original = crate::flight::header(db, &root)
+    let original = crate::preview::header(db, &root)
         .map_err(|e| e.to_string())?
         .ok_or("Task history not found")?;
     if !matches!(
@@ -302,14 +306,14 @@ pub fn workspace_task_import(
         return Err("External-agent tasks remain separate".into());
     }
     let class = parent(&app, parent_goal_id.as_deref(), class)?;
-    let instructions = crate::flight::original_prompt(db, &root).map_err(|e| e.to_string())?;
+    let instructions = crate::preview::original_prompt(db, &root).map_err(|e| e.to_string())?;
     let is_analysis = original.analysis.is_some();
     if schedule.is_some() && instructions.is_none() && !is_analysis {
         return Err("The original prompt was not retained. Create a new task with explicit instructions to schedule it.".into());
     }
     let attempts = crate::domain::attempts(db, &root).map_err(|e| e.to_string())?;
     let execution = attempts.last().cloned().unwrap_or_else(|| root.clone());
-    let header = crate::flight::header(db, &execution)
+    let header = crate::preview::header(db, &execution)
         .map_err(|e| e.to_string())?
         .ok_or("Execution history unavailable")?;
     if header.outcome.is_none() || header.outcome.as_deref() == Some("open") {
@@ -695,12 +699,13 @@ pub async fn workspace_task_action(
 ) -> Result<(), String> {
     if action == "run" {
         let state = app.state::<AppState>();
-        let (settings, key) = crate::settings::snapshot_with_api_key(&state.settings);
+        let (settings, _) = crate::settings::snapshot_with_api_key(&state.settings);
         if settings.external_agent {
             return Err(
                 "Use API mode to run Studio tasks; external-agent sessions remain separate".into(),
             );
         }
+        let (settings, key) = crate::infer_catalog::agent_settings(&state).await?;
         crate::model::protected::discover(
             &app.state::<AppState>().http,
             &settings.base_url,
@@ -893,7 +898,7 @@ fn tick(app: &AppHandle) -> Result<Vec<WorkspaceTask>, String> {
             let outcome = state
                 .trace
                 .db_path()
-                .and_then(|db| crate::flight::header(db, run).ok().flatten())
+                .and_then(|db| crate::preview::header(db, run).ok().flatten())
                 .and_then(|h| h.outcome);
             if let Some(live) = live {
                 let phase = match live.phase {

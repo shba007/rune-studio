@@ -268,7 +268,7 @@ fn run_command(id: &str, calls: bool) -> i32 {
         );
         say(&text);
         if calls && code == 0 {
-            match crate::flight::calls(path, id, None) {
+            match crate::preview::calls(path, id, None) {
                 Ok(list) => say(&calls_report(&list)),
                 Err(err) => say(&format!("Could not read the model attempts: {err}")),
             }
@@ -277,7 +277,7 @@ fn run_command(id: &str, calls: bool) -> i32 {
     })
 }
 
-fn calls_report(list: &[crate::flight::FlightCall]) -> String {
+fn calls_report(list: &[crate::preview::PreviewCall]) -> String {
     if list.is_empty() {
         return "\nModel attempts: none recorded (this run is older than the attempt record)."
             .into();

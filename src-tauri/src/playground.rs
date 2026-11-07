@@ -297,13 +297,22 @@ fn validate_visual_capability(role: &str, capabilities: &[String]) -> Result<(),
 async fn visual_settings(app: &AppHandle, model: &str) -> Result<Settings, String> {
     let state = app.state::<AppState>();
     let (mut settings, key) = crate::settings::snapshot_with_api_key(&state.settings);
-    settings.models.analysis = model.trim().to_string();
+    let roles = crate::infer_catalog::read_roles(&settings.base_url, key.as_deref()).await?;
+    let planner = crate::infer_catalog::configured_role(&roles, "visual_planner")
+        .ok_or("Configure a Visual Analysis planner in the Infer catalog")?;
+    if planner != model.trim() {
+        return Err("The Visual Analysis planner changed in Infer. Reload and retry.".into());
+    }
+    settings.models.analysis = crate::infer_catalog::configured_role(&roles, "analysis")
+        .ok_or("Configure an Analysis model in the Infer catalog")?;
     let status = crate::backend::check(&state.http, &settings, key.as_deref()).await;
     if !status.reachable || !status.auth_ok {
         return Err(status
             .error
             .unwrap_or("Infer is unavailable or authentication failed".into()));
     }
+    crate::workflow::vision_model(&settings, &status.models)?;
+    settings.models.analysis = model.trim().to_string();
     crate::workflow::vision_model(&settings, &status.models)?;
     Ok(settings)
 }
@@ -412,6 +421,7 @@ pub(crate) async fn run_visual_operation(
     input: VisualBranchInput,
 ) -> Result<VisualBranchResult, String> {
     let (task, endpoint, features) = visual_branch_contract(&input.role)?;
+    require_visual_model(app, &input.role, &input.model).await?;
     let prepared = prepare(app, input.target, input.image, &input.model, task).await?;
     if input.role != "regions" {
         let (_, _, _, model) = session(app, &input.model, task, None).await?;
@@ -627,7 +637,7 @@ fn open_with_flow(app: &AppHandle, flow: Option<&str>) -> tauri::Result<()> {
         WebviewUrl::App(
             match flow {
                 Some("image-voice") => "index.html?view=playground&flow=image-voice",
-                Some("screen-insight") => "index.html?view=playground&flow=screen-insight",
+                Some("visual-analysis") => "index.html?view=playground&flow=visual-analysis",
                 _ => "index.html?view=playground",
             }
             .into(),
@@ -650,7 +660,7 @@ fn open_with_flow(app: &AppHandle, flow: Option<&str>) -> tauri::Result<()> {
 pub async fn open_playground(app: AppHandle, flow: Option<String>) -> Result<(), String> {
     if flow
         .as_deref()
-        .is_some_and(|id| !matches!(id, "image-voice" | "screen-insight" | "portfolio-studio"))
+        .is_some_and(|id| !matches!(id, "image-voice" | "visual-analysis" | "portfolio-studio"))
     {
         return Err("Unknown Flow".into());
     }
@@ -1317,6 +1327,7 @@ async fn speech(app: AppHandle, input: SpeechInput) -> Result<SpeechResult, Stri
 }
 
 pub(crate) async fn depth(app: AppHandle, input: DepthInput) -> Result<DepthResult, String> {
+    require_visual_model(&app, "depth", &input.model).await?;
     let prepared = prepare(&app, input.target, input.image, &input.model, DEPTH_TASK).await?;
     let original = prepared.frame.data_uri();
     let started = Instant::now();
@@ -1334,6 +1345,20 @@ pub(crate) async fn depth(app: AppHandle, input: DepthInput) -> Result<DepthResu
         prepared.model.clone(),
         started.elapsed().as_millis() as u64,
     )
+}
+
+async fn require_visual_model(app: &AppHandle, role: &str, model: &str) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let (settings, key) = crate::settings::snapshot_with_api_key(&state.settings);
+    let roles = crate::infer_catalog::read_roles(&settings.base_url, key.as_deref()).await?;
+    let expected = crate::infer_catalog::configured_role(&roles, &format!("visual_{role}"))
+        .ok_or_else(|| format!("Configure the Visual Analysis {role} role in Infer"))?;
+    if expected != model.trim() {
+        return Err(format!(
+            "The Visual Analysis {role} role changed in Infer. Reload and retry."
+        ));
+    }
+    Ok(())
 }
 
 #[derive(Deserialize)]

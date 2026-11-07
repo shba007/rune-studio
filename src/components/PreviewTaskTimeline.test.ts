@@ -2,10 +2,10 @@ import { mount } from '@vue/test-utils'
 import { expect, it } from 'vite-plus/test'
 import { taskTimeline } from '@/config/taskTimeline'
 import { historyFixture } from './taskTimelineTestKit'
-import FlightTaskTimeline from './FlightTaskTimeline.vue'
+import PreviewTaskTimeline from './PreviewTaskTimeline.vue'
 
 it('renders one row per task with shared playheads and seeks to that task step', async () => {
-  const wrapper = mount(FlightTaskTimeline, {
+  const wrapper = mount(PreviewTaskTimeline, {
     props: { timeline: taskTimeline(historyFixture)!, timeMs: 15000 },
   })
   expect(wrapper.findAll('[data-task-row]')).toHaveLength(3)

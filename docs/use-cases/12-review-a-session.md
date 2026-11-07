@@ -10,13 +10,13 @@ When a task ends, Rune offers to replay it: a video of the session, a timeline o
 
 1. Run any task. When it ends, a small card appears above the orb with the task, how it ended and the time and step count.
 2. Click **Review**. Click **Dismiss**, or wait 15 seconds: the dots on the card run out and it goes away.
-3. The Flight Player opens in its own window. Press **Space** to play or pause, **Left** and **Right** to go to the previous or next step, **J** and **K** to slow down or speed up.
+3. Preview opens inside Workspace. Press **Space** to play or pause, **Left** and **Right** to go to the previous or next step, **J** and **K** to slow down or speed up.
 4. Click or drag on the timeline to jump. Roll the mouse wheel over it to zoom in.
 5. Press **D** (or click **Details**) to open the drawer. Press **T** to move through its tabs. Click **Raw** to see the stored JSON, and **Copy** to copy it.
 6. Press **A** to hide or show the small overlay of what Rune did (the click ripple, the typed text, the keys).
 7. Typed text is hidden. Click **Typed text: hidden** (or **Show** next to the arguments) only when nobody else can see the window.
 8. Press **Esc** to close the drawer, then again to close the window.
-9. To look at an older task, choose **Open Flight Player** from the tray icon's menu and pick it from the list.
+9. To look at an older task, open **Workspace** from the tray icon's menu and pick it from task history.
 
 ## What happens
 

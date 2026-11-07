@@ -1,4 +1,4 @@
-# Screen Insight and Kit HTTP validation
+# Visual Analysis and Kit HTTP validation
 
 Validated locally on Windows, 24 October 2026. No commits, pushes, tags,
 releases, publishing workflows, or live release PRs were created by the agent.
@@ -6,7 +6,7 @@ Existing staged owner work was preserved.
 
 ## Changes and files
 
-- `src-tauri/src/workflow.rs`: one static Screen Insight registration, typed input,
+- `src-tauri/src/workflow.rs`: one static Visual Analysis registration, typed input,
   capabilities, timeout/cancellation, generation protection and existing tracing.
 - `src-tauri/src/observe/screenshot.rs`: explicit screen/window enumeration and
   one-frame capture without writing an archive image.
@@ -22,7 +22,7 @@ Existing staged owner work was preserved.
 - Three GitHub Actions workflows: restored validated preparation/publication,
   latest-source checks, exact changelog extraction, installer delivery and missing
   Linux development packages. Existing manifest/lock synchronized to package 0.0.26.
-- AGENTS, README, ARCHITECTURE, RELEASING, Kit and Screen Insight documentation:
+- AGENTS, README, ARCHITECTURE, RELEASING, Kit and Visual Analysis documentation:
   new transport/ownership contract and future workflow ideas only.
 
 ## Actual results
@@ -99,4 +99,4 @@ existing Tauri signing secrets remain configured. Values were not read or expose
 Vue/TypeScript, Bun/Vite, third-party Actions/YAML and existing thin installer/desktop
 fixture wrappers remain; repository-owned release generation stays in Rust xtask.
 
-Suggested owner commit subject: `feat: add Screen Insight and Kit HTTP integration`.
+Suggested owner commit subject: `feat: add Visual Analysis and Kit HTTP integration`.

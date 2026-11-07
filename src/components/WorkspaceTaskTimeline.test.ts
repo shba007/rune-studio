@@ -4,12 +4,12 @@ import { expect, it, vi } from 'vite-plus/test'
 import WorkspaceTaskTimeline from './WorkspaceTaskTimeline.vue'
 import TaskPreview from './TaskPreview.vue'
 import type { WorkspaceTasksModel } from '@/composables/useWorkspaceTasks'
-import type { FlightRun } from '@/config/flight'
+import type { PreviewRun } from '@/config/preview'
 import type { WorkspaceTask } from '@/types/workspace'
 vi.mock('@tauri-apps/api/core', () => ({ invoke: async () => ({}) }))
 
 const now = Date.now()
-const run = (id: string, task: string, outcome: string | null, startedMs: number): FlightRun => ({
+const run = (id: string, task: string, outcome: string | null, startedMs: number): PreviewRun => ({
   id,
   task,
   source: 'built-in',
@@ -21,7 +21,7 @@ const run = (id: string, task: string, outcome: string | null, startedMs: number
   thumb: 'frame.jpg',
 })
 
-function mountTimeline(history: FlightRun[], tasks: WorkspaceTask[] = []) {
+function mountTimeline(history: PreviewRun[], tasks: WorkspaceTask[] = []) {
   const action = vi.fn<(task: WorkspaceTask, name: string) => Promise<void>>()
   const workspace = {
     tasks: ref(tasks),

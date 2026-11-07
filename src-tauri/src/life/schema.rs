@@ -82,15 +82,32 @@ pub enum Opened {
 }
 
 pub fn open_or_create(db: &mut Connection, key_id: &str) -> Result<Opened, LifeError> {
-    db.busy_timeout(std::time::Duration::from_millis(5000))?;
-    db.execute_batch(
-        "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;",
-    )?;
-
     let found: i64 = db.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if found > VERSION {
         return Ok(Opened::Newer(found));
     }
+    if found < 0 {
+        return Err(LifeError::Sqlite(format!(
+            "Unsupported life database schema {found}; the file was preserved"
+        )));
+    }
+
+    if found == 0 {
+        let objects: i64 = db.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'",
+            [],
+            |row| row.get(0),
+        )?;
+        if objects != 0 {
+            return Err(LifeError::Sqlite(
+                "Unsupported unversioned life database; the file was preserved".into(),
+            ));
+        }
+    }
+    db.busy_timeout(std::time::Duration::from_millis(5000))?;
+    db.execute_batch(
+        "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;",
+    )?;
 
     if found == 0 {
         let now = now_utc();
@@ -166,5 +183,19 @@ mod tests {
 
         let opened = open_or_create(&mut conn, "test-key-id").unwrap();
         assert_eq!(opened, Opened::Newer(42));
+    }
+
+    #[test]
+    fn nonempty_unversioned_database_is_preserved() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE previous (value TEXT); INSERT INTO previous VALUES ('keep');",
+        )
+        .unwrap();
+        assert!(open_or_create(&mut conn, "test-key-id").is_err());
+        let value: String = conn
+            .query_row("SELECT value FROM previous", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(value, "keep");
     }
 }

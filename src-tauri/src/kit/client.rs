@@ -5,21 +5,53 @@ use std::{collections::HashSet, time::Duration};
 use tauri::{AppHandle, Manager};
 const LIMIT: usize = 65536;
 const PROTOCOL: &str = include_str!("../../../docs/mcp-kit-version.txt");
+const TOKEN_SERVICE: &str = "rune-studio";
+const TOKEN_ACCOUNT: &str = "rune-kit-http-token";
+
+fn stored_kit_token() -> Result<Option<String>, String> {
+    let entry = crate::credentials::Entry::new(TOKEN_SERVICE, TOKEN_ACCOUNT)
+        .map_err(|e| format!("Cannot access the system credential store: {e}"))?;
+    match entry.get_password() {
+        Ok(token) => Ok(Some(token)),
+        Err(keyring::Error::NoEntry) => Ok(std::env::var("RUNE_KIT_HTTP_TOKEN")
+            .ok()
+            .filter(|v| !v.is_empty())),
+        Err(e) => Err(format!("Cannot read the Kit token: {e}")),
+    }
+}
+
+#[tauri::command]
+pub fn kit_token_set(token: String) -> Result<(), String> {
+    if token.chars().any(char::is_control) {
+        return Err("Kit token cannot contain control characters".into());
+    }
+    let entry = crate::credentials::Entry::new(TOKEN_SERVICE, TOKEN_ACCOUNT)
+        .map_err(|e| format!("Cannot access the system credential store: {e}"))?;
+    if token.is_empty() {
+        match entry.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(e) => Err(format!("Cannot remove the Kit token: {e}")),
+        }
+    } else {
+        entry
+            .set_password(&token)
+            .map_err(|e| format!("Cannot save the Kit token: {e}"))
+    }
+}
+
+#[tauri::command]
+pub fn kit_token_present() -> Result<bool, String> {
+    stored_kit_token().map(|token| token.is_some())
+}
 fn default_endpoint() -> String {
     "http://127.0.0.1:47601/mcp".into()
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct Config {
     pub enabled: bool,
     pub endpoint: String,
     pub selected: Vec<String>,
-    #[serde(skip_serializing)]
-    pub executable: String,
-    #[serde(skip_serializing)]
-    pub root: String,
-    #[serde(skip_deserializing)]
-    pub migration: String,
 }
 impl Default for Config {
     fn default() -> Self {
@@ -27,9 +59,6 @@ impl Default for Config {
             enabled: false,
             endpoint: default_endpoint(),
             selected: vec![],
-            executable: String::new(),
-            root: String::new(),
-            migration: String::new(),
         }
     }
 }
@@ -47,75 +76,46 @@ pub struct Discovery {
     pub tools: Vec<Tool>,
     pub unavailable: Vec<String>,
 }
-fn decode_config(bytes: &[u8]) -> Config {
-    let raw: Value = serde_json::from_slice(bytes).unwrap_or_default();
-    let mut config: Config = serde_json::from_value(raw.clone()).unwrap_or_default();
-    if raw.is_object() && raw.get("endpoint").is_none() {
-        config.enabled = false;
-        config.migration = "Legacy Kit connection disabled. Start Kit HTTP 0.6.0+ separately, configure its filesystem root on the server, confirm the endpoint and re-enable selected tools. Studio will not launch the old executable. Your original settings are backed up on save.".into();
+fn read_config(path: &std::path::Path) -> Result<Config, String> {
+    match std::fs::read(path) {
+        Ok(bytes) => serde_json::from_slice(&bytes).map_err(|_| {
+            "Kit settings are incompatible or malformed; the existing file was preserved".into()
+        }),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Config::default()),
+        Err(error) => Err(error.to_string()),
     }
-    config
 }
 pub fn load(app: &AppHandle) -> Config {
     app.path()
         .app_config_dir()
         .ok()
-        .and_then(|p| std::fs::read(p.join("kit.json")).ok())
-        .map(|b| decode_config(&b))
+        .and_then(|p| read_config(&p.join("kit.json")).ok())
         .unwrap_or_default()
 }
 #[tauri::command]
-pub fn kit_settings(app: AppHandle) -> Config {
-    load(&app)
+pub fn kit_settings(app: AppHandle) -> Result<Config, String> {
+    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    read_config(&dir.join("kit.json"))
 }
 #[tauri::command]
 pub fn kit_save(app: AppHandle, config: Config) -> Result<(), String> {
-    if config.selected.iter().any(|n| !super::approved_identity(n)) {
-        return Err("Only approved read-only tools may be selected".into());
+    if config
+        .selected
+        .iter()
+        .any(|n| n.is_empty() || n.len() > 256 || n.chars().any(char::is_control))
+    {
+        return Err("Invalid Kit tool identity".into());
     }
     endpoint(&config.endpoint)?;
     let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join("kit.json");
-    backup_legacy_config(&dir, &path)?;
+    read_config(&path)?;
     std::fs::write(
         path,
         serde_json::to_vec(&config).map_err(|e| e.to_string())?,
     )
     .map_err(|e| e.to_string())
-}
-fn backup_legacy_config(dir: &std::path::Path, path: &std::path::Path) -> Result<(), String> {
-    if let Ok(bytes) = std::fs::read(path) {
-        let value:Value=serde_json::from_slice(&bytes).map_err(|_|"Existing Kit settings are malformed; preserve or repair the original file before saving")?;
-        if !value.is_object() {
-            return Err(
-                "Existing Kit settings are not an object; original was not replaced".into(),
-            );
-        }
-    }
-    if let Ok(bytes) = std::fs::read(path)
-        && serde_json::from_slice::<Value>(&bytes)
-            .ok()
-            .is_some_and(|v| v.get("endpoint").is_none())
-    {
-        use std::io::Write;
-        match std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(dir.join("kit.stdio-backup.json"))
-        {
-            Ok(mut file) => file.write_all(&bytes).map_err(|e| e.to_string())?,
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                if std::fs::read(dir.join("kit.stdio-backup.json")).map_err(|e| e.to_string())?
-                    != bytes
-                {
-                    return Err("Legacy backup conflicts with current Kit settings; original configuration was not replaced. Preserve both files before migrating.".into());
-                }
-            }
-            Err(e) => return Err(e.to_string()),
-        }
-    }
-    Ok(())
 }
 fn endpoint(text: &str) -> Result<reqwest::Url, String> {
     let url = reqwest::Url::parse(text.trim()).map_err(
@@ -132,6 +132,230 @@ fn endpoint(text: &str) -> Result<reqwest::Url, String> {
         return Err("Kit must use an HTTP loopback /mcp endpoint without embedded credentials, query or fragment".into());
     }
     Ok(url)
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ConfigurationField {
+    plugin: String,
+    key: String,
+    kind: String,
+    description: String,
+    required: bool,
+    secret: bool,
+    locked: bool,
+    value: String,
+}
+
+#[derive(Deserialize)]
+struct ConfigurationFields {
+    fields: Vec<ConfigurationField>,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct ConfigurationUpdate {
+    plugin: String,
+    key: String,
+    value: String,
+    shared: bool,
+}
+
+fn management_client(config: &Config) -> Result<(reqwest::Client, reqwest::Url), String> {
+    let mut url = endpoint(&config.endpoint)?;
+    url.set_path("/management/config");
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|e| e.to_string())?;
+    Ok((client, url))
+}
+
+async fn management_response(response: reqwest::Response) -> Result<reqwest::Response, String> {
+    if response.status().is_success() {
+        Ok(response)
+    } else if response.status() == reqwest::StatusCode::NOT_FOUND {
+        Err("Kit could not find this management endpoint or item. Refresh the list or update Kit.".into())
+    } else {
+        let status = response.status();
+        let message = response.text().await.unwrap_or_default();
+        Err(format!(
+            "Kit configuration request failed ({status}): {}",
+            message.chars().take(512).collect::<String>()
+        ))
+    }
+}
+
+#[tauri::command]
+pub async fn kit_configuration(config: Config) -> Result<Vec<ConfigurationField>, String> {
+    let (client, url) = management_client(&config)?;
+    let mut request = client.get(url);
+    if let Some(token) = stored_kit_token()? {
+        request = request.bearer_auth(token);
+    }
+    let response = management_response(request.send().await.map_err(|e| e.to_string())?).await?;
+    if response
+        .content_length()
+        .is_some_and(|length| length > LIMIT as u64)
+    {
+        return Err("Kit configuration response is too large".into());
+    }
+    let bytes = response.bytes().await.map_err(|e| e.to_string())?;
+    if bytes.len() > LIMIT {
+        return Err("Kit configuration response is too large".into());
+    }
+    serde_json::from_slice::<ConfigurationFields>(&bytes)
+        .map(|result| result.fields)
+        .map_err(|_| "Invalid Kit configuration response".into())
+}
+
+#[tauri::command]
+pub async fn kit_update_configuration(
+    config: Config,
+    update: ConfigurationUpdate,
+) -> Result<(), String> {
+    let (client, url) = management_client(&config)?;
+    let mut request = client.put(url).json(&update);
+    if let Some(token) = stored_kit_token()? {
+        request = request.bearer_auth(token);
+    }
+    management_response(request.send().await.map_err(|e| e.to_string())?).await?;
+    Ok(())
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct KitRemote {
+    name: String,
+    endpoint: String,
+    protocol: String,
+    token_env: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct KitRemotes {
+    servers: Vec<KitRemote>,
+}
+
+#[tauri::command]
+pub async fn kit_remotes(config: Config) -> Result<Vec<KitRemote>, String> {
+    let (client, mut url) = management_client(&config)?;
+    url.set_path("/management/remotes");
+    let mut request = client.get(url);
+    if let Some(token) = stored_kit_token()? {
+        request = request.bearer_auth(token);
+    }
+    let mut response =
+        management_response(request.send().await.map_err(|e| e.to_string())?).await?;
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|e| e.to_string())? {
+        if bytes.len() + chunk.len() > LIMIT {
+            return Err("Kit remote list is too large".into());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    serde_json::from_slice::<KitRemotes>(&bytes)
+        .map(|result| result.servers)
+        .map_err(|_| "Invalid Kit remote list".into())
+}
+
+#[tauri::command]
+pub async fn kit_packages(config: Config) -> Result<Value, String> {
+    let (client, mut url) = management_client(&config)?;
+    url.set_path("/management/packages");
+    let mut request = client.get(url);
+    if let Some(token) = stored_kit_token()? {
+        request = request.bearer_auth(token);
+    }
+    let mut response =
+        management_response(request.send().await.map_err(|e| e.to_string())?).await?;
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|e| e.to_string())? {
+        if bytes.len() + chunk.len() > LIMIT {
+            return Err("Kit package list is too large".into());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    let value: Value = serde_json::from_slice(&bytes).map_err(|_| "Invalid Kit package list")?;
+    if !value["plugins"].is_array() || !value["skills"].is_array() {
+        return Err("Invalid Kit package list".into());
+    }
+    Ok(value)
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct PackageInstall {
+    kind: String,
+    target: String,
+    version: Option<String>,
+    prefer_native: bool,
+}
+
+#[tauri::command]
+pub async fn kit_install_package(config: Config, package: PackageInstall) -> Result<Value, String> {
+    let (client, mut url) = management_client(&config)?;
+    url.set_path("/management/packages");
+    let mut request = client
+        .post(url)
+        .timeout(Duration::from_secs(300))
+        .json(&package);
+    if let Some(token) = stored_kit_token()? {
+        request = request.bearer_auth(token);
+    }
+    let response = management_response(request.send().await.map_err(|e| format!("Kit installation response unavailable: {e}. Check Kit's installed packages before retrying."))?).await?;
+    let bytes = response.bytes().await.map_err(|e| e.to_string())?;
+    if bytes.len() > LIMIT {
+        return Err("Kit installation response is too large".into());
+    }
+    serde_json::from_slice(&bytes).map_err(|_| "Invalid Kit installation response".into())
+}
+
+#[tauri::command]
+pub async fn kit_package_operation(
+    config: Config,
+    action: String,
+    kind: String,
+    name: String,
+) -> Result<Value, String> {
+    if !matches!(action.as_str(), "check" | "update" | "remove") {
+        return Err("Invalid package action".into());
+    }
+    let (client, mut url) = management_client(&config)?;
+    url.set_path(&format!("/management/packages/{action}"));
+    let mut request = client
+        .post(url)
+        .timeout(Duration::from_secs(300))
+        .json(&json!({"kind":kind,"name":name}));
+    if let Some(token) = stored_kit_token()? {
+        request = request.bearer_auth(token);
+    }
+    let response = management_response(request.send().await.map_err(|e| {
+        format!("Kit response unavailable: {e}. Check installed packages before retrying.")
+    })?)
+    .await?;
+    let bytes = response.bytes().await.map_err(|e| e.to_string())?;
+    if bytes.len() > LIMIT {
+        return Err("Kit response is too large".into());
+    }
+    serde_json::from_slice(&bytes).map_err(|_| "Invalid Kit package response".into())
+}
+
+#[tauri::command]
+pub async fn kit_remote_update(
+    config: Config,
+    name: String,
+    remote: Option<KitRemote>,
+) -> Result<(), String> {
+    let (client, mut url) = management_client(&config)?;
+    url.set_path("/management/remotes");
+    let body = json!({ "name": name, "config": remote.map(|remote| json!({
+        "endpoint": remote.endpoint, "protocol": remote.protocol, "token_env": remote.token_env,
+    })) });
+    let mut request = client.put(url).json(&body);
+    if let Some(token) = stored_kit_token()? {
+        request = request.bearer_auth(token);
+    }
+    management_response(request.send().await.map_err(|e| e.to_string())?).await?;
+    Ok(())
 }
 pub fn compatible_version(text: &str) -> bool {
     let parts: Vec<_> = text
@@ -153,6 +377,40 @@ struct Gateway {
     headers: Vec<(String, String)>,
 }
 impl Gateway {
+    fn remote_names(&self) -> HashSet<String> {
+        let mut url = self.endpoint.clone();
+        url.set_path("/management/remotes");
+        let mut request = self.client.get(url).timeout(Duration::from_secs(5));
+        match stored_kit_token() {
+            Ok(Some(token)) => request = request.bearer_auth(token),
+            Ok(None) => (),
+            Err(_) => return HashSet::new(),
+        }
+        let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        else {
+            return HashSet::new();
+        };
+        runtime.block_on(async {
+            let Ok(mut response) = request.send().await else {
+                return HashSet::new();
+            };
+            if !response.status().is_success() {
+                return HashSet::new();
+            }
+            let mut bytes = Vec::new();
+            while let Ok(Some(chunk)) = response.chunk().await {
+                if bytes.len() + chunk.len() > LIMIT {
+                    return HashSet::new();
+                }
+                bytes.extend_from_slice(&chunk);
+            }
+            serde_json::from_slice::<KitRemotes>(&bytes)
+                .map(|list| list.servers.into_iter().map(|server| server.name).collect())
+                .unwrap_or_default()
+        })
+    }
     fn start(
         config: &Config,
         cancel: &CancelToken,
@@ -220,14 +478,14 @@ impl Gateway {
         for (key, value) in std::mem::take(&mut self.headers) {
             request = request.header(key, value);
         }
-        if let Ok(token) = std::env::var("RUNE_KIT_HTTP_TOKEN") {
+        if let Some(token) = stored_kit_token()? {
             request = request.bearer_auth(token);
         }
         let work = async {
             let mut response = request.json(&json!({"jsonrpc":"2.0","id":id,"method":method,"params":params})).send().await.map_err(|e|format!("Cannot reach Kit HTTP endpoint: {e}. Start Kit separately with serve --headless."))?;
             let status = response.status();
             if matches!(status.as_u16(), 401 | 403) {
-                return Err("Kit HTTP authentication refused. Set RUNE_KIT_HTTP_TOKEN to match the separately started server, then restart Studio.".into());
+                return Err("Kit HTTP authentication refused. Set the Kit token in Studio settings to match the server.".into());
             }
 
             let content_type = response
@@ -290,6 +548,15 @@ impl Gateway {
         let entries = result["tools"]
             .as_array()
             .ok_or("Kit discovery did not return tools")?;
+        let remote_names = if entries.iter().any(|entry| {
+            entry["name"]
+                .as_str()
+                .is_some_and(|name| !super::approved_identity(name))
+        }) {
+            self.remote_names()
+        } else {
+            HashSet::new()
+        };
         let mut names = HashSet::new();
         let mut tools = Vec::new();
         for entry in entries {
@@ -299,7 +566,10 @@ impl Gateway {
             if !names.insert(name.to_owned()) {
                 return Err("Duplicate Kit tool identity".into());
             }
-            if !super::approved_identity(name) {
+            let remote = name.split_once("__").is_some_and(|(namespace, tool)| {
+                !tool.is_empty() && remote_names.contains(namespace)
+            });
+            if !super::approved_identity(name) && !remote {
                 continue;
             }
             let reason = if super::headers::extract(&entry["inputSchema"], &json!({})).is_err() {
@@ -416,10 +686,7 @@ pub fn call(
     if args.to_string().len() > 8192 {
         return Err("Kit arguments exceed 8 KB".into());
     }
-    if !config.enabled
-        || !config.selected.iter().any(|n| n == name)
-        || !super::approved_identity(name)
-    {
+    if !config.enabled || !config.selected.iter().any(|n| n == name) {
         return Err("Tool is not selected or approved".into());
     }
     if super::filesystem_identity(name)
@@ -484,13 +751,23 @@ fn bounded(value: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
-    fn migration_preserves_selection_but_never_launches_legacy_settings() {
-        let config=decode_config(br#"{"enabled":true,"executable":"C:/legacy/rune-kit.exe","selected":["time__get_current_time"],"root":"C:/private"}"#);
-        assert!(!config.enabled);
-        assert_eq!(config.selected, vec!["time__get_current_time"]);
-        assert!(!config.migration.is_empty());
-        assert_eq!(config.endpoint, default_endpoint());
+    fn kit_token_uses_credential_store_and_can_be_removed() {
+        kit_token_set("test-token".into()).unwrap();
+        assert_eq!(stored_kit_token().unwrap().as_deref(), Some("test-token"));
+        assert!(kit_token_set("bad\ntoken".into()).is_err());
+        assert_eq!(stored_kit_token().unwrap().as_deref(), Some("test-token"));
+        kit_token_set(String::new()).unwrap();
+        assert!(matches!(
+            crate::credentials::Entry::new(TOKEN_SERVICE, TOKEN_ACCOUNT)
+                .unwrap()
+                .get_password(),
+            Err(keyring::Error::NoEntry)
+        ));
+    }
+    #[test]
+    fn http_endpoint_and_minimum_version_are_enforced() {
         assert!(endpoint("http://example.com/mcp").is_err());
         assert!(endpoint("http://127.0.0.1:47601/mcp").is_ok());
         assert!(!compatible_version("0.5.0"));
@@ -516,6 +793,11 @@ mod tests {
                         break;
                     }
                     headers.push_str(&line);
+                }
+                if mode == "remote" && headers.starts_with("GET /management/remotes ") {
+                    let text = json!({"servers":[{"name":"external","endpoint":"https://example.test/mcp","protocol":"2026-07-28","token_env":null}]}).to_string();
+                    write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", text.len(), text).unwrap();
+                    continue;
                 }
                 let len: usize = headers
                     .lines()
@@ -547,7 +829,23 @@ mod tests {
                         json!({"supportedVersions":[PROTOCOL],"capabilities":{"tools":{}},"_meta":{"io.modelcontextprotocol/serverInfo":{"name":"rune-kit","version":"0.6.0"}},"resultType":"complete"})
                     }
                     "tools/list" => {
-                        json!({"resultType":"complete","tools":[{"name":"time__get_current_time","description":"time","annotations":{"readOnlyHint":true,"destructiveHint":false},"inputSchema":{"type":"object","properties":{"timezone":{"type":"string","x-mcp-header":"Zone"}},"additionalProperties":false,"x-rune-rules":{"read_only":true,"risk":"low","effects":["read"]}}}]})
+                        let name = if mode == "remote" {
+                            "external__clock"
+                        } else {
+                            "time__get_current_time"
+                        };
+                        let safe = json!({"name":name,"description":"time","annotations":{"readOnlyHint":true,"destructiveHint":false},"inputSchema":{"type":"object","properties":{"timezone":{"type":"string","x-mcp-header":"Zone"}},"additionalProperties":false,"x-rune-rules":{"read_only":true,"risk":"low","effects":["read"]}}});
+                        let mut tools = vec![safe.clone()];
+                        if mode == "remote" {
+                            let mut unsafe_tool = safe.clone();
+                            unsafe_tool["name"] = json!("external__unsafe");
+                            unsafe_tool["annotations"]["readOnlyHint"] = json!(false);
+                            tools.push(unsafe_tool);
+                            let mut impostor = safe;
+                            impostor["name"] = json!("other__clock");
+                            tools.push(impostor);
+                        }
+                        json!({"resultType":"complete","tools":tools})
                     }
                     "tools/call" => {
                         assert!(headers.contains("Mcp-Name") || headers.contains("mcp-name"));
@@ -594,6 +892,26 @@ mod tests {
             },
             thread,
         )
+    }
+
+    #[test]
+    fn selected_remote_tools_are_discovered_and_called_through_kit() {
+        let (mut config, server) = server("remote", 7);
+        config.selected = vec!["external__clock".into()];
+        let cancel = CancelToken::default();
+        let discovery = discover(&config, &cancel).unwrap();
+        assert_eq!(discovery.tools.len(), 1);
+        assert_eq!(discovery.tools[0].name, "external__clock");
+        assert!(
+            call(
+                &config,
+                "external__clock",
+                &json!({"timezone":"UTC"}),
+                &cancel
+            )
+            .is_ok()
+        );
+        server.join().unwrap();
     }
     #[test]
     fn http_discovery_sse_json_selected_call_and_errors() {
@@ -668,9 +986,9 @@ mod tests {
         server.join().unwrap();
     }
     #[test]
-    fn legacy_backup_is_idempotent_and_conflicts_preserve_original_bytes() {
+    fn incompatible_settings_are_rejected_without_modification() {
         let dir = std::env::temp_dir().join(format!(
-            "studio-http-migration-{}-{}",
+            "studio-http-config-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -679,22 +997,11 @@ mod tests {
         ));
         std::fs::create_dir(&dir).unwrap();
         let path = dir.join("kit.json");
-        let original = br#"{"enabled":true,"executable":"old.exe","selected":[]}"#;
+        let original = b"{invalid";
         std::fs::write(&path, original).unwrap();
-        backup_legacy_config(&dir, &path).unwrap();
-        backup_legacy_config(&dir, &path).unwrap();
-        assert_eq!(
-            std::fs::read(dir.join("kit.stdio-backup.json")).unwrap(),
-            original
-        );
-        std::fs::write(dir.join("kit.stdio-backup.json"), b"different backup").unwrap();
-        assert!(backup_legacy_config(&dir, &path).is_err());
+        assert!(read_config(&path).is_err());
         assert_eq!(std::fs::read(&path).unwrap(), original);
-        std::fs::write(&path, b"{invalid").unwrap();
-        assert!(backup_legacy_config(&dir, &path).is_err());
-        assert_eq!(std::fs::read(&path).unwrap(), b"{invalid");
         std::fs::remove_file(path).unwrap();
-        std::fs::remove_file(dir.join("kit.stdio-backup.json")).unwrap();
         std::fs::remove_dir(dir).unwrap();
     }
     #[test]

@@ -3,7 +3,6 @@ import { reactive, ref } from 'vue'
 import { beforeEach, expect, it, vi } from 'vite-plus/test'
 import type { Agent } from '@/composables/useAgent'
 import type { BackendStatus, ModelCapabilities, Settings } from '@/types/protocol'
-import ModelRoleRow from './ModelRoleRow.vue'
 import SettingsConnectionModels from './SettingsConnectionModels.vue'
 
 const harness = vi.hoisted(() => ({
@@ -88,7 +87,7 @@ it('shows the migrated connection and its actual discovered models', async () =>
   expect(wrapper.text()).toContain('Model roles save automatically')
   expect(wrapper.text()).toContain('Model input resolution')
   expect(draft.decisionUrl).toBe('http://127.0.0.1:8081')
-  expect(wrapper.findAllComponents(ModelRoleRow)).toHaveLength(6)
+  expect(wrapper.text()).toContain('Configure model roles in the Infer catalog')
   await wrapper.get('input[aria-label="Search discovered models"]').setValue('gem')
   expect(wrapper.get('[aria-label="Discovered models"] ul').text()).toContain('gemma')
   expect(wrapper.get('[aria-label="Discovered models"] ul').text()).not.toContain('qwen')
@@ -211,35 +210,6 @@ it('distinguishes unavailable discovery from an empty model list', async () => {
   expect(wrapper.text()).toContain('0 models')
   await wrapper.get('[aria-label="Open Model connection"]').trigger('click')
   expect(wrapper.text()).toContain('The server reported no models')
-  wrapper.unmount()
-})
-it('saves selected models, additional IDs and the connection output cap', async () => {
-  harness.invoke.mockImplementation(async (command) =>
-    command === 'connections_state' || command === 'connections_models_save' ? initial() : null,
-  )
-  const { wrapper } = await setup()
-  await wrapper.get('[aria-label="Open Model connection"]').trigger('click')
-  const section = wrapper.get('[aria-label="Model selection and limits"]')
-  await section
-    .findAll('button')
-    .find((button) => button.text() === 'Clear')!
-    .trigger('click')
-  await section.get('textarea').setValue('custom-model')
-  const custom = section.findAll('label').find((label) => label.text() === 'custom-model')!
-  await custom.get('button[role=switch]').trigger('click')
-  await section.get('input[type="number"]').setValue('1000')
-  await section
-    .findAll('button')
-    .find((button) => button.text() === 'Save model settings')!
-    .trigger('click')
-  await flushPromises()
-  expect(harness.invoke).toHaveBeenCalledWith('connections_models_save', {
-    revision: 0,
-    id: 'legacy',
-    selectedModels: ['custom-model'],
-    additionalModels: ['custom-model'],
-    outputLimit: 1000,
-  })
   wrapper.unmount()
 })
 it('requires explicit removal confirmation and requests activation for another saved connection', async () => {

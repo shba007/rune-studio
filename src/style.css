@@ -135,7 +135,7 @@ input {
   display: none !important;
 }
 
-html:not(.flight-view) {
+html:not(.window-view) {
   --color-rune-surface: rgb(24 24 28 / 0.94);
   --color-rune-raised: rgb(38 38 44 / 0.94);
   --color-rune-sunken: rgb(14 14 16 / 0.94);
@@ -147,7 +147,7 @@ html.native-blur {
   --color-rune-sunken: rgb(12 12 16 / 0.7);
 }
 
-html.flight-view {
+html.window-view {
   --text-rune-title: 1.5rem;
   --text-rune-title--line-height: 2rem;
   --text-rune-subtitle: 1.125rem;
@@ -159,13 +159,13 @@ html.flight-view {
   --text-rune-heading: 0.75rem;
   --text-rune-heading--line-height: 1rem;
 }
-.flight-view {
+.window-view {
   background: #0a0b0e;
 }
-html.native-blur.flight-view {
+html.native-blur.window-view {
   background: transparent;
 }
-html.native-blur.flight-view #app > main {
+html.native-blur.window-view #app > main {
   border-radius: var(--radius-rune-tile);
   background: rgb(14 15 20 / 0.5);
 }
@@ -179,11 +179,11 @@ html.native-blur.flight-view #app > main {
       0 2px 12px rgb(0 0 0 / 0.14);
   }
 }
-.flight-view pre,
-.flight-view dd,
-.flight-view [data-testid='caption'] {
+.window-view pre,
+.window-view dd,
+.window-view [data-testid='caption'] {
   user-select: text;
 }
-.flight-view #__vue-devtools-container__ {
+.window-view #__vue-devtools-container__ {
   display: none;
 }

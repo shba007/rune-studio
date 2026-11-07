@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import { useIntersectionObserver } from '@vueuse/core'
 import { ref, useTemplateRef, watch } from 'vue'
-import type { FlightRun } from '@/config/flight'
-import { useFlight } from '@/composables/useFlight'
+import type { PreviewRun } from '@/config/preview'
+import { usePreview } from '@/composables/usePreview'
 import AppIcon from './AppIcon.vue'
-const props = defineProps<{ run?: FlightRun | null; fill?: boolean }>()
+const props = defineProps<{ run?: PreviewRun | null; fill?: boolean }>()
 defineEmits<{ open: [] }>()
 const target = useTemplateRef<HTMLElement>('target')
 const visible = ref(false)
 const picture = ref<string | null>(null)
-const flight = useFlight()
+const preview = usePreview()
 let generation = 0
 useIntersectionObserver(target, ([entry]) => {
   visible.value = !!entry?.isIntersecting
@@ -20,7 +20,7 @@ watch(
     const token = ++generation
     picture.value = null
     if (!visible.value || !props.run?.thumb) return
-    const url = await flight.fileOf(props.run.thumb, props.run.thumbRun ?? props.run.id)
+    const url = await preview.fileOf(props.run.thumb, props.run.thumbRun ?? props.run.id)
     if (token === generation) picture.value = url
   },
   { immediate: true },

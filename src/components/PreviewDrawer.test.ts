@@ -1,10 +1,10 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vite-plus/test'
 
-import type { TabId } from '@/config/flight'
+import type { TabId } from '@/config/preview'
 
-import FlightDrawer from './FlightDrawer.vue'
-import { makeCall, makeHeader, makeStep } from './flightTestKit'
+import PreviewDrawer from './PreviewDrawer.vue'
+import { makeCall, makeHeader, makeStep } from './previewTestKit'
 
 type Loader = (callId: number) => Promise<{ request: string; response: string } | null>
 
@@ -15,7 +15,7 @@ const typing = makeStep(2, 5, {
 })
 
 function mountDrawer(over: Record<string, unknown> = {}) {
-  return mount(FlightDrawer, {
+  return mount(PreviewDrawer, {
     props: {
       open: true,
       tabs: ['step', 'api'] as TabId[],
@@ -35,7 +35,7 @@ function mountDrawer(over: Record<string, unknown> = {}) {
   })
 }
 
-describe('FlightDrawer', () => {
+describe('PreviewDrawer', () => {
   it('renders phase timings in milliseconds, seconds and minutes', () => {
     const step = makeStep(1, 0)
     step.phases = {

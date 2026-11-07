@@ -10,8 +10,6 @@ import HubGroup from './HubGroup.vue'
 import HubInput from './HubInput.vue'
 import HubRow from './HubRow.vue'
 import HubToggle from './HubToggle.vue'
-import RuneSwitch from './RuneSwitch.vue'
-import ModelRoleRow from './ModelRoleRow.vue'
 import AppIcon from './AppIcon.vue'
 import ConnectionEditor from './ConnectionEditor.vue'
 import DownloadProgress from './DownloadProgress.vue'
@@ -21,14 +19,6 @@ import {
   type ConnectionView,
 } from '@/composables/useConnections'
 const props = defineProps<{ agent: Agent; draft: Settings }>()
-const ROLES = [
-  { key: 'agent', label: 'Agent' },
-  { key: 'verifier', label: 'Verifier' },
-  { key: 'analysis', label: 'Visual Analysis' },
-  { key: 'voice', label: 'Voice' },
-  { key: 'decision', label: 'Decision' },
-  { key: 'advisor', label: 'Advisor' },
-] as const
 const detail = ref(false)
 const connections = useConnections()
 const editing = ref<ConnectionView | null | undefined>(undefined)
@@ -38,10 +28,6 @@ const activeConnection = computed(() =>
 )
 const checking = ref(false)
 const modelSearch = ref('')
-const selectedDraft = ref<string[]>([])
-const additionalDraft = ref('')
-const limitDraft = ref('')
-const modelError = ref('')
 const embeddedAvailable = ref(false)
 const embeddedStarting = ref(false)
 const embeddedError = ref('')
@@ -168,69 +154,6 @@ const visibleStatus = computed(() =>
     : null,
 )
 const discovered = computed(() => visibleStatus.value?.models ?? [])
-const additionalIds = computed(() => [
-  ...new Set(
-    additionalDraft.value
-      .split(/[\n,]/)
-      .map((id) => id.trim())
-      .filter(Boolean),
-  ),
-])
-const modelIds = computed(() => [
-  ...new Set([
-    ...discovered.value.map((m) => m.id),
-    ...additionalIds.value,
-    ...selectedDraft.value,
-  ]),
-])
-const filteredModelIds = computed(() =>
-  modelIds.value.filter((id) => id.toLowerCase().includes(modelSearch.value.trim().toLowerCase())),
-)
-const roleModelIds = computed(() => [
-  ...new Set([
-    ...discovered.value.map((m) => m.id),
-    ...(activeConnection.value?.additionalModels ?? []),
-  ]),
-])
-watch(
-  activeConnection,
-  (connection) => {
-    if (!connection) return
-    selectedDraft.value =
-      connection.selectedModels != null
-        ? [...connection.selectedModels]
-        : [
-            ...new Set([
-              ...discovered.value.map((model) => model.id),
-              ...Object.values(props.draft.models).filter(Boolean),
-            ]),
-          ]
-    additionalDraft.value = (connection.additionalModels ?? []).join('\n')
-    limitDraft.value = connection.outputLimit?.toString() ?? ''
-  },
-  { immediate: true },
-)
-function toggleModel(id: string, checked: boolean) {
-  selectedDraft.value = checked
-    ? [...new Set([...selectedDraft.value, id])]
-    : selectedDraft.value.filter((item) => item !== id)
-}
-async function saveModelSettings() {
-  const value = String(limitDraft.value).trim()
-  const limit = value ? Number(value) : null
-  if (limit !== null && (!Number.isInteger(limit) || limit < 1 || limit > 1000000)) {
-    modelError.value = 'Enter an output limit between 1 and 1,000,000 tokens, or leave it blank.'
-    return
-  }
-  if (!activeConnection.value) return
-  modelError.value = ''
-  await connections.saveModels(
-    activeConnection.value.id,
-    selectedDraft.value,
-    additionalIds.value,
-    limit,
-  )
-}
 const filteredModels = computed(() => {
   const query = modelSearch.value.trim().toLowerCase()
   return discovered.value.filter((model) => model.id.toLowerCase().includes(query))
@@ -263,18 +186,6 @@ watch(
   () => connections.catalog.value?.activeId,
   (next, previous) => {
     if (previous && next !== previous) detail.value = false
-  },
-)
-watch(
-  () => props.draft.models.agent,
-  (value) => {
-    props.draft.model = value
-  },
-)
-watch(
-  () => props.draft.models.decision,
-  (value) => {
-    props.draft.decisionModel = value
   },
 )
 </script>
@@ -579,110 +490,7 @@ watch(
         </p>
       </section>
 
-      <section class="flex flex-col gap-rune-1" aria-label="Model selection and limits">
-        <h3 class="m-0 px-rune-2 font-sans text-rune-heading text-rune-text-3 uppercase">
-          Model selection and limits
-        </h3>
-        <p class="m-0 px-rune-2 text-rune-caption text-rune-text-3">
-          Select the models available for role assignments. Existing role assignments stay when you
-          switch connections; select their models here to assign them again.
-        </p>
-        <label
-          class="flex flex-col gap-2 rounded-rune-tile bg-rune-surface p-rune-2 text-rune-body text-rune-ink"
-          >Additional model IDs
-          <span class="text-rune-caption text-rune-text-3"
-            >One per line or comma separated. Capabilities remain unknown until reported by the
-            server.</span
-          >
-          <textarea
-            v-model="additionalDraft"
-            rows="3"
-            class="rounded-rune-tile bg-rune-sunken p-rune-2 text-rune-body text-rune-ink"
-          />
-        </label>
-        <input
-          v-model="modelSearch"
-          type="search"
-          aria-label="Search selectable models"
-          placeholder="Search selectable models"
-          class="h-10 w-full rounded-rune-tile bg-rune-sunken px-rune-2 text-rune-body text-rune-ink placeholder:text-rune-text-3"
-        />
-        <div class="flex max-h-72 flex-col gap-0.5 overflow-y-auto rounded-rune-tile">
-          <div class="flex gap-4 bg-rune-surface px-rune-2 py-rune-1">
-            <RuneButton variant="link" @click="selectedDraft = [...modelIds]"
-              >Select all</RuneButton
-            >
-            <RuneButton variant="link" @click="selectedDraft = []">Clear</RuneButton>
-          </div>
-          <label
-            v-for="id in filteredModelIds"
-            :key="id"
-            class="flex cursor-pointer items-center justify-between gap-rune-2 bg-rune-surface px-rune-2 py-rune-1 text-rune-body text-rune-text-2"
-          >
-            {{ id }}
-            <RuneSwitch
-              :model-value="selectedDraft.includes(id)"
-              :label="`Select ${id}`"
-              @update:model-value="toggleModel(id, $event)"
-            />
-          </label>
-          <p
-            v-if="!modelIds.length"
-            class="m-0 bg-rune-surface px-rune-2 py-rune-2 text-rune-caption text-rune-text-3"
-          >
-            No discovered or additional models.
-          </p>
-        </div>
-        <div class="flex flex-col gap-0.5">
-          <HubRow
-            label="Maximum output tokens"
-            hint="Caps model output, not context length."
-            info="Requests with lower limits keep their existing limit. Fast checks use a separate API and are not capped. Providers may reject unsupported values."
-          >
-            <input
-              v-model="limitDraft"
-              type="number"
-              min="1"
-              max="1000000"
-              aria-label="Maximum output tokens"
-              placeholder="No connection cap"
-              class="h-10 w-48 rounded-rune-tile bg-rune-sunken px-rune-2 text-rune-body text-rune-ink placeholder:text-rune-text-3"
-            />
-          </HubRow>
-        </div>
-        <p v-if="modelError" role="alert" class="m-0 px-rune-2 text-rune-body text-error">
-          {{ modelError }}
-        </p>
-        <RuneButton
-          variant="primary"
-          :disabled="connections.pending.value"
-          class="mt-rune-1 w-fit"
-          @click="saveModelSettings"
-        >
-          Save model settings
-        </RuneButton>
-      </section>
-
-      <HubGroup
-        title="Model roles"
-        hint="Visual Analysis needs an explicit Analysis model with image input and tool calling. Other roles use the agent model when empty."
-      >
-        <datalist id="discovered-models-list">
-          <option v-for="id in roleModelIds" :key="id" :value="id" />
-        </datalist>
-
-        <ModelRoleRow
-          v-for="role in ROLES"
-          :key="role.key"
-          v-model="draft.models[role.key]"
-          :role-label="role.label"
-          :role-key="role.key"
-          :agent-model="draft.models.agent"
-          :models="discovered"
-          :selected-models="activeConnection?.selectedModels"
-          :placeholder="role.key === 'agent' ? 'e.g. qwen3.5-4b-q4' : undefined"
-        />
-      </HubGroup>
+      <HubGroup title="Model roles" hint="Configure model roles in the Infer catalog." />
 
       <HubGroup title="Fast checks">
         <HubToggle
@@ -691,7 +499,6 @@ watch(
           hint="Skip planning for confident, simple steps."
           info="A server that loads one model at a time swaps models for every fast check, which can add 10 seconds or more. Leave this off there."
         />
-        <HubInput v-if="draft.fastChecks" v-model="draft.decisionUrl" label="Decision URL" />
       </HubGroup>
       <slot />
     </template>

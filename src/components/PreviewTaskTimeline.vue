@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { clock } from '@/config/flight'
+import { clock } from '@/config/preview'
 import AppIcon from './AppIcon.vue'
 import type { TaskTimeline } from '@/config/taskTimeline'
 defineProps<{ timeline: TaskTimeline; timeMs: number }>()

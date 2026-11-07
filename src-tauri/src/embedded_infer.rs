@@ -27,10 +27,26 @@ impl Drop for RouteGuard {
 pub struct EmbeddedManager(tokio::sync::Mutex<Option<(String, EmbeddedInfer)>>);
 
 impl EmbeddedManager {
-    pub async fn start(&self, app: &tauri::AppHandle, activate: bool) -> Result<(), String> {
+    pub async fn reload(&self, app: &tauri::AppHandle) -> Result<(), String> {
         let state = app.state::<crate::events::AppState>();
-        let model = state.settings.locked().models.agent.clone();
-        self.start_model(app, activate, model, false).await
+        {
+            let analysis = state.analysis.locked();
+            crate::connections::ensure_idle(app, &state, analysis.status)
+                .map_err(|error| error.to_string())?;
+            if state.settings.locked().active_connection_id != CONNECTION_ID {
+                return Err("The active Infer connection changed; reload the catalog".into());
+            }
+        }
+        let root = infer_root()?;
+        let mut runtime = self.0.lock().await;
+        let (model, previous) = runtime.take().ok_or("Local Infer is not running")?;
+        previous.shutdown().await?;
+        *runtime = Some((model, EmbeddedInfer::start(&root).await?));
+        state.capabilities.invalidate();
+        Ok(())
+    }
+    pub async fn start(&self, app: &tauri::AppHandle, activate: bool) -> Result<(), String> {
+        self.start_model(app, activate, String::new(), false).await
     }
 
     pub async fn start_model(
@@ -42,20 +58,21 @@ impl EmbeddedManager {
     ) -> Result<(), String> {
         let mut runtime = self.0.lock().await;
         let state = app.state::<crate::events::AppState>();
-        if model.trim().is_empty() {
+        if select && model.trim().is_empty() {
             return Err("Choose an agent model before starting local Infer".into());
         }
-        if let Some((running_model, running)) = runtime.as_ref() {
-            if running_model == &model && !running.task.is_finished() {
+        if let Some((_, running)) = runtime.as_ref() {
+            if !running.task.is_finished() {
                 if activate {
                     if select {
-                        crate::connections::install_embedded_connection(
-                            app,
-                            &state,
-                            true,
-                            Some(&model),
-                        )
-                        .map_err(|error| error.to_string())?;
+                        crate::connections::install_embedded_connection(app, &state, true)
+                            .map_err(|error| error.to_string())?;
+                        crate::infer_catalog::select_agent(&state, &model).await?;
+                        let root = infer_root()?;
+                        if let Some((_, previous)) = runtime.take() {
+                            previous.shutdown().await?;
+                        }
+                        *runtime = Some((model, EmbeddedInfer::start(&root).await?));
                         return Ok(());
                     }
                     let exists = state
@@ -74,24 +91,11 @@ impl EmbeddedManager {
                         )
                         .map_err(|error| error.to_string())?;
                     } else {
-                        crate::connections::install_embedded_connection(app, &state, true, None)
+                        crate::connections::install_embedded_connection(app, &state, true)
                             .map_err(|error| error.to_string())?;
                     }
                 }
                 return Ok(());
-            }
-            if !running.task.is_finished() {
-                if select {
-                    crate::connections::install_embedded_connection(
-                        app,
-                        &state,
-                        true,
-                        Some(&model),
-                    )
-                    .map_err(|error| error.to_string())?;
-                    return Err("Model selected. Restart Studio to start it.".into());
-                }
-                return Err("Restart Studio to use a different local Infer model".into());
             }
         }
         {
@@ -102,22 +106,19 @@ impl EmbeddedManager {
         if let Some((_, previous)) = runtime.take() {
             previous.shutdown().await?;
         }
-        if std::env::var_os("RUNE_HOME")
-            .filter(|value| !value.is_empty())
-            .is_some_and(|value| !Path::new(&value).is_absolute())
-        {
-            return Err("RUNE_HOME must be an absolute path for local Infer".into());
-        }
-        let root = rune_infer::home::rune_home().map_err(|error| error.to_string())?;
-        let server = EmbeddedInfer::start(&root, &model).await?;
-        if let Err(error) = crate::connections::install_embedded_connection(
-            app,
-            &state,
-            activate,
-            select.then_some(model.as_str()),
-        ) {
+        let root = infer_root()?;
+        let mut server = EmbeddedInfer::start(&root).await?;
+        if let Err(error) = crate::connections::install_embedded_connection(app, &state, activate) {
             let _ = server.shutdown().await;
             return Err(error.to_string());
+        }
+        if select && let Err(error) = crate::infer_catalog::select_agent(&state, &model).await {
+            let _ = server.shutdown().await;
+            return Err(error);
+        }
+        if select {
+            server.shutdown().await?;
+            server = EmbeddedInfer::start(&root).await?;
         }
         *runtime = Some((model, server));
         Ok(())
@@ -132,6 +133,16 @@ impl EmbeddedManager {
     }
 }
 
+fn infer_root() -> Result<std::path::PathBuf, String> {
+    if std::env::var_os("RUNE_HOME")
+        .filter(|value| !value.is_empty())
+        .is_some_and(|value| !Path::new(&value).is_absolute())
+    {
+        return Err("RUNE_HOME must be an absolute path for local Infer".into());
+    }
+    rune_infer::home::rune_home().map_err(|error| error.to_string())
+}
+
 pub struct EmbeddedInfer {
     pub base_url: String,
     #[cfg(test)]
@@ -141,11 +152,11 @@ pub struct EmbeddedInfer {
 }
 
 impl EmbeddedInfer {
-    pub async fn start(root: &Path, model: &str) -> Result<Self, String> {
+    pub async fn start(root: &Path) -> Result<Self, String> {
         if !root.is_absolute() {
             return Err("Infer home must be an absolute path".into());
         }
-        let server = rune_infer::embedding::LocalServer::start(root, model).await?;
+        let server = rune_infer::embedding::LocalServer::start_catalog(root).await?;
         let base_url = server.base_url.clone();
         let api_key = server.api_key.clone();
         *ROUTE.locked() = Some((base_url.clone(), api_key.clone()));
@@ -205,8 +216,8 @@ mod tests {
         std::fs::create_dir(home.path().join("models")).unwrap();
         std::fs::write(home.path().join("models/model.gguf"), b"fixture").unwrap();
         std::fs::write(home.path().join("config/server.json"), r#"{"schema_version":3,"server":{"host":"127.0.0.1","port":8080,"max_loaded_models":1,"idle_unload_seconds":300,"api_key":null}}"#).unwrap();
-        std::fs::write(home.path().join("config/catalog.json"), r#"{"schema_version":3,"models":[{"id":"fixture","name":"Fixture","modality":"Text","engine":{"supported":["llama-server"]},"local":{"path":"models/model.gguf"}}]}"#).unwrap();
-        let infer = EmbeddedInfer::start(home.path(), "fixture").await.unwrap();
+        std::fs::write(home.path().join("config/catalog.json"), r#"{"schema_version":3,"models":[{"id":"fixture","name":"Fixture","modality":"Text","engine":{"supported":["llama-server"]},"local":{"path":"models/model.gguf"}},{"id":"cloud","name":"Cloud","modality":"Text","remote":{"provider":"openai","upstream_model":"fixture","api_key":"test-key"}}],"roles":{"agent":"fixture","voice":"cloud"}}"#).unwrap();
+        let infer = EmbeddedInfer::start(home.path()).await.unwrap();
         let (running, key) = crate::settings::snapshot_with_api_key(&configured);
         assert_eq!(running.base_url, infer.base_url);
         assert_eq!(key.as_deref(), Some(infer.api_key.as_str()));
@@ -223,12 +234,34 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response["data"][0]["id"], "fixture");
+        assert_eq!(response["data"].as_array().unwrap().len(), 2);
+        let effective = crate::infer_catalog::read_roles(&infer.base_url, Some(&infer.api_key))
+            .await
+            .unwrap();
+        assert_eq!(
+            crate::infer_catalog::configured_role(&effective, "agent").as_deref(),
+            Some("fixture")
+        );
+        assert_eq!(
+            crate::infer_catalog::configured_role(&effective, "voice").as_deref(),
+            Some("cloud")
+        );
+        let voice: serde_json::Value = client
+            .get(format!("{}/v1/models/voice", infer.base_url))
+            .bearer_auth(&infer.api_key)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(voice["id"], "cloud");
         infer.shutdown().await.unwrap();
         let (stopped, key) = crate::settings::snapshot_with_api_key(&configured);
         assert_eq!(stopped.base_url, "http://127.0.0.1:0");
         assert!(key.is_none());
         assert!(client.get(&url).send().await.is_err());
-        let crashed = EmbeddedInfer::start(home.path(), "fixture").await.unwrap();
+        let crashed = EmbeddedInfer::start(home.path()).await.unwrap();
         crashed.task.abort();
         for _ in 0..100 {
             if route().is_none() {
@@ -247,7 +280,7 @@ mod tests {
     async fn live_existing_model_responds_and_shuts_down() {
         let home = rune_infer::home::rune_home().unwrap();
         let model = "qwen3.8-27b";
-        let infer = EmbeddedInfer::start(&home, model).await.unwrap();
+        let infer = EmbeddedInfer::start(&home).await.unwrap();
         use base64::Engine;
         let image = format!(
             "data:image/png;base64,{}",

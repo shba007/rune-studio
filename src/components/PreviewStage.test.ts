@@ -1,10 +1,10 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
-import type { ActionLayer } from '@/config/flight'
+import type { ActionLayer } from '@/config/preview'
 
-import FlightStage from './FlightStage.vue'
-import { stubResizeObserver } from './flightTestKit'
+import PreviewStage from './PreviewStage.vue'
+import { stubResizeObserver } from './previewTestKit'
 
 vi.mock('@videojs/html/video/player', () => ({}))
 vi.mock('@videojs/html/ui/container', () => ({}))
@@ -12,7 +12,7 @@ vi.mock('@videojs/html/ui/container', () => ({}))
 beforeEach(() => stubResizeObserver(800, 450))
 
 async function mountStage(over: Record<string, unknown> = {}) {
-  const wrapper = mount(FlightStage, {
+  const wrapper = mount(PreviewStage, {
     props: {
       videoSrc: null,
       still: 'asset://shot.jpg',
@@ -29,7 +29,7 @@ async function mountStage(over: Record<string, unknown> = {}) {
   return wrapper
 }
 
-describe('FlightStage', () => {
+describe('PreviewStage', () => {
   it('shows the screenshot when there is no video', async () => {
     const wrapper = await mountStage()
     expect(wrapper.find('[data-testid="still"]').attributes('src')).toBe('asset://shot.jpg')

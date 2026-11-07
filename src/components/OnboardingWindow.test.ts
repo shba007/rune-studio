@@ -54,6 +54,7 @@ it('requires the selected server to be active and ready before finishing', async
         connectionRevision: 3,
         status: { reachable: true, authOk: true, error: null, models: [{ id: 'model' }] },
       }
+    if (command === 'infer_agent_role') return 'model'
     return undefined
   })
   const wrapper = mount(OnboardingWindow)
@@ -90,6 +91,7 @@ it('resumes an incomplete setup at its saved step', () => {
 it('keeps setup state and allows retry if the window fails to close', async () => {
   localStorage.setItem('rune-onboarding-step', '2')
   harness.invoke.mockImplementation(async (command: string) => {
+    if (command === 'infer_agent_role') return 'model'
     if (command === 'get_settings')
       return {
         activeConnectionId: 'studio-embedded-infer',
@@ -127,6 +129,7 @@ it('keeps setup state and allows retry if the window fails to close', async () =
 it('does not mark a model without vision as ready', async () => {
   localStorage.setItem('rune-onboarding-step', '3')
   harness.invoke.mockImplementation(async (command: string) => {
+    if (command === 'infer_agent_role') return 'text'
     if (command === 'get_settings')
       return {
         activeConnectionId: 'studio-embedded-infer',

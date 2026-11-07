@@ -104,6 +104,7 @@ export interface Settings {
 }
 
 export interface BackendStatus {
+  agentModel?: string | null
   reachable: boolean
   authOk: boolean
   missingModels: string[]

@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import PlaygroundWindow from './PlaygroundWindow.vue'
 import { EMPTY_SNAPSHOT } from '@/config/analysis'
 import { usePlaygroundHistory } from '@/composables/usePlaygroundHistory'
-import type { AnalysisSnapshot } from '@/types/protocol'
+import type { AnalysisSnapshot, VisualAnalysisModels } from '@/types/protocol'
 
 const snapshot = ref<AnalysisSnapshot>({ ...EMPTY_SNAPSHOT })
 const capture = vi.fn<(...args: unknown[]) => Promise<boolean>>(async () => true)
@@ -27,12 +27,36 @@ let pendingStart: Promise<number> | null = null
 let translationReply: Promise<unknown> | null = null
 let translationError = ''
 let noVerifiedAudio = false
-let sharedVisualModels:
-  | { planner: string; entities: string; regions: string; structure: string; depth: string }
-  | undefined
+let sharedVisualModels: VisualAnalysisModels | undefined
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: async (command: string, args?: unknown) => {
     void invoked(command, args)
+    if (command === 'infer_visual_roles') return sharedVisualModels
+    if (command === 'infer_analysis_role') return 'vision-a'
+    if (command === 'infer_catalog_read')
+      return {
+        revision: 'r1',
+        catalog: JSON.stringify({
+          models: [{ id: 'detect-a', roles: ['voice', 'visual_entities'] }],
+          roles: { agent: 'vision-a', visual_entities: 'detect-a' },
+        }),
+        connectionId: 'infer',
+        connectionRevision: 1,
+      }
+    if (command === 'infer_catalog_write') {
+      const document = (args as { document: { catalog: string } }).document
+      const roles = (JSON.parse(document.catalog) as { roles: Record<string, string> }).roles
+      sharedVisualModels = {
+        planner: roles.visual_planner ?? '',
+        entities: roles.visual_entities ?? '',
+        regions: roles.visual_regions ?? '',
+        structure: roles.visual_structure ?? '',
+        depth: roles.visual_depth ?? '',
+        instances: roles.visual_instances ?? '',
+        oriented: roles.visual_oriented ?? '',
+      }
+      return document
+    }
     if (command === 'playground_start_run') return pendingStart ?? 42
     if (command === 'playground_visual_plan')
       return {
@@ -131,7 +155,7 @@ vi.mock('@tauri-apps/api/core', () => ({
         model: 'depth-s',
         elapsedMs: 1200,
       }
-    return command === 'screen_insight_targets'
+    return command === 'visual_analysis_targets'
       ? [
           { target: { kind: 'screen', id: 1 }, label: 'Screen 1', primary: true },
           { target: { kind: 'window', id: 7 }, label: 'Notepad' },
@@ -162,6 +186,7 @@ vi.mock('@/composables/useAnalysis', () => ({
 vi.mock('@/composables/useAgent', () => ({
   useAgent: () => ({
     settings: ref({
+      activeConnectionId: 'infer',
       models: { analysis: 'vision-a' },
       modelImageResolution: '1280',
       visualAnalysisModels: sharedVisualModels,
@@ -241,7 +266,15 @@ beforeEach(() => {
   translationReply = null
   translationError = ''
   noVerifiedAudio = false
-  sharedVisualModels = undefined
+  sharedVisualModels = {
+    planner: 'vision-a',
+    entities: 'detect-a',
+    regions: 'segment-a',
+    structure: 'pose-a',
+    depth: 'depth-s',
+    instances: 'instances-a',
+    oriented: 'oriented-a',
+  }
   invoked.mockClear()
   snapshot.value = { ...EMPTY_SNAPSHOT }
   capture.mockClear()
@@ -252,6 +285,50 @@ beforeEach(() => {
 })
 
 describe('playground window', () => {
+  it('saves shared visual roles through Infer while preserving other catalog fields', async () => {
+    sharedVisualModels = {
+      planner: 'vision-a',
+      entities: 'detect-a',
+      regions: '',
+      structure: '',
+      depth: '',
+      instances: '',
+      oriented: '',
+    }
+    const wrapper = mount(PlaygroundWindow, { global: { stubs: { teleport: true } } })
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Flows')!
+      .trigger('click')
+    await wrapper.get('[data-testid="flow-visual-analysis"]').trigger('click')
+    await wrapper.get('[aria-label="Enable Regions & Context"]').trigger('click')
+    await wrapper.get('button[aria-label="Regions & Context model"]').trigger('click')
+    await wrapper
+      .get('[role="listbox"][aria-label="Regions & Context model"]')
+      .findAll('[role="option"]')[1]!
+      .trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Apply shared models')!
+      .trigger('click')
+    await flushPromises()
+    const call = invoked.mock.calls.find(([command]) => command === 'infer_catalog_write')!
+    const document = (
+      call[1] as { document: { revision: string; catalog: string; connectionId: string } }
+    ).document
+    expect(document).toMatchObject({ revision: 'r1', connectionId: 'infer' })
+    expect(JSON.parse(document.catalog)).toMatchObject({
+      models: [{ id: 'detect-a', roles: ['voice'] }],
+      roles: {
+        agent: 'vision-a',
+        visual_planner: 'vision-a',
+        visual_entities: 'detect-a',
+        visual_regions: 'segment-a',
+      },
+    })
+    wrapper.unmount()
+  })
   it('uses the shared model for visual Operations', async () => {
     sharedVisualModels = {
       planner: 'vision-a',
@@ -322,6 +399,15 @@ describe('playground window', () => {
     wrapper.unmount()
   })
   it('shows a separate Flow list and opens its graph view', async () => {
+    sharedVisualModels = {
+      planner: 'vision-a',
+      entities: 'detect-a',
+      regions: '',
+      structure: '',
+      depth: '',
+      instances: '',
+      oriented: '',
+    }
     const wrapper = mount(PlaygroundWindow, { global: { stubs: { teleport: true } } })
     await flushPromises()
     const flows = wrapper.findAll('button').find((button) => button.text() === 'Flows')
@@ -332,11 +418,9 @@ describe('playground window', () => {
     const view = wrapper.get('[aria-label="Flow view"]')
     await view.findAll('[role="radio"]')[1]!.trigger('click')
     expect(wrapper.get('[data-testid="flow-graph"]').text()).toContain('Create Voice')
-    await wrapper.get('[data-testid="flow-screen-insight"]').trigger('click')
+    await wrapper.get('[data-testid="flow-visual-analysis"]').trigger('click')
     await flushPromises()
     expect(wrapper.get('[data-testid="visual-analysis-flow"]').text()).toContain('Visual Analysis')
-    for (const role of ['Regions & Context', 'Structure & Landmarks', 'Depth'])
-      await wrapper.get(`[aria-label="Enable ${role}"]`).trigger('click')
     await wrapper.get('button[aria-label="Planning model"]').trigger('click')
     await wrapper
       .get('[role="listbox"][aria-label="Planning model"]')
@@ -969,8 +1053,9 @@ describe('playground window', () => {
     wrapper.unmount()
   })
 
-  it('offers only models that advertise vision and tools', () => {
+  it('shows the Infer Analysis role when it advertises vision and tools', async () => {
     const wrapper = mount(PlaygroundWindow)
+    await flushPromises()
     expect(wrapper.text()).toContain('vision-a')
     expect(wrapper.text()).not.toContain('text-only')
     wrapper.unmount()

@@ -137,8 +137,8 @@ async function applyModels() {
   try {
     if (!(await props.saveVisualModels(draft)))
       modelSaveError.value = 'Could not save shared models. Try again.'
-  } catch {
-    modelSaveError.value = 'Could not save shared models. Try again.'
+  } catch (error) {
+    modelSaveError.value = String(error)
   } finally {
     savingModels.value = false
   }

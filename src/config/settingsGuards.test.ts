@@ -13,7 +13,6 @@ const migrated = [
   'HubGroup.vue',
   'SettingsConnectionModels.vue',
   'SettingsTools.vue',
-  'ModelRoleRow.vue',
   'SettingsReview.vue',
   'SettingsGoalContext.vue',
   'SettingsVisualAnalysis.vue',
@@ -30,9 +29,9 @@ const migrated = [
   'GoalTaskProposal.vue',
   'KnowledgeOverview.vue',
   'MindsetsPanel.vue',
-  'FlightPlayer.vue',
-  'FlightDrawer.vue',
-  'FlightAnalysis.vue',
+  'PreviewPlayer.vue',
+  'PreviewDrawer.vue',
+  'PreviewAnalysis.vue',
   'NewWorkForm.vue',
 ]
 

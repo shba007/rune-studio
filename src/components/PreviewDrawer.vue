@@ -21,23 +21,23 @@ import {
   pretty,
   reasoningOf,
   visibleRows,
-  type FlightCall,
-  type FlightEvent,
-  type FlightHeader,
-  type FlightStep,
+  type PreviewCall,
+  type PreviewEvent,
+  type PreviewHeader,
+  type PreviewStep,
   type TabId,
-} from '@/config/flight'
+} from '@/config/preview'
 
 const props = defineProps<{
   open: boolean
   tabs: TabId[]
   tab: TabId
-  step: FlightStep | undefined
+  step: PreviewStep | undefined
   index: number
-  header: FlightHeader
+  header: PreviewHeader
   typed: string[]
-  calls: FlightCall[]
-  events: FlightEvent[]
+  calls: PreviewCall[]
+  events: PreviewEvent[]
   show: boolean
   developer: boolean
   screenshot: string | null
@@ -73,7 +73,7 @@ const pickedBodies = ref<{ request: string; response: string } | null>(null)
 const bodiesState = ref<'idle' | 'loading' | 'missing'>('idle')
 const pickedCall = computed(() => props.calls.find((call) => call.id === picked.value))
 
-async function pick(call: FlightCall) {
+async function pick(call: PreviewCall) {
   if (picked.value === call.id) {
     picked.value = null
     pickedBodies.value = null

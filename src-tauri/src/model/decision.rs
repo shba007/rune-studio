@@ -1,4 +1,3 @@
-use crate::sync::LockExt;
 use std::{
     collections::HashMap,
     sync::Mutex,
@@ -170,13 +169,8 @@ fn request_body(model: &str, text: &str, images: &[String], questions: &[Questio
     json!({ "model": model, "state": state, "questions": questions.iter().map(Question::to_json).collect::<Vec<_>>() })
 }
 
-fn endpoint(decision_url: &str, base_url: &str) -> String {
-    let url = if decision_url.trim().is_empty() {
-        base_url
-    } else {
-        decision_url
-    };
-    format!("{}/v1/decisions", url.trim().trim_end_matches('/'))
+fn endpoint(base_url: &str) -> String {
+    format!("{}/v1/decisions", base_url.trim().trim_end_matches('/'))
 }
 
 fn cooling_down() -> bool {
@@ -203,22 +197,29 @@ pub async fn ask(
         return None;
     }
     let state = app.state::<AppState>();
-    let (enabled, url, model, skip_swap, allowance_secs, api_key) = {
-        let settings = state.settings.locked();
+    let (enabled, url, skip_swap, allowance_secs, api_key) = {
+        let (settings, api_key) = settings::snapshot_with_api_key(&state.settings);
         (
             settings.fast_checks,
-            endpoint(&settings.decision_url, &settings.base_url),
-            settings
-                .model_for_role(crate::model::role::ModelRole::Decision)
-                .to_string(),
+            endpoint(&settings.base_url),
             settings.skip_swap_for_optional_roles,
             settings.first_call_idle_allowance_secs,
-            settings::api_key_for(&settings),
+            api_key,
         )
     };
-    if !enabled || url.starts_with("/v1") || model.trim().is_empty() || cooling_down() {
+    if !enabled || url.starts_with("/v1") || cooling_down() {
         return None;
     }
+
+    let base_url = url.strip_suffix("/v1/decisions")?;
+    let catalog = match crate::infer_catalog::read_roles(base_url, api_key.as_deref()).await {
+        Ok(catalog) => catalog,
+        Err(error) => {
+            log::warn!("skipping fast check: {error}");
+            return None;
+        }
+    };
+    let model = crate::infer_catalog::configured_role(&catalog, "decision")?;
 
     if skip_swap
         && state
@@ -452,16 +453,12 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_decision_url_means_the_same_server_as_the_chat_model() {
+    fn decisions_use_the_active_infer_server() {
         assert_eq!(
-            endpoint("", "http://127.0.0.1:8080/"),
+            endpoint("http://127.0.0.1:8080/"),
             "http://127.0.0.1:8080/v1/decisions"
         );
-        assert_eq!(endpoint("  ", "http://a:1"), "http://a:1/v1/decisions");
-        assert_eq!(
-            endpoint("http://b:2/", "http://a:1"),
-            "http://b:2/v1/decisions"
-        );
+        assert_eq!(endpoint("http://a:1"), "http://a:1/v1/decisions");
     }
 
     #[test]

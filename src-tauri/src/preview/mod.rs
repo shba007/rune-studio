@@ -13,7 +13,7 @@ use crate::trace::{
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct FlightRun {
+pub struct PreviewRun {
     pub id: String,
     pub task: String,
     pub source: String,
@@ -29,7 +29,7 @@ pub struct FlightRun {
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct FlightHeader {
+pub struct PreviewHeader {
     pub id: String,
     pub task: String,
     pub source: String,
@@ -45,12 +45,12 @@ pub struct FlightHeader {
     pub verdict: Option<Value>,
     pub video: Option<Value>,
     pub session_dir: Option<String>,
-    pub analysis: Option<FlightAnalysis>,
+    pub analysis: Option<PreviewAnalysis>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct FlightAnalysis {
+pub struct PreviewAnalysis {
     pub answer: String,
     pub findings: Value,
     pub model: Option<String>,
@@ -71,7 +71,7 @@ fn insight_directory(record: &trace::AnalysisRecord) -> Option<PathBuf> {
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct FlightCall {
+pub struct PreviewCall {
     pub id: i64,
     pub step: Option<i64>,
     pub kind: String,
@@ -100,13 +100,13 @@ fn has_table(db: &rusqlite::Connection, name: &str) -> bool {
     .is_ok()
 }
 
-pub fn runs(db: &Path, limit: usize, before: Option<&str>) -> Result<Vec<FlightRun>, StoreError> {
+pub fn runs(db: &Path, limit: usize, before: Option<&str>) -> Result<Vec<PreviewRun>, StoreError> {
     let all = store::list_sessions(db, limit.saturating_add(200).min(5_000))?;
     Ok(all
         .into_iter()
         .filter(|row| before.is_none_or(|cut| row.started_utc.as_deref().is_some_and(|s| s < cut)))
         .take(limit)
-        .map(|row| FlightRun {
+        .map(|row| PreviewRun {
             thumb_run: row
                 .shot_run
                 .clone()
@@ -156,7 +156,7 @@ fn retries_of(db: &Path, id: &str) -> i64 {
     .unwrap_or(0)
 }
 
-pub fn header(db: &Path, id: &str) -> Result<Option<FlightHeader>, StoreError> {
+pub fn header(db: &Path, id: &str) -> Result<Option<PreviewHeader>, StoreError> {
     let Some(detail) = store::get_run(db, id)? else {
         return Ok(None);
     };
@@ -184,7 +184,7 @@ pub fn header(db: &Path, id: &str) -> Result<Option<FlightHeader>, StoreError> {
         .and_then(|dir| std::fs::read_to_string(Path::new(dir).join("session.json")).ok())
         .and_then(|text| serde_json::from_str::<Value>(&text).ok())
         .and_then(|manifest| manifest.get("video").cloned());
-    Ok(Some(FlightHeader {
+    Ok(Some(PreviewHeader {
         id: info.id.clone(),
         task: info.task.clone(),
         source: info.source.clone(),
@@ -202,7 +202,7 @@ pub fn header(db: &Path, id: &str) -> Result<Option<FlightHeader>, StoreError> {
         }),
         video,
         session_dir: session.as_ref().map(|dir| dir.display().to_string()),
-        analysis: analysis.map(|record| FlightAnalysis {
+        analysis: analysis.map(|record| PreviewAnalysis {
             capture_file: insight_directory(&record).map(|_| "screenshots/capture.png".into()),
             answer: record.answer,
             findings: serde_json::from_str(&record.findings_json).unwrap_or_else(|_| json!([])),
@@ -246,27 +246,13 @@ pub fn events(db: &Path, id: &str) -> Result<Vec<Value>, StoreError> {
     Ok(detail.events.iter().map(|event| json!({ "id": event.id, "atUtc": event.at_utc, "kind": event.kind, "dataJson": event.data_json })).collect())
 }
 
-pub fn calls(db: &Path, id: &str, step: Option<i64>) -> Result<Vec<FlightCall>, StoreError> {
+pub fn calls(db: &Path, id: &str, step: Option<i64>) -> Result<Vec<PreviewCall>, StoreError> {
     let conn = store::open_read(db)?;
-    if !has_table(&conn, "calls") {
-        return Ok(Vec::new());
-    }
-    let version: i64 = conn
-        .query_row("PRAGMA user_version", [], |row| row.get(0))
-        .unwrap_or(0);
-    let sql = if version >= 8 {
-        "SELECT id, step, kind, attempt, started_utc, duration_ms, wait_before_ms, status, outcome, error, truncated, model, prompt_tokens, completion_tokens, served_model, swap_ms, locality
-         FROM calls WHERE run_id = ?1 AND (?2 IS NULL OR step = ?2) ORDER BY id"
-    } else if version >= 7 {
-        "SELECT id, step, kind, attempt, started_utc, duration_ms, wait_before_ms, status, outcome, error, truncated, model, prompt_tokens, completion_tokens, served_model, swap_ms, NULL
-         FROM calls WHERE run_id = ?1 AND (?2 IS NULL OR step = ?2) ORDER BY id"
-    } else {
-        "SELECT id, step, kind, attempt, started_utc, duration_ms, wait_before_ms, status, outcome, error, truncated, model, prompt_tokens, completion_tokens, NULL, NULL, NULL
-         FROM calls WHERE run_id = ?1 AND (?2 IS NULL OR step = ?2) ORDER BY id"
-    };
+    let sql = "SELECT id, step, kind, attempt, started_utc, duration_ms, wait_before_ms, status, outcome, error, truncated, model, prompt_tokens, completion_tokens, served_model, swap_ms, locality
+         FROM calls WHERE run_id = ?1 AND (?2 IS NULL OR step = ?2) ORDER BY id";
     let mut statement = conn.prepare(sql)?;
     let rows = statement.query_map(params![id, step], |row| {
-        Ok(FlightCall {
+        Ok(PreviewCall {
             id: row.get(0)?,
             step: row.get(1)?,
             kind: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
@@ -408,6 +394,9 @@ pub fn delete_record(db: &Path, id: &str) -> Result<(), StoreError> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if version > trace::schema::VERSION {
         return Err(StoreError::Newer(version));
+    }
+    if version < trace::schema::VERSION {
+        return Err(StoreError::Older(version));
     }
     let tx = conn.transaction()?;
     let exists: bool = tx.query_row(

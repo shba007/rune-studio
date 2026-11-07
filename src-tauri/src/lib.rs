@@ -21,10 +21,10 @@ mod error;
 mod eval;
 mod events;
 mod exec;
-mod flight;
 mod goal_domains;
 mod hotkeys;
 mod hub;
+mod infer_catalog;
 mod intake;
 mod intake_discovery;
 mod intake_domain;
@@ -39,6 +39,7 @@ mod overlay;
 mod personalities;
 mod playground;
 mod portfolio;
+mod preview;
 mod prompts;
 mod recording;
 mod reflect;
@@ -274,10 +275,10 @@ pub fn run() {
 
             let show = MenuItem::with_id(app, "show", "Show / hide", true, None::<&str>)?;
             let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
-            let flight = MenuItem::with_id(app, "artifacts", "Workspace…", true, None::<&str>)?;
+            let preview = MenuItem::with_id(app, "artifacts", "Workspace…", true, None::<&str>)?;
             let stop = MenuItem::with_id(app, "stop", "Stop", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &settings, &flight, &stop, &quit])?;
+            let menu = Menu::with_items(app, &[&show, &settings, &preview, &stop, &quit])?;
             let mut tray = TrayIconBuilder::with_id("main")
                 .menu(&menu)
                 .tooltip("Rune Studio")
@@ -320,6 +321,15 @@ pub fn run() {
             kit::client::kit_settings,
             kit::client::kit_save,
             kit::client::kit_discover,
+            kit::client::kit_configuration,
+            kit::client::kit_update_configuration,
+            kit::client::kit_token_set,
+            kit::client::kit_token_present,
+            kit::client::kit_remotes,
+            kit::client::kit_packages,
+            kit::client::kit_install_package,
+            kit::client::kit_package_operation,
+            kit::client::kit_remote_update,
             commands::get_settings,
             commands::save_settings,
             commands::has_api_key,
@@ -327,13 +337,19 @@ pub fn run() {
             commands::check_backend,
             commands::embedded_infer_available,
             commands::start_embedded_infer,
+            commands::reload_embedded_infer,
+            infer_catalog::infer_select_agent,
+            infer_catalog::infer_agent_role,
+            infer_catalog::infer_analysis_role,
+            infer_catalog::infer_visual_roles,
             commands::embedded_model_candidates,
             commands::embedded_model_download,
             commands::embedded_model_download_status,
             commands::embedded_model_download_cancel,
             commands::embedded_model_use,
+            infer_catalog::infer_catalog_read,
+            infer_catalog::infer_catalog_write,
             connections::connections_state,
-            connections::connections_models_save,
             model::activity::model_activity,
             connections::connections_save,
             connections::connections_activate,
@@ -350,7 +366,7 @@ pub fn run() {
             commands::confirm,
             commands::analyze_screen,
             commands::run_workflow,
-            commands::screen_insight_targets,
+            commands::visual_analysis_targets,
             commands::screen_request_state,
             commands::cancel_screen_request,
             commands::analyze_again,
@@ -420,18 +436,18 @@ pub fn run() {
             workspace_tasks::workspace_history_progress,
             workspace_tasks::workspace_calendar,
             commands::task_attempts,
-            commands::flight_runs,
-            commands::flight_task_history,
-            commands::flight_original_prompt,
-            commands::flight_delete,
-            commands::flight_run,
-            commands::flight_steps,
-            commands::flight_events,
-            commands::flight_calls,
-            commands::flight_call_body,
-            commands::flight_file,
-            commands::flight_reveal,
-            commands::open_flight,
+            commands::preview_runs,
+            commands::preview_task_history,
+            commands::preview_original_prompt,
+            commands::preview_delete,
+            commands::preview_run,
+            commands::preview_steps,
+            commands::preview_events,
+            commands::preview_calls,
+            commands::preview_call_body,
+            commands::preview_file,
+            commands::preview_reveal,
+            commands::open_preview,
             commands::debug_set_state,
             recording::screen_recording_state,
             recording::start_screen_recording,

@@ -16,7 +16,7 @@ use tauri::{AppHandle, Manager};
 use crate::{
     backend, commands,
     events::{self, AgentState, AppState},
-    model::{profile::ModelProfile, role::ModelRole},
+    model::profile::ModelProfile,
     safety::gate,
     settings,
     sync::LockExt,
@@ -341,14 +341,10 @@ async fn execute(app: &AppHandle, suite_path: &Path, out: &Path) -> i32 {
         if let Some(show_thinking) = suite.config.show_thinking {
             settings.show_thinking = show_thinking;
         }
-        if let Some(model) = &suite.config.model {
-            settings.models.agent = model.clone();
-            settings.model = model.clone();
-        }
         settings.max_steps = suite.defaults.max_steps;
         settings.verify_mode = suite.verify_mode();
     }
-    let (effective, _) = settings::snapshot_with_api_key(&state.settings);
+    let (mut effective, _) = settings::snapshot_with_api_key(&state.settings);
 
     let running = match check::Machine::process_names(&windows::System) {
         Ok(running) => running,
@@ -375,7 +371,17 @@ async fn execute(app: &AppHandle, suite_path: &Path, out: &Path) -> i32 {
         return refuse(out, &why);
     }
 
-    let agent_model = effective.model_for_role(ModelRole::Agent).to_string();
+    let Some(agent_model) = status.agent_model else {
+        return refuse(
+            out,
+            "configure an Agent model role in Rune Infer before running evaluations",
+        );
+    };
+    if suite.config.model.is_some() {
+        eprintln!("Evaluation suite model is ignored; Rune Infer's Agent role is used.");
+    }
+    effective.models.agent = agent_model.clone();
+    effective.model = agent_model.clone();
     let profile = crate::model::profile::resolve_profile(&agent_model, None, None);
 
     let env = json!({

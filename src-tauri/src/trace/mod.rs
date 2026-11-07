@@ -507,9 +507,9 @@ impl Recorder {
             });
         let db = match opened {
             Ok((db, schema::Opened::Ready)) => db,
-            Ok((_, schema::Opened::Newer(version))) => {
+            Ok((_, schema::Opened::Incompatible(version))) => {
                 log::warn!(
-                    "{} was written by a newer Rune Studio (schema {version}); nothing will be recorded",
+                    "{} uses an unsupported trace schema {version}; nothing will be recorded",
                     path.display()
                 );
                 return Self::noop();

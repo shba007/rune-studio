@@ -1,7 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import ArtifactCard from './ArtifactCard.vue'
-import type { FlightRun } from '@/config/flight'
+import type { PreviewRun } from '@/config/preview'
 
 const invoke = vi.fn<(command: string, args?: Record<string, unknown>) => Promise<unknown>>()
 const writeText = vi.fn<(text: string) => Promise<void>>()
@@ -13,7 +13,7 @@ vi.mock('@vueuse/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@vueuse/core')>()),
   useIntersectionObserver: () => ({ stop: vi.fn<() => void>() }),
 }))
-const run: FlightRun = {
+const run: PreviewRun = {
   id: 'one',
   task: 'A cleaned-up task title',
   source: 'built-in',
@@ -38,7 +38,7 @@ describe('session card actions', () => {
     const wrapper = mount(ArtifactCard, { props: { run } })
     await wrapper.get('button[aria-label="Copy original prompt"]').trigger('click')
     await flushPromises()
-    expect(invoke).toHaveBeenCalledWith('flight_original_prompt', { id: 'one' })
+    expect(invoke).toHaveBeenCalledWith('preview_original_prompt', { id: 'one' })
     expect(writeText).toHaveBeenCalledWith(original)
     expect(wrapper.emitted('open')).toBeUndefined()
     expect(wrapper.text()).toContain('Prompt copied')

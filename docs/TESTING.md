@@ -44,7 +44,7 @@ persisted data formats are unchanged.
 
 ## Session review
 
-Component fixtures cover Flight Player rendering and seeking. They do not prove
+Component fixtures cover Preview rendering and seeking. They do not prove
 Windows Media Foundation encoding, WebView2 H.264 playback or the asset protocol.
 Use the [session review guide](use-cases/12-review-a-session.md) for live checks.
 Historical field observations and unobserved fixes remain distinguished in the

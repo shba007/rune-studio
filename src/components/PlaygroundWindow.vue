@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { onKeyStroke } from '@vueuse/core'
 import { computed, onMounted, onUnmounted, ref, useTemplateRef, watch, type Ref } from 'vue'
-import type { Settings, VisualAnalysisModels } from '@/types/protocol'
+import type { VisualAnalysisModels } from '@/types/protocol'
 
 import { useAgent } from '@/composables/useAgent'
 import { useAnalysis } from '@/composables/useAnalysis'
@@ -16,6 +16,7 @@ import {
   type PlaygroundRun,
 } from '@/composables/usePlaygroundHistory'
 import { FLOWS } from '@/config/flows'
+import { updateVisualRoles } from '@/config/inferVisualRoles'
 import { readImageAsPng } from '@/config/imageFile'
 import {
   DEFAULT_PIPELINE,
@@ -74,13 +75,71 @@ import RuneNavItem from './RuneNavItem.vue'
 import TitleBar from './TitleBar.vue'
 
 const agent = useAgent()
-async function saveVisualModels(models: VisualAnalysisModels) {
+const analysisRole = ref('')
+const emptyVisualRoles: VisualAnalysisModels = {
+  planner: '',
+  entities: '',
+  regions: '',
+  structure: '',
+  depth: '',
+  instances: '',
+  oriented: '',
+}
+const visualRoles = ref<VisualAnalysisModels>()
+let roleRequest = 0
+async function refreshVisualRoles() {
+  const request = ++roleRequest
   try {
-    const settings = await invoke<Settings>('get_settings')
-    return (await agent.saveSettings({ ...settings, visualAnalysisModels: models })) !== false
+    const [roles, analysis] = await Promise.all([
+      invoke<VisualAnalysisModels>('infer_visual_roles'),
+      invoke<string | null>('infer_analysis_role'),
+    ])
+    if (request === roleRequest) {
+      visualRoles.value = roles
+      analysisRole.value = analysis ?? ''
+    }
   } catch {
-    return false
+    if (request === roleRequest) {
+      visualRoles.value = undefined
+      analysisRole.value = ''
+    }
   }
+}
+watch(
+  () => [agent.settings.value?.activeConnectionId, agent.backend.value?.reachable],
+  () => void refreshVisualRoles(),
+  { immediate: true },
+)
+async function saveVisualModels(models: VisualAnalysisModels) {
+  const connection = agent.settings.value?.activeConnectionId
+  const document = await invoke<{
+    revision: string
+    catalog: string
+    connectionId: string
+    connectionRevision: number
+  }>('infer_catalog_read')
+  if (connection !== document.connectionId)
+    throw new Error('Infer connection changed. Reload the flow and retry.')
+  await invoke('infer_catalog_write', {
+    document: { ...document, catalog: updateVisualRoles(document.catalog, models) },
+  })
+  if (connection === 'studio-embedded-infer') await invoke('reload_embedded_infer')
+  for (let attempt = 0; attempt < 28; attempt++) {
+    const effective = await invoke<VisualAnalysisModels>('infer_visual_roles')
+    if (
+      (Object.keys(models) as (keyof VisualAnalysisModels)[]).every(
+        (key) => (models[key] ?? '') === (effective[key] ?? ''),
+      )
+    ) {
+      roleRequest++
+      visualRoles.value = effective
+      return true
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250))
+  }
+  throw new Error(
+    'Roles saved, but Infer has not applied them yet. Restart Infer and reload the flow.',
+  )
 }
 const analysis = useAnalysis()
 const history = usePlaygroundHistory()
@@ -149,11 +208,7 @@ const modelOptions = computed(() =>
     ? capable.value.map((model) => ({ value: model.id, label: model.id }))
     : [{ value: '', label: 'No vision model' }],
 )
-const model = ref('')
-const activeModel = computed({
-  get: () => model.value || agent.settings.value?.models.analysis || modelOptions.value[0]!.value,
-  set: (value: string) => (model.value = value),
-})
+const activeModel = computed(() => analysisRole.value)
 const activeResolution = computed({
   get: () => resolution.value || agent.settings.value?.modelImageResolution || '1280',
   set: (value: string) => (resolution.value = value),
@@ -209,8 +264,9 @@ const taskOptions = computed(() => {
 const taskChoice = ref<Record<string, string>>({})
 const activeTaskModel = computed({
   get: () => {
-    const shared = agent.settings.value?.visualAnalysisModels
-    if (shared && isSharedVisualModel.value) {
+    const shared = visualRoles.value
+    if (isSharedVisualModel.value) {
+      if (!shared) return ''
       const key =
         selectedId.value === 'depth' ? 'depth' : VISUAL_ROLES[selectedId.value as VisualOperation]
       const configured = shared[key] ?? ''
@@ -349,7 +405,6 @@ const headerModel = computed({
   get: () => (isModelRun.value ? activeTaskModel.value : activeModel.value),
   set: (value: string) => {
     if (isModelRun.value) activeTaskModel.value = value
-    else activeModel.value = value
   },
 })
 const headerOptions = computed(() => (isModelRun.value ? taskOptions.value : modelOptions.value))
@@ -416,7 +471,7 @@ const canRun = computed(
               : !!target.value) &&
     (isModelRun.value
       ? !!activeTaskModel.value && modelRuns[selectedId.value]?.value.status !== 'running'
-      : !analysis.busy.value),
+      : capable.value.some((model) => model.id === activeModel.value) && !analysis.busy.value),
 )
 
 async function takeReference(picked: File | undefined, index: number) {
@@ -721,7 +776,7 @@ onKeyStroke('Escape', () => {
       v-if="flowVisited"
       v-show="playgroundSection === 'flows'"
       :models="agent.backend.value?.models ?? []"
-      :visual-models="agent.settings.value?.visualAnalysisModels"
+      :visual-models="visualRoles ?? emptyVisualRoles"
       :save-visual-models="saveVisualModels"
       :sidebar-open="sidebarOpen"
       :selected-flow="requestedFlow"
@@ -764,7 +819,7 @@ onKeyStroke('Escape', () => {
               menu
               icon="model"
               :options="headerOptions"
-              :disabled="isSharedVisualModel && !!agent.settings.value?.visualAnalysisModels"
+              :disabled="!isModelRun || isSharedVisualModel"
             />
           </header>
           <div class="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-6 pb-4">
@@ -773,11 +828,8 @@ onKeyStroke('Escape', () => {
               <h1 class="m-0 font-sans text-rune-title">{{ selected.label }}</h1>
             </header>
             <p class="m-0 text-rune-body text-rune-text-2">{{ selected.summary }}</p>
-            <p
-              v-if="isSharedVisualModel && agent.settings.value?.visualAnalysisModels"
-              class="m-0 text-rune-caption text-rune-text-3"
-            >
-              Configure this model in Settings → Capture & privacy.
+            <p v-if="isSharedVisualModel" class="m-0 text-rune-caption text-rune-text-3">
+              Configure this role in the Infer catalog.
             </p>
             <p
               v-if="modelPipeline?.audioOperation && !activeTaskModel"

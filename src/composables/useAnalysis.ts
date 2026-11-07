@@ -33,7 +33,7 @@ export function useAnalysis() {
   ) =>
     target
       ? run('run_workflow', {
-          workflowId: 'screen-insight',
+          workflowId: 'visual-analysis',
           input: { target, question: question || '', ...options },
         })
       : run('analyze_screen', { question: question || null })
@@ -41,7 +41,8 @@ export function useAnalysis() {
     question: string,
     image: string,
     options?: { model?: string; resolution?: string; sharedVisual?: boolean },
-  ) => run('run_workflow', { workflowId: 'screen-insight', input: { image, question, ...options } })
+  ) =>
+    run('run_workflow', { workflowId: 'visual-analysis', input: { image, question, ...options } })
   const ask = (question: string) => run('analyze_again', { question })
   const cancel = () => run('cancel_analysis')
   const close = () => run('close_analysis')

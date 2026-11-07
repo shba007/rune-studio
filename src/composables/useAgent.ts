@@ -125,7 +125,7 @@ export function useAgent() {
     if (settings.value?.externalAgent)
       return { tone: 'ok', title: 'External agent mode — use your host to start a task' }
     const status = backend.value
-    const model = settings.value?.model ?? ''
+    const model = status?.agentModel ?? ''
     if (!status) return { tone: 'checking', title: 'Checking the model server' }
     if (!status.reachable) return { tone: 'down', title: status.error ?? 'Model server offline' }
     if (!status.authOk) return { tone: 'warn', title: 'API key rejected' }
@@ -133,6 +133,7 @@ export function useAgent() {
       return { tone: 'warn', title: `Missing model: ${status.missingModels.join(', ')}` }
     }
     if (status.error) return { tone: 'warn', title: status.error }
+    if (!model) return { tone: 'warn', title: 'Configure an Agent model in the Infer catalog' }
     return { tone: 'ok', title: `Model server OK, ${status.latencyMs ?? '?'} ms, ${model}` }
   })
   const stepText = ref<string | null>(null)
@@ -342,7 +343,7 @@ export function useAgent() {
   }
   async function openReview(runId: string) {
     reviewOffer.value = null
-    await call('open_flight', { runId })
+    await call('open_preview', { runId })
   }
   async function answerReflection(start: boolean) {
     reflectionPrompt.value = null

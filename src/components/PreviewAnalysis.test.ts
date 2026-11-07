@@ -2,7 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import { describe, expect, it, vi } from 'vite-plus/test'
 import type { AnalysisGroup, Finding } from '@/types/protocol'
-import FlightAnalysis from './FlightAnalysis.vue'
+import PreviewAnalysis from './PreviewAnalysis.vue'
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: async () => '/capture.png',
@@ -16,7 +16,7 @@ vi.mock('@vueuse/core', async (original) => ({
 describe('saved visual analysis highlights', () => {
   it('scales all four groups to the capture and hides only the selected highlights', async () => {
     const groups: AnalysisGroup[] = ['entities', 'regions', 'structure', 'depth']
-    const wrapper = mount(FlightAnalysis, {
+    const wrapper = mount(PreviewAnalysis, {
       props: {
         id: 'insight-saved',
         summary: null,
@@ -67,7 +67,7 @@ describe('saved visual analysis highlights', () => {
   })
 
   it('keeps older sessions without captures readable without inventing highlights', async () => {
-    const wrapper = mount(FlightAnalysis, { props: { id: 'old', summary: 'Recorded answer' } })
+    const wrapper = mount(PreviewAnalysis, { props: { id: 'old', summary: 'Recorded answer' } })
     await flushPromises()
     expect(wrapper.text()).toContain('Recorded answer')
     expect(wrapper.text()).toContain('No capture was saved')

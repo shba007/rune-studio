@@ -32,7 +32,7 @@ async function refresh() {
   notice.value = ''
   refreshStatus.value = ''
   try {
-    const available = await invoke('screen_insight_targets')
+    const available = await invoke('visual_analysis_targets')
     options.value = Array.isArray(available) ? available : []
     refreshStatus.value = `${options.value.length} capture targets available`
     if (!options.value.some((o) => JSON.stringify(o.target) === target.value)) target.value = ''
@@ -80,7 +80,7 @@ onBeforeUnmount(() => off?.())
 <template>
   <HubGroup
     title="Screen recording"
-    hint="Silent video · 2 fps · up to 60 seconds. Saved in Rune Studio’s recording folder. Screen Insight captures stay separate."
+    hint="Silent video · 2 fps · up to 60 seconds. Saved in Rune Studio’s recording folder. Visual Analysis captures stay separate."
     aria-label="Screen recording"
   >
     <template v-if="!busy">

@@ -35,7 +35,7 @@ function step(n: number, seconds: number, extra: Record<string, unknown>) {
   }
 }
 
-export const flightSteps = [
+export const previewSteps = [
   step(1, 0, {
     tool: 'press_keys',
     argsJson: '{"keys":["win"]}',
@@ -70,7 +70,7 @@ export const flightSteps = [
   }),
 ]
 
-export const flightRuns = [
+export const previewRuns = [
   {
     id: '110000-1-insight',
     task: 'What is on this screen?',
@@ -95,7 +95,7 @@ export const flightRuns = [
   },
   {
     id: '090000-1-old',
-    task: 'An older session from before the flight recorder had video',
+    task: 'An older session from before Preview had video',
     source: 'Claude Code',
     outcome: 'failed',
     startedUtc: '2026-10-19T09:00:00Z',
@@ -106,8 +106,8 @@ export const flightRuns = [
   },
 ]
 
-export function flightHeader(id: string, withVideo: boolean) {
-  const run = flightRuns.find((item) => item.id === id) ?? flightRuns[0]!
+export function previewHeader(id: string, withVideo: boolean) {
+  const run = previewRuns.find((item) => item.id === id) ?? previewRuns[0]!
   return {
     id: run.id,
     task: run.task,
@@ -161,12 +161,12 @@ export function flightHeader(id: string, withVideo: boolean) {
   }
 }
 
-export const flightEvents = [
+export const previewEvents = [
   { id: 1, atUtc: at(20), kind: 'stuck_warning', dataJson: '{}' },
   { id: 2, atUtc: at(36), kind: 'ask_user', dataJson: '{"question":"Save the note?"}' },
 ]
 
-export const flightCalls = [
+export const previewCalls = [
   call(1, 2, 1, 'retried', 503),
   call(2, 2, 2, 'ok', 200),
   call(3, 3, 1, 'ok', 200),

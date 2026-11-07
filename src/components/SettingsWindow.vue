@@ -17,6 +17,7 @@ import { useNativeBlur } from '@/composables/useNativeBlur'
 import { useSectionHistory } from '@/composables/useSectionHistory'
 import TitleBar from './TitleBar.vue'
 import SettingsTools from './SettingsTools.vue'
+import InferCatalogEditor from './InferCatalogEditor.vue'
 import SettingsConnectionModels from './SettingsConnectionModels.vue'
 import SettingsVisualAnalysis from './SettingsVisualAnalysis.vue'
 import SettingsGoalContext from './SettingsGoalContext.vue'
@@ -186,10 +187,11 @@ onBeforeUnmount(() => {
               <SettingsConnectionModels :agent="agent" :draft="draft">
                 <SettingsGeneral :agent="agent" :draft="draft" view="models" />
               </SettingsConnectionModels>
+              <InferCatalogEditor />
               <SettingsTools
                 :tool-calls="
                   agent.backend.value?.models?.find(
-                    (model) => model.id === agent.settings.value?.models.agent,
+                    (model) => model.id === agent.backend.value?.agentModel,
                   )?.toolCalls
                 "
               />

@@ -14,12 +14,12 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import AppIcon from '@/components/AppIcon.vue'
 import TitleBar from '@/components/TitleBar.vue'
 import WhenText from '@/components/WhenText.vue'
-import FlightDrawer from '@/components/FlightDrawer.vue'
-import FlightStage from '@/components/FlightStage.vue'
-import FlightTimeline from '@/components/FlightTimeline.vue'
-import FlightAnalysis from '@/components/FlightAnalysis.vue'
-import FlightTaskTimeline from '@/components/FlightTaskTimeline.vue'
-import { problemText, useFlight } from '@/composables/useFlight'
+import PreviewDrawer from '@/components/PreviewDrawer.vue'
+import PreviewStage from '@/components/PreviewStage.vue'
+import PreviewTimeline from '@/components/PreviewTimeline.vue'
+import PreviewAnalysis from '@/components/PreviewAnalysis.vue'
+import PreviewTaskTimeline from '@/components/PreviewTaskTimeline.vue'
+import { problemText, usePreview } from '@/composables/usePreview'
 import { durationText } from '@/config/artifacts'
 import {
   SPEEDS,
@@ -38,7 +38,7 @@ import {
   timeOfStep,
   typedTexts,
   type TabId,
-} from '@/config/flight'
+} from '@/config/preview'
 
 const props = defineProps<{
   embedded?: boolean
@@ -46,7 +46,7 @@ const props = defineProps<{
   parentGoal?: { id: string; title: string } | null
 }>()
 const emit = defineEmits<{ back: []; goal: [id: string] }>()
-const flight = useFlight()
+const preview = usePreview()
 const attempts = ref<string[]>([])
 const selectedAttempt = ref('')
 async function openTask(id: string) {
@@ -69,7 +69,7 @@ function chooseAttempt(id: string) {
   selectedAttempt.value = id
   void openRun(id)
 }
-const stage = ref<InstanceType<typeof FlightStage> | null>(null)
+const stage = ref<InstanceType<typeof PreviewStage> | null>(null)
 
 const timeMs = ref(0)
 const playing = ref(false)
@@ -84,42 +84,42 @@ const still = ref<string | null>(null)
 const stillMissing = ref(false)
 const stepFile = ref<string | null>(null)
 
-const header = flight.header
-const steps = flight.steps
-const grouped = computed(() => flight.timeline.value !== null)
+const header = preview.header
+const steps = preview.steps
+const grouped = computed(() => preview.timeline.value !== null)
 const mediaCovered = computed(
   () =>
     !grouped.value ||
-    (timeMs.value >= flight.mediaOffset.value &&
-      timeMs.value <= flight.mediaOffset.value + flight.mediaDuration.value),
+    (timeMs.value >= preview.mediaOffset.value &&
+      timeMs.value <= preview.mediaOffset.value + preview.mediaDuration.value),
 )
 const hasVideo = computed(
-  () => mediaCovered.value && flight.videoUrl.value !== null && videoFailed.value === null,
+  () => mediaCovered.value && preview.videoUrl.value !== null && videoFailed.value === null,
 )
 const playbackNote = computed(() => {
   if (
     grouped.value &&
-    !flight.timeline.value?.rows.some((task) => task.kind === 'desktop' && task.runId)
+    !preview.timeline.value?.rows.some((task) => task.kind === 'desktop' && task.runId)
   )
     return 'This request contains no recorded desktop task. Reasoning tasks have no screen capture.'
   if (!mediaCovered.value) return 'No desktop capture during this part of the request.'
-  return videoFailed.value ?? flight.videoNote.value
+  return videoFailed.value ?? preview.videoNote.value
 })
 const index = computed(() =>
-  mediaCovered.value ? stepAtTime(flight.starts.value, timeMs.value) : -1,
+  mediaCovered.value ? stepAtTime(preview.starts.value, timeMs.value) : -1,
 )
 const step = computed(() => (index.value >= 0 ? steps.value[index.value] : undefined))
 const typed = computed(() => typedTexts(steps.value))
 const outside = computed(() => (header.value ? isOutsideAgent(header.value.source) : false))
 
 const stepCalls = computed(() =>
-  step.value ? flight.calls.value.filter((call) => call.step === step.value?.step) : [],
+  step.value ? preview.calls.value.filter((call) => call.step === step.value?.step) : [],
 )
 const stepEvents = computed(() =>
   header.value
     ? eventsOfStep(
-        flight.events.value,
-        flight.mediaHeader.value?.startedUtc ?? header.value.startedUtc,
+        preview.events.value,
+        preview.mediaHeader.value?.startedUtc ?? header.value.startedUtc,
         steps.value,
         index.value,
       )
@@ -127,7 +127,7 @@ const stepEvents = computed(() =>
 )
 const retried = computed(() => {
   const set = new Set<number>()
-  for (const call of flight.calls.value) {
+  for (const call of preview.calls.value) {
     if (call.outcome !== 'retried' || call.step === null) continue
     const at = steps.value.findIndex((item) => item.step === call.step)
     if (at >= 0) set.add(at)
@@ -154,17 +154,17 @@ const pictureFile = computed(() =>
   mediaCovered.value ? pictureFileOf(steps.value, index.value, outside.value) : null,
 )
 watch(
-  () => flight.mediaHeader.value?.id,
+  () => preview.mediaHeader.value?.id,
   () => {
     videoFailed.value = null
   },
 )
 
-watch([() => flight.mediaHeader.value?.id, hasVideo], async () => {
+watch([() => preview.mediaHeader.value?.id, hasVideo], async () => {
   if (!grouped.value) return
   await nextTick()
   if (hasVideo.value) {
-    await stage.value?.seek(Math.max(0, timeMs.value - flight.mediaOffset.value))
+    await stage.value?.seek(Math.max(0, timeMs.value - preview.mediaOffset.value))
     await stage.value?.setRate(rate.value)
     if (playing.value) await stage.value?.play()
   }
@@ -183,7 +183,7 @@ watch(
     still.value = null
     stillMissing.value = false
     if (!file) return
-    const url = await flight.fileOf(file)
+    const url = await preview.fileOf(file)
     if (stepFile.value !== file) return
     still.value = url
     stillMissing.value = url === null
@@ -195,10 +195,10 @@ let frame = 0
 let last = 0
 function loop(now: number) {
   if (!playing.value || (hasVideo.value && !grouped.value)) return
-  timeMs.value = Math.min(flight.total.value, timeMs.value + (now - last) * rate.value)
+  timeMs.value = Math.min(preview.total.value, timeMs.value + (now - last) * rate.value)
   last = now
-  if (grouped.value) flight.selectMediaAt(timeMs.value)
-  if (timeMs.value >= flight.total.value) {
+  if (grouped.value) preview.selectMediaAt(timeMs.value)
+  if (timeMs.value >= preview.total.value) {
     playing.value = false
     if (hasVideo.value && grouped.value) void stage.value?.pause()
     return
@@ -208,7 +208,7 @@ function loop(now: number) {
 
 async function play() {
   if (!header.value || (steps.value.length === 0 && !grouped.value)) return
-  if (timeMs.value >= flight.total.value - 50) await seek(0)
+  if (timeMs.value >= preview.total.value - 50) await seek(0)
   playing.value = true
   if (hasVideo.value && !grouped.value) {
     await stage.value?.play()
@@ -227,20 +227,20 @@ function toggle() {
   return playing.value ? pause() : play()
 }
 async function seek(ms: number) {
-  const next = Math.min(flight.total.value, Math.max(0, ms))
+  const next = Math.min(preview.total.value, Math.max(0, ms))
   timeMs.value = next
   if (grouped.value) {
-    flight.selectMediaAt(next)
+    preview.selectMediaAt(next)
     await nextTick()
   }
-  if (hasVideo.value) await stage.value?.seek(next - flight.mediaOffset.value)
+  if (hasVideo.value) await stage.value?.seek(next - preview.mediaOffset.value)
 }
 function goto(target: number) {
-  return seek(timeOfStep(flight.starts.value, target))
+  return seek(timeOfStep(preview.starts.value, target))
 }
 function previousStep() {
   const here = index.value
-  const atStart = timeMs.value - timeOfStep(flight.starts.value, here) < 600
+  const atStart = timeMs.value - timeOfStep(preview.starts.value, here) < 600
   return goto(atStart ? here - 1 : here)
 }
 function nextStep() {
@@ -263,7 +263,7 @@ async function openRun(id: string) {
   notice.value = null
   drawerOpen.value = false
   tab.value = 'step'
-  await flight.open(id)
+  await preview.open(id)
 }
 async function back() {
   await pause()
@@ -280,7 +280,7 @@ async function back() {
   await closeWindow()
 }
 async function reveal() {
-  notice.value = await flight.reveal()
+  notice.value = await preview.reveal()
 }
 async function closeWindow() {
   if (props.embedded) {
@@ -342,7 +342,7 @@ onMounted(async () => {
   else await back()
   if (props.embedded || disposed) return
   try {
-    const off = await listen<{ runId?: string | null }>('flight_open', async (event) => {
+    const off = await listen<{ runId?: string | null }>('preview_open', async (event) => {
       const id = event.payload?.runId
       if (id) await openTask(id)
       else await back()
@@ -360,7 +360,7 @@ onBeforeUnmount(() => {
 
 const duration = computed(() =>
   grouped.value
-    ? durationText(flight.total.value / 1000)
+    ? durationText(preview.total.value / 1000)
     : header.value?.durationSecs == null
       ? null
       : durationText(header.value.durationSecs),
@@ -385,21 +385,23 @@ const verdictLine = computed(() => {
   <main
     class="flex min-h-0 flex-col overflow-hidden text-rune-ink"
     :class="embedded ? 'h-full flex-1' : 'h-screen'"
-    data-testid="flight"
+    data-testid="preview"
   >
     <TitleBar v-if="!embedded" title="Workspace" />
     <section v-if="!header" class="flex min-h-0 flex-1 flex-col gap-3 p-6">
       <RuneButton variant="ghost" size="sm" class="self-start" @click="back">
         Back to Tasks
       </RuneButton>
-      <p v-if="flight.loading.value" class="m-0 text-rune-text-2" data-testid="loading">Loading…</p>
+      <p v-if="preview.loading.value" class="m-0 text-rune-text-2" data-testid="loading">
+        Loading…
+      </p>
       <p
-        v-else-if="flight.problem.value"
+        v-else-if="preview.problem.value"
         class="m-0 text-rune-text-2"
         role="alert"
         data-testid="problem"
       >
-        {{ flight.problem.value }}
+        {{ preview.problem.value }}
       </p>
     </section>
 
@@ -440,7 +442,7 @@ const verdictLine = computed(() => {
           {{ header.task }}
         </h1>
         <div class="flex flex-wrap items-center gap-rune-1 px-rune-1">
-          <RuneChip v-if="flight.live.value" variant="red" data-testid="live"
+          <RuneChip v-if="preview.live.value" variant="red" data-testid="live"
             ><span class="size-1.5 motion-safe:animate-pulse rounded-full bg-white" />Live</RuneChip
           >
           <RuneChip v-else data-testid="outcome" :class="outcomeClass"
@@ -480,7 +482,7 @@ const verdictLine = computed(() => {
         </div>
       </header>
 
-      <FlightAnalysis
+      <PreviewAnalysis
         v-if="header.source === 'screen-insight'"
         :id="header.id"
         :analysis="header.analysis"
@@ -499,9 +501,9 @@ const verdictLine = computed(() => {
           class="flex min-h-0 min-w-0 flex-1 flex-col motion-safe:transition-[margin] motion-safe:duration-[220ms]"
           :class="drawerOpen ? 'mr-[380px]' : ''"
         >
-          <FlightStage
+          <PreviewStage
             ref="stage"
-            :video-src="hasVideo ? flight.videoUrl.value : null"
+            :video-src="hasVideo ? preview.videoUrl.value : null"
             :still="still"
             :still-missing="stillMissing"
             :layer="layer"
@@ -543,7 +545,7 @@ const verdictLine = computed(() => {
                 <AppIcon name="next" />
               </RuneIconButton>
               <span class="px-1 text-rune-caption text-rune-text-2 tabular-nums" data-testid="time"
-                >{{ clock(timeMs) }} / {{ clock(flight.total.value) }}</span
+                >{{ clock(timeMs) }} / {{ clock(preview.total.value) }}</span
               >
               <span class="flex gap-1" role="group" aria-label="Speed">
                 <RuneSegment
@@ -588,21 +590,21 @@ const verdictLine = computed(() => {
             </div>
           </div>
 
-          <FlightTaskTimeline
-            v-if="flight.timeline.value"
-            :timeline="flight.timeline.value"
+          <PreviewTaskTimeline
+            v-if="preview.timeline.value"
+            :timeline="preview.timeline.value"
             :time-ms="timeMs"
             @seek="seek"
           />
-          <FlightTimeline
+          <PreviewTimeline
             v-else
-            :segments="flight.segments.value"
+            :segments="preview.segments.value"
             :steps="steps"
-            :starts="flight.starts.value"
-            :total="flight.total.value"
+            :starts="preview.starts.value"
+            :total="preview.total.value"
             :time-ms="timeMs"
-            :events="flight.events.value"
-            :run-started-utc="flight.mediaHeader.value?.startedUtc ?? header.startedUtc"
+            :events="preview.events.value"
+            :run-started-utc="preview.mediaHeader.value?.startedUtc ?? header.startedUtc"
             :retried="retried"
             @seek="seek"
           />
@@ -616,7 +618,7 @@ const verdictLine = computed(() => {
           </p>
         </div>
 
-        <FlightDrawer
+        <PreviewDrawer
           :open="drawerOpen"
           :tabs="tabs"
           :tab="tab"
@@ -629,7 +631,7 @@ const verdictLine = computed(() => {
           :show="showTyped"
           :developer="developer"
           :screenshot="still"
-          :load-bodies="flight.bodies"
+          :load-bodies="preview.bodies"
           @update:tab="tab = $event"
           @close="drawerOpen = false"
           @toggle-show="showTyped = !showTyped"

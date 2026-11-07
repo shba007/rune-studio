@@ -11,7 +11,7 @@ import TaskCard from './TaskCard.vue'
 import { invoke } from '@tauri-apps/api/core'
 import { useLocalStorage } from '@vueuse/core'
 import { computed, nextTick, ref, watch } from 'vue'
-import type { FlightRun } from '@/config/flight'
+import type { PreviewRun } from '@/config/preview'
 import type { IntakeEntry } from '@/types/decisions'
 import type { WorkspaceTask } from '@/types/workspace'
 import type { WorkspaceTasksModel } from '@/composables/useWorkspaceTasks'
@@ -19,7 +19,7 @@ import { taskProgress } from '@/config/workspaceProgress'
 import TaskPreview from './TaskPreview.vue'
 const props = defineProps<{
   workspace: WorkspaceTasksModel
-  history: FlightRun[]
+  history: PreviewRun[]
   goals: IntakeEntry[]
   active: boolean
   parentFilter?: string | null
@@ -29,7 +29,7 @@ const emit = defineEmits<{
   open: [id: string]
   goal: [id: string]
   schedule: [task: WorkspaceTask]
-  organize: [run: FlightRun]
+  organize: [run: PreviewRun]
   clear: []
   remove: [id: string]
 }>()
@@ -57,7 +57,7 @@ const rows = computed(() =>
       time:
         task.occurrences.at(-1)?.completedMs ?? task.occurrences.at(-1)?.dueMs ?? task.createdMs,
       task,
-      run: null as FlightRun | null,
+      run: null as PreviewRun | null,
     })),
     ...(!props.parentFilter
       ? props.history
@@ -98,13 +98,13 @@ watch([() => props.focusTaskId, () => props.active], async () => {
 function goalTitle(id: string) {
   return props.goals.find((g) => g.id === id)?.approvedGoal?.outcome ?? 'Parent goal unavailable'
 }
-function legacyProgress(run: FlightRun) {
+function legacyProgress(run: PreviewRun) {
   const p = meta.value[run.id]
   return run.outcome === 'succeeded' ? 100 : p?.[1] ? Math.round((p[0] / p[1]) * 100) : null
 }
-async function copy(run: FlightRun) {
+async function copy(run: PreviewRun) {
   try {
-    const text = await invoke<string | null>('flight_original_prompt', { id: run.id })
+    const text = await invoke<string | null>('preview_original_prompt', { id: run.id })
     if (!text) throw new Error('The original prompt was not retained')
     await navigator.clipboard.writeText(text)
     notice.value = 'Original prompt copied'
@@ -112,7 +112,10 @@ async function copy(run: FlightRun) {
     error.value = String(e)
   }
 }
-function previewRun(row: { task: WorkspaceTask | null; run: FlightRun | null }): FlightRun | null {
+function previewRun(row: {
+  task: WorkspaceTask | null
+  run: PreviewRun | null
+}): PreviewRun | null {
   if (row.run) return row.run
   const ids = [...(row.task?.occurrences ?? [])]
     .reverse()
@@ -121,7 +124,7 @@ function previewRun(row: { task: WorkspaceTask | null; run: FlightRun | null }):
   return ids.map((id) => props.history.find((run) => run.id === id)).find(Boolean) ?? null
 }
 
-type Row = { id: string; time: number; task: WorkspaceTask | null; run: FlightRun | null }
+type Row = { id: string; time: number; task: WorkspaceTask | null; run: PreviewRun | null }
 type Tone = 'idle' | 'ok' | 'warn' | 'down' | 'busy'
 type Bucket = 'active' | 'scheduled' | 'done' | 'failed'
 

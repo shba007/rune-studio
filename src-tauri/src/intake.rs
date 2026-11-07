@@ -305,7 +305,10 @@ async fn infer(
     classification: bool,
 ) -> Result<Value, String> {
     let state = app.state::<AppState>();
-    let (settings, key) = crate::settings::snapshot_with_api_key(&state.settings);
+    let (settings, key) =
+        crate::agent::unless_stopped(&e.token, crate::infer_catalog::agent_settings(&state))
+            .await
+            .ok_or("Cancelled")??;
     let model = settings.model_for_role(crate::model::role::ModelRole::Agent);
     let started = std::time::Instant::now();
     if classification {
@@ -1205,7 +1208,7 @@ fn attach_question(app: &AppHandle, e: &mut Entry) -> Result<(), String> {
         .db_path()
         .ok_or("Task history unavailable")?
         .to_path_buf();
-    let runs = crate::flight::runs(&db, 200, None)
+    let runs = crate::preview::runs(&db, 200, None)
         .map_err(|err| err.to_string())?
         .into_iter()
         .filter(|r| api_task_source(&r.source))
@@ -1340,7 +1343,7 @@ fn dispatch(app: &AppHandle, e: &mut Entry, parent: Option<&str>) -> Result<(), 
     let context = parent
         .map(|parent| {
             let db = state.trace.db_path().ok_or("Task history unavailable")?;
-            crate::flight::original_prompt(db, parent)
+            crate::preview::original_prompt(db, parent)
                 .map_err(|err| err.to_string())?
                 .ok_or_else(|| "The original task scope was not retained. Start a new task with explicit targets and constraints instead of attaching to this older record.".to_string())
         })
@@ -2914,7 +2917,7 @@ pub async fn decision_answer(
             } else {
                 let state = app.state::<AppState>();
                 let db = state.trace.db_path().ok_or("Task history unavailable")?;
-                let runs = crate::flight::runs(db, 200, None).map_err(|err| err.to_string())?;
+                let runs = crate::preview::runs(db, 200, None).map_err(|err| err.to_string())?;
                 let matches = runs
                     .iter()
                     .filter(|r| api_task_source(&r.source))

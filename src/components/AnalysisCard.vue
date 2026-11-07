@@ -43,7 +43,7 @@ async function loadTargets() {
   refreshStatus.value = ''
   targetNotice.value = ''
   try {
-    const available = await invoke<unknown>('screen_insight_targets')
+    const available = await invoke<unknown>('visual_analysis_targets')
     targets.value = Array.isArray(available) ? available : []
     refreshStatus.value = `${targets.value.length} capture targets available`
     if (!targets.value.length)

@@ -33,6 +33,21 @@ pub async fn start_embedded_infer(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn reload_embedded_infer(app: AppHandle) -> Result<(), String> {
+    #[cfg(all(windows, feature = "embedded-infer"))]
+    {
+        app.state::<crate::embedded_infer::EmbeddedManager>()
+            .reload(&app)
+            .await
+    }
+    #[cfg(not(all(windows, feature = "embedded-infer")))]
+    {
+        let _ = app;
+        Err("Local Infer is not included in this build".into())
+    }
+}
+
+#[tauri::command]
 pub async fn embedded_model_candidates() -> Result<serde_json::Value, String> {
     #[cfg(all(windows, feature = "embedded-infer"))]
     {
@@ -274,65 +289,6 @@ pub fn save_settings(
         return Err(AppError::Invalid(
             "Connections changed in another window. Reload settings before saving.".into(),
         ));
-    }
-    if let Some(selected) = current
-        .active_connection()
-        .and_then(|c| c.selected_models.as_ref())
-    {
-        let before = [
-            &current.models.agent,
-            &current.models.verifier,
-            &current.models.analysis,
-            &current.models.voice,
-            &current.models.decision,
-            &current.models.advisor,
-        ];
-        let after = [
-            &settings.models.agent,
-            &settings.models.verifier,
-            &settings.models.analysis,
-            &settings.models.voice,
-            &settings.models.decision,
-            &settings.models.advisor,
-        ];
-        if before
-            .iter()
-            .zip(after)
-            .any(|(old, new)| *old != new && !new.trim().is_empty() && !selected.contains(new))
-        {
-            return Err(AppError::Invalid(
-                "Choose a model selected for the active connection.".into(),
-            ));
-        }
-        let old_visual = &current.visual_analysis_models;
-        let new_visual = &settings.visual_analysis_models;
-        let before = [
-            &old_visual.planner,
-            &old_visual.entities,
-            &old_visual.regions,
-            &old_visual.structure,
-            &old_visual.depth,
-            &old_visual.instances,
-            &old_visual.oriented,
-        ];
-        let after = [
-            &new_visual.planner,
-            &new_visual.entities,
-            &new_visual.regions,
-            &new_visual.structure,
-            &new_visual.depth,
-            &new_visual.instances,
-            &new_visual.oriented,
-        ];
-        if before
-            .iter()
-            .zip(after)
-            .any(|(old, new)| *old != new && !new.trim().is_empty() && !selected.contains(new))
-        {
-            return Err(AppError::Invalid(
-                "Choose a model selected for the active connection.".into(),
-            ));
-        }
     }
     let was_on = current.external_agent;
     validate_mode_change(
@@ -731,9 +687,16 @@ pub async fn toggle_listening(app: AppHandle, state: State<'_, AppState>) -> App
 
     let (settings, api_key) = settings::snapshot_with_api_key(&state.settings);
     let http = state.http.clone();
-    let voice_model = settings.model_for_role(crate::model::role::ModelRole::Voice);
-    let profile = crate::model::profile::resolve_profile(voice_model, None, None);
-    if let Some(reason) = crate::voice::seam::voice_disabled_reason(voice_model, &profile) {
+    if api_key.as_deref().is_none_or(|key| key.trim().is_empty()) {
+        return Err(AppError::Invalid("An Infer API key is required".into()));
+    }
+    let catalog = crate::infer_catalog::read_roles(&settings.base_url, api_key.as_deref())
+        .await
+        .map_err(AppError::Invalid)?;
+    let voice_model = crate::infer_catalog::configured_role(&catalog, "voice")
+        .ok_or_else(|| AppError::Invalid("Configure a Voice model in the Infer catalog".into()))?;
+    let profile = crate::model::profile::resolve_profile(&voice_model, None, None);
+    if let Some(reason) = crate::voice::seam::voice_disabled_reason(&voice_model, &profile) {
         return Err(AppError::Invalid(reason));
     }
     tauri::async_runtime::spawn(async move {
@@ -920,21 +883,21 @@ fn trace_db(app: &AppHandle) -> AppResult<std::path::PathBuf> {
         .trace
         .db_path()
         .map(std::path::Path::to_path_buf)
-        .ok_or_else(|| AppError::Invalid("The flight record is not available.".into()))
+        .ok_or_else(|| AppError::Invalid("The preview is not available.".into()))
 }
 
 fn read_error(err: impl std::fmt::Display) -> AppError {
-    AppError::Invalid(format!("Could not read the flight record: {err}"))
+    AppError::Invalid(format!("Could not read the preview: {err}"))
 }
 
 #[tauri::command]
-pub fn flight_runs(
+pub fn preview_runs(
     app: AppHandle,
     limit: Option<usize>,
     before: Option<String>,
-) -> AppResult<Vec<crate::flight::FlightRun>> {
+) -> AppResult<Vec<crate::preview::PreviewRun>> {
     let state = app.state::<AppState>();
-    let mut runs = crate::flight::runs(
+    let mut runs = crate::preview::runs(
         &trace_db(&app)?,
         limit.unwrap_or(30).min(200),
         before.as_deref(),
@@ -944,7 +907,7 @@ pub fn flight_runs(
         let attempts = crate::domain::attempts(&trace_db(&app)?, &run.id).map_err(read_error)?;
         if let Some(last) = attempts.last().filter(|id| *id != &run.id)
             && let Some(header) =
-                crate::flight::header(&trace_db(&app)?, last).map_err(read_error)?
+                crate::preview::header(&trace_db(&app)?, last).map_err(read_error)?
         {
             run.outcome = header.outcome;
             run.ended_utc = header.ended_utc;
@@ -960,7 +923,7 @@ pub fn task_attempts(app: AppHandle, id: String) -> AppResult<Vec<String>> {
 }
 
 #[tauri::command]
-pub fn flight_task_history(app: AppHandle, id: String) -> AppResult<Vec<serde_json::Value>> {
+pub fn preview_task_history(app: AppHandle, id: String) -> AppResult<Vec<serde_json::Value>> {
     app.state::<AppState>()
         .trace
         .sync()
@@ -969,16 +932,16 @@ pub fn flight_task_history(app: AppHandle, id: String) -> AppResult<Vec<serde_js
 }
 
 #[tauri::command]
-pub async fn flight_original_prompt(app: AppHandle, id: String) -> AppResult<String> {
+pub async fn preview_original_prompt(app: AppHandle, id: String) -> AppResult<String> {
     tauri::async_runtime::spawn_blocking(move || {
         app.state::<AppState>().trace.sync().map_err(AppError::Invalid)?;
-        crate::flight::original_prompt(&trace_db(&app)?, &id).map_err(read_error)?
+        crate::preview::original_prompt(&trace_db(&app)?, &id).map_err(read_error)?
             .ok_or_else(|| AppError::Invalid("The original prompt was not retained for this task. Older records may contain only shortened or expanded execution text.".into()))
     }).await.map_err(read_error)?
 }
 
 #[tauri::command]
-pub async fn flight_delete(app: AppHandle, id: String) -> AppResult<Option<String>> {
+pub async fn preview_delete(app: AppHandle, id: String) -> AppResult<Option<String>> {
     static DELETION: std::sync::Mutex<()> = std::sync::Mutex::new(());
     tauri::async_runtime::spawn_blocking(move || {
         let _deletion = DELETION
@@ -990,7 +953,7 @@ pub async fn flight_delete(app: AppHandle, id: String) -> AppResult<Option<Strin
         let state = app.state::<AppState>();
         state.trace.sync().map_err(AppError::Invalid)?;
         let db = trace_db(&app)?;
-        let members = crate::flight::session_members(&db, &id).map_err(read_error)?;
+        let members = crate::preview::session_members(&db, &id).map_err(read_error)?;
         for (index, member) in members.iter().enumerate() {
             if let Err(error) = state.trace.block_session(member) {
                 for blocked in &members[..index] {
@@ -1002,8 +965,8 @@ pub async fn flight_delete(app: AppHandle, id: String) -> AppResult<Option<Strin
         let result = (|| {
             let mut staged = Vec::new();
             for member in &members {
-                if let Some(dir) = crate::flight::session_dir(&db, member).map_err(read_error)? {
-                    if crate::flight::folder_shared(&db, member, &dir).map_err(read_error)? {
+                if let Some(dir) = crate::preview::session_dir(&db, member).map_err(read_error)? {
+                    if crate::preview::folder_shared(&db, member, &dir).map_err(read_error)? {
                         return Err(AppError::Invalid(
                             "This folder is shared with another task; it cannot be deleted safely."
                                 .into(),
@@ -1016,7 +979,7 @@ pub async fn flight_delete(app: AppHandle, id: String) -> AppResult<Option<Strin
                     }
                 }
             }
-            crate::flight::delete_record(&db, &id).map_err(read_error)?;
+            crate::preview::delete_record(&db, &id).map_err(read_error)?;
             let failures = staged
                 .into_iter()
                 .filter_map(|folder| folder.finish().err().map(|error| error.to_string()))
@@ -1043,40 +1006,40 @@ pub async fn flight_delete(app: AppHandle, id: String) -> AppResult<Option<Strin
 }
 
 #[tauri::command]
-pub fn flight_run(app: AppHandle, id: String) -> AppResult<Option<crate::flight::FlightHeader>> {
-    crate::flight::header(&trace_db(&app)?, &id).map_err(read_error)
+pub fn preview_run(app: AppHandle, id: String) -> AppResult<Option<crate::preview::PreviewHeader>> {
+    crate::preview::header(&trace_db(&app)?, &id).map_err(read_error)
 }
 
 #[tauri::command]
-pub fn flight_steps(app: AppHandle, id: String) -> AppResult<Vec<serde_json::Value>> {
-    crate::flight::steps(&trace_db(&app)?, &id).map_err(read_error)
+pub fn preview_steps(app: AppHandle, id: String) -> AppResult<Vec<serde_json::Value>> {
+    crate::preview::steps(&trace_db(&app)?, &id).map_err(read_error)
 }
 
 #[tauri::command]
-pub fn flight_events(app: AppHandle, id: String) -> AppResult<Vec<serde_json::Value>> {
-    crate::flight::events(&trace_db(&app)?, &id).map_err(read_error)
+pub fn preview_events(app: AppHandle, id: String) -> AppResult<Vec<serde_json::Value>> {
+    crate::preview::events(&trace_db(&app)?, &id).map_err(read_error)
 }
 
 #[tauri::command]
-pub fn flight_calls(
+pub fn preview_calls(
     app: AppHandle,
     id: String,
     step: Option<i64>,
-) -> AppResult<Vec<crate::flight::FlightCall>> {
-    crate::flight::calls(&trace_db(&app)?, &id, step).map_err(read_error)
+) -> AppResult<Vec<crate::preview::PreviewCall>> {
+    crate::preview::calls(&trace_db(&app)?, &id, step).map_err(read_error)
 }
 
 #[tauri::command]
-pub fn flight_call_body(app: AppHandle, call_id: i64) -> AppResult<Option<(String, String)>> {
-    crate::flight::call_bodies(&trace_db(&app)?, call_id).map_err(read_error)
+pub fn preview_call_body(app: AppHandle, call_id: i64) -> AppResult<Option<(String, String)>> {
+    crate::preview::call_bodies(&trace_db(&app)?, call_id).map_err(read_error)
 }
 
 #[tauri::command]
-pub fn flight_file(app: AppHandle, id: String, relative: String) -> AppResult<String> {
-    let dir = crate::flight::session_dir(&trace_db(&app)?, &id)
+pub fn preview_file(app: AppHandle, id: String, relative: String) -> AppResult<String> {
+    let dir = crate::preview::session_dir(&trace_db(&app)?, &id)
         .map_err(read_error)?
         .ok_or_else(|| AppError::Invalid("This task has no recording folder.".into()))?;
-    let path = crate::flight::files::resolve(&dir, &relative).map_err(|refused| {
+    let path = crate::preview::files::resolve(&dir, &relative).map_err(|refused| {
         AppError::Invalid(format!("That file cannot be opened: {}.", refused.why()))
     })?;
     app.asset_protocol_scope()
@@ -1086,22 +1049,22 @@ pub fn flight_file(app: AppHandle, id: String, relative: String) -> AppResult<St
 }
 
 #[tauri::command]
-pub async fn open_flight(app: AppHandle, run_id: Option<String>) -> AppResult<()> {
+pub async fn open_preview(app: AppHandle, run_id: Option<String>) -> AppResult<()> {
     let run_id = run_id
         .filter(|id| !id.is_empty())
         .map(|id| crate::domain::task_id(&trace_db(&app)?, &id).map_err(read_error))
         .transpose()?;
-    crate::flight::open(&app, run_id.as_deref())
-        .map_err(|err| AppError::Invalid(format!("Could not open the Flight Player: {err}")))
+    crate::preview::open(&app, run_id.as_deref())
+        .map_err(|err| AppError::Invalid(format!("Could not open Preview: {err}")))
 }
 
 #[tauri::command]
-pub fn flight_reveal(app: AppHandle, id: String) -> AppResult<()> {
-    let dir = crate::flight::session_dir(&trace_db(&app)?, &id)
+pub fn preview_reveal(app: AppHandle, id: String) -> AppResult<()> {
+    let dir = crate::preview::session_dir(&trace_db(&app)?, &id)
         .map_err(read_error)?
         .filter(|dir| dir.is_dir())
         .ok_or_else(|| AppError::Invalid("This task has no recording folder on disk.".into()))?;
-    crate::flight::reveal(&dir)
+    crate::preview::reveal(&dir)
         .map_err(|err| AppError::Invalid(format!("Could not open the folder: {err}")))
 }
 
@@ -1114,7 +1077,7 @@ pub async fn run_workflow(
     crate::workflow::run(&app, &workflow_id, input).await
 }
 #[tauri::command]
-pub async fn screen_insight_targets()
+pub async fn visual_analysis_targets()
 -> Result<Vec<crate::observe::screenshot::TargetOption>, String> {
     tauri::async_runtime::spawn_blocking(crate::observe::screenshot::insight_targets)
         .await

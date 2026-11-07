@@ -327,7 +327,23 @@ pub async fn analyze_image(
     run_id: &str,
 ) -> Result<ModelAnalysis, AnalysisError> {
     let state = app.state::<AppState>();
-    let (settings, _) = settings::snapshot_with_api_key(&state.settings);
+    let (mut settings, key) = settings::snapshot_with_api_key(&state.settings);
+    let catalog = crate::infer_catalog::read_roles(&settings.base_url, key.as_deref())
+        .await
+        .map_err(AnalysisError::Failed)?;
+    settings.models.analysis = crate::infer_catalog::configured_role(&catalog, "analysis")
+        .ok_or_else(|| {
+            AnalysisError::Failed("Configure an Analysis model in the Infer catalog".into())
+        })?;
+    let status = crate::backend::check(&state.http, &settings, key.as_deref()).await;
+    if !status.reachable || !status.auth_ok {
+        return Err(AnalysisError::Failed(
+            status
+                .error
+                .unwrap_or_else(|| "Infer is unavailable".into()),
+        ));
+    }
+    crate::workflow::vision_model(&settings, &status.models).map_err(AnalysisError::Failed)?;
     analyze_image_with_settings(app, question, image, cancel, run_id, &settings).await
 }
 

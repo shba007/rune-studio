@@ -1,6 +1,6 @@
 import type { Finding } from '@/types/protocol'
 
-export interface FlightRun {
+export interface PreviewRun {
   active?: boolean
   id: string
   task: string
@@ -14,14 +14,14 @@ export interface FlightRun {
   thumbRun?: string | null
 }
 
-export interface FlightVideo {
+export interface PreviewVideo {
   kind?: 'storyboard' | 'motion'
   file?: string
   unavailable?: string
   [key: string]: unknown
 }
 
-export interface FlightHeader {
+export interface PreviewHeader {
   id: string
   task: string
   source: string
@@ -35,12 +35,12 @@ export interface FlightHeader {
   retries: number
   durationSecs: number | null
   verdict: { result: string; evidence: string | null; mode: string; error: string | null } | null
-  video: FlightVideo | null
+  video: PreviewVideo | null
   sessionDir: string | null
-  analysis?: FlightAnalysis | null
+  analysis?: PreviewAnalysis | null
 }
 
-export interface FlightAnalysis {
+export interface PreviewAnalysis {
   answer: string
   findings: Finding[]
   model: string | null
@@ -49,7 +49,7 @@ export interface FlightAnalysis {
   error: string | null
 }
 
-export interface FlightPhases {
+export interface PreviewPhases {
   observe: number | null
   screenCheck: number | null
   finishCheck: number | null
@@ -59,7 +59,7 @@ export interface FlightPhases {
   settle: number | null
 }
 
-export interface FlightStep {
+export interface PreviewStep {
   step: number
   startedUtc: string | null
   goal: number | null
@@ -77,17 +77,17 @@ export interface FlightStep {
   promptText: string | null
   thinkingChars: number | null
   completionTokens: number | null
-  phases: FlightPhases
+  phases: PreviewPhases
 }
 
-export interface FlightEvent {
+export interface PreviewEvent {
   id: number
   atUtc: string | null
   kind: string | null
   dataJson: string | null
 }
 
-export interface FlightCall {
+export interface PreviewCall {
   id: number
   step: number | null
   kind: string
@@ -113,11 +113,11 @@ export function parseIso(text: string | null | undefined): number | null {
   return Number.isFinite(value) ? value : null
 }
 
-export function stepStarts(runStartedUtc: string | null, steps: FlightStep[]): number[] {
+export function stepStarts(runStartedUtc: string | null, steps: PreviewStep[]): number[] {
   return absoluteStarts(runStartedUtc, steps).map((start, index) => (index === 0 ? 0 : start))
 }
 
-function absoluteStarts(runStartedUtc: string | null, steps: FlightStep[]): number[] {
+function absoluteStarts(runStartedUtc: string | null, steps: PreviewStep[]): number[] {
   const origin = parseIso(runStartedUtc)
   const starts: number[] = []
   let previous = 0
@@ -153,7 +153,7 @@ export function timeOfStep(starts: number[], index: number): number {
   return starts[Math.min(starts.length - 1, Math.max(0, index))] ?? 0
 }
 
-export function totalMs(starts: number[], header: Pick<FlightHeader, 'durationSecs'>): number {
+export function totalMs(starts: number[], header: Pick<PreviewHeader, 'durationSecs'>): number {
   const last = starts.at(-1) ?? 0
   return Math.max((header.durationSecs ?? 0) * 1000, last + 1000)
 }
@@ -175,7 +175,7 @@ export function segments(starts: number[], total: number): Segment[] {
 export const PHASES = ['observe', 'decide', 'gate', 'act', 'settle'] as const
 export type Phase = (typeof PHASES)[number]
 
-export function phaseTimes(phases: FlightPhases): { phase: Phase; ms: number }[] {
+export function phaseTimes(phases: PreviewPhases): { phase: Phase; ms: number }[] {
   const ms = (value: number | null) => Math.max(0, value ?? 0)
   return [
     { phase: 'observe', ms: ms(phases.observe) + ms(phases.screenCheck) + ms(phases.finishCheck) },
@@ -196,7 +196,7 @@ export function clock(ms: number): string {
     : `${minutes}:${seconds}`
 }
 
-function argsOf(step: Pick<FlightStep, 'argsJson'>): Record<string, unknown> {
+function argsOf(step: Pick<PreviewStep, 'argsJson'>): Record<string, unknown> {
   if (!step.argsJson) return {}
   try {
     const value: unknown = JSON.parse(step.argsJson)
@@ -210,7 +210,7 @@ function argsOf(step: Pick<FlightStep, 'argsJson'>): Record<string, unknown> {
 
 export const TYPING_TOOLS = ['type_text'] as const
 
-export function isTyping(step: Pick<FlightStep, 'tool'>): boolean {
+export function isTyping(step: Pick<PreviewStep, 'tool'>): boolean {
   return TYPING_TOOLS.some((name) => name === step.tool)
 }
 
@@ -219,7 +219,7 @@ export function hiddenText(text: string): string {
   return `•••• (${count} ${count === 1 ? 'character' : 'characters'})`
 }
 
-export function argsText(step: FlightStep, show: boolean): string {
+export function argsText(step: PreviewStep, show: boolean): string {
   if (!step.argsJson) return ''
   if (!isTyping(step) || show) return step.argsJson
   const args = argsOf(step)
@@ -227,7 +227,7 @@ export function argsText(step: FlightStep, show: boolean): string {
   return JSON.stringify({ ...args, text: '••••' })
 }
 
-export function guardText(step: FlightStep, text: string | null, show: boolean): string {
+export function guardText(step: PreviewStep, text: string | null, show: boolean): string {
   if (!text) return ''
   if (show || !isTyping(step)) return text
   const typed = argsOf(step).text
@@ -249,7 +249,7 @@ const BUTTONS: Record<string, string> = {
   middle: 'MIDDLE-CLICK',
 }
 
-export function actionLayer(step: FlightStep | undefined, show: boolean): ActionLayer {
+export function actionLayer(step: PreviewStep | undefined, show: boolean): ActionLayer {
   if (!step || !step.tool) return { kind: 'none' }
   const args = argsOf(step)
   const number = (value: unknown) =>
@@ -286,13 +286,13 @@ export function actionLayer(step: FlightStep | undefined, show: boolean): Action
   }
 }
 
-export function stepBadge(index: number, count: number, step: FlightStep | undefined): string {
+export function stepBadge(index: number, count: number, step: PreviewStep | undefined): string {
   if (!step) return ''
   const tool = (step.tool ?? 'no action').replaceAll('_', ' ').toUpperCase()
   return `STEP ${index + 1} / ${count} · ${tool}`
 }
 
-export function caption(step: FlightStep | undefined, show: boolean): string {
+export function caption(step: PreviewStep | undefined, show: boolean): string {
   if (!step) return ''
   const reason = guardText(step, step.reason, show).trim()
   const outcome =
@@ -328,8 +328,8 @@ export const TAB_LABEL: Record<TabId, string> = {
 }
 
 export interface TabContext {
-  step: FlightStep | undefined
-  calls: FlightCall[]
+  step: PreviewStep | undefined
+  calls: PreviewCall[]
   hasFiles: boolean
   toolEvents: number
 }
@@ -367,11 +367,11 @@ export function visibleRows(
 }
 
 export function eventsOfStep(
-  events: FlightEvent[],
+  events: PreviewEvent[],
   runStartedUtc: string | null,
-  steps: FlightStep[],
+  steps: PreviewStep[],
   index: number,
-): FlightEvent[] {
+): PreviewEvent[] {
   const origin = parseIso(runStartedUtc)
   const starts = absoluteStarts(runStartedUtc, steps)
   if (origin === null || index < 0 || index >= starts.length) return []
@@ -383,7 +383,7 @@ export function eventsOfStep(
   })
 }
 
-export function markerOf(event: FlightEvent): { word: string; error: boolean } | null {
+export function markerOf(event: PreviewEvent): { word: string; error: boolean } | null {
   switch (event.kind) {
     case 'stuck_warning':
       return { word: 'STUCK', error: false }
@@ -475,7 +475,7 @@ export function toolIcon(
   }
 }
 
-export function failedStep(step: FlightStep): boolean {
+export function failedStep(step: PreviewStep): boolean {
   return step.result === 'failed' || (step.error ?? '').trim() !== ''
 }
 
@@ -486,7 +486,7 @@ export function isOutsideAgent(source: string): boolean {
   )
 }
 
-export function typedTexts(steps: FlightStep[]): string[] {
+export function typedTexts(steps: PreviewStep[]): string[] {
   const found = new Set<string>()
   for (const step of steps) {
     if (!isTyping(step)) continue
@@ -568,7 +568,7 @@ const ACTION_TOOLS = new Set([
 ])
 
 export function pictureFileOf(
-  steps: FlightStep[],
+  steps: PreviewStep[],
   index: number,
   outsideAgent: boolean,
 ): string | null {
@@ -586,7 +586,7 @@ export function pictureFileOf(
   return ACTION_TOOLS.has(step.tool ?? '') ? (before() ?? own) : (own ?? before())
 }
 
-export function pointerAt(steps: FlightStep[], index: number): { x: number; y: number } | null {
+export function pointerAt(steps: PreviewStep[], index: number): { x: number; y: number } | null {
   const point = (value: unknown): { x: number; y: number } | null =>
     Array.isArray(value) &&
     typeof value[0] === 'number' &&

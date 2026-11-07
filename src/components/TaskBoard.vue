@@ -4,7 +4,7 @@ import RuneIconButton from './RuneIconButton.vue'
 import { useIntervalFn, useNow, usePreferredReducedMotion } from '@vueuse/core'
 import { computed, nextTick, ref, watch, type ComponentPublicInstance } from 'vue'
 import type { IndependentTask, TaskBoardModel, TaskPhase } from '@/composables/useTaskBoard'
-import { clock } from '@/config/flight'
+import { clock } from '@/config/preview'
 import { clockText } from '@/config/eta'
 import {
   currentStep,

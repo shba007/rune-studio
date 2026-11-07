@@ -35,7 +35,7 @@ fn open_view(app: &AppHandle, section: Option<&str>, run: Option<&str>) -> tauri
     let url = match run {
         Some(id) => format!(
             "index.html?view=workspace&section={section}&run={}",
-            crate::flight::url_safe(id)
+            crate::preview::url_safe(id)
         ),
         None => format!("index.html?view=workspace&section={section}"),
     };

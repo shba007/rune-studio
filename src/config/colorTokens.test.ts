@@ -42,10 +42,10 @@ it('uses the error token instead of the raw error red anywhere', () => {
     ...PILL_PATH,
     'SettingsLife',
     'SettingsConnectionModels',
-    'FlightDrawer',
+    'PreviewDrawer',
     'WorkspaceTaskTimeline',
-    'FlightTimeline',
-    'FlightTaskTimeline',
+    'PreviewTimeline',
+    'PreviewTaskTimeline',
   ]
   expect(names.filter((name) => source(name).includes('#ff6b72'))).toEqual([])
 })

@@ -83,28 +83,56 @@ pub fn start_planned(
     };
     let state = app.state::<AppState>();
     let trace = state.trace.clone();
-    let mode = state.settings.locked().verify_mode;
     let handoff: Shared = Shared::default();
     handoff.locked().board_id = board_id;
     handoff.locked().scope_id = scope.id;
-    let (model, settings_json) = trace::model_and_snapshot(&state.settings);
-    trace.begin_run(RunInfo {
-        id: run_id.clone(),
-        scope_id: i64::try_from(scope.id).ok(),
-        task: task.clone(),
-        source: "built-in".into(),
-        started_utc: trace::now_utc(),
-        plan_json: plan
-            .as_ref()
-            .and_then(|goals| serde_json::to_string(goals).ok()),
-        model: Some(model),
-        app_version: Some(crate::VERSION.into()),
-        settings_json: Some(settings_json),
-        session_dir: crate::archive::session_dir(&session).map(|dir| dir.display().to_string()),
-    });
-    trace.user_prompt(&run_id, original.unwrap_or(&task));
+    let prompt = original.unwrap_or(&task).to_string();
+    let started_utc = trace::now_utc();
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
+        let state = app.state::<AppState>();
+        let (mut effective, api_key) = settings::snapshot_with_api_key(&state.settings);
+        let catalog = unless_stopped(
+            &scope.token,
+            crate::infer_catalog::read_roles(&effective.base_url, api_key.as_deref()),
+        )
+        .await;
+        let mut mode = VerifyMode::Off;
+        let role_error = match catalog {
+            None => Some(Outcome::Stopped),
+            Some(Err(error)) => Some(Outcome::Failed(error)),
+            Some(Ok(catalog)) => match crate::infer_catalog::configured_role(&catalog, "agent") {
+                None => Some(Outcome::Failed(
+                    "Configure an Agent model in the Infer catalog".into(),
+                )),
+                Some(model) => {
+                    effective.models.agent = model;
+                    effective.models.verifier =
+                        crate::infer_catalog::configured_role(&catalog, "verifier")
+                            .unwrap_or_default();
+                    if !effective.models.verifier.is_empty() {
+                        mode = effective.verify_mode;
+                    }
+                    effective.verify_mode = mode;
+                    None
+                }
+            },
+        };
+        trace.begin_run(RunInfo {
+            id: run_id.clone(),
+            scope_id: i64::try_from(scope.id).ok(),
+            task: task.clone(),
+            source: "built-in".into(),
+            started_utc,
+            plan_json: plan
+                .as_ref()
+                .and_then(|goals| serde_json::to_string(goals).ok()),
+            model: role_error.is_none().then(|| effective.models.agent.clone()),
+            app_version: Some(crate::VERSION.into()),
+            settings_json: Some(trace::settings_snapshot(&effective)),
+            session_dir: crate::archive::session_dir(&session).map(|dir| dir.display().to_string()),
+        });
+        trace.user_prompt(&run_id, &prompt);
         if let Some(task_id) = board_id {
             crate::tasks::link_run(&app, task_id, &run_id);
         }
@@ -112,19 +140,27 @@ pub fn start_planned(
         let leftovers = scope.token.clone();
         let work_id = run_id.clone();
         let work_handoff = handoff.clone();
-        let outcome = supervised(async move {
-            run(
-                &work_app,
-                &task,
-                plan,
-                scope.token,
-                &work_id,
-                mode,
-                work_handoff,
-            )
+        let background_settings = effective.clone();
+        let background_key = api_key.clone();
+        let outcome = if let Some(outcome) = role_error {
+            outcome
+        } else {
+            supervised(async move {
+                run(
+                    &work_app,
+                    &task,
+                    plan,
+                    scope.token,
+                    &work_id,
+                    mode,
+                    work_handoff,
+                    effective,
+                    api_key,
+                )
+                .await
+            })
             .await
-        })
-        .await;
+        };
         uia::forget(&format!("agent:{run_id}"));
         stop_leftovers(&leftovers, &outcome);
         end_session(&session, &outcome);
@@ -153,11 +189,13 @@ pub fn start_planned(
         }
         match next {
             AfterRun::Nothing => {}
-            AfterRun::Check => spawn_background_check(&app, run_id, evidence),
+            AfterRun::Check => {
+                spawn_background_check(&app, run_id, evidence, background_settings, background_key)
+            }
             AfterRun::Skip => trace.verdict(skipped_record(
                 &run_id,
                 mode,
-                &app.state::<AppState>().settings.locked().model,
+                &background_settings.models.agent,
             )),
         }
     });
@@ -318,10 +356,15 @@ async fn until_the_user_needs_the_screen(app: &AppHandle, token: &CancelToken) {
     }
 }
 
-fn spawn_background_check(app: &AppHandle, run_id: String, evidence: Option<Evidence>) {
+fn spawn_background_check(
+    app: &AppHandle,
+    run_id: String,
+    evidence: Option<Evidence>,
+    settings: settings::Settings,
+    api_key: Option<String>,
+) {
     let state = app.state::<AppState>();
     let token = state.begin_verification();
-    let (settings, api_key) = settings::snapshot_with_api_key(&state.settings);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let state = app.state::<AppState>();
@@ -626,10 +669,11 @@ async fn run(
     run_id: &str,
     mode: VerifyMode,
     handoff: Shared,
+    settings: settings::Settings,
+    api_key: Option<String>,
 ) -> Outcome {
     let state = app.state::<AppState>();
     let trace = state.trace.clone();
-    let (settings, api_key) = settings::snapshot_with_api_key(&state.settings);
     let recording_scope = {
         let (board_id, scope_id) = {
             let owner = handoff.locked();

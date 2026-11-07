@@ -64,7 +64,7 @@ Progress, status and (later) XP are computed from the grade, not from the claim.
 
 ## 4. Milestones
 
-The platform track continues unchanged underneath: Studio R5 (identity, demo mode, idle shell), R6b (Flight Player), R6c (post-mortems and notes), R7 (notes in the prompt), R8 (trust), K1 (kit client), K2 (A2UI). The life track below uses them.
+The platform track continues unchanged underneath: Studio R5 (identity, demo mode, idle shell), R6b (Preview), R6c (post-mortems and notes), R7 (notes in the prompt), R8 (trust), K1 (kit client), K2 (A2UI). The life track below uses them.
 
 ### L0 Foundations: consent, store, trust slice (M)
 
@@ -159,7 +159,7 @@ The platform track continues unchanged underneath: Studio R5 (identity, demo mod
 **Deliverables**
 
 - The automation ladder in the settings and in each proposal. The system proposes automations it can do: create the daily note, import a statement, move files, open the right workspace, set a reminder, prepare a draft. Each proposal says what it will touch, the scope and the undo.
-- Approvals are recorded (class, scope, expiry) and revocable in one click; every action is logged in the existing record and visible in the Flight Player.
+- Approvals are recorded (class, scope, expiry) and revocable in one click; every action is logged in the existing record and visible in the Preview.
 - All actions go through Studio's existing safety gate; money, messages to other people and deletions stay at "ask every time".
 - It also proposes things it should **not** automate, because doing them yourself is the point (practice, hard decisions).
   **Exit:** three automation classes run at the "act within approved scope" level for 14 days without a mistake you report; every action has an undo or a confirmation; revoking works immediately.

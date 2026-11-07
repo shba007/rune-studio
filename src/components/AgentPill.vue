@@ -5,7 +5,7 @@ import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 
 
 import { useAgent } from '@/composables/useAgent'
 import { useUpdater } from '@/composables/useUpdater'
-import { DOCK_GAP, DOCK_WIDTH, PAGE_GAP, PAGE_WIDTH } from '@/config/layout'
+import { DOCK_GAP, DOCK_WIDTH, PAGE_GAP, PAGE_WIDTH, pillContentHeight } from '@/config/layout'
 
 import Composer from './Composer.vue'
 import LifeDots from './LifeDots.vue'
@@ -192,8 +192,7 @@ const cards = useTemplateRef<HTMLElement>('cards')
 const composer = useTemplateRef<HTMLElement>('composer')
 const { height: cardsHeight } = useElementSize(cards)
 const { height: composerHeight } = useElementSize(composer)
-const measuredHeight = () =>
-  cardsHeight.value + composerHeight.value + (cardsHeight.value && composerHeight.value ? 8 : 0)
+const measuredHeight = () => pillContentHeight(cardsHeight.value, composerHeight.value)
 agent.setHeightProbe(measuredHeight)
 onBeforeUnmount(() => agent.setHeightProbe(undefined))
 watch([cardsHeight, composerHeight], () => {

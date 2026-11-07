@@ -61,7 +61,7 @@ beforeEach(() => {
   snapshot.value = { ...EMPTY_SNAPSHOT }
   nextId = 0
   invoke.mockReset().mockImplementation(async (command) => {
-    if (command === 'screen_insight_targets')
+    if (command === 'visual_analysis_targets')
       return [{ target: { kind: 'screen', id: 1 }, label: 'Main screen', primary: true }]
     if (command === 'playground_start_run') return ++nextId
     if (command === 'playground_visual_plan')
@@ -325,7 +325,7 @@ it('keeps a selected target on refresh and chooses the new primary when it disap
 it('plans questions first and launches independent branches against the same frame', async () => {
   const pending: Array<(value: unknown) => void> = []
   invoke.mockImplementation(async (command) => {
-    if (command === 'screen_insight_targets')
+    if (command === 'visual_analysis_targets')
       return [{ target: { kind: 'screen', id: 1 }, label: 'Main screen', primary: true }]
     if (command === 'playground_start_run') return ++nextId
     if (command === 'playground_visual_plan')
@@ -450,7 +450,7 @@ it('shows semantic classes and pose keypoints returned by Infer', async () => {
 
 it('isolates a failed branch and retains successful siblings', async () => {
   invoke.mockImplementation(async (command, args) => {
-    if (command === 'screen_insight_targets')
+    if (command === 'visual_analysis_targets')
       return [{ target: { kind: 'screen', id: 1 }, label: 'Main screen', primary: true }]
     if (command === 'playground_start_run') return ++nextId
     if (command === 'playground_visual_plan')

@@ -15,6 +15,8 @@ pub enum StoreError {
     NotFound,
     #[error("the trace database was written by a newer Rune Studio (schema {0})")]
     Newer(i64),
+    #[error("the trace database uses an unsupported older schema ({0}); the file was preserved")]
+    Older(i64),
     #[error("{0}")]
     Sqlite(String),
 }
@@ -286,16 +288,14 @@ pub fn open_read(path: &Path) -> Result<Connection, StoreError> {
     if version > schema::VERSION {
         return Err(StoreError::Newer(version));
     }
+    if version < schema::VERSION {
+        return Err(StoreError::Older(version));
+    }
     Ok(db)
 }
 
 pub fn list_runs(path: &Path, limit: usize) -> Result<Vec<RunSummary>, StoreError> {
     list_runs_in(&open_read(path)?, limit)
-}
-
-fn has_verdicts(db: &Connection) -> Result<bool, StoreError> {
-    let version: i64 = db.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    Ok(version >= 2)
 }
 
 pub fn list_runs_in(db: &Connection, limit: usize) -> Result<Vec<RunSummary>, StoreError> {
@@ -304,26 +304,10 @@ pub fn list_runs_in(db: &Connection, limit: usize) -> Result<Vec<RunSummary>, St
 
 pub fn list_sessions(path: &Path, limit: usize) -> Result<Vec<RunSummary>, StoreError> {
     let db = open_read(path)?;
-    let linked: bool = db.query_row(
-        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='task_links')",
-        [],
-        |row| row.get(0),
-    )?;
-    let attempts: bool = db.query_row(
-        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='task_attempts')",
-        [],
-        |r| r.get(0),
-    )?;
     list_runs_filtered(
         &db,
         limit,
-        if linked && attempts {
-            "WHERE NOT EXISTS(SELECT 1 FROM task_links l JOIN runs parent ON parent.id=l.request_id WHERE l.run_id=r.id AND l.run_id!=l.request_id) AND NOT EXISTS(SELECT 1 FROM task_attempts a JOIN runs parent ON parent.id=a.task_id WHERE a.run_id=r.id)"
-        } else if linked {
-            "WHERE NOT EXISTS(SELECT 1 FROM task_links l JOIN runs parent ON parent.id=l.request_id WHERE l.run_id=r.id AND l.run_id!=l.request_id)"
-        } else {
-            ""
-        },
+        "WHERE NOT EXISTS(SELECT 1 FROM task_links l JOIN runs parent ON parent.id=l.request_id WHERE l.run_id=r.id AND l.run_id!=l.request_id) AND NOT EXISTS(SELECT 1 FROM task_attempts a JOIN runs parent ON parent.id=a.task_id WHERE a.run_id=r.id)",
     )
 }
 
@@ -337,13 +321,9 @@ fn list_runs_filtered(
     } else if filter.is_empty() {
         "s.run_id = r.id"
     } else {
-        "(s.run_id = r.id OR s.run_id IN (SELECT run_id FROM task_links WHERE request_id=r.id))"
+        "s.run_id = r.id"
     };
-    let verdict = if has_verdicts(db)? {
-        "(SELECT v.result FROM verdicts v WHERE v.run_id = r.id)"
-    } else {
-        "NULL"
-    };
+    let verdict = "(SELECT v.result FROM verdicts v WHERE v.run_id = r.id)";
     let mut statement = db.prepare(&format!(
         "SELECT r.id, r.started_utc, r.ended_utc, r.source, r.outcome, r.task, (SELECT COUNT(*) FROM steps s WHERE {step_filter}), {verdict}, r.session_dir,
                 (SELECT s.observation_path FROM steps s WHERE {step_filter} AND s.observation_path IS NOT NULL ORDER BY s.started_utc DESC, s.step DESC LIMIT 1),
@@ -403,20 +383,10 @@ pub fn get_run_in(db: &Connection, id: &str) -> Result<Option<RunDetail>, StoreE
         Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(None),
         Err(err) => return Err(err.into()),
     };
-    let version: i64 = db
-        .query_row("PRAGMA user_version", [], |row| row.get(0))
-        .unwrap_or(0);
-    let sql = if version >= 7 {
-        format!(
-            "SELECT run_id, step, {} FROM steps WHERE run_id = ?1 ORDER BY step",
-            STEP_COLUMNS.join(", ")
-        )
-    } else {
-        format!(
-            "SELECT run_id, step, {} FROM steps WHERE run_id = ?1 ORDER BY step",
-            STEP_COLUMNS[..STEP_COLUMNS.len() - 1].join(", ")
-        )
-    };
+    let sql = format!(
+        "SELECT run_id, step, {} FROM steps WHERE run_id = ?1 ORDER BY step",
+        STEP_COLUMNS.join(", ")
+    );
     let steps = db
         .prepare(&sql)?
         .query_map([id], step_from_row)?
@@ -432,7 +402,7 @@ pub fn get_run_in(db: &Connection, id: &str) -> Result<Option<RunDetail>, StoreE
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
-    let verdict = if has_verdicts(db)? {
+    let verdict = {
         let found = db.query_row(
             "SELECT mode, result, evidence, error, model, latency_ms, claimed_success, challenged, created_utc FROM verdicts WHERE run_id = ?1",
             [id],
@@ -456,8 +426,6 @@ pub fn get_run_in(db: &Connection, id: &str) -> Result<Option<RunDetail>, StoreE
             Err(rusqlite::Error::QueryReturnedNoRows) => None,
             Err(err) => return Err(err.into()),
         }
-    } else {
-        None
     };
     Ok(Some(RunDetail {
         run,
@@ -470,12 +438,9 @@ pub fn get_run_in(db: &Connection, id: &str) -> Result<Option<RunDetail>, StoreE
 #[cfg(any(feature = "agent-bridge", test))]
 pub fn list_analyses(path: &Path, limit: usize) -> Result<Vec<AnalysisRecord>, StoreError> {
     let db = open_read(path)?;
-    if !has_analyses(&db)? {
-        return Ok(Vec::new());
-    }
     let mut statement = db.prepare(&format!(
         "SELECT {} FROM analyses ORDER BY created_utc DESC, rowid DESC LIMIT ?1",
-        analysis_columns(&db)?
+        ANALYSIS_COLUMNS
     ))?;
     let rows = statement.query_map(
         [i64::try_from(limit).unwrap_or(i64::MAX)],
@@ -487,10 +452,6 @@ pub fn list_analyses(path: &Path, limit: usize) -> Result<Vec<AnalysisRecord>, S
 #[cfg(any(feature = "agent-bridge", test))]
 pub fn list_reflections(path: &Path, limit: usize) -> Result<Vec<ReflectionRecord>, StoreError> {
     let db = open_read(path)?;
-    let version: i64 = db.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if version < 4 {
-        return Ok(Vec::new());
-    }
     let mut statement = db.prepare(
         "SELECT id, started_utc, ended_utc, outcome, stages FROM reflections ORDER BY started_utc DESC, rowid DESC LIMIT ?1",
     )?;
@@ -508,14 +469,8 @@ pub fn list_reflections(path: &Path, limit: usize) -> Result<Vec<ReflectionRecor
 
 pub fn get_analysis(path: &Path, id: &str) -> Result<Option<AnalysisRecord>, StoreError> {
     let db = open_read(path)?;
-    if !has_analyses(&db)? {
-        return Ok(None);
-    }
     match db.query_row(
-        &format!(
-            "SELECT {} FROM analyses WHERE id = ?1",
-            analysis_columns(&db)?
-        ),
+        &format!("SELECT {} FROM analyses WHERE id = ?1", ANALYSIS_COLUMNS),
         [id],
         analysis_from_row,
     ) {
@@ -525,20 +480,7 @@ pub fn get_analysis(path: &Path, id: &str) -> Result<Option<AnalysisRecord>, Sto
     }
 }
 
-const ANALYSIS_COLUMNS: &str = "id, created_utc, question, answer, findings_json, model, latency_ms, status, error, screenshot_path, monitor_json";
-
-fn analysis_columns(db: &Connection) -> Result<String, StoreError> {
-    let version: i64 = db.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    Ok(format!(
-        "{ANALYSIS_COLUMNS}, {}",
-        if version >= 5 { "boxes_rejected" } else { "0" }
-    ))
-}
-
-fn has_analyses(db: &Connection) -> Result<bool, StoreError> {
-    let version: i64 = db.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    Ok(version >= 3)
-}
+const ANALYSIS_COLUMNS: &str = "id, created_utc, question, answer, findings_json, model, latency_ms, status, error, screenshot_path, monitor_json, boxes_rejected";
 
 fn analysis_from_row(row: &Row<'_>) -> rusqlite::Result<AnalysisRecord> {
     let text = |index: usize| {

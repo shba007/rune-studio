@@ -1,8 +1,12 @@
-import type { FlightCall, FlightEvent, FlightHeader, FlightStep } from '@/config/flight'
+import type { PreviewCall, PreviewEvent, PreviewHeader, PreviewStep } from '@/config/preview'
 
 export const START = '2026-10-20T10:00:00Z'
 
-export function makeStep(n: number, seconds: number, extra: Partial<FlightStep> = {}): FlightStep {
+export function makeStep(
+  n: number,
+  seconds: number,
+  extra: Partial<PreviewStep> = {},
+): PreviewStep {
   const at = new Date(Date.parse(START) + seconds * 1000).toISOString().replace('.000Z', 'Z')
   return {
     step: n,
@@ -35,7 +39,7 @@ export function makeStep(n: number, seconds: number, extra: Partial<FlightStep> 
   }
 }
 
-export function makeHeader(extra: Partial<FlightHeader> = {}): FlightHeader {
+export function makeHeader(extra: Partial<PreviewHeader> = {}): PreviewHeader {
   return {
     id: 'r1',
     task: 'Open notepad',
@@ -56,7 +60,7 @@ export function makeHeader(extra: Partial<FlightHeader> = {}): FlightHeader {
   }
 }
 
-export function makeCall(id: number, step: number, extra: Partial<FlightCall> = {}): FlightCall {
+export function makeCall(id: number, step: number, extra: Partial<PreviewCall> = {}): PreviewCall {
   return {
     id,
     step,
@@ -76,7 +80,7 @@ export function makeCall(id: number, step: number, extra: Partial<FlightCall> = 
   }
 }
 
-export const noEvents: FlightEvent[] = []
+export const noEvents: PreviewEvent[] = []
 
 export function stubResizeObserver(width = 800, height = 400) {
   class Fake {

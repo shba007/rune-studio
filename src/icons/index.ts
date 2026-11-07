@@ -29,6 +29,7 @@ import IconHourglass from '~icons/ph/hourglass-medium-fill'
 import IconKeyboard from '~icons/ph/keyboard-fill'
 import IconLinkSimple from '~icons/ph/link-simple-fill'
 import IconMicrophone from '~icons/ph/waveform-bold'
+import IconVoiceInput from '~icons/custom/voice-input'
 import IconMonitor from '~icons/ph/monitor-fill'
 import IconMouse from '~icons/ph/mouse-simple-fill'
 import IconPlugs from '~icons/ph/plugs-connected-fill'
@@ -118,6 +119,7 @@ export const icons = {
   link: IconLinkSimple,
   logo: IconRuneMark,
   mic: IconMicrophone,
+  'voice-input': IconVoiceInput,
   monitor: IconMonitor,
   mouse: IconMouse,
   ok: IconCheckCircle,

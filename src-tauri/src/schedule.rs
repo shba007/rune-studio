@@ -97,7 +97,7 @@ pub async fn schedule_interpret(app: AppHandle, text: String) -> Result<Interpre
     let now_local = crate::task_calendar::local_now(&zone)?;
     let day = weekday(parse(&now_local)?);
     let state = app.state::<AppState>();
-    let (settings, key) = crate::settings::snapshot_with_api_key(&state.settings);
+    let (settings, key) = crate::infer_catalog::agent_settings(&state).await?;
     let model = settings.model_for_role(crate::model::role::ModelRole::Agent);
     let profile =
         crate::model::protected::discover(&state.http, &settings.base_url, key.as_deref(), model)

@@ -45,4 +45,4 @@ Faster steps, remembered tips per app (for example "Notepad restores old tabs"),
 
 ## Features used
 
-Text input, planning, screenshot and control list, the action loop, the safety gate, stuck detection, the flight recorder.
+Text input, planning, screenshot and control list, the action loop, the safety gate, stuck detection, the Preview.

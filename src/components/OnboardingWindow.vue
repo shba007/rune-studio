@@ -78,7 +78,7 @@ async function checkSetup(): Promise<boolean> {
       message.value = 'The connection changed while checking. Please check again.'
       return false
     }
-    const model = settings.models.agent.trim()
+    const model = (await invoke<string | null>('infer_agent_role'))?.trim() ?? ''
     if (!probe.status.reachable || !probe.status.authOk || probe.status.error) {
       message.value = probe.status.error || 'The selected model server is not ready yet.'
       return false

@@ -57,9 +57,7 @@ it('sets up a cloud connection and selects its model within onboarding', async (
     .trigger('click')
   await flushPromises()
   expect(harness.invoke).toHaveBeenCalledWith('connections_activate', { revision: 2, id: 'cloud' })
-  expect(harness.invoke).toHaveBeenCalledWith('save_settings', {
-    settings: { model: 'vision', models: { agent: 'vision' } },
-  })
+  expect(harness.invoke).toHaveBeenCalledWith('infer_select_agent', { model: 'vision' })
   expect(wrapper.emitted('ready')).toHaveLength(1)
   wrapper.unmount()
 })

@@ -66,16 +66,21 @@ pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
         return;
     }
     let stop_generation = STOPS.load(std::sync::atomic::Ordering::SeqCst);
-    let (base_url, voice_model, api_key, output_limit) = {
-        let (settings, _) = settings::snapshot_with_api_key(&state.settings);
-        (
-            settings.base_url.clone(),
-            settings
-                .model_for_role(crate::model::role::ModelRole::Voice)
-                .to_string(),
-            settings::api_key_for(&settings),
-            settings.output_limit(),
-        )
+    let (settings, api_key) = settings::snapshot_with_api_key(&state.settings);
+    let base_url = settings.base_url.clone();
+    let output_limit = settings.output_limit();
+    let voice_model = match crate::infer_catalog::read_roles(&base_url, api_key.as_deref()).await {
+        Ok(catalog) => crate::infer_catalog::configured_role(&catalog, "voice"),
+        Err(error) => {
+            heard(app, "", error);
+            crate::commands::close_microphone(app);
+            return;
+        }
+    };
+    let Some(voice_model) = voice_model else {
+        heard(app, "", "Configure a Voice model in the Infer catalog");
+        crate::commands::close_microphone(app);
+        return;
     };
     let wav = direct::wav(&utterance);
     let (profile, capabilities) = match crate::model::protected::discover_with_capabilities(

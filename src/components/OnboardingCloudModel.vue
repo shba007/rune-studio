@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { useConnections, type ConnectionEdit } from '@/composables/useConnections'
-import type { BackendStatus, Settings } from '@/types/protocol'
+import type { BackendStatus } from '@/types/protocol'
 import ConnectionEditor from './ConnectionEditor.vue'
 import RuneButton from './RuneButton.vue'
 
@@ -82,10 +82,7 @@ async function useModel() {
   error.value = ''
   try {
     if (!(await connections.activate(connectionId.value))) return
-    const settings = await invoke<Settings>('get_settings')
-    settings.models.agent = model.value
-    settings.model = model.value
-    await invoke('save_settings', { settings })
+    await invoke('infer_select_agent', { model: model.value })
     emit('ready')
   } catch (e) {
     error.value = String(e)

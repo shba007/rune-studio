@@ -2,8 +2,8 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
-import { makeCall, makeHeader, makeStep, stubResizeObserver } from './flightTestKit'
-import FlightPlayer from './FlightPlayer.vue'
+import { makeCall, makeHeader, makeStep, stubResizeObserver } from './previewTestKit'
+import PreviewPlayer from './PreviewPlayer.vue'
 
 const invoke = vi.fn<(command: string, args?: Record<string, unknown>) => Promise<unknown>>()
 const nativeWindow = vi.hoisted(() => ({ close: vi.fn<() => void>() }))
@@ -53,20 +53,20 @@ function world(w: World) {
         return w.attempts ?? null
       case 'get_settings':
         return { developerMode: w.developer ?? true }
-      case 'flight_runs':
+      case 'preview_runs':
         return w.runs ?? [RUN]
-      case 'flight_run':
+      case 'preview_run':
         if (w.mediaHeaders?.[String(args?.id)]) return w.mediaHeaders[String(args?.id)]
         return w.header === undefined ? makeHeader() : w.header
-      case 'flight_task_history':
+      case 'preview_task_history':
         return w.history ?? []
-      case 'flight_steps':
+      case 'preview_steps':
         return w.steps ?? [makeStep(1, 0), makeStep(2, 10), makeStep(3, 20)]
-      case 'flight_events':
+      case 'preview_events':
         return []
-      case 'flight_calls':
+      case 'preview_calls':
         return w.calls ?? []
-      case 'flight_file':
+      case 'preview_file':
         return w.file ? w.file(String(args?.relative)) : String(args?.relative)
       default:
         return null
@@ -75,8 +75,8 @@ function world(w: World) {
 }
 
 async function open(run: string | null = 'r1') {
-  window.history.replaceState({}, '', run ? `/?view=flight&run=${run}` : '/?view=flight')
-  const wrapper = mount(FlightPlayer, { attachTo: document.body })
+  window.history.replaceState({}, '', run ? `/?view=preview&run=${run}` : '/?view=preview')
+  const wrapper = mount(PreviewPlayer, { attachTo: document.body })
   await flushPromises()
   return wrapper
 }
@@ -88,7 +88,7 @@ beforeEach(() => {
   document.body.innerHTML = ''
 })
 
-describe('FlightPlayer states', () => {
+describe('PreviewPlayer states', () => {
   it('opens the latest attempt and can replay the original attempt without changing the owning task', async () => {
     world({
       attempts: ['r1', 'attempt-2'],
@@ -101,15 +101,15 @@ describe('FlightPlayer states', () => {
       .find((b) => b.text() === 'Attempt 1')!
       .trigger('click')
     await flushPromises()
-    expect(invoke).toHaveBeenCalledWith('flight_run', { id: 'r1' })
+    expect(invoke).toHaveBeenCalledWith('preview_run', { id: 'r1' })
     expect(wrapper.get('[data-testid="task"]').text()).toBe('Open notepad')
     wrapper.unmount()
   })
   it('embedded Preview returns to history without opening or closing a native window', async () => {
     world({})
-    const wrapper = mount(FlightPlayer, { props: { embedded: true, taskId: 'r1' } })
+    const wrapper = mount(PreviewPlayer, { props: { embedded: true, taskId: 'r1' } })
     await flushPromises()
-    expect(invoke).toHaveBeenCalledWith('flight_run', { id: 'r1' })
+    expect(invoke).toHaveBeenCalledWith('preview_run', { id: 'r1' })
     expect(wrapper.findComponent({ name: 'TitleBar' }).exists()).toBe(false)
     await wrapper.get('[data-testid="back"]').trigger('click')
     await flushPromises()
@@ -168,14 +168,14 @@ describe('FlightPlayer states', () => {
         return () => null
       },
     })
-    window.history.replaceState({}, '', '/?view=flight&run=request')
-    const wrapper = mount(FlightPlayer, { global: { stubs: { FlightStage: stageStub } } })
+    window.history.replaceState({}, '', '/?view=preview&run=request')
+    const wrapper = mount(PreviewPlayer, { global: { stubs: { PreviewStage: stageStub } } })
     await flushPromises()
     await wrapper.get('[aria-label="Desktop 2, step 1: Type, done"]').trigger('click')
     await flushPromises()
     expect(seekVideo).toHaveBeenLastCalledWith(5000)
     expect(wrapper.get('[data-testid="time"]').text()).toBe('0:25 / 0:40')
-    expect(invoke).toHaveBeenCalledWith('flight_file', { id: 'desktop-2', relative: 'second.mp4' })
+    expect(invoke).toHaveBeenCalledWith('preview_file', { id: 'desktop-2', relative: 'second.mp4' })
     wrapper.unmount()
   })
   it('opens a whole request with three task rows and resolves captures against its desktop child', async () => {
@@ -225,7 +225,7 @@ describe('FlightPlayer states', () => {
     await wrapper.get('[aria-label="Translate, step 1: Complete, done"]').trigger('click')
     await flushPromises()
     expect(wrapper.get('[data-testid="time"]').text()).toBe('0:10 / 0:30')
-    expect(invoke).toHaveBeenCalledWith('flight_file', {
+    expect(invoke).toHaveBeenCalledWith('preview_file', {
       id: 'desktop',
       relative: 'screenshots/one.png',
     })
@@ -248,7 +248,7 @@ describe('FlightPlayer states', () => {
   })
 
   it('shows one line when the record cannot be read, never a crash', async () => {
-    world({ fail: 'The flight record is not available.' })
+    world({ fail: 'The preview is not available.' })
     const wrapper = await open('r1')
     expect(wrapper.find('[data-testid="problem"]').text()).toContain('not available')
   })
@@ -359,7 +359,7 @@ describe('FlightPlayer states', () => {
   })
 })
 
-describe('FlightPlayer controls', () => {
+describe('PreviewPlayer controls', () => {
   it('moves between steps', async () => {
     world({})
     const wrapper = await open()

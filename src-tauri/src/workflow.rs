@@ -44,9 +44,9 @@ trait Workflow: Sync {
         id: &'a str,
     ) -> Work<'a>;
 }
-struct ScreenInsight;
-static SCREEN_INSIGHT: ScreenInsight = ScreenInsight;
-static WORKFLOWS: &[&dyn Workflow] = &[&SCREEN_INSIGHT];
+struct VisualAnalysisWorkflow;
+static VISUAL_ANALYSIS_WORKFLOW: VisualAnalysisWorkflow = VisualAnalysisWorkflow;
+static WORKFLOWS: &[&dyn Workflow] = &[&VISUAL_ANALYSIS_WORKFLOW];
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct ScreenInput {
@@ -101,10 +101,41 @@ pub fn vision_model(
     }
     Ok(name.into())
 }
-impl Workflow for ScreenInsight {
+
+fn configure_visual_roles(
+    settings: &mut crate::settings::Settings,
+    catalog: &Value,
+) -> Result<bool, String> {
+    let role = |name| crate::infer_catalog::configured_role(catalog, name).unwrap_or_default();
+    let analysis = role("analysis");
+    if analysis.is_empty() {
+        return Err("Configure an Analysis model in the Infer catalog".into());
+    }
+    settings.models.analysis = analysis;
+    let selected = &mut settings.visual_analysis_models;
+    selected.planner = role("visual_planner");
+    selected.entities = role("visual_entities");
+    selected.regions = role("visual_regions");
+    selected.structure = role("visual_structure");
+    selected.depth = role("visual_depth");
+    selected.instances = role("visual_instances");
+    selected.oriented = role("visual_oriented");
+    Ok(!selected.planner.is_empty()
+        && [
+            &selected.entities,
+            &selected.regions,
+            &selected.structure,
+            &selected.depth,
+            &selected.instances,
+            &selected.oriented,
+        ]
+        .iter()
+        .any(|model| !model.is_empty()))
+}
+impl Workflow for VisualAnalysisWorkflow {
     fn definition(&self) -> Definition {
         Definition {
-            id: "screen-insight",
+            id: "visual-analysis",
             name: "Visual Analysis",
             capabilities: &["screen_capture", "vision_model"],
         }
@@ -145,39 +176,28 @@ impl Workflow for ScreenInsight {
             let input: ScreenInput = serde_json::from_value(input).map_err(|e| e.to_string())?;
             let state = app.state::<AppState>();
             let (mut settings, key) = crate::settings::snapshot_with_api_key(&state.settings);
-            if let Some(model) = input
+            let catalog =
+                crate::infer_catalog::read_roles(&settings.base_url, key.as_deref()).await?;
+            let configured_analysis = crate::infer_catalog::configured_role(&catalog, "analysis")
+                .ok_or("Configure an Analysis model in the Infer catalog")?;
+            if input
                 .model
                 .as_deref()
                 .map(str::trim)
-                .filter(|m| !m.is_empty())
+                .filter(|value| !value.is_empty())
+                .is_some_and(|value| value != configured_analysis)
             {
-                settings.models.analysis = model.into();
+                return Err("The Analysis role changed in Infer. Reload and retry.".into());
             }
+            settings.models.analysis = configured_analysis;
+            let mut infer_analysis = None;
+            let mut shared_visual = input.shared_visual;
             if input.shared_visual {
-                let planner = settings.visual_analysis_models.planner.trim();
-                if planner.is_empty() {
-                    return Err(
-                        "Choose a Visual Analysis planning model in Settings → Capture & privacy"
-                            .into(),
-                    );
+                shared_visual = configure_visual_roles(&mut settings, &catalog)?;
+                infer_analysis = Some(settings.models.analysis.clone());
+                if shared_visual {
+                    settings.models.analysis = settings.visual_analysis_models.planner.clone();
                 }
-                if [
-                    &settings.visual_analysis_models.entities,
-                    &settings.visual_analysis_models.regions,
-                    &settings.visual_analysis_models.structure,
-                    &settings.visual_analysis_models.depth,
-                    &settings.visual_analysis_models.instances,
-                    &settings.visual_analysis_models.oriented,
-                ]
-                .iter()
-                .all(|model| model.trim().is_empty())
-                {
-                    return Err(
-                        "Enable at least one Visual Analysis model in Settings → Capture & privacy"
-                            .into(),
-                    );
-                }
-                settings.models.analysis = planner.to_string();
             }
             if let Some(resolution) = input.resolution {
                 settings.model_image_resolution = resolution;
@@ -187,6 +207,12 @@ impl Workflow for ScreenInsight {
                 return Err(status
                     .error
                     .unwrap_or("Infer is unavailable or authentication failed".into()));
+            }
+            if shared_visual {
+                vision_model(&settings, &status.models)?;
+            }
+            if let Some(analysis) = infer_analysis {
+                settings.models.analysis = analysis;
             }
             let model = vision_model(&settings, &status.models)?;
             if !crate::analysis::run::current(app, id) {
@@ -252,8 +278,10 @@ impl Workflow for ScreenInsight {
             crate::analysis::run::publish(app);
             let question = crate::analysis::report::question_or_default(&input.question);
             let mut maps = VisualMaps::default();
-            let analysis = if input.shared_visual {
-                plan_visual_questions(app, &question, &image, cancel, &settings).await?;
+            let analysis = if shared_visual {
+                let mut planner_settings = settings.clone();
+                planner_settings.models.analysis = settings.visual_analysis_models.planner.clone();
+                plan_visual_questions(app, &question, &image, cancel, &planner_settings).await?;
                 let png = format!("data:image/png;base64,{}", {
                     use base64::Engine;
                     base64::engine::general_purpose::STANDARD.encode(stored.png.as_ref())
@@ -621,17 +649,16 @@ pub async fn run(app: &AppHandle, workflow_id: &str, input: Value) -> Result<(),
         );
         analysis.frame = None;
         analysis.id = id.clone();
-        let settings = state.settings.locked().clone();
         let (_, settings_json) = crate::trace::model_and_snapshot(&state.settings);
         state.trace.begin_run(crate::trace::RunInfo {
             id: id.clone(),
             scope_id: None,
             task: analysis.question.clone(),
-            source: workflow.definition().id.into(),
+            // Keep the stored source identifier so existing saved analyses remain readable.
+            source: "screen-insight".into(),
             started_utc: crate::trace::now_utc(),
             plan_json: None,
-            model: (!settings.models.analysis.trim().is_empty())
-                .then(|| settings.models.analysis.clone()),
+            model: None,
             app_version: Some(crate::VERSION.into()),
             settings_json: Some(settings_json),
             session_dir: None,
@@ -680,6 +707,23 @@ pub async fn run(app: &AppHandle, workflow_id: &str, input: Value) -> Result<(),
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn visual_analysis_uses_infer_roles_and_skips_unconfigured_operations() {
+        let mut settings = crate::settings::Settings::default();
+        settings.visual_analysis_models.entities = "stale-studio-model".into();
+        let catalog = serde_json::json!({"models":[{"id":"vision"},{"id":"depth"}],
+            "roles":{"analysis":"vision","visual_planner":"vision","visual_depth":"depth"}});
+        assert!(configure_visual_roles(&mut settings, &catalog).unwrap());
+        assert_eq!(settings.models.analysis, "vision");
+        assert_eq!(settings.visual_analysis_models.depth, "depth");
+        assert!(settings.visual_analysis_models.entities.is_empty());
+        let no_operations =
+            serde_json::json!({"models":[{"id":"vision"}],"roles":{"analysis":"vision"}});
+        assert!(!configure_visual_roles(&mut settings, &no_operations).unwrap());
+        assert!(settings.visual_analysis_models.depth.is_empty());
+        assert!(configure_visual_roles(&mut settings, &serde_json::json!({"models":[]})).is_err());
+    }
     #[test]
     fn preserves_instance_masks_and_normalizes_oriented_corners() {
         let mut maps = VisualMaps::default();
@@ -721,23 +765,23 @@ mod tests {
     fn registration_validation_and_explicit_vision_requirements() {
         assert_eq!(WORKFLOWS.len(), 1);
         assert!(
-            SCREEN_INSIGHT
+            VISUAL_ANALYSIS_WORKFLOW
                 .validate(&serde_json::json!({"target":{"kind":"screen","id":1}}))
                 .is_ok()
         );
         assert!(
-            SCREEN_INSIGHT
+            VISUAL_ANALYSIS_WORKFLOW
                 .validate(&serde_json::json!({"target":{"kind":"video","id":1}}))
                 .is_err()
         );
         assert!(
-            SCREEN_INSIGHT
+            VISUAL_ANALYSIS_WORKFLOW
                 .validate(&serde_json::json!({"target":{"kind":"screen","id":1},"model":"m","resolution":"1280"}))
                 .is_ok()
         );
         for resolution in ["720", "1280", "1920", "2560", "native"] {
             assert!(
-                SCREEN_INSIGHT
+                VISUAL_ANALYSIS_WORKFLOW
                     .validate(&serde_json::json!({
                         "target":{"kind":"screen","id":1},"resolution":resolution
                     }))
@@ -745,7 +789,7 @@ mod tests {
             );
         }
         assert!(
-            SCREEN_INSIGHT
+            VISUAL_ANALYSIS_WORKFLOW
                 .validate(&serde_json::json!({
                     "target":{"kind":"screen","id":1},"resolution":null
                 }))
@@ -757,7 +801,7 @@ mod tests {
             serde_json::json!(1920),
         ] {
             assert!(
-                SCREEN_INSIGHT
+                VISUAL_ANALYSIS_WORKFLOW
                     .validate(&serde_json::json!({
                         "target":{"kind":"screen","id":1},"resolution":resolution
                     }))
@@ -766,7 +810,7 @@ mod tests {
         }
         let png = format!("{IMAGE_PREFIX}AA==");
         assert!(
-            SCREEN_INSIGHT
+            VISUAL_ANALYSIS_WORKFLOW
                 .validate(&serde_json::json!({"image": png, "question": "x"}))
                 .is_ok()
         );
@@ -775,7 +819,7 @@ mod tests {
             serde_json::json!({"image": "data:image/jpeg;base64,AA=="}),
             serde_json::json!({"image": png, "target": {"kind":"screen","id":1}}),
         ] {
-            assert!(SCREEN_INSIGHT.validate(&bad).is_err());
+            assert!(VISUAL_ANALYSIS_WORKFLOW.validate(&bad).is_err());
         }
         assert_eq!(image_bytes(&png).unwrap(), vec![0]);
         assert!(image_bytes("data:image/png;base64,***").is_err());
