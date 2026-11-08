@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.11.0
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.10.0...v0.11.0)
+
+### 🚀 Enhancements
+
+- Add preview functionality with new types and mock data ([5fe4ff2](https://github.com/shba007/rune-studio/commit/5fe4ff2))
+- Refactor SettingsTools component to use RuneChoice and RuneSwitch for better UI consistency ([76002c6](https://github.com/shba007/rune-studio/commit/76002c6))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+
 ## v0.10.0
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.9.0...v0.10.0)
