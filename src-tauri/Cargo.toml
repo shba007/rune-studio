@@ -36,7 +36,7 @@ embedded-kit = ["dep:rune-kit"]
 rune-infer = { git = "https://github.com/shba007/rune-infer.git", rev = "d5bd9796fce1f74d04b397de967c31252eecc31c", default-features = false, features = [
   "cpu",
 ], optional = true }
-rune-kit = { git = "https://github.com/shba007/rune-kit.git", rev = "defe0beb11681d720092fc46f82b58feb6a11231", optional = true }
+rune-kit = { git = "https://github.com/shba007/rune-kit.git", rev = "872048b5dce6dd34f42028fb29e2e8bc5ee026cf", optional = true }
 dirs = "7"
 axum = { version = "0.8", optional = true, default-features = false, features = [
   "http1",
@@ -112,6 +112,3 @@ opt-level = 1
 
 [patch.crates-io]
 zip = { git = "https://github.com/zip-rs/zip2", tag = "v4.6.1" }
-
-[patch."https://github.com/shba007/rune-kit.git"]
-rune-kit = { path = "../../code-kit" }
