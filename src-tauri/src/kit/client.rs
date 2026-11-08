@@ -175,7 +175,10 @@ async fn management_response(response: reqwest::Response) -> Result<reqwest::Res
     if response.status().is_success() {
         Ok(response)
     } else if response.status() == reqwest::StatusCode::NOT_FOUND {
-        Err("Kit could not find this management endpoint or item. Refresh the list or update Kit.".into())
+        Err(
+            "Kit could not find this management endpoint or item. Refresh the list or update Kit."
+                .into(),
+        )
     } else {
         let status = response.status();
         let message = response.text().await.unwrap_or_default();
@@ -888,7 +891,6 @@ mod tests {
                 enabled: true,
                 endpoint,
                 selected: vec!["time__get_current_time".into()],
-                ..Config::default()
             },
             thread,
         )
@@ -1034,7 +1036,6 @@ mod tests {
             enabled: true,
             endpoint,
             selected: vec![tool.clone()],
-            ..Config::default()
         };
         let found = discover(&config, &CancelToken::default()).unwrap();
         println!(

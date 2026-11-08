@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import RuneButton from './RuneButton.vue'
+import RuneChoice from './RuneChoice.vue'
+import RuneSwitch from './RuneSwitch.vue'
 import HubGroup from './HubGroup.vue'
 import HubInput from './HubInput.vue'
 import HubRow from './HubRow.vue'
@@ -368,15 +370,16 @@ function setSelected(name: string, value: boolean) {
         "
       >
         <template v-if="!field.locked">
-          <select
+          <RuneChoice
             v-if="field.kind === 'boolean'"
             v-model="field.value"
-            :aria-label="`${field.plugin}: ${field.key}`"
-            class="h-10 rounded-rune-tile bg-rune-sunken px-rune-2 text-rune-ink"
-          >
-            <option value="true">True</option>
-            <option value="false">False</option>
-          </select>
+            :label="`${field.plugin}: ${field.key}`"
+            menu
+            :options="[
+              { value: 'true', label: 'True' },
+              { value: 'false', label: 'False' },
+            ]"
+          />
           <input
             v-else
             v-model="field.value"
@@ -386,9 +389,17 @@ function setSelected(name: string, value: boolean) {
             autocomplete="off"
             class="h-10 w-48 rounded-rune-tile bg-rune-sunken px-rune-2 text-rune-ink"
           />
-          <label v-if="!field.secret" class="text-rune-caption text-rune-text-2"
-            ><input v-model="field.shared" type="checkbox" /> Shared default</label
+          <label
+            v-if="!field.secret"
+            class="flex items-center gap-rune-2 text-rune-caption text-rune-text-2"
           >
+            <RuneSwitch
+              :model-value="field.shared ?? false"
+              label="Shared default"
+              @update:model-value="field.shared = $event"
+            />
+            Shared default
+          </label>
           <RuneButton size="sm" :disabled="configBusy" @click="saveField(field)">Save</RuneButton>
         </template>
         <span v-else class="text-rune-caption text-rune-text-2">{{ field.value }}</span>
@@ -481,14 +492,15 @@ function setSelected(name: string, value: boolean) {
         >
       </HubRow>
       <HubRow label="Package type">
-        <select
+        <RuneChoice
           v-model="installKind"
-          aria-label="Package type"
-          class="h-10 rounded-rune-tile bg-rune-sunken px-rune-2 text-rune-ink"
-        >
-          <option value="plugin">Plugin</option>
-          <option value="skill">Skill</option>
-        </select>
+          label="Package type"
+          menu
+          :options="[
+            { value: 'plugin', label: 'Plugin' },
+            { value: 'skill', label: 'Skill' },
+          ]"
+        />
       </HubRow>
       <HubInput
         v-model="installTarget"

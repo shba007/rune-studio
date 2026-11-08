@@ -318,8 +318,6 @@ fn list_runs_filtered(
 ) -> Result<Vec<RunSummary>, StoreError> {
     let step_filter = if filter.contains("task_attempts") {
         "(s.run_id=r.id OR s.run_id IN (SELECT run_id FROM task_links WHERE request_id=r.id OR request_id IN (SELECT run_id FROM task_attempts WHERE task_id=r.id)) OR s.run_id IN (SELECT run_id FROM task_attempts WHERE task_id=r.id))"
-    } else if filter.is_empty() {
-        "s.run_id = r.id"
     } else {
         "s.run_id = r.id"
     };

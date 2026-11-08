@@ -661,6 +661,7 @@ async fn make_plan(
     Ok(goals)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run(
     app: &AppHandle,
     task: &str,

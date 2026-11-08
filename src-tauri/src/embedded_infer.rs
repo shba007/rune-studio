@@ -61,42 +61,42 @@ impl EmbeddedManager {
         if select && model.trim().is_empty() {
             return Err("Choose an agent model before starting local Infer".into());
         }
-        if let Some((_, running)) = runtime.as_ref() {
-            if !running.task.is_finished() {
-                if activate {
-                    if select {
-                        crate::connections::install_embedded_connection(app, &state, true)
-                            .map_err(|error| error.to_string())?;
-                        crate::infer_catalog::select_agent(&state, &model).await?;
-                        let root = infer_root()?;
-                        if let Some((_, previous)) = runtime.take() {
-                            previous.shutdown().await?;
-                        }
-                        *runtime = Some((model, EmbeddedInfer::start(&root).await?));
-                        return Ok(());
-                    }
-                    let exists = state
-                        .settings
-                        .locked()
-                        .connections
-                        .iter()
-                        .any(|connection| connection.id == CONNECTION_ID);
-                    if exists {
-                        let revision = state.settings.locked().connections_revision;
-                        crate::connections::connections_activate(
-                            app.clone(),
-                            state,
-                            revision,
-                            CONNECTION_ID.into(),
-                        )
+        if let Some((_, running)) = runtime.as_ref()
+            && !running.task.is_finished()
+        {
+            if activate {
+                if select {
+                    crate::connections::install_embedded_connection(app, &state, true)
                         .map_err(|error| error.to_string())?;
-                    } else {
-                        crate::connections::install_embedded_connection(app, &state, true)
-                            .map_err(|error| error.to_string())?;
+                    crate::infer_catalog::select_agent(&state, &model).await?;
+                    let root = infer_root()?;
+                    if let Some((_, previous)) = runtime.take() {
+                        previous.shutdown().await?;
                     }
+                    *runtime = Some((model, EmbeddedInfer::start(&root).await?));
+                    return Ok(());
                 }
-                return Ok(());
+                let exists = state
+                    .settings
+                    .locked()
+                    .connections
+                    .iter()
+                    .any(|connection| connection.id == CONNECTION_ID);
+                if exists {
+                    let revision = state.settings.locked().connections_revision;
+                    crate::connections::connections_activate(
+                        app.clone(),
+                        state,
+                        revision,
+                        CONNECTION_ID.into(),
+                    )
+                    .map_err(|error| error.to_string())?;
+                } else {
+                    crate::connections::install_embedded_connection(app, &state, true)
+                        .map_err(|error| error.to_string())?;
+                }
             }
+            return Ok(());
         }
         {
             let analysis = state.analysis.locked();
