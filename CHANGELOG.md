@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.12.0
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.11.0...v0.12.0)
+
+### 🚀 Enhancements
+
+- **window:** Add fit_panel function for dynamic window sizing and hide_console for Windows ([de7e457](https://github.com/shba007/rune-studio/commit/de7e457))
+
+### 🩹 Fixes
+
+- **components:** Resolve linter and formatting rules in OnboardingWindow and SettingsTools ([11ad80f](https://github.com/shba007/rune-studio/commit/11ad80f))
+- **dependencies:** Update rune-kit dependency to specific commit and remove patch reference ([2705a68](https://github.com/shba007/rune-studio/commit/2705a68))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+
 ## v0.11.0
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.10.0...v0.11.0)
