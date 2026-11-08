@@ -9,6 +9,19 @@ import OnboardingCloudModel from './OnboardingCloudModel.vue'
 import TitleBar from './TitleBar.vue'
 
 type Choice = 'local' | 'cloud'
+
+interface KitConfig {
+  enabled: boolean
+  endpoint: string
+  selected: string[]
+}
+
+interface TestPrompt {
+  category: string
+  prompt: string
+  tag: string
+}
+
 const logo = '/logo.svg'
 const storedStep = Number(localStorage.getItem('rune-onboarding-step') ?? 0)
 const step = ref(
@@ -24,7 +37,101 @@ const localAvailable = ref<boolean | null>(null)
 const platform = ref('')
 const nextLabel = computed(() => (step.value === 3 ? 'Open Rune' : 'Continue'))
 
+const starterMcpName = 'rune-fetch'
+const mcpBusy = ref(false)
+const mcpInstalled = ref(false)
+const mcpStatus = ref('')
+const copiedPrompt = ref('')
+let copyTimer: ReturnType<typeof setTimeout> | null = null
+
+const testPrompts: TestPrompt[] = [
+  {
+    category: 'Computer Use',
+    prompt: 'Open a text editor and type hello.',
+    tag: 'Desktop',
+  },
+  {
+    category: 'Web & MCP',
+    prompt: 'Search the web for the latest weather and summarize it.',
+    tag: 'Fetch MCP',
+  },
+  {
+    category: 'Filesystem',
+    prompt: "Create a meeting notes file on my desktop with today's date.",
+    tag: 'Desktop',
+  },
+  {
+    category: 'Reasoning',
+    prompt: 'Calculate the compound interest for $10,000 at 5% over 3 years and save the result.',
+    tag: 'Math',
+  },
+]
+
+async function checkStarterMcp() {
+  try {
+    const kitConfig = await invoke<KitConfig>('kit_settings')
+    const result = await invoke<{
+      mcps?: Array<{ name: string }>
+      plugins?: Array<{ name: string }>
+    }>('kit_packages', {
+      config: kitConfig,
+    })
+    const list = result.mcps ?? result.plugins ?? []
+    if (list.some((pkg) => pkg.name === starterMcpName || pkg.name.includes('fetch'))) {
+      mcpInstalled.value = true
+    }
+  } catch {
+    // Kit server may not be reachable or configured yet
+  }
+}
+
+async function installStarterMcp() {
+  mcpBusy.value = true
+  mcpStatus.value = ''
+  try {
+    const kitConfig = await invoke<KitConfig>('kit_settings')
+    await invoke('kit_install_package', {
+      config: kitConfig,
+      package: {
+        kind: 'mcp',
+        target: starterMcpName,
+        version: null,
+        prefer_native: false,
+      },
+    })
+    kitConfig.enabled = true
+    if (!kitConfig.selected.includes(starterMcpName)) {
+      kitConfig.selected.push(starterMcpName)
+    }
+    await invoke('kit_save', { config: kitConfig }).catch(() => {})
+    mcpInstalled.value = true
+    mcpStatus.value = 'Web Research MCP installed and enabled.'
+  } catch (error) {
+    mcpStatus.value = `Notice: ${String(error)}. You can also configure MCP servers anytime in Settings.`
+  } finally {
+    mcpBusy.value = false
+  }
+}
+
+async function copyPrompt(text: string) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+    }
+    copiedPrompt.value = text
+    if (copyTimer) clearTimeout(copyTimer)
+    copyTimer = setTimeout(() => {
+      copiedPrompt.value = ''
+    }, 2000)
+  } catch {
+    // Clipboard permission denied or unsupported
+  }
+}
+
 onMounted(async () => {
+  if (step.value === 3) {
+    void checkStarterMcp()
+  }
   void Promise.resolve(invoke<string>('onboarding_platform'))
     .then((value) => {
       platform.value = value
@@ -43,6 +150,9 @@ function move(next: number) {
   step.value = next
   localStorage.setItem('rune-onboarding-step', String(next))
   message.value = ''
+  if (next === 3) {
+    void checkStarterMcp()
+  }
 }
 function choose(value: Choice) {
   choice.value = value
@@ -186,16 +296,62 @@ async function proceed() {
       <OnboardingLocalModel v-if="choice === 'local'" @ready="checkSetup" />
       <OnboardingCloudModel v-else @ready="checkSetup" @cancel="move(1)" />
     </section>
-    <section v-else class="setup-center">
+    <section v-else class="setup-center step-try">
       <img :src="logo" alt="" class="setup-logo small" />
       <p class="setup-tag">READY TO TRY</p>
       <h1>Start with a small task</h1>
-      <p>Open the Rune composer and try: <strong>“Open a text editor and type hello.”</strong></p>
       <p>
         Rune captures your screen and stores task screenshots and details on this computer. Review
         its actions, approve requests when asked, and use <strong>{{ stopShortcut }}</strong> to
         stop.
       </p>
+
+      <div class="mcp-starter-box">
+        <div class="mcp-starter-info">
+          <div class="mcp-starter-title">
+            <strong>Starter MCP Server: Web Research</strong>
+            <span v-if="mcpInstalled" class="mcp-badge success">Installed</span>
+          </div>
+          <span class="mcp-starter-desc">
+            Installs <code>rune-fetch</code> for live web search and information retrieval.
+          </span>
+        </div>
+        <RuneButton
+          v-if="!mcpInstalled"
+          type="button"
+          :disabled="mcpBusy"
+          class="mcp-install-btn"
+          @click="installStarterMcp"
+        >
+          {{ mcpBusy ? 'Installing…' : 'Install Fetch MCP' }}
+        </RuneButton>
+      </div>
+      <p v-if="mcpStatus" class="mcp-status" role="status">{{ mcpStatus }}</p>
+
+      <div class="setup-prompts-section">
+        <p class="setup-prompts-title">SUGGESTED TEST PROMPTS (CLICK TO COPY)</p>
+        <div class="setup-prompts-grid">
+          <div
+            v-for="item in testPrompts"
+            :key="item.prompt"
+            role="button"
+            tabindex="0"
+            class="setup-prompt-card"
+            :class="{ copied: copiedPrompt === item.prompt }"
+            @click="copyPrompt(item.prompt)"
+            @keydown.enter="copyPrompt(item.prompt)"
+            @keydown.space.prevent="copyPrompt(item.prompt)"
+          >
+            <div class="prompt-card-header">
+              <span class="prompt-card-cat">{{ item.category }}</span>
+              <span v-if="copiedPrompt === item.prompt" class="prompt-copied-pill">Copied!</span>
+              <span v-else class="prompt-card-tag">{{ item.tag }}</span>
+            </div>
+            <strong class="prompt-card-text">“{{ item.prompt }}”</strong>
+          </div>
+        </div>
+      </div>
+
       <p v-if="capabilityWarning" role="status">{{ capabilityWarning }}</p>
       <p v-if="platform === 'linux' || platform === 'macos'" role="status">
         Computer-use support on this platform is still in development. Some actions are unavailable.
@@ -400,6 +556,153 @@ async function proceed() {
   }
   .setup-logo {
     margin-bottom: 20px;
+  }
+}
+.setup-center.step-try {
+  overflow-y: auto;
+  max-width: 820px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 16px 32px 24px;
+}
+.mcp-starter-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  max-width: 680px;
+  margin: 16px 0 6px;
+  padding: 12px 18px;
+  background: var(--color-rune-surface);
+  border: 1px solid var(--color-rune-raised);
+  border-radius: 10px;
+  text-align: left;
+}
+.mcp-starter-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.mcp-starter-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--color-rune-ink);
+}
+.mcp-starter-desc {
+  font-size: 12px;
+  color: var(--color-rune-text-2);
+}
+.mcp-starter-desc code {
+  color: var(--accent);
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+.mcp-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+.mcp-badge.success {
+  background: rgba(46, 204, 113, 0.15);
+  color: #2ecc71;
+  border: 1px solid rgba(46, 204, 113, 0.3);
+}
+.mcp-install-btn {
+  flex-shrink: 0;
+  font-size: 13px;
+  padding: 8px 14px;
+  background: var(--accent);
+  color: #171719;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  border: none;
+}
+.mcp-status {
+  font-size: 12px;
+  color: var(--accent);
+  margin: 4px 0 8px;
+}
+.setup-prompts-section {
+  width: 100%;
+  max-width: 680px;
+  margin-top: 12px;
+  text-align: left;
+}
+.setup-prompts-title {
+  font-size: 11px !important;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--color-rune-text-3) !important;
+  margin-bottom: 8px;
+}
+.setup-prompts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.setup-prompt-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+  background: var(--color-rune-surface);
+  border: 1px solid var(--color-rune-raised);
+  border-radius: 8px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background-color 0.15s;
+  font-family: inherit;
+}
+.setup-prompt-card:hover {
+  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.03);
+}
+.setup-prompt-card.copied {
+  border-color: #2ecc71;
+}
+.prompt-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+.prompt-card-cat {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.prompt-card-tag {
+  font-size: 10px;
+  color: var(--color-rune-text-3);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.prompt-copied-pill {
+  font-size: 10px;
+  font-weight: 600;
+  color: #2ecc71;
+  background: rgba(46, 204, 113, 0.15);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.prompt-card-text {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--color-rune-ink);
+  font-weight: 500;
+}
+@media (max-width: 600px) {
+  .setup-prompts-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

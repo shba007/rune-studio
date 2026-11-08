@@ -157,3 +157,80 @@ it('does not mark a model without vision as ready', async () => {
   expect(harness.invoke).not.toHaveBeenCalledWith('onboarding_complete')
   wrapper.unmount()
 })
+
+it('renders starter MCP server installation and interactive test prompts', async () => {
+  const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined)
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+
+  harness.invoke.mockImplementation(async (command: string) => {
+    if (command === 'get_settings')
+      return {
+        activeConnectionId: 'studio-embedded-infer',
+        connectionsRevision: 1,
+        models: { agent: 'model' },
+        stopHotkey: 'Escape',
+      }
+    if (command === 'check_backend')
+      return {
+        connectionId: 'studio-embedded-infer',
+        connectionRevision: 1,
+        status: {
+          reachable: true,
+          authOk: true,
+          error: null,
+          models: [{ id: 'model', imageIn: 'yes', toolCalls: 'yes' }],
+        },
+      }
+    if (command === 'infer_agent_role') return 'model'
+    if (command === 'kit_settings')
+      return { enabled: false, endpoint: 'http://127.0.0.1:47601/mcp', selected: [] }
+    if (command === 'kit_packages') return { mcps: [], skills: [] }
+    if (command === 'kit_install_package') {
+      return { name: 'rune-fetch', version: '0.1.0', restart_required: false }
+    }
+    if (command === 'kit_save') return undefined
+    return undefined
+  })
+
+  // Start at step 2, check setup to advance to step 3
+  localStorage.setItem('rune-onboarding-step', '2')
+  const wrapper = mount(OnboardingWindow)
+  await wrapper.get('footer button.setup-button').trigger('click')
+  await flushPromises()
+
+  // Verify step 3 elements
+  expect(wrapper.text()).toContain('Start with a small task')
+  expect(wrapper.text()).toContain('Starter MCP Server: Web Research')
+  expect(wrapper.text()).toContain('rune-fetch')
+  expect(wrapper.text()).toContain('Search the web for the latest weather and summarize it.')
+  expect(wrapper.text()).toContain("Create a meeting notes file on my desktop with today's date.")
+  expect(wrapper.text()).toContain(
+    'Calculate the compound interest for $10,000 at 5% over 3 years and save the result.',
+  )
+
+  // Install starter MCP
+  const installButton = wrapper.find('.mcp-install-btn')
+  expect(installButton.exists()).toBe(true)
+  await installButton.trigger('click')
+  await flushPromises()
+
+  expect(harness.invoke).toHaveBeenCalledWith('kit_install_package', {
+    config: expect.objectContaining({ enabled: true }),
+    package: {
+      kind: 'mcp',
+      target: 'rune-fetch',
+      version: null,
+      prefer_native: false,
+    },
+  })
+  expect(wrapper.text()).toContain('Installed')
+
+  // Click prompt card to copy
+  const promptCard = wrapper.findAll('.setup-prompt-card')[1]!
+  await promptCard.trigger('click')
+  expect(writeText).toHaveBeenCalledWith('Search the web for the latest weather and summarize it.')
+  await flushPromises()
+  expect(wrapper.text()).toContain('Copied!')
+
+  wrapper.unmount()
+})

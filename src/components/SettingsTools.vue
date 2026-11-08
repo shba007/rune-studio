@@ -20,7 +20,8 @@ interface Tool {
   inputSchema: unknown
 }
 interface KitField {
-  plugin: string
+  mcp?: string
+  plugin?: string
   key: string
   kind: string
   description: string
@@ -72,17 +73,17 @@ const remoteDraft = ref<KitRemote>({
 })
 const remoteStatus = ref('Load third-party servers from Kit.')
 const remoteBusy = ref(false)
-const packages = ref<{ plugins: KitPackage[]; skills: KitPackage[] }>({ plugins: [], skills: [] })
+const packages = ref<{ mcps: KitPackage[]; skills: KitPackage[] }>({ mcps: [], skills: [] })
 const packageStatus = ref('Load installed packages from Kit.')
 const packageBusy = ref(false)
-const installKind = ref<'plugin' | 'skill'>('plugin')
+const installKind = ref<'mcp' | 'skill'>('mcp')
 const installTarget = ref('')
 const installVersion = ref('')
 const preferNative = ref(false)
-const removePackage = ref<{ kind: 'plugin' | 'skill'; name: string } | null>(null)
+const removePackage = ref<{ kind: 'mcp' | 'skill'; name: string } | null>(null)
 async function packageAction(
   action: 'check' | 'update' | 'remove',
-  kind: 'plugin' | 'skill',
+  kind: 'mcp' | 'skill',
   name: string,
 ) {
   packageBusy.value = true
@@ -127,7 +128,7 @@ async function installPackage() {
     installTarget.value = ''
     installVersion.value = ''
     await loadPackages()
-    packageStatus.value = `${result.name} ${result.version} installed.${result.restart_required ? ' Restart Kit to load the plugin.' : ''}`
+    packageStatus.value = `${result.name} ${result.version} installed.${result.restart_required ? ' Restart Kit to load the MCP server.' : ''}`
   } catch (error) {
     packageStatus.value = String(error)
   } finally {
@@ -138,14 +139,19 @@ async function loadPackages() {
   packageBusy.value = true
   const endpoint = config.value.endpoint
   try {
-    const result = await invoke<{ plugins: KitPackage[]; skills: KitPackage[] }>('kit_packages', {
+    const result = await invoke<{
+      mcps?: KitPackage[]
+      plugins?: KitPackage[]
+      skills: KitPackage[]
+    }>('kit_packages', {
       config: config.value,
     })
     if (endpoint !== config.value.endpoint) return
-    packages.value = result
-    packageStatus.value = `${result.plugins.length} plugins and ${result.skills.length} skills installed.`
+    const mcps = result.mcps ?? result.plugins ?? []
+    packages.value = { mcps, skills: result.skills ?? [] }
+    packageStatus.value = `${mcps.length} MCPs and ${packages.value.skills.length} skills installed.`
   } catch (error) {
-    packages.value = { plugins: [], skills: [] }
+    packages.value = { mcps: [], skills: [] }
     packageStatus.value = String(error)
   } finally {
     packageBusy.value = false
@@ -163,7 +169,7 @@ async function loadRemotes() {
       : 'No third-party servers configured.'
   } catch (error) {
     remotes.value = []
-    packages.value = { plugins: [], skills: [] }
+    packages.value = { mcps: [], skills: [] }
     packageStatus.value = 'Load installed packages from Kit.'
     remoteStatus.value = String(error)
   } finally {
@@ -205,7 +211,7 @@ async function loadFields() {
     fields.value = result
     configStatus.value = result.length
       ? 'Settings are managed by Kit.'
-      : 'No plugin settings are available.'
+      : 'No MCP settings are available.'
   } catch (error) {
     fields.value = []
     configStatus.value = String(error)
@@ -216,17 +222,18 @@ async function loadFields() {
 async function saveField(field: KitField) {
   configBusy.value = true
   try {
+    const mcpName = field.mcp || field.plugin || ''
     await invoke('kit_update_configuration', {
       config: config.value,
       update: {
-        plugin: field.plugin,
+        plugin: mcpName,
         key: field.key,
         value: field.value,
         shared: field.shared ?? false,
       },
     })
     if (field.secret) field.value = ''
-    configStatus.value = `${field.plugin}: ${field.key} saved by Kit.`
+    configStatus.value = `${mcpName}: ${field.key} saved by Kit.`
   } catch (error) {
     configStatus.value = String(error)
   } finally {
@@ -350,17 +357,14 @@ function setSelected(name: string, value: boolean) {
         @update:model-value="setSelected(tool.name, $event)"
       />
     </HubGroup>
-    <HubGroup title="Kit plugin settings">
-      <HubRow
-        label="Plugin configuration"
-        hint="Read and update settings on the running Kit server."
-      >
+    <HubGroup title="Kit MCP settings">
+      <HubRow label="MCP configuration" hint="Read and update settings on the running Kit server.">
         <RuneButton size="sm" :disabled="configBusy" @click="loadFields">Load settings</RuneButton>
       </HubRow>
       <HubRow
         v-for="field in fields"
-        :key="`${field.plugin}:${field.key}`"
-        :label="`${field.plugin}: ${field.key}`"
+        :key="`${field.mcp || field.plugin}:${field.key}`"
+        :label="`${field.mcp || field.plugin}: ${field.key}`"
         :hint="
           field.locked
             ? `${field.description} Managed on the Kit server.`
@@ -373,7 +377,7 @@ function setSelected(name: string, value: boolean) {
           <RuneChoice
             v-if="field.kind === 'boolean'"
             v-model="field.value"
-            :label="`${field.plugin}: ${field.key}`"
+            :label="`${field.mcp || field.plugin}: ${field.key}`"
             menu
             :options="[
               { value: 'true', label: 'True' },
@@ -384,7 +388,7 @@ function setSelected(name: string, value: boolean) {
             v-else
             v-model="field.value"
             :type="field.secret ? 'password' : 'text'"
-            :aria-label="`${field.plugin}: ${field.key}`"
+            :aria-label="`${field.mcp || field.plugin}: ${field.key}`"
             :placeholder="field.secret ? 'Enter a new secret' : field.kind"
             autocomplete="off"
             class="h-10 w-48 rounded-rune-tile bg-rune-sunken px-rune-2 text-rune-ink"
@@ -461,33 +465,33 @@ function setSelected(name: string, value: boolean) {
       >
     </HubGroup>
     <HubGroup title="Installed Kit packages">
-      <HubRow label="Plugins and skills" hint="Packages installed in Kit’s shared storage.">
+      <HubRow label="MCPs and skills" hint="Packages installed in Kit’s shared storage.">
         <RuneButton size="sm" :disabled="packageBusy" @click="loadPackages"
           >Load packages</RuneButton
         >
       </HubRow>
       <HubRow
-        v-for="item in packages.plugins"
-        :key="`plugin:${item.name}`"
+        v-for="item in packages.mcps"
+        :key="`mcp:${item.name}`"
         :label="item.name"
-        :hint="`Plugin · ${item.version}${item.description ? ` · ${item.description}` : ''}`"
+        :hint="`MCP · ${item.version}${item.description ? ` · ${item.description}` : ''}`"
       >
         <RuneButton
           size="sm"
           :disabled="packageBusy"
-          @click="packageAction('check', 'plugin', item.name)"
+          @click="packageAction('check', 'mcp', item.name)"
           >Check update</RuneButton
         >
         <RuneButton
           size="sm"
           :disabled="packageBusy"
-          @click="packageAction('update', 'plugin', item.name)"
+          @click="packageAction('update', 'mcp', item.name)"
           >Update</RuneButton
         >
         <RuneButton
           size="sm"
           :disabled="packageBusy"
-          @click="removePackage = { kind: 'plugin', name: item.name }"
+          @click="removePackage = { kind: 'mcp', name: item.name }"
           >Remove</RuneButton
         >
       </HubRow>
@@ -497,7 +501,7 @@ function setSelected(name: string, value: boolean) {
           label="Package type"
           menu
           :options="[
-            { value: 'plugin', label: 'Plugin' },
+            { value: 'mcp', label: 'MCP Server' },
             { value: 'skill', label: 'Skill' },
           ]"
         />
@@ -513,9 +517,9 @@ function setSelected(name: string, value: boolean) {
         hint="Optional; leave blank for the default version."
       />
       <HubToggle
-        v-if="installKind === 'plugin'"
+        v-if="installKind === 'mcp'"
         v-model="preferNative"
-        label="Prefer native plugin"
+        label="Prefer native MCP binary"
       />
       <HubRow label="Install package"
         ><RuneButton

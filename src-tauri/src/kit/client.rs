@@ -44,7 +44,7 @@ pub fn kit_token_present() -> Result<bool, String> {
     stored_kit_token().map(|token| token.is_some())
 }
 fn default_endpoint() -> String {
-    "http://127.0.0.1:47601/mcp".into()
+    crate::embedded_kit::endpoint().unwrap_or_else(|| "http://127.0.0.1:47601/mcp".into())
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -136,14 +136,15 @@ fn endpoint(text: &str) -> Result<reqwest::Url, String> {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ConfigurationField {
-    plugin: String,
-    key: String,
-    kind: String,
-    description: String,
-    required: bool,
-    secret: bool,
-    locked: bool,
-    value: String,
+    #[serde(alias = "plugin")]
+    pub mcp: String,
+    pub key: String,
+    pub kind: String,
+    pub description: String,
+    pub required: bool,
+    pub secret: bool,
+    pub locked: bool,
+    pub value: String,
 }
 
 #[derive(Deserialize)]
@@ -153,10 +154,11 @@ struct ConfigurationFields {
 
 #[derive(Deserialize, Serialize)]
 pub struct ConfigurationUpdate {
-    plugin: String,
-    key: String,
-    value: String,
-    shared: bool,
+    #[serde(alias = "plugin")]
+    pub mcp: String,
+    pub key: String,
+    pub value: String,
+    pub shared: bool,
 }
 
 fn management_client(config: &Config) -> Result<(reqwest::Client, reqwest::Url), String> {
@@ -278,8 +280,11 @@ pub async fn kit_packages(config: Config) -> Result<Value, String> {
         }
         bytes.extend_from_slice(&chunk);
     }
-    let value: Value = serde_json::from_slice(&bytes).map_err(|_| "Invalid Kit package list")?;
-    if !value["plugins"].is_array() || !value["skills"].is_array() {
+    let mut value: Value = serde_json::from_slice(&bytes).map_err(|_| "Invalid Kit package list")?;
+    if !value["mcps"].is_array() && value["plugins"].is_array() {
+        value["mcps"] = value["plugins"].clone();
+    }
+    if !value["mcps"].is_array() || !value["skills"].is_array() {
         return Err("Invalid Kit package list".into());
     }
     Ok(value)
@@ -725,7 +730,7 @@ pub fn call(
             })
         })
     }) {
-        return Err(format!("Plugin error: {}", bounded(&result)));
+        return Err(format!("MCP error: {}", bounded(&result)));
     }
     Ok(bounded(&result))
 }

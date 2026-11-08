@@ -18,6 +18,26 @@ pub fn embedded_infer_available() -> bool {
 }
 
 #[tauri::command]
+pub fn embedded_kit_available() -> bool {
+    cfg!(feature = "embedded-kit")
+}
+
+#[tauri::command]
+pub async fn start_embedded_kit(app: AppHandle) -> Result<String, String> {
+    #[cfg(feature = "embedded-kit")]
+    {
+        app.state::<crate::embedded_kit::EmbeddedKitManager>()
+            .start()
+            .await
+    }
+    #[cfg(not(feature = "embedded-kit"))]
+    {
+        let _ = app;
+        Err("Embedded Kit is not included in this build".into())
+    }
+}
+
+#[tauri::command]
 pub async fn start_embedded_infer(app: AppHandle) -> Result<(), String> {
     #[cfg(all(windows, feature = "embedded-infer"))]
     {

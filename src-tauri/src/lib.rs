@@ -16,6 +16,7 @@ mod domain;
 mod embedded_download;
 #[cfg(all(windows, feature = "embedded-infer"))]
 mod embedded_infer;
+mod embedded_kit;
 mod error;
 #[cfg(feature = "eval")]
 mod eval;
@@ -214,6 +215,18 @@ pub fn run() {
                 ),
             });
             app.manage(playground::PlaygroundRuns::default());
+            app.manage(embedded_kit::EmbeddedKitManager::default());
+            #[cfg(feature = "embedded-kit")]
+            {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Some(manager) = handle.try_state::<embedded_kit::EmbeddedKitManager>() {
+                        if let Err(e) = manager.start().await {
+                            log::info!("Embedded Kit initialization: {e}");
+                        }
+                    }
+                });
+            }
             #[cfg(all(windows, feature = "embedded-infer"))]
             {
                 app.manage(embedded_infer::EmbeddedManager::default());
@@ -337,6 +350,8 @@ pub fn run() {
             commands::check_backend,
             commands::embedded_infer_available,
             commands::start_embedded_infer,
+            commands::embedded_kit_available,
+            commands::start_embedded_kit,
             commands::reload_embedded_infer,
             infer_catalog::infer_select_agent,
             infer_catalog::infer_agent_role,
@@ -463,6 +478,9 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
+                tauri::async_runtime::block_on(
+                    app.state::<embedded_kit::EmbeddedKitManager>().stop(),
+                );
                 #[cfg(all(windows, feature = "embedded-infer"))]
                 tauri::async_runtime::block_on(
                     app.state::<embedded_infer::EmbeddedManager>().stop(),

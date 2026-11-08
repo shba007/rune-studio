@@ -101,7 +101,7 @@ it('shows installed plugins and skills returned by Kit', async () => {
   await flushPromises()
   expect(wrapper.text()).toContain('clock')
   expect(wrapper.text()).toContain('review')
-  expect(wrapper.text()).toContain('1 plugins and 1 skills installed.')
+  expect(wrapper.text()).toContain('1 MCPs and 1 skills installed.')
 })
 
 it('installs through Kit and reports the plugin restart requirement', async () => {
@@ -125,10 +125,10 @@ it('installs through Kit and reports the plugin restart requirement', async () =
   expect(api.invoke).toHaveBeenCalledWith(
     'kit_install_package',
     expect.objectContaining({
-      package: { kind: 'plugin', target: 'clock', version: null, prefer_native: false },
+      package: { kind: 'mcp', target: 'clock', version: null, prefer_native: false },
     }),
   )
-  expect(wrapper.text()).toContain('Restart Kit to load the plugin.')
+  expect(wrapper.text()).toContain('Restart Kit to load the MCP server.')
 })
 
 it('requires confirmation before removing a Kit skill', async () => {
