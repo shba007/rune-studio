@@ -8,10 +8,45 @@ pub const MAIN: &str = "main";
 pub const PANEL_WIDTH: f64 = 1180.0;
 pub const PANEL_HEIGHT: f64 = 760.0;
 
+pub fn fit_panel(window: &WebviewWindow) -> tauri::Result<()> {
+    let area = match window.current_monitor()? {
+        Some(monitor) => Some(monitor),
+        None => window.primary_monitor()?,
+    };
+    let (width, height) = match area {
+        Some(monitor) => {
+            let scale = monitor.scale_factor().max(0.1);
+            let size = monitor.work_area().size;
+            (
+                PANEL_WIDTH.min(0.95 * f64::from(size.width) / scale),
+                PANEL_HEIGHT.min(0.95 * f64::from(size.height) / scale),
+            )
+        }
+        None => (PANEL_WIDTH, PANEL_HEIGHT),
+    };
+    window.set_size(LogicalSize::new(width, height))
+}
+
+#[cfg(windows)]
+pub fn hide_console() {
+    use windows::Win32::{
+        System::Console::{AllocConsole, GetConsoleWindow},
+        UI::WindowsAndMessaging::{SW_HIDE, ShowWindow},
+    };
+    unsafe {
+        if GetConsoleWindow().0.is_null() && AllocConsole().is_ok() {
+            let console = GetConsoleWindow();
+            if !console.0.is_null() {
+                let _ = ShowWindow(console, SW_HIDE);
+            }
+        }
+    }
+}
+
 pub fn show_panel(window: &WebviewWindow) -> tauri::Result<()> {
     window.unminimize()?;
     window.unmaximize()?;
-    window.set_size(LogicalSize::new(PANEL_WIDTH, PANEL_HEIGHT))?;
+    fit_panel(window)?;
     window.center()?;
     window.set_always_on_top(true)?;
     window.show()?;

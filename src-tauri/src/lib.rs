@@ -87,6 +87,8 @@ pub fn cli_main() -> i32 {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let _ = dotenvy::from_filename("../.env").or_else(|_| dotenvy::dotenv());
+    #[cfg(windows)]
+    window::hide_console();
 
     let mut builder = tauri::Builder::default();
 

@@ -46,6 +46,8 @@ pub fn open(app: &AppHandle, section: Option<&str>) -> tauri::Result<()> {
         .transparent(true)
         .center()
         .build()?;
+    crate::window::fit_panel(&window)?;
+    window.center()?;
     crate::window::protect(&window)?;
     window.set_focus()?;
     Ok(())

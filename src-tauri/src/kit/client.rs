@@ -280,7 +280,8 @@ pub async fn kit_packages(config: Config) -> Result<Value, String> {
         }
         bytes.extend_from_slice(&chunk);
     }
-    let mut value: Value = serde_json::from_slice(&bytes).map_err(|_| "Invalid Kit package list")?;
+    let mut value: Value =
+        serde_json::from_slice(&bytes).map_err(|_| "Invalid Kit package list")?;
     if !value["mcps"].is_array() && value["plugins"].is_array() {
         value["mcps"] = value["plugins"].clone();
     }

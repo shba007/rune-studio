@@ -195,12 +195,17 @@ export function useAgent() {
     const grows = MODE_RANK[next] > MODE_RANK[mode.value]
     if (grows) {
       await call('set_mode', { mode: next })
+      fittedHeight = 0
       if (token !== modeToken) return
       mode.value = next
     } else {
       mode.value = next
       await sleep(COLLAPSE_MS)
-      if (token === modeToken) await call('set_mode', { mode: next })
+      if (token === modeToken) {
+        if (fitting) await fitting
+        await call('set_mode', { mode: next })
+        fittedHeight = 0
+      }
     }
     const wanted = measureHeight?.() || wantedHeight
     if (token === modeToken && wanted >= 48) await fitHeight(wanted)
