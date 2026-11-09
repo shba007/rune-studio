@@ -243,6 +243,7 @@ export interface StepStartedPayload {
 export interface TaskDonePayload {
   summary: string
   success: boolean
+  model?: string
 }
 
 export interface TaskVerifiedPayload {

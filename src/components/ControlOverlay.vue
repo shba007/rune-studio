@@ -424,6 +424,14 @@ const bubbleThinking = ref('')
 const bubbleSays = ref('')
 const bubbleModel = ref('')
 const configuredSettings = ref<Settings | null>(null)
+const agentRole = ref<string | null>(null)
+async function refreshAgentRole() {
+  try {
+    agentRole.value = (await invoke<string | null>('infer_agent_role'))?.trim() || null
+  } catch {
+    agentRole.value = null
+  }
+}
 const modelActivity = useModelActivity()
 const pill = ref<PillRect | null>(null)
 let refreshingPill = false
@@ -496,7 +504,7 @@ function onSays(text: string, model?: string) {
 
 function configuredModelLabel() {
   const settings = configuredSettings.value
-  const model = settings?.externalAgent ? undefined : settings?.models?.agent
+  const model = settings?.externalAgent ? undefined : (agentRole.value ?? settings?.models?.agent)
   return modelActivity.models.value.length > 1 ? 'Multiple models' : model ? model : undefined
 }
 
@@ -529,11 +537,13 @@ onMounted(async () => {
     configuredSettings.value = await invoke<Settings>('get_settings')
     stopHotkey.value = configuredSettings.value.stopHotkey
   } catch {}
+  void refreshAgentRole()
   unlisten.push(
     await listen('settings_changed', async () => {
       try {
         configuredSettings.value = await invoke<Settings>('get_settings')
       } catch {}
+      void refreshAgentRole()
     }),
     await listen<{ state: AgentState }>('state_changed', (event) => {
       const next = event.payload.state
@@ -550,7 +560,10 @@ onMounted(async () => {
       if (next !== 'acting' && next !== 'observing' && next !== 'planning') {
         action.value = null
       }
-      if (next === 'planning') void refreshPill()
+      if (next === 'planning') {
+        void refreshPill()
+        void refreshAgentRole()
+      }
       if (next === 'idle' || next === 'stopped') {
         bubbleThinking.value = ''
       }
@@ -569,10 +582,12 @@ onMounted(async () => {
         typing: null,
       }
     }),
-    await listen<{ summary: string; success?: boolean }>('task_done', (event) =>
+    await listen<{ summary: string; success?: boolean; model?: string }>('task_done', (event) =>
       onSays(
         event.payload.summary,
-        event.payload.success === false ? undefined : configuredModelLabel(),
+        event.payload.success === false
+          ? undefined
+          : (event.payload.model ?? configuredModelLabel()),
       ),
     ),
     await listen<string | null>('task_answer', ({ payload }) => {
@@ -738,7 +753,7 @@ onBeforeUnmount(() => {
         <div class="flex items-center gap-2">
           <span
             :title="
-              bubble.label === configuredSettings?.models?.agent
+              bubble.label === (agentRole ?? configuredSettings?.models?.agent)
                 ? 'Configured model; serving model not confirmed'
                 : undefined
             "

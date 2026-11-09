@@ -234,6 +234,7 @@ pub fn run() {
             {
                 app.manage(embedded_infer::EmbeddedManager::default());
                 app.manage(embedded_download::Downloads::default());
+                app.manage(embedded_download::Imports::default());
                 let should_start = app
                     .state::<AppState>()
                     .settings

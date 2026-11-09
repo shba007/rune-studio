@@ -145,19 +145,50 @@ pub async fn embedded_model_import(app: AppHandle, id: String, dir: String) -> R
             .into_iter()
             .find(|candidate| candidate.id == id)
             .ok_or("Model is not available")?;
-        let staging_root = root.clone();
-        let staging_id = id.clone();
+        if app
+            .state::<crate::embedded_download::Downloads>()
+            .status()
+            .phase
+            == "downloading"
+        {
+            return Err("A model download is already in progress".into());
+        }
+        let imports = app.state::<crate::embedded_download::Imports>();
+        if imports
+            .take_report()
+            .is_some_and(|s| s.phase == "preparing")
+        {
+            return Err("A model import is already in progress".into());
+        }
+        imports.set(Some(crate::embedded_download::Imported {
+            phase: "preparing".into(),
+            model: Some(id.clone()),
+            filename: Some("Checking and copying your model files".into()),
+            ..Default::default()
+        }));
         tauri::async_runtime::spawn_blocking(move || {
-            crate::embedded_download::stage(&staging_root, &staging_id, std::path::Path::new(&dir))
-        })
-        .await
-        .map_err(|error| error.to_string())??;
-        app.state::<crate::embedded_download::Downloads>().start(
-            root,
-            id,
-            candidate.revision,
-            candidate.manifest,
-        )
+            let imports = app.state::<crate::embedded_download::Imports>();
+            let staged = crate::embedded_download::stage(&root, &id, std::path::Path::new(&dir));
+            let started = staged.and_then(|()| {
+                let result = app.state::<crate::embedded_download::Downloads>().start(
+                    root,
+                    id.clone(),
+                    candidate.revision,
+                    candidate.manifest,
+                );
+                imports.set(None);
+                result
+            });
+            if let Err(error) = started {
+                imports.set(Some(crate::embedded_download::Imported {
+                    phase: "failed".into(),
+                    model: Some(id),
+                    error: Some(error),
+                    ..Default::default()
+                }));
+            }
+        });
+        Ok(())
     }
     #[cfg(not(all(windows, feature = "embedded-infer")))]
     {
@@ -170,6 +201,12 @@ pub async fn embedded_model_import(app: AppHandle, id: String, dir: String) -> R
 pub fn embedded_model_download_status(app: AppHandle) -> Result<serde_json::Value, String> {
     #[cfg(all(windows, feature = "embedded-infer"))]
     {
+        if let Some(status) = app
+            .state::<crate::embedded_download::Imports>()
+            .take_report()
+        {
+            return serde_json::to_value(status).map_err(|error| error.to_string());
+        }
         let downloads = app.state::<crate::embedded_download::Downloads>();
         let status = downloads.status();
         downloads.acknowledge();

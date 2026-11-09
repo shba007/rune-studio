@@ -40,6 +40,26 @@ pub fn candidates() -> Result<Vec<rune_infer::model_management::Candidate>, Stri
     models(memory, gpu, disk)
 }
 
+pub type Imported = rune_infer::model_management::Status;
+
+#[derive(Default)]
+pub struct Imports(std::sync::Mutex<Option<Imported>>);
+
+impl Imports {
+    pub fn set(&self, status: Option<Imported>) {
+        *self.0.lock().unwrap_or_else(|e| e.into_inner()) = status;
+    }
+
+    pub fn take_report(&self) -> Option<Imported> {
+        let mut slot = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let status = slot.clone();
+        if status.as_ref().is_some_and(|s| s.phase == "failed") {
+            *slot = None;
+        }
+        status
+    }
+}
+
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Found {

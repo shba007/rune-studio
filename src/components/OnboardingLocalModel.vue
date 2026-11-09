@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import DownloadProgress from './DownloadProgress.vue'
 import RuneButton from './RuneButton.vue'
@@ -36,6 +36,12 @@ const starting = ref(false)
 const active = computed(() =>
   ['preparing', 'downloading', 'engine'].includes(status.value?.phase ?? ''),
 )
+const panel = useTemplateRef<HTMLElement>('panel')
+watch(error, async (value) => {
+  if (!value) return
+  await nextTick()
+  panel.value?.scrollTo({ top: panel.value.scrollHeight })
+})
 const folder = ref('')
 const found = ref<Found[]>([])
 const scanned = ref(false)
@@ -158,7 +164,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="local-setup">
+  <div ref="panel" class="local-setup">
     <p v-if="loading">Loading models…</p>
     <template v-else>
       <div class="model-heading">
@@ -280,7 +286,7 @@ onBeforeUnmount(() => {
   max-height: 100%;
   overflow-x: hidden;
   overflow-y: auto;
-  padding: 2px 4px 2px 2px;
+  padding: 4px 8px 4px 4px;
 }
 .local-setup p {
   margin: 0;

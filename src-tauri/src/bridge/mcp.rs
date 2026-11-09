@@ -1108,7 +1108,14 @@ fn done(app: &AppHandle, arguments: &Value) -> Reply {
     crate::archive::end_session(None, label, &summary);
     state.trace.end_open_run(label, &summary);
     events::set_external(app, None);
-    let _ = app.emit(events::TASK_DONE, TaskDone { summary, success });
+    let _ = app.emit(
+        events::TASK_DONE,
+        TaskDone {
+            summary,
+            success,
+            model: None,
+        },
+    );
     events::set_agent_state(
         app,
         if success {

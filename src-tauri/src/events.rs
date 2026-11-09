@@ -263,6 +263,8 @@ pub struct StepFinished {
 pub struct TaskDone {
     pub summary: String,
     pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 #[cfg(test)]

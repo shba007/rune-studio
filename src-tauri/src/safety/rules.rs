@@ -297,8 +297,16 @@ fn assess_click(foreground: &Foreground, result: &mut Assessment) {
     }
 }
 
+fn without_key_hints(name: &str) -> &str {
+    let lowered = name.to_lowercase();
+    match lowered.find("press ") {
+        Some(at) => name[..at].trim_end_matches([',', ' ', '.']),
+        None => name,
+    }
+}
+
 fn assess_control(name: &str, result: &mut Assessment) {
-    if let Some(word) = mentions_any(name, HIGH_WORDS) {
+    if let Some(word) = mentions_any(without_key_hints(name), HIGH_WORDS) {
         result.raise(Risk::High, format!("The control is called \"{word}\""));
     }
 }
@@ -380,6 +388,9 @@ mod tests {
     #[test]
     fn a_control_named_after_something_irreversible_is_high_risk() {
         let mut found = Assessment::low();
+        let mut hint = Assessment::low();
+        assess_control("weather in London, press Shift+Delete to remove", &mut hint);
+        assert_eq!(hint.risk, Risk::Low);
         assess_control("Delete all", &mut found);
         assert_eq!(found.risk, Risk::High);
         let mut calm = Assessment::low();

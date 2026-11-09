@@ -50,6 +50,7 @@ fn duration_text(duration: Duration) -> String {
 }
 
 const MAX_INVALID_IN_A_ROW: u32 = 3;
+static LAST_SERVED_MODEL: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 const MAX_DECLINES: u32 = 3;
 const MAX_REPEAT_BLOCKS: u32 = 2;
 const THINKING_EVERY: Duration = Duration::from_millis(150);
@@ -107,6 +108,7 @@ pub fn start_planned(
                     "Configure an Agent model in the Infer catalog".into(),
                 )),
                 Some(model) => {
+                    *LAST_SERVED_MODEL.locked() = Some(model.clone());
                     effective.models.agent = model;
                     effective.models.verifier =
                         crate::infer_catalog::configured_role(&catalog, "verifier")
@@ -568,7 +570,14 @@ fn finish(app: &AppHandle, outcome: Outcome) {
         Outcome::Stopped => {}
         Outcome::Finished { summary, success } => {
             log::info!("task finished (success: {success}): {summary}");
-            let _ = app.emit(events::TASK_DONE, TaskDone { summary, success });
+            let _ = app.emit(
+                events::TASK_DONE,
+                TaskDone {
+                    summary,
+                    success,
+                    model: LAST_SERVED_MODEL.locked().take(),
+                },
+            );
             events::set_agent_state(
                 app,
                 if success {
@@ -585,6 +594,7 @@ fn finish(app: &AppHandle, outcome: Outcome) {
                 TaskDone {
                     summary: message,
                     success: false,
+                    model: None,
                 },
             );
             events::set_agent_state(app, AgentState::Failed);
@@ -704,6 +714,11 @@ async fn run(
         .await
         {
             Ok(Ok(discovery)) => {
+                log::info!(
+                    "Kit tools discovered: {:?}; selected: {:?}",
+                    discovery.tools.iter().map(|t| &t.name).collect::<Vec<_>>(),
+                    kit_config.selected
+                );
                 if let Some(list) = tools.as_array_mut() {
                     for tool in discovery.tools {
                         if kit_config.selected.contains(&tool.name) {
@@ -1101,6 +1116,9 @@ async fn run(
         let reply = match reply {
             Ok(reply) => {
                 row.rec.served_model = reply.served_model.clone();
+                if reply.served_model.is_some() {
+                    *LAST_SERVED_MODEL.locked() = reply.served_model.clone();
+                }
                 reply
             }
             Err(err @ (ModelError::NoToolCall(_) | ModelError::BadArguments(_))) => {
@@ -1235,13 +1253,20 @@ async fn run(
             row.rec.result = Some("skipped".into());
             row.rec.error = Some(problem.clone());
             if invalid_in_a_row >= MAX_INVALID_IN_A_ROW {
-                return Outcome::Failed(problem);
+                if matches!(action, Action::Done { success: true, .. }) {
+                    trace.event(run_id, "premature_done_accepted", "{}");
+                } else {
+                    return Outcome::Failed(
+                        "Stopped: the model kept ignoring the planned steps".into(),
+                    );
+                }
+            } else {
+                history.push(Entry {
+                    action: action.describe(),
+                    outcome: problem,
+                });
+                continue;
             }
-            history.push(Entry {
-                action: action.describe(),
-                outcome: problem,
-            });
-            continue;
         }
         invalid_in_a_row = 0;
         row.rec.reason = Some(reason.clone());

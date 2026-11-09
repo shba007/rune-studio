@@ -37,9 +37,32 @@ const localAvailable = ref<boolean | null>(null)
 const platform = ref('')
 const nextLabel = computed(() => (step.value === 3 ? 'Open Rune' : 'Continue'))
 
-const starterMcpName = 'rune-fetch'
-const mcpBusy = ref(false)
-const mcpInstalled = ref(false)
+interface Starter {
+  name: string
+  namespace: string
+  title: string
+  description: string
+  button: string
+}
+
+const starters: Starter[] = [
+  {
+    name: 'rune-fetch',
+    namespace: 'fetch',
+    title: 'Starter MCP Server: Web Research',
+    description: 'Installs rune-fetch to read web pages.',
+    button: 'Install Fetch MCP',
+  },
+  {
+    name: 'rune-time',
+    namespace: 'time',
+    title: 'Starter MCP Server: Clock',
+    description: 'Installs rune-time for the current time in any time zone.',
+    button: 'Install Time MCP',
+  },
+]
+const mcpBusy = ref('')
+const mcpInstalled = ref<Record<string, boolean>>({})
 const mcpStatus = ref('')
 const mcpFailed = ref(false)
 const copiedPrompt = ref('')
@@ -52,9 +75,14 @@ const testPrompts: TestPrompt[] = [
     tag: 'Desktop',
   },
   {
-    category: 'Web & MCP',
-    prompt: 'Search the web for the latest weather and summarize it.',
+    category: 'MCP Use',
+    prompt: 'Use the fetch MCP to read https://example.com and tell me what the page says.',
     tag: 'Fetch MCP',
+  },
+  {
+    category: 'MCP Use',
+    prompt: 'Use the time MCP to tell me the current time in Tokyo.',
+    tag: 'Time MCP',
   },
   {
     category: 'Filesystem',
@@ -62,9 +90,9 @@ const testPrompts: TestPrompt[] = [
     tag: 'Desktop',
   },
   {
-    category: 'Reasoning',
-    prompt: 'Calculate the compound interest for $10,000 at 5% over 3 years and save the result.',
-    tag: 'Math',
+    category: 'Browser Use',
+    prompt: 'Open the browser and search for the latest weather.',
+    tag: 'Browser',
   },
 ]
 
@@ -72,6 +100,21 @@ async function startKit(kitConfig: KitConfig) {
   if (await invoke<boolean>('embedded_kit_available')) {
     kitConfig.endpoint = await invoke<string>('start_embedded_kit')
   }
+}
+
+async function selectStarterTools(kitConfig: KitConfig, starter: Starter): Promise<number> {
+  const discovery = await invoke<{ tools: Array<{ name: string }> }>('kit_discover', {
+    config: kitConfig,
+  })
+  const names = (discovery?.tools ?? [])
+    .map((tool) => tool.name)
+    .filter((name) => name.split('__')[0]!.includes(starter.namespace))
+  kitConfig.enabled = true
+  for (const name of names) {
+    if (!kitConfig.selected.includes(name)) kitConfig.selected.push(name)
+  }
+  await invoke('kit_save', { config: kitConfig })
+  return names.length
 }
 
 async function checkStarterMcp() {
@@ -85,16 +128,19 @@ async function checkStarterMcp() {
       config: kitConfig,
     })
     const list = result.mcps ?? result.plugins ?? []
-    if (list.some((pkg) => pkg.name === starterMcpName || pkg.name.includes('fetch'))) {
-      mcpInstalled.value = true
+    for (const starter of starters) {
+      if (list.some((pkg) => pkg.name === starter.name || pkg.name.includes(starter.namespace))) {
+        mcpInstalled.value = { ...mcpInstalled.value, [starter.name]: true }
+        await selectStarterTools(kitConfig, starter)
+      }
     }
   } catch {
     // Kit server may not be reachable or configured yet
   }
 }
 
-async function installStarterMcp() {
-  mcpBusy.value = true
+async function installStarterMcp(starter: Starter) {
+  mcpBusy.value = starter.name
   mcpStatus.value = ''
   mcpFailed.value = false
   try {
@@ -104,23 +150,21 @@ async function installStarterMcp() {
       config: kitConfig,
       package: {
         kind: 'mcp',
-        target: starterMcpName,
+        target: starter.name,
         version: null,
         prefer_native: false,
       },
     })
-    kitConfig.enabled = true
-    if (!kitConfig.selected.includes(starterMcpName)) {
-      kitConfig.selected.push(starterMcpName)
-    }
-    await invoke('kit_save', { config: kitConfig }).catch(() => {})
-    mcpInstalled.value = true
-    mcpStatus.value = 'Web Research MCP installed and enabled.'
+    mcpInstalled.value = { ...mcpInstalled.value, [starter.name]: true }
+    const tools = await selectStarterTools(kitConfig, starter)
+    mcpStatus.value = tools
+      ? `${starter.name} installed and enabled.`
+      : `Installed, but Kit lists no ${starter.namespace} tools yet. Check Settings → Tools.`
   } catch (error) {
     mcpFailed.value = true
     mcpStatus.value = `${String(error).replace(/\.+$/, '')}. You can also configure MCP servers anytime in Settings.`
   } finally {
-    mcpBusy.value = false
+    mcpBusy.value = ''
   }
 }
 
@@ -317,25 +361,23 @@ async function proceed() {
         stop.
       </p>
 
-      <div class="mcp-starter-box">
+      <div v-for="starter in starters" :key="starter.name" class="mcp-starter-box">
         <div class="mcp-starter-info">
           <div class="mcp-starter-title">
-            <strong>Starter MCP Server: Web Research</strong>
-            <span v-if="mcpInstalled" class="mcp-badge success">Installed</span>
+            <strong>{{ starter.title }}</strong>
+            <span v-if="mcpInstalled[starter.name]" class="mcp-badge success">Installed</span>
           </div>
-          <span class="mcp-starter-desc">
-            Installs <code>rune-fetch</code> for live web search and information retrieval.
-          </span>
+          <span class="mcp-starter-desc">{{ starter.description }}</span>
         </div>
         <RuneButton
-          v-if="!mcpInstalled"
+          v-if="!mcpInstalled[starter.name]"
           size="sm"
           variant="primary"
-          :disabled="mcpBusy"
+          :disabled="!!mcpBusy"
           class="mcp-install-btn"
-          @click="installStarterMcp"
+          @click="installStarterMcp(starter)"
         >
-          {{ mcpBusy ? 'Installing…' : mcpFailed ? 'Try again' : 'Install Fetch MCP' }}
+          {{ mcpBusy === starter.name ? 'Installing…' : mcpFailed ? 'Try again' : starter.button }}
         </RuneButton>
       </div>
       <p

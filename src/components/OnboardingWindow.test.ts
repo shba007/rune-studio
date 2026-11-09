@@ -188,6 +188,8 @@ it('renders starter MCP server installation and interactive test prompts', async
     if (command === 'kit_install_package') {
       return { name: 'rune-fetch', version: '0.1.0', restart_required: false }
     }
+    if (command === 'kit_discover')
+      return { tools: [{ name: 'fetch__fetch' }, { name: 'time__get_current_time' }] }
     if (command === 'kit_save') return undefined
     return undefined
   })
@@ -202,11 +204,13 @@ it('renders starter MCP server installation and interactive test prompts', async
   expect(wrapper.text()).toContain('Start with a small task')
   expect(wrapper.text()).toContain('Starter MCP Server: Web Research')
   expect(wrapper.text()).toContain('rune-fetch')
-  expect(wrapper.text()).toContain('Search the web for the latest weather and summarize it.')
-  expect(wrapper.text()).toContain("Create a meeting notes file on my desktop with today's date.")
+  expect(wrapper.text()).toContain('rune-time')
+  expect(wrapper.text()).toContain('Use the time MCP to tell me the current time in Tokyo.')
   expect(wrapper.text()).toContain(
-    'Calculate the compound interest for $10,000 at 5% over 3 years and save the result.',
+    'Use the fetch MCP to read https://example.com and tell me what the page says.',
   )
+  expect(wrapper.text()).toContain("Create a meeting notes file on my desktop with today's date.")
+  expect(wrapper.text()).toContain('Open the browser and search for the latest weather.')
 
   // Install starter MCP
   const installButton = wrapper.find('.mcp-install-btn')
@@ -224,11 +228,16 @@ it('renders starter MCP server installation and interactive test prompts', async
     },
   })
   expect(wrapper.text()).toContain('Installed')
+  expect(harness.invoke).toHaveBeenCalledWith('kit_save', {
+    config: expect.objectContaining({ enabled: true, selected: ['fetch__fetch'] }),
+  })
 
   // Click prompt card to copy
   const promptCard = wrapper.findAll('.setup-prompt-card')[1]!
   await promptCard.trigger('click')
-  expect(writeText).toHaveBeenCalledWith('Search the web for the latest weather and summarize it.')
+  expect(writeText).toHaveBeenCalledWith(
+    'Use the fetch MCP to read https://example.com and tell me what the page says.',
+  )
   await flushPromises()
   expect(wrapper.text()).toContain('Copied!')
 

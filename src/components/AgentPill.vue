@@ -207,13 +207,20 @@ watch([cardsHeight, composerHeight], () => {
   if (height >= 48) void agent.fitHeight(Math.ceil(height))
 })
 
-watch(cardsHeight, async () => {
-  await nextTick()
-  const scroller = cardScroll.value
-  if (scroller && scroller.scrollHeight > scroller.clientHeight) {
-    scroller.scrollTop = scroller.scrollHeight
-  }
-})
+watch(
+  () =>
+    ['confirm', 'decision', 'feedback', 'review', 'reflection'].some((card) =>
+      shows(card as PillCard),
+    ),
+  async (needsAttention) => {
+    if (!needsAttention) return
+    await nextTick()
+    const scroller = cardScroll.value
+    if (scroller && scroller.scrollHeight > scroller.clientHeight) {
+      scroller.scrollTop = scroller.scrollHeight
+    }
+  },
+)
 
 useEventListener(window, 'resize', () => {
   if (isAmbient.value) return
