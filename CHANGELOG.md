@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.13.0
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.12.0...v0.13.0)
+
+### 🚀 Enhancements
+
+- Enhance onboarding and model management features ([7ad6c1e](https://github.com/shba007/rune-studio/commit/7ad6c1e))
+- Enhance task completion handling and model management ([45dacf3](https://github.com/shba007/rune-studio/commit/45dacf3))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+
 ## v0.12.0
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.11.0...v0.12.0)
