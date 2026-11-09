@@ -214,17 +214,28 @@ export function useAgent() {
 
   const setHeightProbe = (probe: (() => number) | undefined) => (measureHeight = probe)
 
-  async function fitHeight(height: number) {
+  async function fitHeight(height: number, force = false) {
     if (!Number.isFinite(height)) return
     wantedHeight = Math.max(64, Math.ceil(height))
+    if (force) fittedHeight = 0
     if (mode.value === 'open' || mode.value === 'task' || mode.value === 'analysis') {
       if (!fitting) {
         fitting = (async () => {
           await Promise.resolve()
-          while (mode.value !== 'ambient' && fittedHeight !== wantedHeight) {
-            const next = wantedHeight
-            await call('fit_height', { height: next })
-            fittedHeight = next
+          let verifications = 0
+          let applied: number | undefined
+          while (mode.value !== 'ambient') {
+            if (fittedHeight !== wantedHeight) {
+              const next = wantedHeight
+              applied = await call<number>('fit_height', { height: next })
+              fittedHeight = next
+              continue
+            }
+            if (typeof applied !== 'number' || verifications >= 2) break
+            await sleep(80)
+            if (Math.abs(window.innerHeight - applied) <= 2) break
+            verifications += 1
+            fittedHeight = 0
           }
         })().finally(() => {
           fitting = undefined

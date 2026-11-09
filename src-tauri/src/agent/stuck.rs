@@ -114,7 +114,17 @@ pub struct Watch {
     unchanged: u32,
     last_key: Option<String>,
     repeats: u32,
+    effect: Option<Effect>,
 }
+
+struct Effect {
+    action: String,
+    fraction: f64,
+    repeats: u32,
+}
+
+const REPEAT_NOTE_AFTER: u32 = 3;
+const BARELY_CHANGED: f64 = 0.05;
 
 impl Watch {
     pub fn look(&mut self, signature: Vec<u8>, acted: Option<&Acted>) -> u32 {
@@ -125,6 +135,14 @@ impl Watch {
                 1
             };
             self.last_key = Some(acted.key.clone());
+            self.effect = match &self.last {
+                Some(before) if !acted.quiet => Some(Effect {
+                    action: acted.key.clone(),
+                    fraction: changed_fraction(before, &signature),
+                    repeats: self.repeats,
+                }),
+                _ => None,
+            };
             match &self.last {
                 Some(before) if same(before, &signature) => {
                     if !acted.quiet {
@@ -133,9 +151,26 @@ impl Watch {
                 }
                 _ => self.unchanged = 0,
             }
+        } else {
+            self.effect = None;
         }
         self.last = Some(signature);
         self.unchanged
+    }
+
+    pub fn effect_note(&self) -> Option<String> {
+        let effect = self.effect.as_ref()?;
+        if effect.fraction < CHANGED_FRACTION {
+            (self.unchanged < WARN_AFTER).then(|| crate::prompts::agent_no_effect(&effect.action))
+        } else if effect.repeats >= REPEAT_NOTE_AFTER && effect.fraction < BARELY_CHANGED {
+            Some(crate::prompts::agent_repeated_action(
+                &effect.action,
+                effect.repeats,
+                (effect.fraction * 100.0).round() as u32,
+            ))
+        } else {
+            None
+        }
     }
 
     pub fn should_give_up(&self) -> bool {
@@ -285,6 +320,31 @@ mod tests {
         assert_eq!(watch.look(screen(10), None), 0);
         assert_eq!(watch.look(screen(60), Some(&click(1))), 0);
         assert_eq!(watch.look(screen(120), Some(&click(2))), 0);
+    }
+
+    #[test]
+    fn a_click_with_no_effect_is_reported_at_once_and_a_repeat_with_a_tiny_change_later() {
+        let mut watch = Watch::default();
+        watch.look(screen(10), None);
+        watch.look(screen(10), Some(&click(1)));
+        assert!(watch.effect_note().unwrap().contains("click 1"));
+        watch.look(screen(10), Some(&click(1)));
+        assert!(
+            watch.effect_note().is_none(),
+            "the stuck warning takes over"
+        );
+        let mut watch = Watch::default();
+        watch.look(screen(200), None);
+        for _ in 0..1 {
+            watch.look(with_patch(200, 460, 20), Some(&click(2)));
+            assert!(watch.effect_note().is_none());
+            watch.look(screen(200), Some(&click(2)));
+        }
+        watch.look(with_patch(200, 460, 20), Some(&click(2)));
+        let note = watch.effect_note().unwrap();
+        assert!(note.contains("5%"), "{note}");
+        watch.look(screen(200), Some(&click(3)));
+        assert!(watch.effect_note().is_none(), "a different action is fine");
     }
 
     #[test]

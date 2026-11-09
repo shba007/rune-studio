@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import RuneButton from './RuneButton.vue'
-import { onKeyStroke, useElementSize } from '@vueuse/core'
+import { onKeyStroke, useElementSize, useEventListener } from '@vueuse/core'
 import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 
 import { useAgent } from '@/composables/useAgent'
@@ -189,6 +189,7 @@ const shows = (card: PillCard) => plan.value.cards.includes(card)
 if (import.meta.env.DEV) Object.assign(window, { __demoAgent: agent })
 
 const cards = useTemplateRef<HTMLElement>('cards')
+const cardScroll = useTemplateRef<HTMLElement>('cardScroll')
 const composer = useTemplateRef<HTMLElement>('composer')
 const { height: cardsHeight } = useElementSize(cards)
 const { height: composerHeight } = useElementSize(composer)
@@ -204,6 +205,20 @@ watch([cardsHeight, composerHeight], () => {
     return
   }
   if (height >= 48) void agent.fitHeight(Math.ceil(height))
+})
+
+watch(cardsHeight, async () => {
+  await nextTick()
+  const scroller = cardScroll.value
+  if (scroller && scroller.scrollHeight > scroller.clientHeight) {
+    scroller.scrollTop = scroller.scrollHeight
+  }
+})
+
+useEventListener(window, 'resize', () => {
+  if (isAmbient.value) return
+  const height = measuredHeight()
+  if (height >= 48 && window.innerHeight + 2 < height) void agent.fitHeight(Math.ceil(height), true)
 })
 
 watch(isAmbient, async (ambient) => {
@@ -325,7 +340,7 @@ function onOrb() {
           v-if="dueTasks.length"
           role="status"
           :aria-label="`${dueTasks.length} reminder${dueTasks.length > 1 ? 's' : ''} due`"
-          class="pointer-events-none absolute top-0 left-1/2 z-10 grid size-5 -translate-x-1/2 place-items-center rounded-full bg-error text-[11px] font-bold text-black motion-safe:animate-pulse"
+          class="pointer-events-none absolute top-1 left-1/2 z-10 grid size-5 -translate-x-1/2 place-items-center rounded-full bg-error text-[11px] font-bold text-black motion-safe:animate-pulse"
           >{{ dueTasks.length }}</span
         >
         <GlyphOrb
@@ -366,7 +381,7 @@ function onOrb() {
         <div class="flex max-h-full min-h-0 flex-col">
           <Transition name="page" mode="out-in">
             <div key="main" class="flex min-h-0 flex-col gap-2">
-              <div class="min-h-0 overflow-y-auto">
+              <div ref="cardScroll" class="min-h-0 overflow-y-auto">
                 <div ref="cards" class="flex flex-col gap-2">
                   <IntakeStatus
                     :classifying="

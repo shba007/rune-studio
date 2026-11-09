@@ -54,4 +54,4 @@ if [[ $# -ne 0 ]]; then
 fi
 
 cargo build --locked --manifest-path src-tauri/Cargo.toml --bin rune-studio-cli --features agent-bridge
-exec bun x --no-install tauri dev --features agent-bridge,embedded-infer --config "$config_native"
+exec bun x --no-install tauri dev --features agent-bridge,embedded-infer,embedded-kit --config "$config_native"

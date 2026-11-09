@@ -50,7 +50,7 @@ jobs:
             asset: 'linux_x64'
 
           - platform: 'windows-latest'
-            args: '--features agent-bridge,embedded-infer'
+            args: '--features agent-bridge,embedded-infer,embedded-kit'
             target: ''
             cli: 'rune-studio-cli.exe'
             asset: 'x64.exe'

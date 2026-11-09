@@ -68,6 +68,7 @@ tauri-plugin-autostart = "2.7.0"
 rawler = "=0.8.0"
 png = "=0.18.1"
 tempfile = "3"
+tauri-plugin-dialog = "2.8"
 
 [dev-dependencies]
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }

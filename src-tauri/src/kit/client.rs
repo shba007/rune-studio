@@ -173,6 +173,17 @@ fn management_client(config: &Config) -> Result<(reqwest::Client, reqwest::Url),
     Ok((client, url))
 }
 
+fn send_error(error: reqwest::Error, config: &Config, after: &str) -> String {
+    if error.is_connect() {
+        format!(
+            "Kit is not running at {}. Start Kit, then try again.",
+            config.endpoint
+        )
+    } else {
+        format!("Kit response unavailable: {error}. {after}")
+    }
+}
+
 async fn management_response(response: reqwest::Response) -> Result<reqwest::Response, String> {
     if response.status().is_success() {
         Ok(response)
@@ -271,8 +282,13 @@ pub async fn kit_packages(config: Config) -> Result<Value, String> {
     if let Some(token) = stored_kit_token()? {
         request = request.bearer_auth(token);
     }
-    let mut response =
-        management_response(request.send().await.map_err(|e| e.to_string())?).await?;
+    let mut response = management_response(
+        request
+            .send()
+            .await
+            .map_err(|e| send_error(e, &config, "Check that Kit is running."))?,
+    )
+    .await?;
     let mut bytes = Vec::new();
     while let Some(chunk) = response.chunk().await.map_err(|e| e.to_string())? {
         if bytes.len() + chunk.len() > LIMIT {
@@ -310,7 +326,14 @@ pub async fn kit_install_package(config: Config, package: PackageInstall) -> Res
     if let Some(token) = stored_kit_token()? {
         request = request.bearer_auth(token);
     }
-    let response = management_response(request.send().await.map_err(|e| format!("Kit installation response unavailable: {e}. Check Kit's installed packages before retrying."))?).await?;
+    let response = management_response(request.send().await.map_err(|e| {
+        send_error(
+            e,
+            &config,
+            "Check Kit's installed packages before retrying.",
+        )
+    })?)
+    .await?;
     let bytes = response.bytes().await.map_err(|e| e.to_string())?;
     if bytes.len() > LIMIT {
         return Err("Kit installation response is too large".into());

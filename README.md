@@ -372,7 +372,7 @@ Copyright &copy; 2024 Shirsendu Bairagi.
 
 ### Selected read-only Kit tools
 
-Settings → Tools supports selected time, commit-message validation and bounded file read/list tools through a separately running rune-kit HTTP server (minimum release 0.6.0, MCP 2026-07-28). Configure its loopback endpoint in Tools settings. Kit/plugin installation and filesystem roots remain server-owned. File tools require filesystem 0.4.1+. See [setup, permissions and verification](docs/kit.md).
+Settings → Tools supports selected time, commit-message validation and bounded file read/list tools through a rune-kit HTTP server (minimum release 0.6.0, MCP 2026-07-28): embedded in builds with `embedded-kit`, otherwise one you run yourself. Configure its loopback endpoint in Tools settings. Kit/plugin installation and filesystem roots remain server-owned. File tools require filesystem 0.4.1+. See [setup, permissions and verification](docs/kit.md).
 
 ### Visual Analysis
 

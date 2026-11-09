@@ -39,6 +39,21 @@ pub fn agent_stuck(unchanged: u32) -> String {
     )
 }
 
+pub fn agent_no_effect(action: &str) -> String {
+    fill(prompt!("agent/no_effect.md"), &[("action", action)])
+}
+
+pub fn agent_repeated_action(action: &str, count: u32, percent: u32) -> String {
+    fill(
+        prompt!("agent/repeated_action.md"),
+        &[
+            ("action", action),
+            ("count", &count.to_string()),
+            ("percent", &percent.to_string()),
+        ],
+    )
+}
+
 pub fn agent_contradicted(evidence: &str) -> String {
     fill(prompt!("agent/contradicted.md"), &[("evidence", evidence)])
 }

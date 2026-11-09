@@ -103,6 +103,70 @@ pub fn embedded_model_download(
 }
 
 #[tauri::command]
+pub async fn pick_folder(app: AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    tauri::async_runtime::spawn_blocking(move || {
+        app.dialog()
+            .file()
+            .blocking_pick_folder()
+            .and_then(|path| path.into_path().ok())
+            .map(|path| path.display().to_string())
+    })
+    .await
+    .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn embedded_model_scan(dir: String) -> Result<serde_json::Value, String> {
+    #[cfg(all(windows, feature = "embedded-infer"))]
+    {
+        let found = tauri::async_runtime::spawn_blocking(move || {
+            crate::embedded_download::scan(std::path::Path::new(&dir))
+        })
+        .await
+        .map_err(|error| error.to_string())??;
+        serde_json::to_value(found).map_err(|error| error.to_string())
+    }
+    #[cfg(not(all(windows, feature = "embedded-infer")))]
+    {
+        let _ = dir;
+        Err("Local Infer is not included in this build".into())
+    }
+}
+
+#[tauri::command]
+pub async fn embedded_model_import(app: AppHandle, id: String, dir: String) -> Result<(), String> {
+    #[cfg(all(windows, feature = "embedded-infer"))]
+    {
+        let root = rune_infer::home::rune_home().map_err(|error| error.to_string())?;
+        let candidate = tauri::async_runtime::spawn_blocking(crate::embedded_download::candidates)
+            .await
+            .map_err(|error| error.to_string())??
+            .into_iter()
+            .find(|candidate| candidate.id == id)
+            .ok_or("Model is not available")?;
+        let staging_root = root.clone();
+        let staging_id = id.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            crate::embedded_download::stage(&staging_root, &staging_id, std::path::Path::new(&dir))
+        })
+        .await
+        .map_err(|error| error.to_string())??;
+        app.state::<crate::embedded_download::Downloads>().start(
+            root,
+            id,
+            candidate.revision,
+            candidate.manifest,
+        )
+    }
+    #[cfg(not(all(windows, feature = "embedded-infer")))]
+    {
+        let _ = (app, id, dir);
+        Err("Local Infer is not included in this build".into())
+    }
+}
+
+#[tauri::command]
 pub fn embedded_model_download_status(app: AppHandle) -> Result<serde_json::Value, String> {
     #[cfg(all(windows, feature = "embedded-infer"))]
     {
@@ -469,7 +533,7 @@ pub async fn check_backend(app: AppHandle, state: State<'_, AppState>) -> AppRes
 }
 
 #[tauri::command]
-pub fn fit_height(app: AppHandle, height: f64) -> AppResult<()> {
+pub fn fit_height(app: AppHandle, height: f64) -> AppResult<f64> {
     Ok(window::fit_height(&app, height)?)
 }
 

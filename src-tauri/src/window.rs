@@ -147,7 +147,7 @@ pub fn set_mode(app: &AppHandle, mode: Mode) -> tauri::Result<()> {
     resize_keeping_corner(app, Some(width), height)
 }
 
-pub fn fit_height(app: &AppHandle, height: f64) -> tauri::Result<()> {
+pub fn fit_height(app: &AppHandle, height: f64) -> tauri::Result<f64> {
     let ceiling = main_window(app)
         .and_then(|window| {
             let area = window.current_monitor().ok()??.work_area().size.height;
@@ -157,7 +157,9 @@ pub fn fit_height(app: &AppHandle, height: f64) -> tauri::Result<()> {
             ))
         })
         .unwrap_or(1_200.0);
-    resize_keeping_corner(app, Some(Mode::Open.size().0), height.clamp(64.0, ceiling))
+    let height = height.clamp(64.0, ceiling);
+    resize_keeping_corner(app, Some(Mode::Open.size().0), height)?;
+    Ok(height)
 }
 
 pub fn max_pill_height(work_area_physical: f64, scale: f64) -> f64 {

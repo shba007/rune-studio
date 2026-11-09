@@ -49,8 +49,8 @@ jobs:
           path: src-tauri/target
           key: ${{ runner.os }}-app-${{ hashFiles('src-tauri/Cargo.lock') }}-${{ github.sha }}
           restore-keys: ${{ runner.os }}-app-${{ hashFiles('src-tauri/Cargo.lock') }}-
-      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib --features eval,agent-bridge,embedded-infer
-      - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets --features eval,agent-bridge,embedded-infer -- -D warnings
+      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib --features eval,agent-bridge,embedded-infer,embedded-kit
+      - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets --features eval,agent-bridge,embedded-infer,embedded-kit -- -D warnings
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
   prepare:
     name: Prepare release PR

@@ -16,7 +16,7 @@ import {
 } from './release.mjs'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
-test('the Windows installer and its CI checks include embedded Infer', async () => {
+test('the Windows installer and its CI checks include embedded Infer and Kit', async () => {
   const deploy = await readFile(join(root, '.github/workflows/deploy.yml'), 'utf8')
   const windows = deploy.match(/- platform: 'windows-latest'\s*\n\s*args: '([^']+)'/)
   assert.ok(windows, 'Windows release build is missing')
@@ -24,6 +24,9 @@ test('the Windows installer and its CI checks include embedded Infer', async () 
   const ci = await readFile(join(root, '.github/workflows/integrate.yml'), 'utf8')
   assert.match(ci, /cargo test [^\n]*--features [^\n]*\bembedded-infer\b/)
   assert.match(ci, /cargo clippy [^\n]*--features [^\n]*\bembedded-infer\b/)
+  assert.match(ci, /cargo test [^\n]*--features [^\n]*\bembedded-kit\b/)
+  assert.match(ci, /cargo clippy [^\n]*--features [^\n]*\bembedded-kit\b/)
+  assert.match(windows[1], /--features\s+[^']*\bembedded-kit\b/)
 })
 const raw = (message, body = '', shortHash = 'abc1234') => ({
   message,

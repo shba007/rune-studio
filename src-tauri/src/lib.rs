@@ -108,6 +108,7 @@ pub fn run() {
 
     builder
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -222,10 +223,10 @@ pub fn run() {
             {
                 let handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
-                    if let Some(manager) = handle.try_state::<embedded_kit::EmbeddedKitManager>() {
-                        if let Err(e) = manager.start().await {
-                            log::info!("Embedded Kit initialization: {e}");
-                        }
+                    if let Some(manager) = handle.try_state::<embedded_kit::EmbeddedKitManager>()
+                        && let Err(e) = manager.start().await
+                    {
+                        log::info!("Embedded Kit initialization: {e}");
                     }
                 });
             }
@@ -361,6 +362,9 @@ pub fn run() {
             infer_catalog::infer_visual_roles,
             commands::embedded_model_candidates,
             commands::embedded_model_download,
+            commands::embedded_model_scan,
+            commands::pick_folder,
+            commands::embedded_model_import,
             commands::embedded_model_download_status,
             commands::embedded_model_download_cancel,
             commands::embedded_model_use,

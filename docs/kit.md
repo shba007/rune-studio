@@ -1,14 +1,18 @@
 # Kit HTTP integration
 
-Studio connects to a separately running Kit server at
-`http://127.0.0.1:47601/mcp` by default. Configure another loopback HTTP `/mcp`
-endpoint in Settings → Tools. Minimum supported HTTP release: **Kit 0.6.0**.
+Builds with the `embedded-kit` feature (the Windows release build, CI and
+`tauri:dev`) start Kit inside Studio at launch, on `http://127.0.0.1:47601/mcp`
+or a free loopback port if that is taken, and stop it on exit. Onboarding starts
+it before installing the starter MCP. Other builds connect to a separately
+running Kit server at the same default address. Configure another loopback HTTP
+`/mcp` endpoint in Settings → Tools. Minimum supported HTTP release: **Kit 0.6.0**.
 Kit's current local preview artifact may still report 0.5.0; debug-only testing
 can explicitly opt in with `RUNE_STUDIO_ALLOW_KIT_HTTP_PREVIEW=1`. Published
 0.5.0 is not an HTTP compatibility guarantee; release builds reject it.
 
 Start Kit with `rune-kit serve --headless` for background/CI use. With an attached
-interactive terminal Kit provides its own TUI. Studio never starts or stops Kit.
+interactive terminal Kit provides its own TUI. Studio only starts and stops the
+embedded Kit it runs itself; it never spawns an external Kit process.
 The shared installation root is the actual user home plus `/.rune`: binaries
 `rune-kit[.exe]` and `rune-infer[.exe]` sit directly there, Kit storage is
 `~/.rune/tools` (plugins in `tools/plugins`), and Infer uses `~/.rune/infer`
@@ -24,7 +28,7 @@ Old executable/stdio settings are disabled on read. Selection is retained, and
 saving the new endpoint first preserves the original bytes in
 `kit.stdio-backup.json` without overwriting an existing backup. Explicitly start
 the new server, configure its root, verify discovery, then re-enable selected
-tools. There is no silent launch or stdio fallback.
+tools. There is no stdio fallback.
 
 ## Protocol contract
 

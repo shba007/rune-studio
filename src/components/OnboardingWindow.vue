@@ -41,6 +41,7 @@ const starterMcpName = 'rune-fetch'
 const mcpBusy = ref(false)
 const mcpInstalled = ref(false)
 const mcpStatus = ref('')
+const mcpFailed = ref(false)
 const copiedPrompt = ref('')
 let copyTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -67,9 +68,16 @@ const testPrompts: TestPrompt[] = [
   },
 ]
 
+async function startKit(kitConfig: KitConfig) {
+  if (await invoke<boolean>('embedded_kit_available')) {
+    kitConfig.endpoint = await invoke<string>('start_embedded_kit')
+  }
+}
+
 async function checkStarterMcp() {
   try {
     const kitConfig = await invoke<KitConfig>('kit_settings')
+    await startKit(kitConfig)
     const result = await invoke<{
       mcps?: Array<{ name: string }>
       plugins?: Array<{ name: string }>
@@ -88,8 +96,10 @@ async function checkStarterMcp() {
 async function installStarterMcp() {
   mcpBusy.value = true
   mcpStatus.value = ''
+  mcpFailed.value = false
   try {
     const kitConfig = await invoke<KitConfig>('kit_settings')
+    await startKit(kitConfig)
     await invoke('kit_install_package', {
       config: kitConfig,
       package: {
@@ -107,7 +117,8 @@ async function installStarterMcp() {
     mcpInstalled.value = true
     mcpStatus.value = 'Web Research MCP installed and enabled.'
   } catch (error) {
-    mcpStatus.value = `Notice: ${String(error)}. You can also configure MCP servers anytime in Settings.`
+    mcpFailed.value = true
+    mcpStatus.value = `${String(error).replace(/\.+$/, '')}. You can also configure MCP servers anytime in Settings.`
   } finally {
     mcpBusy.value = false
   }
@@ -236,7 +247,7 @@ async function proceed() {
 
 <template>
   <main class="setup-shell">
-    <TitleBar title="Rune Studio" controls="close" :close-action="closeSetup" />
+    <TitleBar title="Rune Studio" controls="close" bare :close-action="closeSetup" />
     <section v-if="step === 0" class="setup-center">
       <img :src="logo" alt="" class="setup-logo" />
       <p class="setup-tag">YOUR COMPUTER ASSISTANT</p>
@@ -318,15 +329,23 @@ async function proceed() {
         </div>
         <RuneButton
           v-if="!mcpInstalled"
-          type="button"
+          size="sm"
+          variant="primary"
           :disabled="mcpBusy"
           class="mcp-install-btn"
           @click="installStarterMcp"
         >
-          {{ mcpBusy ? 'Installing…' : 'Install Fetch MCP' }}
+          {{ mcpBusy ? 'Installing…' : mcpFailed ? 'Try again' : 'Install Fetch MCP' }}
         </RuneButton>
       </div>
-      <p v-if="mcpStatus" class="mcp-status" role="status">{{ mcpStatus }}</p>
+      <p
+        v-if="mcpStatus"
+        class="mcp-status"
+        :class="{ failed: mcpFailed }"
+        :role="mcpFailed ? 'alert' : 'status'"
+      >
+        {{ mcpStatus }}
+      </p>
 
       <div class="setup-prompts-section">
         <p class="setup-prompts-title">SUGGESTED TEST PROMPTS (CLICK TO COPY)</p>
@@ -369,16 +388,12 @@ async function proceed() {
       >
         <span v-for="n in 4" :key="n" :class="{ current: n === step + 1 }" />
       </div>
-      <RuneButton
-        v-if="step > 0"
-        variant="link"
-        type="button"
-        :disabled="busy"
-        @click="move(step - 1)"
+      <RuneButton v-if="step > 0" variant="ghost" :disabled="busy" @click="move(step - 1)"
         >Back</RuneButton
       >
       <RuneButton
         class="setup-button"
+        variant="primary"
         type="button"
         :disabled="busy || (step === 1 && localAvailable === null)"
         @click="proceed"
@@ -399,25 +414,6 @@ async function proceed() {
   color: var(--color-rune-ink);
   background: radial-gradient(circle at 50% 5%, #242529, #101114 65%);
   font-family: var(--font-sans);
-}
-.setup-header {
-  height: 54px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 26px;
-  color: var(--color-rune-text-3);
-  font-size: 12px;
-  letter-spacing: 0.12em;
-}
-.setup-header button,
-.setup-footer button:not(.setup-button) {
-  border: 0;
-  color: var(--color-rune-text-2);
-  background: transparent;
-  cursor: pointer;
-  font-size: 18px;
-  font-family: inherit;
 }
 .setup-center {
   flex: 1;
@@ -459,6 +455,7 @@ async function proceed() {
   letter-spacing: 0.13em;
 }
 .setup-content {
+  overflow-x: hidden;
   flex: 1;
   min-height: 0;
   display: grid;
@@ -503,21 +500,6 @@ async function proceed() {
   font-family: var(--font-rune-reading);
   line-height: 1.4;
 }
-.setup-button {
-  border: 0;
-  border-radius: 7px;
-  background: var(--color-rune-ink);
-  color: #171719;
-  padding: 10px 18px;
-  font-weight: 650;
-  cursor: pointer;
-  font-family: inherit;
-  text-transform: none;
-}
-.setup-button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
 .setup-error {
   color: var(--color-error) !important;
   margin: 0 8% 12px;
@@ -559,11 +541,20 @@ async function proceed() {
   }
 }
 .setup-center.step-try {
+  justify-content: flex-start;
+  min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
-  max-width: 820px;
-  margin: 0 auto;
-  width: 100%;
   padding: 16px 32px 24px;
+}
+.setup-center.step-try::before,
+.setup-center.step-try::after {
+  content: '';
+  margin: auto;
+}
+.setup-center.step-try > * {
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 .mcp-starter-box {
   display: flex;
@@ -614,19 +605,14 @@ async function proceed() {
 }
 .mcp-install-btn {
   flex-shrink: 0;
-  font-size: 13px;
-  padding: 8px 14px;
-  background: var(--accent);
-  color: #171719;
-  font-weight: 600;
-  border-radius: 6px;
-  cursor: pointer;
-  border: none;
 }
 .mcp-status {
   font-size: 12px;
   color: var(--accent);
   margin: 4px 0 8px;
+}
+.mcp-status.failed {
+  color: var(--color-error);
 }
 .setup-prompts-section {
   width: 100%;

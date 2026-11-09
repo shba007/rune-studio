@@ -59,8 +59,12 @@ changelogen adapter is JavaScript because it calls the authoritative npm APIs;
 Studio's Vue/TypeScript and existing thin installer/fixture wrappers remain.
 
 Product contract: Studio connects to Kit's loopback HTTP MCP endpoint (default
-http://127.0.0.1:47601/mcp), minimum HTTP release 0.6.0. It never discovers,
-launches, owns or stops a Kit subprocess. Old stdio settings are disabled and
+http://127.0.0.1:47601/mcp), minimum HTTP release 0.6.0. Builds with the
+embedded-kit feature (Windows release, CI, tauri:dev) run Kit in-process at
+launch like embedded Infer, falling back to a free loopback port, and stop it on
+exit; onboarding starts it before installing the starter MCP. Studio still never
+discovers or spawns an external Kit subprocess, and without the feature it only
+connects to a Kit the user runs. Old stdio settings are disabled and
 backed up before replacement; selected tool restrictions remain. Public Studio
 → Kit MCP uses the revision documented in docs/mcp-kit-version.txt. The private
 native/WASM plugin ABI is unchanged. Kit/Infer own shared ~/.rune installation,

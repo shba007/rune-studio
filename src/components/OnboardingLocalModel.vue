@@ -16,6 +16,7 @@ type Candidate = {
   recommended?: boolean
   recommendationBasis?: string | null
 }
+type Found = { id: string; name: string; bytes: number; path: string }
 type Status = {
   phase: string
   model?: string
@@ -35,6 +36,10 @@ const starting = ref(false)
 const active = computed(() =>
   ['preparing', 'downloading', 'engine'].includes(status.value?.phase ?? ''),
 )
+const folder = ref('')
+const found = ref<Found[]>([])
+const scanned = ref(false)
+const scanning = ref(false)
 let timer: ReturnType<typeof setInterval> | undefined
 let disposed = false
 let selecting = false
@@ -75,6 +80,44 @@ async function download(model: Candidate) {
       revision: model.revision,
       manifest: model.manifest,
     })
+    await refresh()
+    if (active.value) poll()
+  } catch (e) {
+    error.value = String(e)
+  }
+}
+async function browse() {
+  try {
+    const picked = await invoke<string | null>('pick_folder')
+    if (picked) {
+      folder.value = picked
+      await scan()
+    }
+  } catch (e) {
+    error.value = String(e)
+  }
+}
+async function scan() {
+  const dir = folder.value.trim()
+  if (!dir) return
+  error.value = ''
+  scanning.value = true
+  scanned.value = false
+  try {
+    found.value = await invoke<Found[]>('embedded_model_scan', { dir })
+    scanned.value = true
+  } catch (e) {
+    found.value = []
+    error.value = String(e)
+  } finally {
+    scanning.value = false
+  }
+}
+async function useFound(model: Found) {
+  error.value = ''
+  selecting = false
+  try {
+    await invoke('embedded_model_import', { id: model.id, dir: folder.value.trim() })
     await refresh()
     if (active.value) poll()
   } catch (e) {
@@ -172,6 +215,44 @@ onBeforeUnmount(() => {
         @click="selected && download(selected)"
         >Download selected model</RuneButton
       >
+      <div class="existing">
+        <div class="model-heading"><span>Already have a model?</span></div>
+        <p class="hint">Pick the folder that holds your models and Rune will find a match.</p>
+        <div class="folder-row">
+          <input
+            v-model="folder"
+            class="folder-input"
+            type="text"
+            placeholder="Models folder"
+            aria-label="Models folder"
+            :disabled="active || starting"
+            @keydown.enter="scan"
+          />
+          <RuneButton size="sm" :disabled="active || starting" @click="browse">Browse</RuneButton>
+          <RuneButton
+            size="sm"
+            :disabled="!folder.trim() || scanning || active || starting"
+            @click="scan"
+            >{{ scanning ? 'Scanning…' : 'Scan' }}</RuneButton
+          >
+        </div>
+        <p v-if="scanned && !found.length" role="status">
+          No supported model was found in this folder.
+        </p>
+        <div v-for="model in found" :key="model.id" class="found-row">
+          <span class="model-info">
+            <span class="model-title">{{ model.name }}</span>
+            <span class="model-meta source">{{ model.path }}</span>
+          </span>
+          <RuneButton
+            size="sm"
+            variant="primary"
+            :disabled="active || starting"
+            @click="useFound(model)"
+            >Use</RuneButton
+          >
+        </div>
+      </div>
       <DownloadProgress v-if="active && status" v-bind="status" />
       <RuneButton v-if="active" size="sm" @click="cancel">Cancel</RuneButton>
       <p v-if="starting" role="status">Starting local Infer…</p>
@@ -197,6 +278,7 @@ onBeforeUnmount(() => {
   gap: 12px;
   min-width: 0;
   max-height: 100%;
+  overflow-x: hidden;
   overflow-y: auto;
   padding: 2px 4px 2px 2px;
 }
@@ -312,6 +394,36 @@ onBeforeUnmount(() => {
 .source {
   overflow-wrap: anywhere;
   user-select: text;
+}
+.existing {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.hint {
+  color: var(--color-rune-text-3);
+  font: 400 12px/1.4 var(--font-rune-reading);
+}
+.folder-row {
+  display: flex;
+  gap: 8px;
+}
+.folder-input {
+  flex: 1;
+  min-width: 0;
+  border-radius: var(--radius-rune-tile);
+  background: var(--color-rune-raised);
+  color: var(--color-rune-ink);
+  padding: 8px 12px;
+  font: 400 12px/1.4 var(--font-rune-reading);
+}
+.found-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-radius: var(--radius-rune-tile);
+  background: var(--color-rune-surface);
+  padding: 8px 12px;
 }
 .download-button {
   align-self: flex-start;

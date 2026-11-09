@@ -51,6 +51,7 @@ fn duration_text(duration: Duration) -> String {
 
 const MAX_INVALID_IN_A_ROW: u32 = 3;
 const MAX_DECLINES: u32 = 3;
+const MAX_REPEAT_BLOCKS: u32 = 2;
 const THINKING_EVERY: Duration = Duration::from_millis(150);
 const LOAD_WAIT: Duration = Duration::from_millis(900);
 
@@ -807,6 +808,7 @@ async fn run(
     let mut challenged = false;
     let mut invalid_in_a_row = 0;
     let mut declines = 0;
+    let mut repeat_blocks = 0;
 
     let mut watch = stuck::Watch::default();
     let mut wait_watch = stuck::WaitWatch::default();
@@ -945,6 +947,7 @@ async fn run(
         control_watch.observe_window(uia::current_window());
         let warning = [
             stuck::warning(unchanged),
+            watch.effect_note(),
             wait_watch.warning().map(str::to_string),
             control_watch.warning().map(str::to_string),
             notes.and_then(|notes| notes.hint).map(String::from),
@@ -1396,10 +1399,19 @@ async fn run(
                 }
                 Verdict::Stopped => return Outcome::Stopped,
                 Verdict::Denied(_) => {
-                    let message = "Stopped because repeating the click was not confirmed.";
-                    row.fail(message);
                     trace.event(run_id, "repeated_control_stop", "{}");
-                    return Outcome::Failed(message.into());
+                    repeat_blocks += 1;
+                    if repeat_blocks > MAX_REPEAT_BLOCKS {
+                        let message = "Stopped because repeating the click was not confirmed.";
+                        row.fail(message);
+                        return Outcome::Failed(message.into());
+                    }
+                    row.rec.result = Some("skipped".into());
+                    history.push(Entry {
+                        action: action.describe(),
+                        outcome: "Blocked: this same control was already clicked repeatedly without getting you closer to the goal, and the user did not approve another click. Do not click it again. Re-read the screen and pick a different approach (another control, a menu or keyboard shortcut, scrolling, or another window), or finish with done and say what blocked you.".into(),
+                    });
+                    continue;
                 }
             }
         }
