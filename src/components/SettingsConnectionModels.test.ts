@@ -133,12 +133,8 @@ it('lets the user review and start a local model download', async () => {
     return null
   })
   const { wrapper } = await setup()
-  await wrapper
-    .findAll('button')
-    .find((button) => button.text() === 'Show models')!
-    .trigger('click')
-  await flushPromises()
-  expect(wrapper.text()).toContain('Qwen 27B · 2.00 GB · Test license')
+  expect(wrapper.text()).toContain('Qwen 27B')
+  expect(wrapper.text()).toContain('2.00 GB · Test license')
   expect(harness.invoke.mock.calls.some(([name]) => name === 'embedded_model_download')).toBe(false)
   await wrapper
     .findAll('button')
@@ -167,12 +163,36 @@ it('explains an empty local model list', async () => {
     return null
   })
   const { wrapper } = await setup()
+  expect(wrapper.text()).toContain('No compatible models are available in this build.')
+  wrapper.unmount()
+})
+it('lists installed models on device and makes one the agent model', async () => {
+  const catalog = {
+    models: [
+      { id: 'qwen3.5-4b-q4', name: 'Qwen 4B', local: { path: 'qwen/a.gguf' } },
+      { id: 'cloud', name: 'Cloud', remote: { provider: 'x' } },
+    ],
+  }
+  harness.invoke.mockImplementation(async (command) => {
+    if (command === 'connections_state') return initial()
+    if (command === 'infer_catalog_read') return { catalog: JSON.stringify(catalog) }
+    if (command === 'infer_agent_role') return 'other'
+    return null
+  })
+  const { wrapper } = await setup()
+  expect(wrapper.text()).toContain('Qwen 4B')
+  expect(wrapper.get('[aria-label="Models"]').text()).not.toContain('Cloud')
+  await wrapper.get('[aria-label="Remove Qwen 4B"]').trigger('click')
+  expect(harness.invoke.mock.calls.some(([name]) => name === 'infer_model_remove')).toBe(false)
   await wrapper
     .findAll('button')
-    .find((button) => button.text() === 'Show models')!
+    .find((button) => button.text() === 'Confirm remove')!
     .trigger('click')
   await flushPromises()
-  expect(wrapper.text()).toContain('No compatible models are available in this build.')
+  expect(harness.invoke).toHaveBeenCalledWith('infer_model_remove', { model: 'qwen3.5-4b-q4' })
+  await wrapper.get('[aria-label="Use Qwen 4B"]').trigger('click')
+  await flushPromises()
+  expect(harness.invoke).toHaveBeenCalledWith('infer_select_agent', { model: 'qwen3.5-4b-q4' })
   wrapper.unmount()
 })
 it('stages edits until Save and preserves shared model roles and Decision URL', async () => {

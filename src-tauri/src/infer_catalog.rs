@@ -244,6 +244,126 @@ pub async fn infer_agent_role(state: State<'_, AppState>) -> Result<Option<Strin
 }
 
 #[tauri::command]
+pub async fn infer_model_remove(
+    state: State<'_, AppState>,
+    model: String,
+) -> Result<Vec<String>, String> {
+    let (settings, key) = settings::snapshot_with_api_key(&state.settings);
+    let key = key
+        .filter(|key| !key.trim().is_empty())
+        .ok_or("Removing a model requires an Infer API key")?;
+    validate_url(&settings.base_url)?;
+    let mut url = reqwest::Url::parse(&format!(
+        "{}/v1/management/models/",
+        settings.base_url.trim_end_matches('/')
+    ))
+    .map_err(|_| "Invalid Infer URL")?;
+    url.path_segments_mut()
+        .map_err(|_| "Invalid Infer URL")?
+        .pop_if_empty()
+        .push(&model);
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .map_err(|_| "Cannot create Infer client")?;
+    let response = client
+        .delete(url)
+        .bearer_auth(key)
+        .send()
+        .await
+        .map_err(|_| "Cannot reach Infer")?;
+    let status = response.status();
+    if !status.is_success() {
+        let message = match status.as_u16() {
+            401 => "Infer rejected the API key",
+            404 => "Model is not installed",
+            409 => "This model is used by a role or alias. Choose another model first.",
+            422 => "Only reviewed models downloaded by Rune can be removed",
+            501 | 405 => "This Infer server cannot remove models yet. Update Infer.",
+            _ => "Infer could not remove the model",
+        };
+        return Err(message.into());
+    }
+    let body: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|_| "Invalid response from Infer")?;
+    let failed: Vec<String> = body
+        .get("failed")
+        .and_then(serde_json::Value::as_array)
+        .map(|names| {
+            names
+                .iter()
+                .filter_map(|name| name.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(failed)
+}
+
+static ICONS: std::sync::Mutex<Option<std::collections::HashMap<String, Option<String>>>> =
+    std::sync::Mutex::new(None);
+
+#[tauri::command]
+pub async fn infer_model_icon(
+    state: State<'_, AppState>,
+    model: String,
+) -> Result<Option<String>, String> {
+    let (settings, key) = settings::snapshot_with_api_key(&state.settings);
+    let Some(key) = key.filter(|key| !key.trim().is_empty()) else {
+        return Ok(None);
+    };
+    validate_url(&settings.base_url)?;
+    let cache_key = format!("{}|{model}", settings.base_url);
+    if let Some(known) = ICONS
+        .lock()
+        .ok()
+        .and_then(|cache| cache.as_ref()?.get(&cache_key).cloned())
+    {
+        return Ok(known);
+    }
+    let mut url = reqwest::Url::parse(&format!(
+        "{}/v1/management/model-icon/",
+        settings.base_url.trim_end_matches('/')
+    ))
+    .map_err(|_| "Invalid Infer URL")?;
+    url.path_segments_mut()
+        .map_err(|_| "Invalid Infer URL")?
+        .pop_if_empty()
+        .push(&model);
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|_| "Cannot create Infer client")?;
+    let Ok(response) = client.get(url).bearer_auth(key).send().await else {
+        return Ok(None);
+    };
+    let icon = if response.status().is_success() {
+        let bytes = response.bytes().await.map_err(|e| e.to_string())?;
+        if bytes.len() > 64 * 1024 {
+            return Ok(None);
+        }
+        use base64::Engine;
+        Some(format!(
+            "data:image/svg+xml;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(bytes)
+        ))
+    } else if response.status().as_u16() == 404 {
+        None
+    } else {
+        return Ok(None);
+    };
+    if let Ok(mut cache) = ICONS.lock() {
+        cache
+            .get_or_insert_with(Default::default)
+            .insert(cache_key, icon.clone());
+    }
+    Ok(icon)
+}
+
+#[tauri::command]
 pub async fn infer_analysis_role(state: State<'_, AppState>) -> Result<Option<String>, String> {
     let (settings, key) = settings::snapshot_with_api_key(&state.settings);
     let catalog = read_roles(&settings.base_url, key.as_deref()).await?;

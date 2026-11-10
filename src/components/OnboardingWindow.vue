@@ -6,6 +6,7 @@ import type { BackendProbe, Settings } from '@/types/protocol'
 import RuneButton from './RuneButton.vue'
 import OnboardingLocalModel from './OnboardingLocalModel.vue'
 import OnboardingCloudModel from './OnboardingCloudModel.vue'
+import McpIcon from './McpIcon.vue'
 import TitleBar from './TitleBar.vue'
 
 type Choice = 'local' | 'cloud'
@@ -364,6 +365,7 @@ async function proceed() {
       <div v-for="starter in starters" :key="starter.name" class="mcp-starter-box">
         <div class="mcp-starter-info">
           <div class="mcp-starter-title">
+            <McpIcon :name="starter.name" />
             <strong>{{ starter.title }}</strong>
             <span v-if="mcpInstalled[starter.name]" class="mcp-badge success">Installed</span>
           </div>

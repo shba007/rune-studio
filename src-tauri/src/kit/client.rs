@@ -307,6 +307,65 @@ pub async fn kit_packages(config: Config) -> Result<Value, String> {
     Ok(value)
 }
 
+#[tauri::command]
+pub async fn kit_registry(config: Config) -> Result<Value, String> {
+    let (client, mut url) = management_client(&config)?;
+    url.set_path("/management/registry");
+    let mut request = client.get(url).timeout(Duration::from_secs(20));
+    if let Some(token) = stored_kit_token()? {
+        request = request.bearer_auth(token);
+    }
+    let mut response = management_response(request.send().await.map_err(|e| {
+        send_error(e, &config, "Check that Kit is running and up to date.")
+    })?)
+    .await?;
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|e| e.to_string())? {
+        if bytes.len() + chunk.len() > LIMIT {
+            return Err("Kit registry list is too large".into());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    let value: Value = serde_json::from_slice(&bytes).map_err(|_| "Invalid Kit registry list")?;
+    if !value.is_array() {
+        return Err("Invalid Kit registry list".into());
+    }
+    Ok(value)
+}
+
+#[tauri::command]
+pub async fn kit_icon(config: Config, name: String) -> Result<Option<String>, String> {
+    if name.is_empty()
+        || name.len() > 64
+        || !name
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    {
+        return Ok(None);
+    }
+    let (client, mut url) = management_client(&config)?;
+    url.set_path(&format!("/management/icons/{name}"));
+    let mut request = client.get(url);
+    if let Some(token) = stored_kit_token()? {
+        request = request.bearer_auth(token);
+    }
+    let Ok(response) = request.send().await else {
+        return Ok(None);
+    };
+    if !response.status().is_success() {
+        return Ok(None);
+    }
+    let bytes = response.bytes().await.map_err(|e| e.to_string())?;
+    if bytes.len() > 64 * 1024 {
+        return Ok(None);
+    }
+    use base64::Engine;
+    Ok(Some(format!(
+        "data:image/svg+xml;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    )))
+}
+
 #[derive(Deserialize, Serialize)]
 pub struct PackageInstall {
     kind: String,

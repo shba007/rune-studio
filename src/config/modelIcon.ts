@@ -1,15 +1,25 @@
-export function modelIcon(model: string) {
-  const families: [RegExp, string][] = [
-    [/qwen|qwq/i, 'qwen'],
-    [/deepseek/i, 'deepseek'],
-    [/(?:^|[/_-])(?:lfm\d|liquid(?:ai)?(?:[-_/]|$))/i, 'liquid'],
-    [/gemma/i, 'gemma'],
-    [/gemini/i, 'gemini'],
-    [/claude/i, 'claude'],
-    [/llama|(?:^|\/)meta(?:[-/]|$)/i, 'meta'],
-    [/mistral|mixtral|ministral|codestral|devstral/i, 'mistral'],
-    [/(?:^|[/-])phi[-\d]|microsoft/i, 'microsoft'],
-    [/gpt|chatgpt|openai|(?:^|\/)o[134](?:[-/]|$)/i, 'openai'],
-  ]
-  return `/model/${families.find(([pattern]) => pattern.test(model))?.[1] ?? 'model'}.svg`
+import { invoke } from '@tauri-apps/api/core'
+
+export const GENERIC_MODEL_ICON = '/model/model.svg'
+
+const loaded = new Map<string, Promise<string>>()
+
+export function loadModelIcon(model: string): Promise<string> {
+  const id = model.trim()
+  if (!id) return Promise.resolve(GENERIC_MODEL_ICON)
+  let icon = loaded.get(id)
+  if (!icon) {
+    icon = invoke<string | null>('infer_model_icon', { model: id })
+      .then((uri) => uri || GENERIC_MODEL_ICON)
+      .catch(() => {
+        loaded.delete(id)
+        return GENERIC_MODEL_ICON
+      })
+    loaded.set(id, icon)
+  }
+  return icon
+}
+
+export function clearModelIcons() {
+  loaded.clear()
 }

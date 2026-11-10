@@ -6,6 +6,7 @@ import HubGroup from './HubGroup.vue'
 import HubInput from './HubInput.vue'
 import HubRow from './HubRow.vue'
 import HubToggle from './HubToggle.vue'
+import McpLibrary from './McpLibrary.vue'
 import { invoke } from '@tauri-apps/api/core'
 import { onMounted, ref, watch } from 'vue'
 defineProps<{ toolCalls?: string }>()
@@ -49,6 +50,7 @@ const status = ref(
   'Not connected. rune-kit 0.6.0 or newer with a compatible MCP protocol is required.',
 )
 const busy = ref(false)
+const configReady = ref(false)
 const token = ref('')
 const tokenPresent = ref(false)
 async function saveToken(value: string) {
@@ -275,6 +277,7 @@ onMounted(async () => {
   } catch (error) {
     status.value = String(error)
   }
+  configReady.value = true
 })
 function setEnabled(value: boolean) {
   config.value.enabled = value
@@ -296,6 +299,7 @@ function setSelected(name: string, value: boolean) {
       The selected agent model does not support tool calling. Choose a tool-capable model in Models
       settings.
     </p>
+    <McpLibrary v-if="configReady" v-model:config="config" />
     <HubGroup title="Kit tools">
       <HubToggle
         :model-value="config.enabled"
