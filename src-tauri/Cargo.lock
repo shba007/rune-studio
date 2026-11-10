@@ -3259,7 +3259,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2",
+ "windows-core 0.61.2",
 ]
 
 [[package]]
@@ -4851,7 +4851,7 @@ version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "680998035259dcfcafe653688bf2aa6d3e2dc05e98be6ab46afb089dc84f1df8"
 dependencies = [
- "proc-macro-crate 3.5.0",
+ "proc-macro-crate 1.3.1",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -5877,7 +5877,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b570b25f7617e43d59005d0990ccb79e950a423952cea19671b7a876da390adf"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -6455,8 +6455,8 @@ dependencies = [
 
 [[package]]
 name = "rune-infer"
-version = "0.19.0"
-source = "git+https://github.com/shba007/rune-infer.git?rev=d5bd9796fce1f74d04b397de967c31252eecc31c#d5bd9796fce1f74d04b397de967c31252eecc31c"
+version = "0.20.0"
+source = "git+https://github.com/shba007/rune-infer.git?rev=661c7c5ca4e6889ad7129e9d8f06ebbaa7695159#661c7c5ca4e6889ad7129e9d8f06ebbaa7695159"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -6488,8 +6488,8 @@ dependencies = [
 
 [[package]]
 name = "rune-kit"
-version = "0.8.0"
-source = "git+https://github.com/shba007/rune-kit.git?rev=465731a7a9d8c0d32ccf8ab4ee2d0aa6f8aa22d1#465731a7a9d8c0d32ccf8ab4ee2d0aa6f8aa22d1"
+version = "0.9.0"
+source = "git+https://github.com/shba007/rune-kit.git?rev=ecabdec16446e57006c3bb4f12e54ec664d016ad#ecabdec16446e57006c3bb4f12e54ec664d016ad"
 dependencies = [
  "async-trait",
  "axum",
