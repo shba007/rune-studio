@@ -468,35 +468,13 @@ function setSelected(name: string, value: boolean) {
         </p></template
       >
     </HubGroup>
-    <HubGroup title="Installed Kit packages">
-      <HubRow label="MCPs and skills" hint="Packages installed in Kit’s shared storage.">
+    <HubGroup title="Skills and custom packages">
+      <HubRow
+        label="Installed skills"
+        hint="Skills installed in Kit’s shared storage. Manage MCP servers above."
+      >
         <RuneButton size="sm" :disabled="packageBusy" @click="loadPackages"
           >Load packages</RuneButton
-        >
-      </HubRow>
-      <HubRow
-        v-for="item in packages.mcps"
-        :key="`mcp:${item.name}`"
-        :label="item.name"
-        :hint="`MCP · ${item.version}${item.description ? ` · ${item.description}` : ''}`"
-      >
-        <RuneButton
-          size="sm"
-          :disabled="packageBusy"
-          @click="packageAction('check', 'mcp', item.name)"
-          >Check update</RuneButton
-        >
-        <RuneButton
-          size="sm"
-          :disabled="packageBusy"
-          @click="packageAction('update', 'mcp', item.name)"
-          >Update</RuneButton
-        >
-        <RuneButton
-          size="sm"
-          :disabled="packageBusy"
-          @click="removePackage = { kind: 'mcp', name: item.name }"
-          >Remove</RuneButton
         >
       </HubRow>
       <HubRow label="Package type">

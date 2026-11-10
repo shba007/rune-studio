@@ -6489,7 +6489,7 @@ dependencies = [
 [[package]]
 name = "rune-kit"
 version = "0.8.0"
-source = "git+https://github.com/shba007/rune-kit.git?rev=872048b5dce6dd34f42028fb29e2e8bc5ee026cf#872048b5dce6dd34f42028fb29e2e8bc5ee026cf"
+source = "git+https://github.com/shba007/rune-kit.git?rev=465731a7a9d8c0d32ccf8ab4ee2d0aa6f8aa22d1#465731a7a9d8c0d32ccf8ab4ee2d0aa6f8aa22d1"
 dependencies = [
  "async-trait",
  "axum",

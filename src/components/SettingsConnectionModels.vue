@@ -12,6 +12,7 @@ import HubRow from './HubRow.vue'
 import HubToggle from './HubToggle.vue'
 import AppIcon from './AppIcon.vue'
 import ConnectionEditor from './ConnectionEditor.vue'
+import ModelIcon from './ModelIcon.vue'
 import ModelLibrary from './ModelLibrary.vue'
 import {
   useConnections,
@@ -333,8 +334,9 @@ watch(
             <li
               v-for="model in filteredModels"
               :key="model.id"
-              class="bg-rune-surface px-rune-2 py-rune-1 text-rune-body break-all text-rune-text-2"
+              class="flex items-center gap-rune-2 bg-rune-surface px-rune-2 py-rune-1 text-rune-body break-all text-rune-text-2"
             >
+              <ModelIcon :model="model.id" />
               {{ model.id }}
             </li>
           </ul>
