@@ -315,9 +315,12 @@ pub async fn kit_registry(config: Config) -> Result<Value, String> {
     if let Some(token) = stored_kit_token()? {
         request = request.bearer_auth(token);
     }
-    let mut response = management_response(request.send().await.map_err(|e| {
-        send_error(e, &config, "Check that Kit is running and up to date.")
-    })?)
+    let mut response = management_response(
+        request
+            .send()
+            .await
+            .map_err(|e| send_error(e, &config, "Check that Kit is running and up to date."))?,
+    )
     .await?;
     let mut bytes = Vec::new();
     while let Some(chunk) = response.chunk().await.map_err(|e| e.to_string())? {

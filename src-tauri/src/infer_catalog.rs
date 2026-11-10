@@ -243,53 +243,70 @@ pub async fn infer_agent_role(state: State<'_, AppState>) -> Result<Option<Strin
     Ok(configured_role(&catalog, "agent"))
 }
 
-#[tauri::command]
-pub async fn infer_model_remove(
-    state: State<'_, AppState>,
-    model: String,
-) -> Result<Vec<String>, String> {
+async fn model_request(
+    state: &State<'_, AppState>,
+    method: reqwest::Method,
+    model: &str,
+    action: Option<&str>,
+    timeout: u64,
+) -> Result<reqwest::Response, String> {
     let (settings, key) = settings::snapshot_with_api_key(&state.settings);
     let key = key
         .filter(|key| !key.trim().is_empty())
-        .ok_or("Removing a model requires an Infer API key")?;
+        .ok_or("Managing models requires an Infer API key")?;
     validate_url(&settings.base_url)?;
     let mut url = reqwest::Url::parse(&format!(
         "{}/v1/management/models/",
         settings.base_url.trim_end_matches('/')
     ))
     .map_err(|_| "Invalid Infer URL")?;
-    url.path_segments_mut()
-        .map_err(|_| "Invalid Infer URL")?
-        .pop_if_empty()
-        .push(&model);
+    {
+        let mut segments = url.path_segments_mut().map_err(|_| "Invalid Infer URL")?;
+        segments.pop_if_empty().push(model);
+        if let Some(action) = action {
+            segments.push(action);
+        }
+    }
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
-        .timeout(std::time::Duration::from_secs(60))
+        .timeout(std::time::Duration::from_secs(timeout))
         .build()
         .map_err(|_| "Cannot create Infer client")?;
-    let response = client
-        .delete(url)
+    client
+        .request(method, url)
         .bearer_auth(key)
         .send()
         .await
-        .map_err(|_| "Cannot reach Infer")?;
-    let status = response.status();
-    if !status.is_success() {
-        let message = match status.as_u16() {
-            401 => "Infer rejected the API key",
-            404 => "Model is not installed",
-            409 => "This model is used by a role or alias. Choose another model first.",
-            422 => "Only reviewed models downloaded by Rune can be removed",
-            501 | 405 => "This Infer server cannot remove models yet. Update Infer.",
-            _ => "Infer could not remove the model",
-        };
-        return Err(message.into());
+        .map_err(|_| "Cannot reach Infer".to_string())
+}
+
+fn model_error(status: u16, remove: bool) -> String {
+    match status {
+        401 => "Infer rejected the API key",
+        404 | 405 | 501 => "This Infer server cannot do that yet. Update Infer.",
+        409 if remove => "This model is used by a role or alias. Choose another model first.",
+        409 => "The model is busy. Try again in a moment.",
+        422 if remove => "Only reviewed models downloaded by Rune can be removed",
+        422 => "Only local models can be loaded or unloaded",
+        _ => "Infer could not change the model",
+    }
+    .into()
+}
+
+#[tauri::command]
+pub async fn infer_model_remove(
+    state: State<'_, AppState>,
+    model: String,
+) -> Result<Vec<String>, String> {
+    let response = model_request(&state, reqwest::Method::DELETE, &model, None, 60).await?;
+    if !response.status().is_success() {
+        return Err(model_error(response.status().as_u16(), true));
     }
     let body: serde_json::Value = response
         .json()
         .await
         .map_err(|_| "Invalid response from Infer")?;
-    let failed: Vec<String> = body
+    Ok(body
         .get("failed")
         .and_then(serde_json::Value::as_array)
         .map(|names| {
@@ -298,8 +315,21 @@ pub async fn infer_model_remove(
                 .filter_map(|name| name.as_str().map(str::to_owned))
                 .collect()
         })
-        .unwrap_or_default();
-    Ok(failed)
+        .unwrap_or_default())
+}
+
+#[tauri::command]
+pub async fn infer_model_residency(
+    state: State<'_, AppState>,
+    model: String,
+    load: bool,
+) -> Result<(), String> {
+    let action = if load { "load" } else { "unload" };
+    let response = model_request(&state, reqwest::Method::POST, &model, Some(action), 300).await?;
+    if !response.status().is_success() {
+        return Err(model_error(response.status().as_u16(), false));
+    }
+    Ok(())
 }
 
 static ICONS: std::sync::Mutex<Option<std::collections::HashMap<String, Option<String>>>> =

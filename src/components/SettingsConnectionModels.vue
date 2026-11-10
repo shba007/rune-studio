@@ -66,6 +66,11 @@ const visibleStatus = computed(() =>
     ? props.agent.backend.value
     : null,
 )
+const modelStatuses = computed(() =>
+  Object.fromEntries(
+    (visibleStatus.value?.models ?? []).map((model) => [model.id, model.status ?? undefined]),
+  ),
+)
 const discovered = computed(() => visibleStatus.value?.models ?? [])
 const filteredModels = computed(() => {
   const query = modelSearch.value.trim().toLowerCase()
@@ -117,6 +122,7 @@ watch(
         v-if="embeddedChecked"
         :downloads="embeddedAvailable"
         :busy="connections.pending.value || !!agent.isRunning?.value"
+        :statuses="modelStatuses"
         @used="modelsChanged"
       />
       <section class="flex flex-col gap-rune-1" aria-label="Model connections">

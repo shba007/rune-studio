@@ -58,7 +58,7 @@ async function setup() {
     latencyMs: 5,
     error: null,
     models: [
-      { id: 'qwen', locality: 'local' },
+      { id: 'qwen', locality: 'local', status: 'available' },
       { id: 'gemma', locality: 'unknown' },
     ] as ModelCapabilities[],
   })
@@ -169,7 +169,7 @@ it('explains an empty local model list', async () => {
 it('lists installed models on device and makes one the agent model', async () => {
   const catalog = {
     models: [
-      { id: 'qwen3.5-4b-q4', name: 'Qwen 4B', local: { path: 'qwen/a.gguf' } },
+      { id: 'qwen', name: 'Qwen 4B', local: { path: 'qwen/a.gguf' } },
       { id: 'cloud', name: 'Cloud', remote: { provider: 'x' } },
     ],
   }
@@ -189,10 +189,16 @@ it('lists installed models on device and makes one the agent model', async () =>
     .find((button) => button.text() === 'Confirm remove')!
     .trigger('click')
   await flushPromises()
-  expect(harness.invoke).toHaveBeenCalledWith('infer_model_remove', { model: 'qwen3.5-4b-q4' })
+  expect(harness.invoke).toHaveBeenCalledWith('infer_model_remove', { model: 'qwen' })
+  await wrapper.get('[aria-label="Load Qwen 4B into memory"]').trigger('click')
+  await flushPromises()
+  expect(harness.invoke).toHaveBeenCalledWith('infer_model_residency', {
+    model: 'qwen',
+    load: true,
+  })
   await wrapper.get('[aria-label="Use Qwen 4B"]').trigger('click')
   await flushPromises()
-  expect(harness.invoke).toHaveBeenCalledWith('infer_select_agent', { model: 'qwen3.5-4b-q4' })
+  expect(harness.invoke).toHaveBeenCalledWith('infer_select_agent', { model: 'qwen' })
   wrapper.unmount()
 })
 it('stages edits until Save and preserves shared model roles and Decision URL', async () => {

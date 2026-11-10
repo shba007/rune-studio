@@ -363,6 +363,7 @@ pub fn run() {
             infer_catalog::infer_agent_role,
             infer_catalog::infer_model_icon,
             infer_catalog::infer_model_remove,
+            infer_catalog::infer_model_residency,
             infer_catalog::infer_analysis_role,
             infer_catalog::infer_visual_roles,
             commands::embedded_model_candidates,

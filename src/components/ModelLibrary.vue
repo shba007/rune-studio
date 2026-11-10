@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core'
 import DownloadProgress from './DownloadProgress.vue'
 import ModelIcon from './ModelIcon.vue'
 import RuneButton from './RuneButton.vue'
+import RuneSwitch from './RuneSwitch.vue'
 
 type Candidate = {
   id: string
@@ -25,7 +26,11 @@ type DownloadStatus = {
 }
 type Installed = { id: string; name: string; path: string }
 
-const props = defineProps<{ downloads: boolean; busy: boolean }>()
+const props = defineProps<{
+  downloads: boolean
+  busy: boolean
+  statuses?: Record<string, string | null | undefined>
+}>()
 const emit = defineEmits<{ used: [] }>()
 
 const tab = ref<'discover' | 'device'>(props.downloads ? 'discover' : 'device')
@@ -39,6 +44,7 @@ const starting = ref(false)
 const error = ref('')
 const unavailable = ref('')
 const removing = ref<string | null>(null)
+const switching = ref('')
 let timer: ReturnType<typeof setInterval> | undefined
 let disposed = false
 
@@ -152,6 +158,18 @@ async function useInstalled(model: Installed) {
     error.value = String(e)
   } finally {
     starting.value = false
+  }
+}
+async function setLoaded(model: Installed, load: boolean) {
+  switching.value = model.id
+  error.value = ''
+  try {
+    await invoke('infer_model_residency', { model: model.id, load })
+    emit('used')
+  } catch (e) {
+    error.value = String(e)
+  } finally {
+    switching.value = ''
   }
 }
 async function removeInstalled(model: Installed) {
@@ -332,6 +350,22 @@ onBeforeUnmount(() => {
             @click="useInstalled(model)"
             >Use</RuneButton
           >
+          <span class="text-rune-caption text-rune-text-3">{{
+            switching === model.id
+              ? 'Working…'
+              : statuses?.[model.id] === 'loading'
+                ? 'Loading…'
+                : statuses?.[model.id] === 'loaded'
+                  ? 'In memory'
+                  : ''
+          }}</span>
+          <RuneSwitch
+            v-if="statuses && statuses[model.id] !== undefined"
+            :model-value="statuses[model.id] === 'loaded'"
+            :label="`Load ${model.name} into memory`"
+            :disabled="starting || busy || !!switching || statuses[model.id] === 'loading'"
+            @update:model-value="setLoaded(model, $event)"
+          />
           <RuneButton
             v-if="removing !== model.id"
             variant="ghost"
