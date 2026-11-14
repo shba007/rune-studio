@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.14.0
+
+[compare changes](https://github.com/shba007/rune-studio/compare/v0.13.0...v0.14.0)
+
+### 🚀 Enhancements
+
+- Enhance model icon handling and introduce modellibrary component ([ce33cd1](https://github.com/shba007/rune-studio/commit/ce33cd1))
+- Implement model residency management and enhance model handling in UI ([b6b0fd5](https://github.com/shba007/rune-studio/commit/b6b0fd5))
+- Update rune-kit dependency and enhance UI components with model icons ([bb8af76](https://github.com/shba007/rune-studio/commit/bb8af76))
+- Update dependencies for rune-infer and rune-kit to latest versions ([8e4b75d](https://github.com/shba007/rune-studio/commit/8e4b75d))
+
+### 💅 Refactors
+
+- Remove outdated use case documentation and update Cargo.toml for zip dependency ([f261c97](https://github.com/shba007/rune-studio/commit/f261c97))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+
 ## v0.13.0
 
 [compare changes](https://github.com/shba007/rune-studio/compare/v0.12.0...v0.13.0)
