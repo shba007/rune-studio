@@ -1,4 +1,5 @@
 import { mockIPC } from '@tauri-apps/api/mocks'
+import { emit } from '@tauri-apps/api/event'
 
 import {
   drawnShot,
@@ -87,6 +88,48 @@ function analysisFixture() {
 }
 
 export function installTauriMock() {
+  let runSerial = 0
+  let demoScheduled = false
+  async function scriptedRun() {
+    const serial = ++runSerial
+    await emit('task_started')
+    await emit('state_changed', { state: 'acting' })
+    await emit('plan_updated', { goals: ['Prepare a note'], current: 0, finished: false })
+    const script = [
+      { tool: 'click', text: 'Open the notes field', detail: 'Project notes window', ok: true },
+      { tool: 'type', text: 'Write the note', detail: 'Buy milk and call Sam', ok: true },
+      {
+        tool: 'click',
+        text: 'Save the note',
+        detail: 'Save button unavailable (scripted failure)',
+        ok: false,
+      },
+    ]
+    for (const [index, item] of script.entries()) {
+      if (serial !== runSerial) return
+      await emit('step_started', {
+        step: index + 1,
+        tool: item.tool,
+        text: item.text,
+        detail: item.detail,
+        reason: '',
+        point: null,
+        double: false,
+        button: 'left',
+        durationMs: 0,
+      })
+      await new Promise((resolve) => setTimeout(resolve, 2500))
+      if (serial !== runSerial) return
+      await emit('step_finished', { step: index + 1, ok: item.ok })
+      await new Promise((resolve) => setTimeout(resolve, 700))
+    }
+    if (serial !== runSerial) return
+    await emit('task_done', {
+      summary: 'Scripted run: the note could not be saved.',
+      success: false,
+    })
+    await emit('state_changed', { state: 'failed' })
+  }
   const videoParam = new URLSearchParams(location.search).get('video')
   const withVideo = videoParam !== null
   const agentParam = new URLSearchParams(location.search).get('agent')
@@ -94,6 +137,13 @@ export function installTauriMock() {
     (command, args) => {
       const given = (args ?? {}) as Record<string, unknown>
       switch (command) {
+        case 'start_task':
+          void scriptedRun()
+          return null
+        case 'stop':
+          runSerial++
+          void emit('state_changed', { state: 'stopped' })
+          return null
         case 'external_agent':
           return agentParam
             ? {
@@ -356,6 +406,12 @@ export function installTauriMock() {
             oriented: '',
           }
         case 'check_backend':
+          if (!demoScheduled && new URLSearchParams(location.search).get('demo') === 'live-steps') {
+            demoScheduled = true
+            setTimeout(() => {
+              void emit('summon').then(() => scriptedRun())
+            }, 1000)
+          }
           return {
             revision: Date.now(),
             status: {

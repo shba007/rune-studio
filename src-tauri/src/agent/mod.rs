@@ -1469,7 +1469,14 @@ async fn run(
             let name = name.clone();
             let args = arguments.clone();
             let token = cancel.clone();
-            body::announce(app, step, &reason, &action, &frame.monitor);
+            body::announce(
+                app,
+                step,
+                &reason,
+                &action,
+                &frame.monitor,
+                Some(reply.served_model.as_deref().unwrap_or(client.model)),
+            );
             events::set_agent_state(app, AgentState::Acting);
             let started = Instant::now();
             let result = tauri::async_runtime::spawn_blocking(move || {
@@ -1530,7 +1537,14 @@ async fn run(
             acted = None;
             continue;
         }
-        let described = body::announce(app, step, &reason, &action, &frame.monitor);
+        let described = body::announce(
+            app,
+            step,
+            &reason,
+            &action,
+            &frame.monitor,
+            Some(reply.served_model.as_deref().unwrap_or(client.model)),
+        );
         let acted_now = stuck::Acted::new(action.tool_name(), action.describe());
         events::set_agent_state(app, AgentState::Acting);
         let settle = body::settle_time(&action);

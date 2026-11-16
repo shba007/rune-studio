@@ -40,7 +40,7 @@ const panel = useTemplateRef<HTMLElement>('panel')
 watch(error, async (value) => {
   if (!value) return
   await nextTick()
-  panel.value?.scrollTo({ top: panel.value.scrollHeight })
+  panel.value?.scrollTo?.({ top: panel.value.scrollHeight })
 })
 const folder = ref('')
 const found = ref<Found[]>([])
@@ -144,10 +144,11 @@ async function retryStart() {
 }
 onMounted(async () => {
   try {
-    const available = await invoke<Candidate[]>('embedded_model_candidates')
-    models.value = Array.isArray(available)
-      ? available.filter((model) => model.id.startsWith('holo'))
-      : []
+    await invoke('start_embedded_infer')
+    const available = await invoke<Candidate[]>('embedded_model_candidates', {
+      purpose: 'computer-use',
+    })
+    models.value = Array.isArray(available) ? available : []
     selectedId.value = models.value.find((model) => model.recommended)?.id ?? ''
     await refresh()
     if (active.value) poll()
@@ -165,7 +166,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div ref="panel" class="local-setup">
-    <p v-if="loading">Loading models…</p>
+    <p v-if="loading">Setting up Infer and loading models…</p>
     <template v-else>
       <div class="model-heading">
         <span>Local models</span>
@@ -204,12 +205,12 @@ onBeforeUnmount(() => {
           No reliable fit was detected. Select a model to continue.
         </p>
         <p v-if="selected?.sourceUrl" class="source">Source: {{ selected.sourceUrl }}</p>
-        <p v-if="models[0]?.recommendationBasis">
-          {{ models[0].recommendationBasis }}. Actual performance may vary.
+        <p v-if="selected?.recommendationBasis">
+          {{ selected.recommendationBasis }}. Actual performance may vary.
         </p>
         <p>
-          Models run on your computer. These Holo models have not yet been validated with Studio.
-          Sizes exclude engine and temporary files.
+          Models run on your computer. Compatibility and performance can vary. Sizes exclude engine
+          and temporary files.
         </p>
       </div>
       <RuneButton

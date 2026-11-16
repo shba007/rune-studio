@@ -7,6 +7,126 @@ const api = vi.hoisted(() => ({
 }))
 vi.mock('@tauri-apps/api/core', () => ({ invoke: api.invoke }))
 
+it('shows Kit-owned sandbox workspaces and approval records', async () => {
+  api.invoke.mockReset()
+  api.invoke.mockImplementation(async (command: string) => {
+    if (command === 'kit_settings')
+      return { enabled: true, endpoint: 'http://127.0.0.1:47601/mcp', selected: [] }
+    if (command === 'kit_sandbox_inventory')
+      return {
+        workspace_only: true,
+        plugins: [
+          {
+            plugin: 'example',
+            workspace: '/sandbox/example',
+            approvals: [{ path: '/files/report.txt', kind: 'file' }],
+          },
+          { plugin: 'new', workspace: null, approvals: [] },
+        ],
+      }
+    if (command === 'kit_token_present') return false
+  })
+  const wrapper = mount(SettingsTools)
+  await flushPromises()
+  await wrapper
+    .findAll('button')
+    .find((button) => button.text() === 'Load sandbox')!
+    .trigger('click')
+  await flushPromises()
+  expect(api.invoke).toHaveBeenCalledWith('kit_sandbox_inventory', {
+    config: expect.objectContaining({ endpoint: 'http://127.0.0.1:47601/mcp' }),
+  })
+  expect(wrapper.text()).toContain('/sandbox/example')
+  expect(wrapper.text()).toContain('/files/report.txt')
+  expect(wrapper.text()).toContain('Workspace not created')
+  expect(wrapper.text()).toContain('do not by themselves change runtime permissions')
+  wrapper.unmount()
+})
+
+it('requires explicit confirmation before applying or restoring a reviewed item', async () => {
+  api.invoke.mockReset()
+  api.invoke.mockImplementation(async (command: string) => {
+    if (command === 'kit_settings')
+      return { enabled: true, endpoint: 'http://127.0.0.1:47601/mcp', selected: [] }
+    if (command === 'kit_changes_inventory')
+      return {
+        plugins: [
+          {
+            plugin: 'example',
+            reviews: [
+              {
+                path: '/original',
+                staged_path: '/staged',
+                deleted: false,
+                baseline: 'old-hash',
+                staged_digest: 'new-hash',
+                approval: 'a'.repeat(64),
+              },
+            ],
+            recoveries: [
+              {
+                path: '/original',
+                id: 'recovery-1',
+                backup_path: '/backup',
+                completed: null,
+                approval: 'b'.repeat(64),
+              },
+            ],
+          },
+        ],
+      }
+    if (command === 'kit_token_present') return false
+  })
+  const wrapper = mount(SettingsTools)
+  await flushPromises()
+  await wrapper
+    .findAll('button')
+    .find((button) => button.text() === 'Load changes')!
+    .trigger('click')
+  await flushPromises()
+  expect(wrapper.text()).toContain('example: Modify')
+  expect(wrapper.text()).toContain('/staged')
+  expect(wrapper.text()).toContain('old-hash')
+  expect(wrapper.text()).toContain('Unresolved backup')
+  expect(wrapper.text()).toContain('/backup')
+  expect(wrapper.text()).toContain('Kit rejects stale reviews')
+  expect(api.invoke).toHaveBeenCalledWith('kit_changes_inventory', expect.anything())
+  await wrapper
+    .findAll('button')
+    .find((button) => button.text() === 'Review apply')!
+    .trigger('click')
+  expect(api.invoke.mock.calls.some(([command]) => command === 'kit_change_action')).toBe(false)
+  expect(wrapper.text()).toContain('Confirm file change')
+  await wrapper
+    .findAll('button')
+    .find((button) => button.text() === 'Confirm apply')!
+    .trigger('click')
+  await flushPromises()
+  expect(api.invoke).toHaveBeenCalledWith(
+    'kit_change_action',
+    expect.objectContaining({
+      action: { plugin: 'example', action: 'apply', approval: 'a'.repeat(64) },
+    }),
+  )
+  await wrapper
+    .findAll('button')
+    .find((button) => button.text() === 'Review restore')!
+    .trigger('click')
+  expect(wrapper.text()).toContain('Confirm backup restore')
+  await wrapper
+    .findAll('button')
+    .find((button) => button.text() === 'Confirm restore')!
+    .trigger('click')
+  await flushPromises()
+  expect(api.invoke).toHaveBeenCalledWith(
+    'kit_change_action',
+    expect.objectContaining({
+      action: { plugin: 'example', action: 'restore', approval: 'b'.repeat(64) },
+    }),
+  )
+  wrapper.unmount()
+})
+
 it('loads Kit fields and sends secret updates to Kit without retaining the secret', async () => {
   api.invoke.mockReset()
   api.invoke.mockImplementation(async (command: string) => {

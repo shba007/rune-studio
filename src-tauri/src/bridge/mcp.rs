@@ -670,6 +670,8 @@ async fn analyze(app: &AppHandle, arguments: &Value) -> Reply {
         events::STEP_STARTED,
         events::StepStarted {
             step,
+            kind: "screen",
+            model: None,
             tool: "analyze",
             reason: question.clone(),
             text: "Analyzing the screen".into(),
@@ -907,7 +909,7 @@ async fn act_turn(
     };
 
     let action = decision.action;
-    let described = body::announce(app, step, &decision.reason, &action, &monitor);
+    let described = body::announce(app, step, &decision.reason, &action, &monitor, None);
     events::set_agent_state(app, AgentState::Acting);
     let settle = body::settle_time(&action);
     let worker_cancel = cancel.clone();

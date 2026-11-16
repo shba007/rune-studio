@@ -133,7 +133,7 @@ impl EmbeddedManager {
     }
 }
 
-fn infer_root() -> Result<std::path::PathBuf, String> {
+pub(crate) fn infer_root() -> Result<std::path::PathBuf, String> {
     if std::env::var_os("RUNE_HOME")
         .filter(|value| !value.is_empty())
         .is_some_and(|value| !Path::new(&value).is_absolute())
@@ -201,6 +201,106 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    #[ignore = "starts an isolated embedded Infer server"]
+    async fn fresh_infer_setup_serves_model_candidates() {
+        let home = tempfile::tempdir().unwrap();
+        rune_infer::embedding::prepare_config(home.path()).unwrap();
+        let server_path = home.path().join("config/server.json");
+        let catalog_path = home.path().join("config/catalog.json");
+        let server_before = std::fs::read(&server_path).unwrap();
+        let catalog_before = std::fs::read(&catalog_path).unwrap();
+        let infer = EmbeddedInfer::start(home.path()).await.unwrap();
+        let all = crate::infer_catalog::read_model_candidates(
+            &infer.base_url,
+            Some(&infer.api_key),
+            "all",
+        )
+        .await
+        .unwrap();
+        let computer = crate::infer_catalog::read_model_candidates(
+            &infer.base_url,
+            Some(&infer.api_key),
+            "computer-use",
+        )
+        .await
+        .unwrap();
+        let all = all.as_array().unwrap();
+        let computer = computer.as_array().unwrap();
+        assert!(!all.is_empty() && !computer.is_empty());
+        assert!(
+            computer
+                .iter()
+                .all(|candidate| all.iter().any(|model| model["id"] == candidate["id"]))
+        );
+        assert!(
+            computer
+                .iter()
+                .filter(|candidate| candidate["recommended"] == true)
+                .count()
+                <= 1
+        );
+        infer.shutdown().await.unwrap();
+        assert_eq!(std::fs::read(server_path).unwrap(), server_before);
+        assert_eq!(std::fs::read(catalog_path).unwrap(), catalog_before);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires the Infer model-management API and starts an isolated server"]
+    async fn embedded_infer_serves_model_management() {
+        let home = tempfile::tempdir().unwrap();
+        rune_infer::embedding::prepare_config(home.path()).unwrap();
+        let infer = EmbeddedInfer::start(home.path()).await.unwrap();
+        let status = crate::infer_catalog::model_download_request(
+            &infer.base_url,
+            Some(&infer.api_key),
+            reqwest::Method::GET,
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(status["phase"].is_string());
+        let found = crate::infer_catalog::scan_models_request(
+            &infer.base_url,
+            Some(&infer.api_key),
+            home.path().to_str().unwrap(),
+        )
+        .await
+        .unwrap();
+        assert!(found.as_array().unwrap().is_empty());
+        crate::infer_catalog::model_download_request(
+            &infer.base_url,
+            Some(&infer.api_key),
+            reqwest::Method::DELETE,
+            None,
+        )
+        .await
+        .unwrap();
+        infer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires the Infer engine-cancellation API and starts an isolated server"]
+    async fn embedded_infer_engine_cancellation_requires_auth_and_a_job() {
+        let home = tempfile::tempdir().unwrap();
+        rune_infer::embedding::prepare_config(home.path()).unwrap();
+        let infer = EmbeddedInfer::start(home.path()).await.unwrap();
+        let client = reqwest::Client::new();
+        let url = format!("{}/v1/management/engines/needle/update", infer.base_url);
+        assert_eq!(client.delete(&url).send().await.unwrap().status(), 401);
+        assert_eq!(
+            client
+                .delete(&url)
+                .bearer_auth(&infer.api_key)
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            404
+        );
+        infer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn private_server_serves_selected_model_and_stops() {
         let mut configured = crate::settings::Settings::default();
         configured.connections[0].id = "studio-embedded-infer".into();
@@ -238,6 +338,181 @@ mod tests {
         let effective = crate::infer_catalog::read_roles(&infer.base_url, Some(&infer.api_key))
             .await
             .unwrap();
+        let engines = crate::infer_catalog::read_engines(&infer.base_url, Some(&infer.api_key))
+            .await
+            .unwrap();
+        assert!(
+            engines["engines"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|engine| { engine["name"] == "encoder" && engine["installed"] == true })
+        );
+        assert!(engines["engines"].as_array().unwrap().iter().any(|engine| {
+            engine["name"] == "needle" && engine["release_check_available"] == true
+        }));
+        assert!(engines["engines"].as_array().unwrap().iter().any(|engine| {
+            engine["name"] == "needle" && engine["installation_available"] == true
+        }));
+        assert!(
+            crate::infer_catalog::engine_installation_request(
+                &infer.base_url,
+                Some(&infer.api_key),
+                "encoder",
+                true
+            )
+            .await
+            .unwrap_err()
+            .contains("400")
+        );
+        assert!(
+            crate::infer_catalog::engine_installation_request(
+                &infer.base_url,
+                Some(&infer.api_key),
+                "needle",
+                false
+            )
+            .await
+            .unwrap_err()
+            .contains("404")
+        );
+        if std::env::var_os("RUNE_VERIFY_ENGINE_INSTALL").is_some() {
+            let job = crate::infer_catalog::engine_installation_request(
+                &infer.base_url,
+                Some(&infer.api_key),
+                "needle",
+                true,
+            )
+            .await
+            .unwrap();
+            assert_eq!(job["status"], "running");
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(240);
+            loop {
+                let job = crate::infer_catalog::engine_installation_request(
+                    &infer.base_url,
+                    Some(&infer.api_key),
+                    "needle",
+                    false,
+                )
+                .await
+                .unwrap();
+                if job["status"] != "running" {
+                    assert_eq!(job["status"], "completed", "{job}");
+                    break;
+                }
+                assert!(
+                    tokio::time::Instant::now() < deadline,
+                    "Engine installation timed out"
+                );
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+            let installed =
+                crate::infer_catalog::read_engines(&infer.base_url, Some(&infer.api_key))
+                    .await
+                    .unwrap();
+            assert!(
+                installed["engines"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|entry| entry["name"] == "needle"
+                        && entry["installed"] == true
+                        && entry["managed"] == true)
+            );
+            assert!(
+                installed["engines"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|entry| entry["name"] == "needle" && entry["update_available"] == true)
+            );
+            let binary = home.path().join("bin/needle").join(if cfg!(windows) {
+                "needle.exe"
+            } else {
+                "needle"
+            });
+            let original = std::fs::read(&binary).unwrap();
+            assert!(
+                crate::infer_catalog::engine_installation_request(
+                    &infer.base_url,
+                    Some(&infer.api_key),
+                    "needle",
+                    true
+                )
+                .await
+                .unwrap_err()
+                .contains("409")
+            );
+            let job = crate::infer_catalog::engine_operation_request(
+                &infer.base_url,
+                Some(&infer.api_key),
+                "needle",
+                "update",
+                true,
+            )
+            .await
+            .unwrap();
+            assert_eq!(job["operation"], "update");
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+            loop {
+                let job = crate::infer_catalog::engine_operation_request(
+                    &infer.base_url,
+                    Some(&infer.api_key),
+                    "needle",
+                    "update",
+                    false,
+                )
+                .await
+                .unwrap();
+                if job["status"] != "running" {
+                    assert_eq!(job["status"], "completed", "{job}");
+                    assert!(job["message"].as_str().unwrap().contains("up to date"));
+                    break;
+                }
+                assert!(
+                    tokio::time::Instant::now() < deadline,
+                    "Engine update timed out"
+                );
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            assert_eq!(std::fs::read(binary).unwrap(), original);
+        }
+        assert_eq!(
+            client
+                .post(format!(
+                    "{}/v1/management/engines/needle/release-check",
+                    infer.base_url
+                ))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            401
+        );
+        assert!(
+            crate::infer_catalog::read_engine_release(
+                &infer.base_url,
+                Some(&infer.api_key),
+                "encoder"
+            )
+            .await
+            .unwrap_err()
+            .contains("400")
+        );
+        if std::env::var_os("RUNE_VERIFY_ENGINE_RELEASE").is_some() {
+            let release = crate::infer_catalog::read_engine_release(
+                &infer.base_url,
+                Some(&infer.api_key),
+                "needle",
+            )
+            .await
+            .unwrap();
+            assert!(
+                release["latest"]
+                    .as_str()
+                    .is_some_and(|value| value.starts_with("revision "))
+            );
+        }
         assert_eq!(
             crate::infer_catalog::configured_role(&effective, "agent").as_deref(),
             Some("fixture")

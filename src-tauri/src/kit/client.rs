@@ -252,6 +252,163 @@ struct KitRemotes {
     servers: Vec<KitRemote>,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct KitSandboxApproval {
+    path: String,
+    kind: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct KitSandboxPlugin {
+    plugin: String,
+    workspace: Option<String>,
+    approvals: Vec<KitSandboxApproval>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct KitSandboxInventory {
+    workspace_only: bool,
+    plugins: Vec<KitSandboxPlugin>,
+}
+
+async fn sandbox_inventory_request(
+    config: &Config,
+    token: Option<&str>,
+) -> Result<KitSandboxInventory, String> {
+    let (client, mut url) = management_client(config)?;
+    url.set_path("/management/sandbox");
+    let mut request = client.get(url);
+    if let Some(token) = token {
+        request = request.bearer_auth(token);
+    }
+    let mut response = management_response(
+        request
+            .send()
+            .await
+            .map_err(|e| send_error(e, config, "Check that Kit is running."))?,
+    )
+    .await?;
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|e| e.to_string())? {
+        if bytes.len() + chunk.len() > LIMIT {
+            return Err("Kit sandbox inventory is too large".into());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    serde_json::from_slice(&bytes).map_err(|_| "Invalid Kit sandbox inventory".into())
+}
+
+#[tauri::command]
+pub async fn kit_sandbox_inventory(config: Config) -> Result<KitSandboxInventory, String> {
+    let token = stored_kit_token()?;
+    sandbox_inventory_request(&config, token.as_deref()).await
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct KitStagedChange {
+    path: String,
+    staged_path: String,
+    deleted: bool,
+    baseline: Option<String>,
+    staged_digest: Option<String>,
+    approval: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct KitRecovery {
+    path: String,
+    id: String,
+    backup_path: String,
+    completed: Option<u64>,
+    approval: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct KitPluginChanges {
+    plugin: String,
+    reviews: Vec<KitStagedChange>,
+    recoveries: Vec<KitRecovery>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct KitChangesInventory {
+    plugins: Vec<KitPluginChanges>,
+}
+
+async fn changes_inventory_request(
+    config: &Config,
+    token: Option<&str>,
+) -> Result<KitChangesInventory, String> {
+    let (client, mut url) = management_client(config)?;
+    url.set_path("/management/changes");
+    let mut request = client.get(url);
+    if let Some(token) = token {
+        request = request.bearer_auth(token);
+    }
+    let mut response = management_response(
+        request
+            .send()
+            .await
+            .map_err(|e| send_error(e, config, "Check that Kit is running."))?,
+    )
+    .await?;
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|e| e.to_string())? {
+        if bytes.len() + chunk.len() > LIMIT {
+            return Err("Kit change inventory is too large".into());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    serde_json::from_slice(&bytes).map_err(|_| "Invalid Kit change inventory".into())
+}
+
+#[tauri::command]
+pub async fn kit_changes_inventory(config: Config) -> Result<KitChangesInventory, String> {
+    let token = stored_kit_token()?;
+    changes_inventory_request(&config, token.as_deref()).await
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct KitChangeAction {
+    plugin: String,
+    action: String,
+    approval: String,
+}
+
+async fn change_action_request(
+    config: &Config,
+    token: Option<&str>,
+    action: &KitChangeAction,
+) -> Result<(), String> {
+    if action.plugin.is_empty()
+        || !matches!(action.action.as_str(), "apply" | "restore")
+        || action.approval.len() != 64
+        || !action.approval.bytes().all(|b| b.is_ascii_hexdigit())
+    {
+        return Err("Invalid Kit change approval".into());
+    }
+    let (client, mut url) = management_client(config)?;
+    url.set_path("/management/changes");
+    let mut request = client.post(url).json(action);
+    if let Some(token) = token {
+        request = request.bearer_auth(token);
+    }
+    management_response(
+        request
+            .send()
+            .await
+            .map_err(|e| send_error(e, config, "Reload the review before retrying."))?,
+    )
+    .await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn kit_change_action(config: Config, action: KitChangeAction) -> Result<(), String> {
+    let token = stored_kit_token()?;
+    change_action_request(&config, token.as_deref(), &action).await
+}
+
 #[tauri::command]
 pub async fn kit_remotes(config: Config) -> Result<Vec<KitRemote>, String> {
     let (client, mut url) = management_client(&config)?;
@@ -845,6 +1002,226 @@ fn bounded(value: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn sandbox_inventory_uses_authenticated_kit_management() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut bytes = [0; 4096];
+            let count = stream.read(&mut bytes).unwrap();
+            let request = String::from_utf8_lossy(&bytes[..count]).to_ascii_lowercase();
+            assert!(request.starts_with("get /management/sandbox "));
+            assert!(request.contains("authorization: bearer test-key"));
+            let body = r#"{"workspace_only":true,"plugins":[{"plugin":"fixture","workspace":null,"approvals":[{"path":"/source","kind":"file"}]}]}"#;
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .unwrap();
+        });
+        let config = Config {
+            endpoint: format!("http://{address}/mcp"),
+            ..Config::default()
+        };
+        let result = sandbox_inventory_request(&config, Some("test-key"))
+            .await
+            .unwrap();
+        assert!(result.workspace_only);
+        assert_eq!(result.plugins[0].plugin, "fixture");
+        assert_eq!(result.plugins[0].approvals[0].path, "/source");
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn changes_inventory_uses_authenticated_kit_management() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut bytes = [0; 4096];
+            let count = stream.read(&mut bytes).unwrap();
+            let request = String::from_utf8_lossy(&bytes[..count]).to_ascii_lowercase();
+            assert!(request.starts_with("get /management/changes "));
+            assert!(request.contains("authorization: bearer test-key"));
+            let body = r#"{"plugins":[{"plugin":"fixture","reviews":[{"path":"/a","staged_path":"/b","deleted":false,"baseline":"old","staged_digest":"new","approval":"test"}],"recoveries":[]}]}"#;
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .unwrap();
+        });
+        let config = Config {
+            endpoint: format!("http://{address}/mcp"),
+            ..Config::default()
+        };
+        let result = changes_inventory_request(&config, Some("test-key"))
+            .await
+            .unwrap();
+        assert_eq!(result.plugins[0].reviews[0].path, "/a");
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn reviewed_change_action_sends_token_to_kit() {
+        use std::io::{BufRead, BufReader, Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut headers = String::new();
+            loop {
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                if line == "\r\n" {
+                    break;
+                }
+                headers.push_str(&line);
+            }
+            let lower = headers.to_ascii_lowercase();
+            assert!(lower.starts_with("post /management/changes "));
+            assert!(lower.contains("authorization: bearer test-key"));
+            let size: usize = lower
+                .lines()
+                .find_map(|line| line.strip_prefix("content-length:"))
+                .unwrap()
+                .trim()
+                .parse()
+                .unwrap();
+            let mut body = vec![0; size];
+            reader.read_exact(&mut body).unwrap();
+            let body: Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(body["action"], "apply");
+            assert_eq!(body["approval"], "a".repeat(64));
+            write!(
+                stream,
+                "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n"
+            )
+            .unwrap();
+        });
+        let config = Config {
+            endpoint: format!("http://{address}/mcp"),
+            ..Config::default()
+        };
+        let action = KitChangeAction {
+            plugin: "fixture".into(),
+            action: "apply".into(),
+            approval: "a".repeat(64),
+        };
+        change_action_request(&config, Some("test-key"), &action)
+            .await
+            .unwrap();
+        server.join().unwrap();
+    }
+
+    #[cfg(feature = "embedded-kit")]
+    #[tokio::test]
+    #[ignore = "requires an isolated RUNE_KIT_DATA_DIR and RUNE_KIT_HTTP_TOKEN"]
+    async fn embedded_kit_sandbox_inventory_is_read_only_and_authenticated() {
+        let root = std::path::PathBuf::from(
+            std::env::var_os("RUNE_KIT_DATA_DIR").expect("isolated Kit data directory"),
+        );
+        assert!(root.is_absolute() && root.is_dir() && !root.join("sandbox").exists());
+        let token = std::env::var("RUNE_KIT_HTTP_TOKEN").expect("test token");
+        let mut configuration =
+            rune_kit::configuration::Configuration::read(root.join("test-config.json")).unwrap();
+        configuration.plugins.push(rune_kit::configuration::Plugin {
+            name: "fixture".into(),
+            path: Default::default(),
+            kind: rune_kit::ExecutionKind::Native,
+            manifest: serde_json::from_value(serde_json::json!({})).unwrap(),
+            params: Default::default(),
+            workspace: None,
+        });
+        let options = rune_kit::server::Options {
+            bind: "127.0.0.1".parse().unwrap(),
+            port: 0,
+            headless: true,
+            workspace_only: false,
+            read_only: true,
+            allowed_tools: vec![],
+            timeout: 1,
+            plugins: vec![],
+            roots: vec![],
+        };
+        let server =
+            rune_kit::server::start_embedded(rune_kit::McpRouter::new(), options, configuration)
+                .await
+                .unwrap();
+        let config = Config {
+            endpoint: server.endpoint.clone(),
+            ..Config::default()
+        };
+        assert!(sandbox_inventory_request(&config, None).await.is_err());
+        let inventory = sandbox_inventory_request(&config, Some(&token))
+            .await
+            .unwrap();
+        assert_eq!(inventory.plugins.len(), 1);
+        assert_eq!(inventory.plugins[0].plugin, "fixture");
+        assert!(inventory.plugins[0].workspace.is_none());
+        assert!(changes_inventory_request(&config, None).await.is_err());
+        let changes = changes_inventory_request(&config, Some(&token))
+            .await
+            .unwrap();
+        assert_eq!(changes.plugins.len(), 1);
+        assert_eq!(changes.plugins[0].plugin, "fixture");
+        assert!(changes.plugins[0].reviews.is_empty() && changes.plugins[0].recoveries.is_empty());
+        assert!(!root.join("sandbox").exists());
+        let original = root.join("fixture.txt");
+        std::fs::write(&original, b"original").unwrap();
+        let mut sandbox = rune_kit::sandbox::Sandbox::open(root.join("sandbox")).unwrap();
+        sandbox.approve("fixture", &original).unwrap();
+        let broker = rune_kit::file_access::Broker::open(root.join("sandbox"), "fixture").unwrap();
+        broker
+            .request(rune_kit::file_access::Request {
+                schema_version: 1,
+                operation: rune_kit::file_access::Operation::WriteFile,
+                path: original.clone(),
+                data: b"changed".to_vec(),
+            })
+            .unwrap();
+        let listed = changes_inventory_request(&config, Some(&token))
+            .await
+            .unwrap();
+        let approval = listed.plugins[0].reviews[0].approval.clone();
+        let action = KitChangeAction {
+            plugin: "fixture".into(),
+            action: "apply".into(),
+            approval,
+        };
+        assert!(change_action_request(&config, None, &action).await.is_err());
+        assert_eq!(std::fs::read(&original).unwrap(), b"original");
+        change_action_request(&config, Some(&token), &action)
+            .await
+            .unwrap();
+        assert_eq!(std::fs::read(&original).unwrap(), b"changed");
+        assert!(
+            change_action_request(&config, Some(&token), &action)
+                .await
+                .is_err()
+        );
+        let listed = changes_inventory_request(&config, Some(&token))
+            .await
+            .unwrap();
+        let restore = KitChangeAction {
+            plugin: "fixture".into(),
+            action: "restore".into(),
+            approval: listed.plugins[0].recoveries[0].approval.clone(),
+        };
+        change_action_request(&config, Some(&token), &restore)
+            .await
+            .unwrap();
+        assert_eq!(std::fs::read(&original).unwrap(), b"original");
+        server.shutdown().await.unwrap();
+    }
 
     #[test]
     fn kit_token_uses_credential_store_and_can_be_removed() {

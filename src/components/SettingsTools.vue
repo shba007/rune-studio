@@ -44,6 +44,34 @@ interface KitPackage {
   description?: string | null
   author?: string | null
 }
+interface SandboxInventory {
+  workspace_only: boolean
+  plugins: Array<{
+    plugin: string
+    workspace: string | null
+    approvals: Array<{ path: string; kind: string }>
+  }>
+}
+interface ChangesInventory {
+  plugins: Array<{
+    plugin: string
+    reviews: Array<{
+      path: string
+      staged_path: string
+      deleted: boolean
+      baseline: string | null
+      staged_digest: string | null
+      approval: string
+    }>
+    recoveries: Array<{
+      path: string
+      id: string
+      backup_path: string
+      completed: number | null
+      approval: string
+    }>
+  }>
+}
 const config = ref<Config>({ enabled: false, endpoint: 'http://127.0.0.1:47601/mcp', selected: [] })
 const tools = ref<Tool[]>([])
 const status = ref(
@@ -75,6 +103,94 @@ const remoteDraft = ref<KitRemote>({
 })
 const remoteStatus = ref('Load third-party servers from Kit.')
 const remoteBusy = ref(false)
+const sandbox = ref<SandboxInventory | null>(null)
+const sandboxStatus = ref('Load sandbox information from Kit.')
+const sandboxBusy = ref(false)
+const changes = ref<ChangesInventory | null>(null)
+const changesBusy = ref(false)
+const changesStatus = ref('Load staged changes and recovery backups from Kit.')
+const changeConfirmation = ref<{
+  plugin: string
+  action: 'apply' | 'restore'
+  approval: string
+  path: string
+  endpoint: string
+} | null>(null)
+watch(
+  () => config.value.endpoint,
+  () => {
+    sandbox.value = null
+    sandboxStatus.value = 'Load sandbox information from Kit.'
+    changes.value = null
+    changeConfirmation.value = null
+    changesStatus.value = 'Load staged changes and recovery backups from Kit.'
+  },
+)
+async function loadSandbox() {
+  const endpoint = config.value.endpoint
+  sandboxBusy.value = true
+  try {
+    const result = await invoke<SandboxInventory>('kit_sandbox_inventory', { config: config.value })
+    if (config.value.endpoint !== endpoint) return
+    sandbox.value = result
+    sandboxStatus.value = sandbox.value.plugins.length
+      ? 'Sandbox information provided by Kit.'
+      : 'No loaded MCPs reported by Kit.'
+  } catch (error) {
+    if (config.value.endpoint !== endpoint) return
+    sandbox.value = null
+    sandboxStatus.value = String(error)
+  } finally {
+    sandboxBusy.value = false
+  }
+}
+async function loadChanges() {
+  const endpoint = config.value.endpoint
+  changeConfirmation.value = null
+  changesBusy.value = true
+  try {
+    const result = await invoke<ChangesInventory>('kit_changes_inventory', { config: config.value })
+    if (config.value.endpoint !== endpoint) return
+    changes.value = result
+    changesStatus.value = 'Review information provided by Kit.'
+  } catch (error) {
+    if (config.value.endpoint !== endpoint) return
+    changes.value = null
+    changesStatus.value = String(error)
+  } finally {
+    changesBusy.value = false
+  }
+}
+async function confirmChange() {
+  const selected = changeConfirmation.value
+  if (!selected || changesBusy.value || selected.endpoint !== config.value.endpoint) return
+  changesBusy.value = true
+  changeConfirmation.value = null
+  try {
+    await invoke('kit_change_action', {
+      config: config.value,
+      action: { plugin: selected.plugin, action: selected.action, approval: selected.approval },
+    })
+    if (config.value.endpoint !== selected.endpoint) return
+    await loadChanges()
+    if (config.value.endpoint === selected.endpoint) {
+      const success =
+        selected.action === 'apply'
+          ? 'Kit applied the reviewed change.'
+          : 'Kit restored the reviewed backup.'
+      changesStatus.value = changes.value
+        ? success
+        : `${success} Could not refresh the inventory: ${changesStatus.value}`
+    }
+  } catch (error) {
+    if (config.value.endpoint === selected.endpoint) {
+      changes.value = null
+      changesStatus.value = `${String(error)}. Reload and review before retrying.`
+    }
+  } finally {
+    changesBusy.value = false
+  }
+}
 const packages = ref<{ mcps: KitPackage[]; skills: KitPackage[] }>({ mcps: [], skills: [] })
 const packageStatus = ref('Load installed packages from Kit.')
 const packageBusy = ref(false)
@@ -351,6 +467,99 @@ function setSelected(name: string, value: boolean) {
         </p>
       </template>
     </HubGroup>
+    <HubGroup title="Kit staged changes and backups">
+      <HubRow
+        label="Review inventory"
+        hint="Inspect pending changes and recovery backups managed by Kit."
+      >
+        <RuneButton size="sm" :disabled="changesBusy" @click="loadChanges">{{
+          changesBusy ? 'Loading…' : 'Load changes'
+        }}</RuneButton>
+      </HubRow>
+      <template v-for="plugin in changes?.plugins ?? []" :key="plugin.plugin">
+        <HubRow
+          v-if="!plugin.reviews.length && !plugin.recoveries.length"
+          :label="plugin.plugin"
+          hint="No pending changes or recovery backups."
+        />
+        <HubRow
+          v-for="review in plugin.reviews"
+          :key="`${plugin.plugin}:change:${review.path}`"
+          :label="`${plugin.plugin}: ${review.deleted ? 'Delete' : review.baseline ? 'Modify' : 'Create'}`"
+          :hint="review.path"
+        >
+          <details class="text-rune-caption text-rune-text-2">
+            <summary>Review details</summary>
+            <div>Staged file: {{ review.staged_path }}</div>
+            <div>Original SHA-256: {{ review.baseline || 'new file' }}</div>
+            <div>Staged SHA-256: {{ review.staged_digest || 'delete' }}</div>
+            <RuneButton
+              size="sm"
+              :disabled="changesBusy"
+              @click="
+                changeConfirmation = {
+                  plugin: plugin.plugin,
+                  action: 'apply',
+                  approval: review.approval,
+                  path: review.path,
+                  endpoint: config.endpoint,
+                }
+              "
+              >Review apply</RuneButton
+            >
+          </details>
+        </HubRow>
+        <HubRow
+          v-for="recovery in plugin.recoveries"
+          :key="`${plugin.plugin}:recovery:${recovery.id}`"
+          :label="`${plugin.plugin}: ${recovery.completed == null ? 'Unresolved backup' : 'Completed backup'}`"
+          :hint="recovery.path"
+        >
+          <details class="text-rune-caption text-rune-text-2">
+            <summary>Backup details</summary>
+            <div>Backup: {{ recovery.backup_path }}</div>
+            <div>Recovery ID: {{ recovery.id }}</div>
+            <RuneButton
+              size="sm"
+              :disabled="changesBusy"
+              @click="
+                changeConfirmation = {
+                  plugin: plugin.plugin,
+                  action: 'restore',
+                  approval: recovery.approval,
+                  path: recovery.path,
+                  endpoint: config.endpoint,
+                }
+              "
+              >Review restore</RuneButton
+            >
+          </details>
+        </HubRow>
+      </template>
+      <HubRow
+        v-if="changeConfirmation"
+        :label="
+          changeConfirmation.action === 'apply' ? 'Confirm file change' : 'Confirm backup restore'
+        "
+        :hint="changeConfirmation.path"
+      >
+        <RuneButton size="sm" :disabled="changesBusy" @click="confirmChange">{{
+          changeConfirmation.action === 'apply' ? 'Confirm apply' : 'Confirm restore'
+        }}</RuneButton>
+        <RuneButton size="sm" :disabled="changesBusy" @click="changeConfirmation = null"
+          >Cancel</RuneButton
+        >
+      </HubRow>
+      <template #after
+        ><p role="status" class="m-0 mt-rune-1 px-rune-2 text-rune-caption text-rune-text-2">
+          {{ changesStatus }}
+        </p>
+        <p v-if="changes" class="m-0 px-rune-2 text-rune-caption text-rune-text-3">
+          File contents are not displayed. Review the details before confirming an action; Kit
+          rejects stale reviews and conflicting file changes.
+        </p></template
+      >
+    </HubGroup>
     <HubGroup v-if="tools.length" title="Available tools">
       <HubToggle
         v-for="tool in tools"
@@ -360,6 +569,41 @@ function setSelected(name: string, value: boolean) {
         :hint="tool.description"
         @update:model-value="setSelected(tool.name, $event)"
       />
+    </HubGroup>
+    <HubGroup title="Kit sandbox">
+      <HubRow label="Workspaces and approvals" hint="Read the current sandbox inventory from Kit.">
+        <RuneButton size="sm" :disabled="sandboxBusy" @click="loadSandbox">{{
+          sandboxBusy ? 'Loading…' : 'Load sandbox'
+        }}</RuneButton>
+      </HubRow>
+      <HubRow
+        v-for="plugin in sandbox?.plugins ?? []"
+        :key="plugin.plugin"
+        :label="plugin.plugin"
+        :hint="plugin.workspace || 'Workspace not created'"
+      >
+        <span v-if="!plugin.approvals.length" class="text-rune-caption text-rune-text-3"
+          >No path approvals</span
+        >
+        <ul v-else class="m-0 list-none p-0 text-rune-caption text-rune-text-2">
+          <li v-for="approval in plugin.approvals" :key="approval.path">
+            {{ approval.kind }}: {{ approval.path }}
+          </li>
+        </ul>
+      </HubRow>
+      <template #after>
+        <p role="status" class="m-0 mt-rune-1 px-rune-2 text-rune-caption text-rune-text-2">
+          {{ sandboxStatus }}
+        </p>
+        <p v-if="sandbox" class="m-0 px-rune-2 text-rune-caption text-rune-text-3">
+          {{
+            sandbox.workspace_only
+              ? 'Kit is running in workspace-only mode.'
+              : 'Kit is not running in workspace-only mode.'
+          }}
+          Path approvals are records and do not by themselves change runtime permissions.
+        </p>
+      </template>
     </HubGroup>
     <HubGroup title="Kit MCP settings">
       <HubRow label="MCP configuration" hint="Read and update settings on the running Kit server.">

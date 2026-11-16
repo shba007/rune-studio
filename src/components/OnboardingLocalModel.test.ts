@@ -6,7 +6,7 @@ const harness = vi.hoisted(() => ({
   invoke: vi.fn<(command: string, args?: Record<string, unknown>) => Promise<unknown>>(),
 }))
 
-it('offers only Holo models, preselects the estimate, and shows source and license', async () => {
+it('starts Infer before showing its recommended computer-use models', async () => {
   harness.invoke.mockReset().mockImplementation(async (command: string) => {
     if (command === 'embedded_model_candidates')
       return [
@@ -32,7 +32,15 @@ it('offers only Holo models, preselects the estimate, and shows source and licen
   })
   const wrapper = mount(OnboardingLocalModel)
   await flushPromises()
-  expect(wrapper.text()).not.toContain('Qwen')
+  expect(wrapper.text()).toContain('Qwen')
+  expect(harness.invoke).toHaveBeenCalledWith('embedded_model_candidates', {
+    purpose: 'computer-use',
+  })
+  expect(
+    harness.invoke.mock.calls.findIndex(([command]) => command === 'start_embedded_infer'),
+  ).toBeLessThan(
+    harness.invoke.mock.calls.findIndex(([command]) => command === 'embedded_model_candidates'),
+  )
   expect(wrapper.text()).toContain('non-commercial only')
   expect(wrapper.text()).toContain('https://huggingface.co/community/model')
   expect((wrapper.get('input[value="holo3.1-4b-q4"]').element as HTMLInputElement).checked).toBe(
@@ -45,6 +53,19 @@ it('offers only Holo models, preselects the estimate, and shows source and licen
   wrapper.unmount()
 })
 vi.mock('@tauri-apps/api/core', () => ({ invoke: harness.invoke }))
+
+it('shows Infer setup failures before requesting model choices', async () => {
+  harness.invoke.mockReset().mockImplementation(async (command: string) => {
+    if (command === 'start_embedded_infer') throw new Error('Infer setup failed')
+  })
+  const wrapper = mount(OnboardingLocalModel)
+  await flushPromises()
+  expect(wrapper.text()).toContain('Infer setup failed')
+  expect(
+    harness.invoke.mock.calls.some(([command]) => command === 'embedded_model_candidates'),
+  ).toBe(false)
+  wrapper.unmount()
+})
 
 it('downloads and starts the selected model without opening Settings', async () => {
   let phase = ''

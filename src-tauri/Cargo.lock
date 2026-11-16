@@ -3259,7 +3259,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.61.2",
+ "windows-core 0.62.2",
 ]
 
 [[package]]
@@ -6456,7 +6456,7 @@ dependencies = [
 [[package]]
 name = "rune-infer"
 version = "0.20.0"
-source = "git+https://github.com/shba007/rune-infer.git?rev=661c7c5ca4e6889ad7129e9d8f06ebbaa7695159#661c7c5ca4e6889ad7129e9d8f06ebbaa7695159"
+source = "git+https://github.com/shba007/rune-infer.git?rev=040c01df948b0f2c5e2442095db67297cd0ff595#040c01df948b0f2c5e2442095db67297cd0ff595"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -6489,7 +6489,7 @@ dependencies = [
 [[package]]
 name = "rune-kit"
 version = "0.9.0"
-source = "git+https://github.com/shba007/rune-kit.git?rev=ecabdec16446e57006c3bb4f12e54ec664d016ad#ecabdec16446e57006c3bb4f12e54ec664d016ad"
+source = "git+https://github.com/shba007/rune-kit.git?rev=f36ba4c108fd1b298b7c1f45a36fce0f3f037e70#f36ba4c108fd1b298b7c1f45a36fce0f3f037e70"
 dependencies = [
  "async-trait",
  "axum",

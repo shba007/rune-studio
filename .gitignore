@@ -44,7 +44,3 @@ temp
 .vitest/
 
 eval-out/
-
-docs/wire-audit-*.md
-docs/field-test-report-*.md
-docs/local-fixes.diff

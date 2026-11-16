@@ -112,7 +112,17 @@ export function useAgent() {
   const thinking = ref<ThinkingPayload | null>(null)
   const response = ref<string | null>(null)
   const question = ref<ConfirmRequestPayload | null>(null)
-  const steps = ref<{ step: number; tool: string; detail: string; ok: boolean | null }[]>([])
+  const steps = ref<
+    {
+      step: number
+      tool: string
+      kind: StepStartedPayload['kind']
+      model: string | null
+      text: string
+      detail: string
+      ok: boolean | null
+    }[]
+  >([])
   const notice = ref<string | null>(null)
   const noticeKind = ref<'error' | 'info'>('error')
   const focusTick = ref(0)
@@ -472,6 +482,9 @@ export function useAgent() {
           {
             step: event.payload.step,
             tool: event.payload.tool,
+            kind: event.payload.kind,
+            model: event.payload.model,
+            text: event.payload.text,
             detail: event.payload.detail,
             ok: null,
           },

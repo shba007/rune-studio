@@ -41,9 +41,7 @@ pub async fn start_embedded_kit(app: AppHandle) -> Result<String, String> {
 pub async fn start_embedded_infer(app: AppHandle) -> Result<(), String> {
     #[cfg(all(windows, feature = "embedded-infer"))]
     {
-        app.state::<crate::embedded_infer::EmbeddedManager>()
-            .start(&app, true)
-            .await
+        ensure_embedded_infer(&app, true).await
     }
     #[cfg(not(all(windows, feature = "embedded-infer")))]
     {
@@ -67,23 +65,157 @@ pub async fn reload_embedded_infer(app: AppHandle) -> Result<(), String> {
     }
 }
 
+#[cfg(all(windows, feature = "embedded-infer"))]
+async fn ensure_embedded_infer(app: &AppHandle, activate: bool) -> Result<(), String> {
+    let root = crate::embedded_infer::infer_root()?;
+    tauri::async_runtime::spawn_blocking(move || rune_infer::embedding::prepare_config(&root))
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(|error| format!("Cannot prepare Infer: {error:#}"))?;
+    app.state::<crate::embedded_infer::EmbeddedManager>()
+        .start(app, activate)
+        .await
+}
+
+#[cfg(all(windows, feature = "embedded-infer"))]
+async fn local_infer_route(app: &AppHandle) -> Result<(String, String), String> {
+    if let Some(route) = crate::embedded_infer::route() {
+        return Ok(route);
+    }
+    ensure_embedded_infer(app, false).await?;
+    crate::embedded_infer::route().ok_or("Local Infer is not running".into())
+}
+
+#[cfg(all(windows, feature = "embedded-infer"))]
+async fn local_model_download(
+    app: &AppHandle,
+    method: reqwest::Method,
+    body: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
+    let (base_url, key) = local_infer_route(app).await?;
+    crate::infer_catalog::model_download_request(&base_url, Some(&key), method, body).await
+}
+
+fn active_infer_route(
+    state: &crate::events::AppState,
+    connection_id: &str,
+    connection_revision: u64,
+) -> Result<(String, Option<String>), String> {
+    let (settings, key) = settings::snapshot_with_api_key(&state.settings);
+    if settings.active_connection_id != connection_id
+        || settings.connections_revision != connection_revision
+    {
+        return Err("The active Infer connection changed. Reload the model library.".into());
+    }
+    Ok((settings.base_url, key))
+}
+
 #[tauri::command]
-pub async fn embedded_model_candidates() -> Result<serde_json::Value, String> {
+pub async fn infer_library_candidates(
+    state: State<'_, crate::events::AppState>,
+    connection_id: String,
+    connection_revision: u64,
+) -> Result<serde_json::Value, String> {
+    let (url, key) = active_infer_route(&state, &connection_id, connection_revision)?;
+    crate::infer_catalog::read_model_candidates(&url, key.as_deref(), "all").await
+}
+
+#[tauri::command]
+pub async fn infer_library_download(
+    state: State<'_, crate::events::AppState>,
+    connection_id: String,
+    connection_revision: u64,
+    id: String,
+    revision: String,
+    manifest: String,
+    directory: Option<String>,
+) -> Result<(), String> {
+    let (url, key) = active_infer_route(&state, &connection_id, connection_revision)?;
+    crate::infer_catalog::model_download_request(
+        &url,
+        key.as_deref(),
+        reqwest::Method::POST,
+        Some(serde_json::json!({"id":id,"revision":revision,"manifest":manifest,"directory":directory})),
+    )
+    .await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn infer_library_scan(
+    state: State<'_, crate::events::AppState>,
+    connection_id: String,
+    connection_revision: u64,
+    directory: String,
+) -> Result<serde_json::Value, String> {
+    let (url, key) = active_infer_route(&state, &connection_id, connection_revision)?;
+    crate::infer_catalog::scan_models_request(&url, key.as_deref(), &directory).await
+}
+
+#[tauri::command]
+pub async fn infer_library_download_status(
+    state: State<'_, crate::events::AppState>,
+    connection_id: String,
+    connection_revision: u64,
+) -> Result<serde_json::Value, String> {
+    let (url, key) = active_infer_route(&state, &connection_id, connection_revision)?;
+    crate::infer_catalog::model_download_request(&url, key.as_deref(), reqwest::Method::GET, None)
+        .await
+}
+
+#[tauri::command]
+pub async fn infer_library_download_cancel(
+    state: State<'_, crate::events::AppState>,
+    connection_id: String,
+    connection_revision: u64,
+) -> Result<(), String> {
+    let (url, key) = active_infer_route(&state, &connection_id, connection_revision)?;
+    crate::infer_catalog::model_download_request(
+        &url,
+        key.as_deref(),
+        reqwest::Method::DELETE,
+        None,
+    )
+    .await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn infer_library_select_agent(
+    state: State<'_, crate::events::AppState>,
+    connection_id: String,
+    connection_revision: u64,
+    model: String,
+) -> Result<(), String> {
+    let (url, key) = active_infer_route(&state, &connection_id, connection_revision)?;
+    crate::infer_catalog::select_agent_and_wait(&url, key.as_deref(), &model).await
+}
+
+#[tauri::command]
+pub async fn embedded_model_candidates(
+    app: AppHandle,
+    purpose: Option<String>,
+) -> Result<serde_json::Value, String> {
     #[cfg(all(windows, feature = "embedded-infer"))]
     {
-        let candidates = tauri::async_runtime::spawn_blocking(crate::embedded_download::candidates)
-            .await
-            .map_err(|error| error.to_string())??;
-        serde_json::to_value(candidates).map_err(|error| error.to_string())
+        ensure_embedded_infer(&app, false).await?;
+        let (base_url, key) = crate::embedded_infer::route().ok_or("Local Infer is not running")?;
+        crate::infer_catalog::read_model_candidates(
+            &base_url,
+            Some(&key),
+            purpose.as_deref().unwrap_or("all"),
+        )
+        .await
     }
     #[cfg(not(all(windows, feature = "embedded-infer")))]
     {
+        let _ = (app, purpose);
         Err("Local Infer is not included in this build".into())
     }
 }
 
 #[tauri::command]
-pub fn embedded_model_download(
+pub async fn embedded_model_download(
     app: AppHandle,
     id: String,
     revision: String,
@@ -91,9 +223,13 @@ pub fn embedded_model_download(
 ) -> Result<(), String> {
     #[cfg(all(windows, feature = "embedded-infer"))]
     {
-        let root = rune_infer::home::rune_home().map_err(|error| error.to_string())?;
-        app.state::<crate::embedded_download::Downloads>()
-            .start(root, id, revision, manifest)
+        local_model_download(
+            &app,
+            reqwest::Method::POST,
+            Some(serde_json::json!({"id":id,"revision":revision,"manifest":manifest})),
+        )
+        .await?;
+        Ok(())
     }
     #[cfg(not(all(windows, feature = "embedded-infer")))]
     {
@@ -117,19 +253,15 @@ pub async fn pick_folder(app: AppHandle) -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
-pub async fn embedded_model_scan(dir: String) -> Result<serde_json::Value, String> {
+pub async fn embedded_model_scan(app: AppHandle, dir: String) -> Result<serde_json::Value, String> {
     #[cfg(all(windows, feature = "embedded-infer"))]
     {
-        let found = tauri::async_runtime::spawn_blocking(move || {
-            crate::embedded_download::scan(std::path::Path::new(&dir))
-        })
-        .await
-        .map_err(|error| error.to_string())??;
-        serde_json::to_value(found).map_err(|error| error.to_string())
+        let (base_url, key) = local_infer_route(&app).await?;
+        crate::infer_catalog::scan_models_request(&base_url, Some(&key), &dir).await
     }
     #[cfg(not(all(windows, feature = "embedded-infer")))]
     {
-        let _ = dir;
+        let _ = (app, dir);
         Err("Local Infer is not included in this build".into())
     }
 }
@@ -138,56 +270,21 @@ pub async fn embedded_model_scan(dir: String) -> Result<serde_json::Value, Strin
 pub async fn embedded_model_import(app: AppHandle, id: String, dir: String) -> Result<(), String> {
     #[cfg(all(windows, feature = "embedded-infer"))]
     {
-        let root = rune_infer::home::rune_home().map_err(|error| error.to_string())?;
-        let candidate = tauri::async_runtime::spawn_blocking(crate::embedded_download::candidates)
-            .await
-            .map_err(|error| error.to_string())??
-            .into_iter()
-            .find(|candidate| candidate.id == id)
+        let (base_url, key) = local_infer_route(&app).await?;
+        let candidates =
+            crate::infer_catalog::read_model_candidates(&base_url, Some(&key), "all").await?;
+        let candidate = candidates
+            .as_array()
+            .and_then(|models| models.iter().find(|candidate| candidate["id"] == id))
             .ok_or("Model is not available")?;
-        if app
-            .state::<crate::embedded_download::Downloads>()
-            .status()
-            .phase
-            == "downloading"
-        {
-            return Err("A model download is already in progress".into());
-        }
-        let imports = app.state::<crate::embedded_download::Imports>();
-        if imports
-            .take_report()
-            .is_some_and(|s| s.phase == "preparing")
-        {
-            return Err("A model import is already in progress".into());
-        }
-        imports.set(Some(crate::embedded_download::Imported {
-            phase: "preparing".into(),
-            model: Some(id.clone()),
-            filename: Some("Checking and copying your model files".into()),
-            ..Default::default()
-        }));
-        tauri::async_runtime::spawn_blocking(move || {
-            let imports = app.state::<crate::embedded_download::Imports>();
-            let staged = crate::embedded_download::stage(&root, &id, std::path::Path::new(&dir));
-            let started = staged.and_then(|()| {
-                let result = app.state::<crate::embedded_download::Downloads>().start(
-                    root,
-                    id.clone(),
-                    candidate.revision,
-                    candidate.manifest,
-                );
-                imports.set(None);
-                result
-            });
-            if let Err(error) = started {
-                imports.set(Some(crate::embedded_download::Imported {
-                    phase: "failed".into(),
-                    model: Some(id),
-                    error: Some(error),
-                    ..Default::default()
-                }));
-            }
-        });
+        let revision = candidate["revision"]
+            .as_str()
+            .ok_or("Invalid Infer model candidate")?;
+        let manifest = candidate["manifest"]
+            .as_str()
+            .ok_or("Invalid Infer model candidate")?;
+        crate::infer_catalog::model_download_request(&base_url, Some(&key), reqwest::Method::POST,
+            Some(serde_json::json!({"id":id,"revision":revision,"manifest":manifest,"directory":dir}))).await?;
         Ok(())
     }
     #[cfg(not(all(windows, feature = "embedded-infer")))]
@@ -198,19 +295,10 @@ pub async fn embedded_model_import(app: AppHandle, id: String, dir: String) -> R
 }
 
 #[tauri::command]
-pub fn embedded_model_download_status(app: AppHandle) -> Result<serde_json::Value, String> {
+pub async fn embedded_model_download_status(app: AppHandle) -> Result<serde_json::Value, String> {
     #[cfg(all(windows, feature = "embedded-infer"))]
     {
-        if let Some(status) = app
-            .state::<crate::embedded_download::Imports>()
-            .take_report()
-        {
-            return serde_json::to_value(status).map_err(|error| error.to_string());
-        }
-        let downloads = app.state::<crate::embedded_download::Downloads>();
-        let status = downloads.status();
-        downloads.acknowledge();
-        serde_json::to_value(status).map_err(|error| error.to_string())
+        local_model_download(&app, reqwest::Method::GET, None).await
     }
     #[cfg(not(all(windows, feature = "embedded-infer")))]
     {
@@ -220,10 +308,10 @@ pub fn embedded_model_download_status(app: AppHandle) -> Result<serde_json::Valu
 }
 
 #[tauri::command]
-pub fn embedded_model_download_cancel(app: AppHandle) -> Result<(), String> {
+pub async fn embedded_model_download_cancel(app: AppHandle) -> Result<(), String> {
     #[cfg(all(windows, feature = "embedded-infer"))]
     {
-        app.state::<crate::embedded_download::Downloads>().cancel();
+        local_model_download(&app, reqwest::Method::DELETE, None).await?;
         Ok(())
     }
     #[cfg(not(all(windows, feature = "embedded-infer")))]
@@ -237,12 +325,8 @@ pub fn embedded_model_download_cancel(app: AppHandle) -> Result<(), String> {
 pub async fn embedded_model_use(app: AppHandle, id: String) -> Result<(), String> {
     #[cfg(all(windows, feature = "embedded-infer"))]
     {
-        if app
-            .state::<crate::embedded_download::Downloads>()
-            .completed_model()
-            .as_deref()
-            != Some(id.as_str())
-        {
+        let status = local_model_download(&app, reqwest::Method::GET, None).await?;
+        if status["phase"] != "complete" || status["model"].as_str() != Some(id.as_str()) {
             return Err("Download the model before selecting it".into());
         }
         app.state::<crate::embedded_infer::EmbeddedManager>()

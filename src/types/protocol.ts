@@ -230,6 +230,8 @@ export interface StateChangedPayload {
 }
 export interface StepStartedPayload {
   step: number
+  kind: 'tool' | 'screen'
+  model: string | null
   tool: string
   reason: string
   text: string

@@ -13,8 +13,6 @@ mod cursor;
 mod debug;
 mod domain;
 #[cfg(all(windows, feature = "embedded-infer"))]
-mod embedded_download;
-#[cfg(all(windows, feature = "embedded-infer"))]
 mod embedded_infer;
 mod embedded_kit;
 mod error;
@@ -233,8 +231,6 @@ pub fn run() {
             #[cfg(all(windows, feature = "embedded-infer"))]
             {
                 app.manage(embedded_infer::EmbeddedManager::default());
-                app.manage(embedded_download::Downloads::default());
-                app.manage(embedded_download::Imports::default());
                 let should_start = app
                     .state::<AppState>()
                     .settings
@@ -343,6 +339,9 @@ pub fn run() {
             kit::client::kit_token_set,
             kit::client::kit_token_present,
             kit::client::kit_remotes,
+            kit::client::kit_sandbox_inventory,
+            kit::client::kit_changes_inventory,
+            kit::client::kit_change_action,
             kit::client::kit_packages,
             kit::client::kit_icon,
             kit::client::kit_registry,
@@ -361,12 +360,23 @@ pub fn run() {
             commands::reload_embedded_infer,
             infer_catalog::infer_select_agent,
             infer_catalog::infer_agent_role,
+            infer_catalog::infer_engines,
+            infer_catalog::infer_engine_release,
+            infer_catalog::infer_engine_installation,
+            infer_catalog::infer_engine_update,
+            infer_catalog::infer_engine_cancel,
             infer_catalog::infer_model_icon,
             infer_catalog::infer_model_remove,
             infer_catalog::infer_model_residency,
             infer_catalog::infer_analysis_role,
             infer_catalog::infer_visual_roles,
             commands::embedded_model_candidates,
+            commands::infer_library_candidates,
+            commands::infer_library_download,
+            commands::infer_library_scan,
+            commands::infer_library_download_status,
+            commands::infer_library_download_cancel,
+            commands::infer_library_select_agent,
             commands::embedded_model_download,
             commands::embedded_model_scan,
             commands::pick_folder,

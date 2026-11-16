@@ -103,6 +103,7 @@ pub fn announce(
     reason: &str,
     action: &Action,
     monitor: &Monitor,
+    model: Option<&str>,
 ) -> String {
     let described = action.describe();
     let (detail, point, double, button) = visual(action, monitor);
@@ -125,6 +126,12 @@ pub fn announce(
         events::STEP_STARTED,
         StepStarted {
             step,
+            kind: if matches!(action, Action::External { .. }) {
+                "tool"
+            } else {
+                "screen"
+            },
+            model: model.map(str::to_owned),
             tool: action.tool_name(),
             reason: reason.to_string(),
             text: if reason.is_empty() {

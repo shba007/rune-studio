@@ -26,6 +26,14 @@
 
 ---
 
+## Goal
+
+Full statement: [`Goal.md`](Goal.md). It describes direction; the rest of this README describes what works today.
+
+**Current goal.** Studio is the runtime, orchestrator and interface of Rune, a local, Jarvis-like AI harness. Each step is a model call (Rune Infer), a tool call (Rune Kit) or, as a last resort, a screen action. Every step shows what it actually produced, rendered automatically from the schema Kit or Infer publishes, and decisions are made on that content with several options. Studio chooses the model for each step, may run several sub-agents under an orchestrator when the plan calls for it, and proposes work without being asked. The Playground is the test bench for models, tools and flows.
+
+**Not goals.** Running models or MCP servers, owning memory (Rune Lake), model-generated layouts, continuous screen watching, direct connections to remote model servers, macOS. A non-goal is not a removal order: existing code outside these goals stays until the owner explicitly approves removing it.
+
 ## Overview
 
 Rune Studio is a small floating desktop app. You give it a command by typing or speaking, and it carries the command out on your PC: it looks at the screen, picks **one** action, performs it with the real mouse and keyboard, checks the result and repeats until the task is done.
@@ -219,7 +227,8 @@ One agent holds control at a time (the "lease"). It ends on `rune_done`, on Stop
 
 ## Platform support
 
-Rune Studio aims to support Windows, macOS and Linux desktop. The following table
+The platforms in scope for now are Windows, Linux and Android (see
+[`Goal.md`](Goal.md)); macOS is not a current target. The following table
 describes implementation status, not a promise that every platform is ready for
 computer use. Platform permissions, local inference and end-to-end behavior must
 be validated separately on each system.
@@ -237,7 +246,7 @@ be validated separately on each system.
 
 ## Related projects
 
-Rune Studio is one of four projects. **rune-infer** is the model server it calls; **rune-kit** (the `rune` CLI, an MCP package manager and gateway) and **rune-tools** (its plugin registry) are intended to own MCP servers, skills, plugins and external tools so the app does not. The app does not use kit or tools yet. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) section 18 and the plan in [`docs/ROADMAP.md`](docs/ROADMAP.md) (Preview, verifier and visual analysis are built, unmeasured; idle reflection mode is not built).
+Rune Studio is one part of Rune; the overall goal and each part's role are in [`Goal.md`](Goal.md). **rune-infer** is the model server it calls and, in builds with the `embedded-infer` feature on Windows, runs in-process. **rune-kit** (an MCP package manager and gateway) owns MCP servers, skills, plugins and external tools; Studio connects to its loopback HTTP MCP endpoint and, in builds with the `embedded-kit` feature, runs it in-process. **rune-tools** is Kit's plugin registry. **rune-lake** (memory) and **rune-agent** (sub-agents) are not used by the app yet. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) section 18 and the plan in [`docs/ROADMAP.md`](docs/ROADMAP.md) (Preview, verifier and visual analysis are built, unmeasured; idle reflection mode is not built).
 
 ---
 

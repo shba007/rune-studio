@@ -134,6 +134,486 @@ pub(crate) async fn read_roles(
     Ok(roles)
 }
 
+#[tauri::command]
+pub async fn infer_engines(state: tauri::State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let (settings, key) = settings::snapshot_with_api_key(&state.settings);
+    read_engines(&settings.base_url, key.as_deref()).await
+}
+
+pub(crate) async fn read_model_candidates(
+    base_url: &str,
+    key: Option<&str>,
+    purpose: &str,
+) -> Result<serde_json::Value, String> {
+    if !matches!(purpose, "all" | "computer-use") {
+        return Err("Invalid model candidate purpose".into());
+    }
+    let key = key
+        .filter(|key| !key.trim().is_empty())
+        .ok_or("Infer model candidates require an API key")?;
+    validate_url(base_url)?;
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|_| "Cannot create Infer client")?;
+    let mut response = client
+        .get(format!(
+            "{}/v1/management/model-candidates?purpose={purpose}",
+            base_url.trim_end_matches('/')
+        ))
+        .bearer_auth(key)
+        .send()
+        .await
+        .map_err(|_| "Cannot reach Infer model candidates")?;
+    if matches!(response.status().as_u16(), 404 | 501) {
+        return Err(
+            "This Infer server does not expose model candidates. Update Infer and retry.".into(),
+        );
+    }
+    if !response.status().is_success() {
+        return Err(format!(
+            "Cannot read Infer model candidates ({})",
+            response.status()
+        ));
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| "Cannot read Infer model candidates")?
+    {
+        if bytes.len() + chunk.len() > 4 * 1024 * 1024 {
+            return Err("Infer model candidates are too large".into());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    let models: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|_| "Invalid Infer model candidates")?;
+    if !models.is_array() {
+        return Err("Invalid Infer model candidates".into());
+    }
+    Ok(models)
+}
+
+pub(crate) async fn model_download_request(
+    base_url: &str,
+    key: Option<&str>,
+    method: reqwest::Method,
+    body: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
+    let key = key
+        .filter(|value| !value.trim().is_empty())
+        .ok_or("Infer model downloads require an API key")?;
+    validate_url(base_url)?;
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|_| "Cannot create Infer client")?;
+    let request = client
+        .request(
+            method,
+            format!(
+                "{}/v1/management/model-download",
+                base_url.trim_end_matches('/')
+            ),
+        )
+        .bearer_auth(key);
+    let request = if let Some(body) = body {
+        request.json(&body)
+    } else {
+        request
+    };
+    let mut response = request
+        .send()
+        .await
+        .map_err(|_| "Cannot reach Infer model downloads")?;
+    if matches!(response.status().as_u16(), 404 | 501) {
+        return Err(
+            "This Infer server does not expose model downloads. Update Infer and retry.".into(),
+        );
+    }
+    if response.status() == reqwest::StatusCode::CONFLICT {
+        return Err("The model changed, is unavailable, or another model or engine operation is running. Reload the model list and retry.".into());
+    }
+    if !response.status().is_success() {
+        return Err(format!(
+            "Infer could not manage the model download ({})",
+            response.status()
+        ));
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| "Cannot read Infer model download status")?
+    {
+        if bytes.len() + chunk.len() > 65536 {
+            return Err("Infer model download status is too large".into());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    let status: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|_| "Invalid Infer model download status")?;
+    if !status["phase"].is_string() {
+        return Err("Invalid Infer model download status".into());
+    }
+    Ok(status)
+}
+
+pub(crate) async fn scan_models_request(
+    base_url: &str,
+    key: Option<&str>,
+    directory: &str,
+) -> Result<serde_json::Value, String> {
+    let key = key
+        .filter(|value| !value.trim().is_empty())
+        .ok_or("Infer model scans require an API key")?;
+    validate_url(base_url)?;
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .map_err(|_| "Cannot create Infer client")?;
+    let mut response = client
+        .post(format!(
+            "{}/v1/management/model-scan",
+            base_url.trim_end_matches('/')
+        ))
+        .bearer_auth(key)
+        .json(&serde_json::json!({"directory":directory}))
+        .send()
+        .await
+        .map_err(|_| "Cannot reach Infer model scan")?;
+    if matches!(response.status().as_u16(), 404 | 501) {
+        return Err(
+            "This Infer server does not expose model scanning. Update Infer and retry.".into(),
+        );
+    }
+    if response.status() == reqwest::StatusCode::BAD_REQUEST {
+        return Err("Choose an existing folder on the Infer server.".into());
+    }
+    if !response.status().is_success() {
+        return Err(format!(
+            "Infer could not scan the model folder ({})",
+            response.status()
+        ));
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| "Cannot read Infer model scan")?
+    {
+        if bytes.len() + chunk.len() > 4 * 1024 * 1024 {
+            return Err("Infer model scan is too large".into());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    let found: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|_| "Invalid Infer model scan")?;
+    if !found.is_array() {
+        return Err("Invalid Infer model scan".into());
+    }
+    Ok(found)
+}
+
+#[tauri::command]
+pub async fn infer_engine_release(
+    state: tauri::State<'_, AppState>,
+    name: String,
+) -> Result<serde_json::Value, String> {
+    let (settings, key) = settings::snapshot_with_api_key(&state.settings);
+    read_engine_release(&settings.base_url, key.as_deref(), &name).await
+}
+
+#[tauri::command]
+pub async fn infer_engine_installation(
+    state: tauri::State<'_, AppState>,
+    name: String,
+    start: bool,
+) -> Result<serde_json::Value, String> {
+    let (settings, key) = settings::snapshot_with_api_key(&state.settings);
+    engine_installation_request(&settings.base_url, key.as_deref(), &name, start).await
+}
+
+#[tauri::command]
+pub async fn infer_engine_update(
+    state: tauri::State<'_, AppState>,
+    name: String,
+    start: bool,
+) -> Result<serde_json::Value, String> {
+    let (settings, key) = settings::snapshot_with_api_key(&state.settings);
+    engine_operation_request(&settings.base_url, key.as_deref(), &name, "update", start).await
+}
+
+#[tauri::command]
+pub async fn infer_engine_cancel(
+    state: tauri::State<'_, AppState>,
+    name: String,
+    operation: String,
+    connection_id: String,
+    connection_revision: u64,
+) -> Result<serde_json::Value, String> {
+    let operation = match operation.as_str() {
+        "install" => "installation",
+        "update" => "update",
+        _ => return Err("Invalid engine operation".into()),
+    };
+    let (settings, key) = settings::snapshot_with_api_key(&state.settings);
+    if settings.active_connection_id != connection_id
+        || settings.connections_revision != connection_revision
+    {
+        return Err("The active Infer connection changed. Reload engines.".into());
+    }
+    engine_operation_with_method(
+        &settings.base_url,
+        key.as_deref(),
+        &name,
+        operation,
+        reqwest::Method::DELETE,
+    )
+    .await
+}
+
+pub(crate) async fn engine_installation_request(
+    base_url: &str,
+    key: Option<&str>,
+    name: &str,
+    start: bool,
+) -> Result<serde_json::Value, String> {
+    engine_operation_request(base_url, key, name, "installation", start).await
+}
+
+pub(crate) async fn engine_operation_request(
+    base_url: &str,
+    key: Option<&str>,
+    name: &str,
+    operation: &str,
+    start: bool,
+) -> Result<serde_json::Value, String> {
+    engine_operation_with_method(
+        base_url,
+        key,
+        name,
+        operation,
+        if start {
+            reqwest::Method::POST
+        } else {
+            reqwest::Method::GET
+        },
+    )
+    .await
+}
+
+async fn engine_operation_with_method(
+    base_url: &str,
+    key: Option<&str>,
+    name: &str,
+    operation: &str,
+    method: reqwest::Method,
+) -> Result<serde_json::Value, String> {
+    if name.is_empty()
+        || !name
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    {
+        return Err("Invalid engine name".into());
+    }
+    let key = key
+        .filter(|key| !key.trim().is_empty())
+        .ok_or("Infer engine operations require an API key")?;
+    validate_url(base_url)?;
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|_| "Cannot create Infer client")?;
+    let url = format!(
+        "{}/v1/management/engines/{name}/{operation}",
+        base_url.trim_end_matches('/')
+    );
+    let request = client.request(method.clone(), url);
+    let mut response = request
+        .bearer_auth(key)
+        .send()
+        .await
+        .map_err(|_| "Cannot reach Infer engine operation")?;
+    if method == reqwest::Method::DELETE && matches!(response.status().as_u16(), 405 | 501) {
+        return Err(
+            "This Infer server does not support engine cancellation. Update Infer and retry."
+                .into(),
+        );
+    }
+    if !response.status().is_success() {
+        return Err(format!(
+            "Infer could not {} engine operation ({})",
+            if method == reqwest::Method::POST {
+                "start"
+            } else if method == reqwest::Method::DELETE {
+                "cancel"
+            } else {
+                "check"
+            },
+            response.status()
+        ));
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| "Cannot read engine operation status")?
+    {
+        if bytes.len() + chunk.len() > 65536 {
+            return Err("Infer engine operation response is too large".into());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    let job: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|_| "Invalid Infer engine operation response")?;
+    if job["name"].as_str() != Some(name)
+        || job.get("operation").is_some_and(|value| {
+            value.as_str()
+                != Some(if operation == "installation" {
+                    "install"
+                } else {
+                    "update"
+                })
+        })
+        || !matches!(
+            job["status"].as_str(),
+            Some("running" | "completed" | "failed" | "cancelled")
+        )
+        || !job["message"].is_string()
+    {
+        return Err("Invalid Infer engine operation response".into());
+    }
+    Ok(job)
+}
+
+pub(crate) async fn read_engine_release(
+    base_url: &str,
+    key: Option<&str>,
+    name: &str,
+) -> Result<serde_json::Value, String> {
+    if name.is_empty()
+        || !name
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    {
+        return Err("Invalid engine name".into());
+    }
+    let key = key
+        .filter(|key| !key.trim().is_empty())
+        .ok_or("Infer release checks require an API key")?;
+    validate_url(base_url)?;
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(std::time::Duration::from_secs(45))
+        .build()
+        .map_err(|_| "Cannot create Infer client")?;
+    let mut response = client
+        .post(format!(
+            "{}/v1/management/engines/{name}/release-check",
+            base_url.trim_end_matches('/')
+        ))
+        .bearer_auth(key)
+        .send()
+        .await
+        .map_err(|_| "Cannot reach Infer release check")?;
+    if matches!(response.status().as_u16(), 404 | 501) {
+        return Err(
+            "This Infer server does not support engine release checks. Update Infer and retry."
+                .into(),
+        );
+    }
+    if !response.status().is_success() {
+        return Err(format!(
+            "Infer could not check the engine release ({})",
+            response.status()
+        ));
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| "Cannot read Infer release check")?
+    {
+        if bytes.len() + chunk.len() > 65536 {
+            return Err("Infer release response is too large".into());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    let release: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|_| "Invalid Infer release response")?;
+    if !release
+        .get("latest")
+        .is_some_and(serde_json::Value::is_string)
+        || !release
+            .get("detail")
+            .is_some_and(serde_json::Value::is_string)
+    {
+        return Err("Invalid Infer release response".into());
+    }
+    Ok(release)
+}
+
+pub(crate) async fn read_engines(
+    base_url: &str,
+    key: Option<&str>,
+) -> Result<serde_json::Value, String> {
+    let key = key
+        .filter(|key| !key.trim().is_empty())
+        .ok_or("Infer engine inventory requires an API key")?;
+    validate_url(base_url)?;
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(std::time::Duration::from_secs(45))
+        .build()
+        .map_err(|_| "Cannot create Infer client")?;
+    let mut response = client
+        .get(format!(
+            "{}/v1/management/engines",
+            base_url.trim_end_matches('/')
+        ))
+        .bearer_auth(key)
+        .send()
+        .await
+        .map_err(|_| "Cannot reach Infer engine inventory")?;
+    if matches!(response.status().as_u16(), 404 | 501) {
+        return Err(
+            "This Infer server does not expose engine inventory. Update Infer and retry.".into(),
+        );
+    }
+    if !response.status().is_success() {
+        return Err(format!(
+            "Cannot read Infer engine inventory ({})",
+            response.status()
+        ));
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| "Cannot read Infer engine inventory")?
+    {
+        if bytes.len() + chunk.len() > 65536 {
+            return Err("Infer engine inventory is too large".into());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    let inventory: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|_| "Invalid Infer engine inventory")?;
+    if !inventory
+        .get("engines")
+        .is_some_and(serde_json::Value::is_array)
+    {
+        return Err("Invalid Infer engine inventory".into());
+    }
+    Ok(inventory)
+}
+
 pub(crate) async fn agent_settings(
     state: &AppState,
 ) -> Result<(settings::Settings, Option<String>), String> {
@@ -219,12 +699,20 @@ async fn select_agent_at(base_url: &str, key: Option<&str>, model: &str) -> Resu
 
 #[tauri::command]
 pub async fn infer_select_agent(state: State<'_, AppState>, model: String) -> Result<(), String> {
-    select_agent(&state, &model).await?;
     let (settings, key) = settings::snapshot_with_api_key(&state.settings);
+    select_agent_and_wait(&settings.base_url, key.as_deref(), &model).await
+}
+
+pub(crate) async fn select_agent_and_wait(
+    base_url: &str,
+    key: Option<&str>,
+    model: &str,
+) -> Result<(), String> {
+    select_agent_at(base_url, key, model).await?;
     tokio::time::timeout(std::time::Duration::from_secs(7), async {
         loop {
-            let roles = read_roles(&settings.base_url, key.as_deref()).await?;
-            if configured_role(&roles, "agent").as_deref() == Some(model.as_str()) {
+            let roles = read_roles(base_url, key).await?;
+            if configured_role(&roles, "agent").as_deref() == Some(model) {
                 return Ok(());
             }
             tokio::time::sleep(std::time::Duration::from_millis(250)).await;
@@ -530,6 +1018,282 @@ mod tests {
                 .await
                 .is_err()
         );
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn manages_model_downloads_and_scans_through_infer() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            for (method, path, body) in [
+                ("get", "/v1/management/model-download", r#"{"phase":""}"#),
+                (
+                    "post",
+                    "/v1/management/model-download",
+                    r#"{"phase":"preparing"}"#,
+                ),
+                (
+                    "delete",
+                    "/v1/management/model-download",
+                    r#"{"phase":"cancelled"}"#,
+                ),
+                ("post", "/v1/management/model-scan", r#"[]"#),
+            ] {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut buffer = [0u8; 8192];
+                let count = stream.read(&mut buffer).unwrap();
+                let request = String::from_utf8_lossy(&buffer[..count]).to_ascii_lowercase();
+                assert!(request.starts_with(&format!("{method} {path} ")));
+                assert!(request.contains("authorization: bearer test-key"));
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                )
+                .unwrap();
+            }
+        });
+        let url = format!("http://{address}");
+        assert!(
+            model_download_request(&url, None, reqwest::Method::GET, None)
+                .await
+                .is_err()
+        );
+        for (method, body) in [
+            (reqwest::Method::GET, None),
+            (
+                reqwest::Method::POST,
+                Some(serde_json::json!({"id":"fixture"})),
+            ),
+            (reqwest::Method::DELETE, None),
+        ] {
+            model_download_request(&url, Some("test-key"), method, body)
+                .await
+                .unwrap();
+        }
+        assert!(
+            scan_models_request(&url, Some("test-key"), "C:\\models")
+                .await
+                .unwrap()
+                .is_array()
+        );
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn reads_model_candidates_from_authenticated_infer() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buffer = [0u8; 4096];
+            let count = stream.read(&mut buffer).unwrap();
+            let request = String::from_utf8_lossy(&buffer[..count]).to_ascii_lowercase();
+            assert!(
+                request.starts_with("get /v1/management/model-candidates?purpose=computer-use ")
+            );
+            assert!(request.contains("authorization: bearer test-key"));
+            let body = r#"[{"id":"fixture","recommended":true}]"#;
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .unwrap();
+        });
+        let url = format!("http://{address}");
+        assert!(
+            read_model_candidates(&url, None, "computer-use")
+                .await
+                .is_err()
+        );
+        assert!(
+            read_model_candidates(&url, Some("test-key"), "invalid")
+                .await
+                .is_err()
+        );
+        let candidates = read_model_candidates(&url, Some("test-key"), "computer-use")
+            .await
+            .unwrap();
+        assert_eq!(candidates[0]["id"], "fixture");
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn starts_and_reads_engine_updates_through_infer() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            for method in ["post", "get", "delete"] {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut buffer = [0u8; 4096];
+                let count = stream.read(&mut buffer).unwrap();
+                let request = String::from_utf8_lossy(&buffer[..count]).to_ascii_lowercase();
+                assert!(
+                    request.starts_with(&format!("{method} /v1/management/engines/needle/update "))
+                );
+                assert!(request.contains("authorization: bearer test-key"));
+                let body = if method == "delete" {
+                    r#"{"name":"needle","operation":"update","status":"cancelled","message":"Cancelled"}"#
+                } else {
+                    r#"{"name":"needle","operation":"update","status":"running","message":"Updating engine"}"#
+                };
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                )
+                .unwrap();
+            }
+        });
+        let url = format!("http://{address}");
+        assert!(
+            engine_operation_request(&url, Some("test-key"), "../needle", "update", true)
+                .await
+                .is_err()
+        );
+        for start in [true, false] {
+            assert_eq!(
+                engine_operation_request(&url, Some("test-key"), "needle", "update", start)
+                    .await
+                    .unwrap()["operation"],
+                "update"
+            );
+        }
+        assert_eq!(
+            engine_operation_with_method(
+                &url,
+                Some("test-key"),
+                "needle",
+                "update",
+                reqwest::Method::DELETE
+            )
+            .await
+            .unwrap()["status"],
+            "cancelled"
+        );
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn starts_and_reads_engine_installation_through_infer() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            for method in ["post", "get"] {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut buffer = [0u8; 4096];
+                let count = stream.read(&mut buffer).unwrap();
+                let request = String::from_utf8_lossy(&buffer[..count]).to_ascii_lowercase();
+                assert!(request.starts_with(&format!(
+                    "{method} /v1/management/engines/needle/installation "
+                )));
+                assert!(request.contains("authorization: bearer test-key"));
+                let body = r#"{"name":"needle","status":"running","message":"Installing engine"}"#;
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                )
+                .unwrap();
+            }
+        });
+        let url = format!("http://{address}");
+        assert!(
+            engine_installation_request(&url, Some("test-key"), "../needle", true)
+                .await
+                .is_err()
+        );
+        assert!(
+            engine_installation_request(&url, None, "needle", true)
+                .await
+                .is_err()
+        );
+        for start in [true, false] {
+            assert_eq!(
+                engine_installation_request(&url, Some("test-key"), "needle", start)
+                    .await
+                    .unwrap()["status"],
+                "running"
+            );
+        }
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn checks_engine_release_through_authenticated_infer() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buffer = [0u8; 4096];
+            let count = stream.read(&mut buffer).unwrap();
+            let request = String::from_utf8_lossy(&buffer[..count]).to_ascii_lowercase();
+            assert!(request.starts_with("post /v1/management/engines/needle/release-check "));
+            assert!(request.contains("authorization: bearer test-key"));
+            let body = r#"{"latest":"revision 123","detail":"Verified source"}"#;
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .unwrap();
+        });
+        let url = format!("http://{address}");
+        assert!(
+            read_engine_release(&url, Some("test-key"), "../needle")
+                .await
+                .is_err()
+        );
+        assert!(read_engine_release(&url, None, "needle").await.is_err());
+        assert_eq!(
+            read_engine_release(&url, Some("test-key"), "needle")
+                .await
+                .unwrap()["latest"],
+            "revision 123"
+        );
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn reads_engine_inventory_with_key_and_reports_older_servers() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            for (status, body) in [
+                (
+                    "200 OK",
+                    r#"{"engines":[{"name":"encoder","installed":true,"managed":false,"version":"Built in"}]}"#,
+                ),
+                ("404 Not Found", ""),
+            ] {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut buffer = [0u8; 4096];
+                let count = stream.read(&mut buffer).unwrap();
+                let request = String::from_utf8_lossy(&buffer[..count]).to_ascii_lowercase();
+                assert!(request.starts_with("get /v1/management/engines "));
+                assert!(request.contains("authorization: bearer test-key"));
+                write!(stream, "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).unwrap();
+            }
+        });
+        let url = format!("http://{address}");
+        assert_eq!(
+            read_engines(&url, Some("test-key")).await.unwrap()["engines"][0]["name"],
+            "encoder"
+        );
+        assert!(
+            read_engines(&url, Some("test-key"))
+                .await
+                .unwrap_err()
+                .contains("Update Infer")
+        );
+        assert!(read_engines(&url, None).await.is_err());
         server.join().unwrap();
     }
 

@@ -127,21 +127,27 @@ it('lets the user review and start a local model download', async () => {
   harness.invoke.mockImplementation(async (command) => {
     if (command === 'embedded_infer_available') return true
     if (command === 'connections_state') return initial()
-    if (command === 'embedded_model_candidates') return [candidate]
-    if (command === 'embedded_model_download_status')
+    if (command === 'infer_library_candidates') return [candidate]
+    if (command === 'infer_library_download_status')
       return { phase: 'complete', model: candidate.id, downloaded: 0 }
     return null
   })
   const { wrapper } = await setup()
   expect(wrapper.text()).toContain('Qwen 27B')
   expect(wrapper.text()).toContain('2.00 GB · Test license')
-  expect(harness.invoke.mock.calls.some(([name]) => name === 'embedded_model_download')).toBe(false)
+  expect(harness.invoke).toHaveBeenCalledWith('infer_library_candidates', {
+    connectionId: 'legacy',
+    connectionRevision: 0,
+  })
+  expect(harness.invoke.mock.calls.some(([name]) => name === 'infer_library_download')).toBe(false)
   await wrapper
     .findAll('button')
     .find((button) => button.text() === 'Download')!
     .trigger('click')
   await flushPromises()
-  expect(harness.invoke).toHaveBeenCalledWith('embedded_model_download', {
+  expect(harness.invoke).toHaveBeenCalledWith('infer_library_download', {
+    connectionId: 'legacy',
+    connectionRevision: 0,
     id: candidate.id,
     revision: 'v1',
     manifest: 'checked',
@@ -152,18 +158,105 @@ it('lets the user review and start a local model download', async () => {
     .find((button) => button.text() === 'Use this model')!
     .trigger('click')
   await flushPromises()
-  expect(harness.invoke).toHaveBeenCalledWith('embedded_model_use', { id: 'qwen3.8-27b' })
+  expect(harness.invoke).toHaveBeenCalledWith('infer_library_select_agent', {
+    connectionId: 'legacy',
+    connectionRevision: 0,
+    model: 'qwen3.8-27b',
+  })
   wrapper.unmount()
 })
 it('explains an empty local model list', async () => {
   harness.invoke.mockImplementation(async (command) => {
     if (command === 'embedded_infer_available') return true
     if (command === 'connections_state') return initial()
-    if (command === 'embedded_model_candidates') return []
+    if (command === 'infer_library_candidates') return []
     return null
   })
   const { wrapper } = await setup()
-  expect(wrapper.text()).toContain('No compatible models are available in this build.')
+  expect(wrapper.text()).toContain('No compatible models are available from this Infer server.')
+  wrapper.unmount()
+})
+it('scans and imports a folder on the active Infer server', async () => {
+  const candidate = {
+    id: 'fixture',
+    name: 'Fixture',
+    license: 'Test',
+    bytes: 7,
+    revision: 'v1',
+    manifest: 'reviewed',
+  }
+  harness.invoke.mockImplementation(async (command) => {
+    if (command === 'connections_state') return initial()
+    if (command === 'infer_library_candidates') return [candidate]
+    if (command === 'infer_library_download_status') return { phase: 'idle', downloaded: 0 }
+    if (command === 'infer_library_scan')
+      return [{ id: 'fixture', name: 'Fixture', path: '/models/fixture.gguf' }]
+    return null
+  })
+  const { wrapper } = await setup()
+  expect(wrapper.findAll('button').some((button) => button.text() === 'Browse')).toBe(false)
+  await wrapper.get('[aria-label="Infer model folder"]').setValue('/models')
+  await wrapper
+    .findAll('button')
+    .find((button) => button.text() === 'Scan')!
+    .trigger('click')
+  await flushPromises()
+  expect(harness.invoke).toHaveBeenCalledWith('infer_library_scan', {
+    connectionId: 'legacy',
+    connectionRevision: 0,
+    directory: '/models',
+  })
+  expect(wrapper.text()).toContain('/models/fixture.gguf')
+  await wrapper
+    .findAll('button')
+    .find((button) => button.text() === 'Import')!
+    .trigger('click')
+  await flushPromises()
+  expect(harness.invoke).toHaveBeenCalledWith('infer_library_download', {
+    connectionId: 'legacy',
+    connectionRevision: 0,
+    id: 'fixture',
+    revision: 'v1',
+    manifest: 'reviewed',
+    directory: '/models',
+  })
+  await wrapper.get('[aria-label="Infer model folder"]').setValue('/different')
+  expect(wrapper.findAll('button').some((button) => button.text() === 'Import')).toBe(false)
+  wrapper.unmount()
+})
+it('offers the local folder picker for embedded Infer', async () => {
+  harness.invoke.mockImplementation(async (command) => {
+    if (command === 'connections_state')
+      return {
+        revision: 1,
+        activeId: 'studio-embedded-infer',
+        connections: [
+          {
+            id: 'studio-embedded-infer',
+            name: 'Local Infer',
+            baseUrl: 'http://127.0.0.1:8080',
+            active: true,
+            hasApiKey: true,
+          },
+        ],
+      }
+    if (command === 'infer_library_candidates') return []
+    if (command === 'infer_library_download_status') return { phase: 'idle', downloaded: 0 }
+    if (command === 'pick_folder') return 'C:\\models'
+    if (command === 'infer_library_scan') return []
+    return null
+  })
+  const { wrapper } = await setup()
+  await wrapper
+    .findAll('button')
+    .find((button) => button.text() === 'Browse')!
+    .trigger('click')
+  await flushPromises()
+  expect(harness.invoke).toHaveBeenCalledWith('infer_library_scan', {
+    connectionId: 'studio-embedded-infer',
+    connectionRevision: 1,
+    directory: 'C:\\models',
+  })
   wrapper.unmount()
 })
 it('lists installed models on device and makes one the agent model', async () => {
@@ -180,6 +273,10 @@ it('lists installed models on device and makes one the agent model', async () =>
     return null
   })
   const { wrapper } = await setup()
+  await wrapper
+    .findAll('button')
+    .find((button) => button.text() === 'Installed')!
+    .trigger('click')
   expect(wrapper.text()).toContain('Qwen 4B')
   expect(wrapper.get('[aria-label="Models"]').text()).not.toContain('Cloud')
   await wrapper.get('[aria-label="Remove Qwen 4B"]').trigger('click')
@@ -198,7 +295,11 @@ it('lists installed models on device and makes one the agent model', async () =>
   })
   await wrapper.get('[aria-label="Use Qwen 4B"]').trigger('click')
   await flushPromises()
-  expect(harness.invoke).toHaveBeenCalledWith('infer_select_agent', { model: 'qwen' })
+  expect(harness.invoke).toHaveBeenCalledWith('infer_library_select_agent', {
+    connectionId: 'legacy',
+    connectionRevision: 0,
+    model: 'qwen',
+  })
   wrapper.unmount()
 })
 it('stages edits until Save and preserves shared model roles and Decision URL', async () => {

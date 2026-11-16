@@ -236,6 +236,8 @@ impl ExternalAgent {
 #[serde(rename_all = "camelCase")]
 pub struct StepStarted {
     pub step: u32,
+    pub kind: &'static str,
+    pub model: Option<String>,
     pub tool: &'static str,
     pub reason: String,
     pub text: String,
@@ -271,8 +273,10 @@ pub struct TaskDone {
 mod tests {
     #[test]
     fn step_started_is_sent_with_the_camel_case_names_the_ui_reads() {
-        let started = super::StepStarted {
+        let mut started = super::StepStarted {
             step: 1,
+            kind: "screen",
+            model: Some("test-model".into()),
             tool: "click",
             reason: String::new(),
             text: String::new(),
@@ -282,9 +286,22 @@ mod tests {
             button: "left",
             duration_ms: 250,
         };
-        let json = serde_json::to_value(started).unwrap();
+        let json = serde_json::to_value(&started).unwrap();
         assert_eq!(json["durationMs"], 250, "the overlay reads durationMs");
         assert!(json.get("duration_ms").is_none());
+        assert_eq!(json["kind"], "screen");
+        assert_eq!(json["model"], "test-model");
+        assert_eq!(json.as_object().unwrap().len(), 11);
+        for name in [
+            "step", "tool", "reason", "text", "detail", "point", "double", "button",
+        ] {
+            assert!(json.get(name).is_some(), "missing existing field {name}");
+        }
+        started.kind = "tool";
+        started.model = None;
+        let json = serde_json::to_value(started).unwrap();
+        assert_eq!(json["kind"], "tool");
+        assert!(json.get("model").unwrap().is_null());
     }
 
     use super::*;

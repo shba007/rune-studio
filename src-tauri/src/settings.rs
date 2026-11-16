@@ -9,7 +9,6 @@ use crate::{error::AppResult, hotkeys, model::role::ModelRole};
 
 pub(crate) const KEYRING_SERVICE: &str = "dev.shirsendu-bairagi.rune-studio";
 pub const DEFAULT_CONNECTION: &str = "default";
-const DEFAULT_AGENT_MODEL: &str = "qwen3.5-4b-q4";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -41,7 +40,7 @@ fn default_connection(base_url: &str) -> Connection {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelRoles {
-    #[serde(default = "default_agent_model")]
+    #[serde(default)]
     pub agent: String,
     #[serde(default)]
     pub verifier: String,
@@ -49,28 +48,20 @@ pub struct ModelRoles {
     pub analysis: String,
     #[serde(default)]
     pub voice: String,
-    #[serde(default = "default_decision_model")]
+    #[serde(default)]
     pub decision: String,
     #[serde(default)]
     pub advisor: String,
 }
 
-fn default_agent_model() -> String {
-    DEFAULT_AGENT_MODEL.into()
-}
-
-fn default_decision_model() -> String {
-    "liquid-d1-3b".into()
-}
-
 impl Default for ModelRoles {
     fn default() -> Self {
         Self {
-            agent: default_agent_model(),
+            agent: String::new(),
             verifier: String::new(),
             analysis: String::new(),
             voice: String::new(),
-            decision: default_decision_model(),
+            decision: String::new(),
             advisor: String::new(),
         }
     }
@@ -79,48 +70,12 @@ impl Default for ModelRoles {
 impl ModelRoles {
     pub fn model_for_role(&self, role: ModelRole) -> &str {
         match role {
-            ModelRole::Agent => {
-                if !self.agent.is_empty() {
-                    &self.agent
-                } else {
-                    DEFAULT_AGENT_MODEL
-                }
-            }
-            ModelRole::Verifier => {
-                if !self.verifier.is_empty() {
-                    &self.verifier
-                } else {
-                    self.model_for_role(ModelRole::Agent)
-                }
-            }
-            ModelRole::Analysis => {
-                if !self.analysis.is_empty() {
-                    &self.analysis
-                } else {
-                    self.model_for_role(ModelRole::Agent)
-                }
-            }
-            ModelRole::Voice => {
-                if !self.voice.is_empty() {
-                    &self.voice
-                } else {
-                    self.model_for_role(ModelRole::Agent)
-                }
-            }
-            ModelRole::Decision => {
-                if !self.decision.is_empty() {
-                    &self.decision
-                } else {
-                    self.model_for_role(ModelRole::Agent)
-                }
-            }
-            ModelRole::Advisor => {
-                if !self.advisor.is_empty() {
-                    &self.advisor
-                } else {
-                    self.model_for_role(ModelRole::Agent)
-                }
-            }
+            ModelRole::Agent => &self.agent,
+            ModelRole::Verifier => &self.verifier,
+            ModelRole::Analysis => &self.analysis,
+            ModelRole::Voice => &self.voice,
+            ModelRole::Decision => &self.decision,
+            ModelRole::Advisor => &self.advisor,
         }
     }
 }
@@ -467,7 +422,7 @@ impl Default for Settings {
             input_classification: InputClassification::Automatic,
             developer_mode: false,
             fast_checks: false,
-            decision_model: "liquid-d1-3b".into(),
+            decision_model: String::new(),
             decision_url: String::new(),
             archive_keep_days: 0,
             verify_mode: VerifyMode::default(),
@@ -806,16 +761,18 @@ mod tests {
         assert_eq!(settings.connections[0].base_url, settings.base_url);
     }
     #[test]
-    fn default_agent_model_applies_to_new_settings_and_empty_agent_role() {
+    fn defaults_do_not_choose_infer_models() {
         use super::*;
         let settings = Settings::default();
-        assert_eq!(settings.model, "qwen3.5-4b-q4");
-        assert_eq!(settings.models.agent, "qwen3.5-4b-q4");
+        assert!(settings.model.is_empty());
+        assert!(settings.models.agent.is_empty());
+        assert!(settings.models.decision.is_empty());
+        assert!(settings.decision_model.is_empty());
         let empty = ModelRoles {
             agent: String::new(),
             ..ModelRoles::default()
         };
-        assert_eq!(empty.model_for_role(ModelRole::Agent), "qwen3.5-4b-q4");
+        assert!(empty.model_for_role(ModelRole::Agent).is_empty());
         let saved: Settings =
             settings_fixture(r#"{"model":"custom","models":{"agent":"custom"}}"#).unwrap();
         assert_eq!(saved.models.agent, "custom");
@@ -921,10 +878,10 @@ mod tests {
             settings.model_for_role(ModelRole::Verifier),
             "verifier-model"
         );
-        assert_eq!(settings.model_for_role(ModelRole::Analysis), "agent-model");
+        assert_eq!(settings.model_for_role(ModelRole::Analysis), "");
         assert_eq!(settings.model_for_role(ModelRole::Voice), "voice-model");
-        assert_eq!(settings.model_for_role(ModelRole::Decision), "agent-model");
-        assert_eq!(settings.model_for_role(ModelRole::Advisor), "agent-model");
+        assert_eq!(settings.model_for_role(ModelRole::Decision), "");
+        assert_eq!(settings.model_for_role(ModelRole::Advisor), "");
     }
 
     #[test]

@@ -765,13 +765,13 @@ pub(crate) fn submit_with_id(
     }
     if let Some(request) = tasks_state().requests.iter().find(|r| r.id == id) {
         let state = app.state::<AppState>();
-        let (model, settings_json) = crate::trace::model_and_snapshot(&state.settings);
+        let (_, settings_json) = crate::trace::model_and_snapshot(&state.settings);
         state.trace.begin_background_run(crate::trace::RunInfo {
             id: request.history_id.clone(),
             task: text.into(),
             source: "task-request".into(),
             started_utc: crate::trace::now_utc(),
-            model: Some(model),
+            model: None,
             settings_json: Some(settings_json),
             app_version: Some(crate::VERSION.into()),
             ..Default::default()

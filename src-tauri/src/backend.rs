@@ -138,8 +138,6 @@ pub async fn check(
         .map(|m| m.raw_capabilities.clone())
         .unwrap_or_default();
 
-    let models = studio_model_choices(models);
-
     BackendStatus {
         agent_model,
         reachable: true,
@@ -151,13 +149,6 @@ pub async fn check(
         models,
         memory: crate::model::capabilities::parse_server_memory(&body),
     }
-}
-
-fn studio_model_choices(models: Vec<ModelCapabilities>) -> Vec<ModelCapabilities> {
-    models
-        .into_iter()
-        .filter(|model| !model.id.eq_ignore_ascii_case("holo3.1-0.8b-q4"))
-        .collect()
 }
 
 fn missing_models(catalog: &serde_json::Value, models: &[ModelCapabilities]) -> Vec<String> {
@@ -174,15 +165,38 @@ fn missing_models(catalog: &serde_json::Value, models: &[ModelCapabilities]) -> 
 mod tests {
     use super::*;
 
-    #[test]
-    fn removed_model_is_not_offered_in_discovered_choices() {
-        let models = vec![
-            ModelCapabilities::unknown("HOLO3.1-0.8B-Q4"),
-            ModelCapabilities::unknown("holo3.1-4b-q4"),
-        ];
-        let visible = studio_model_choices(models);
-        assert_eq!(visible.len(), 1);
-        assert_eq!(visible[0].id, "holo3.1-4b-q4");
+    #[tokio::test]
+    async fn backend_shows_all_models_reported_by_infer() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            for body in [
+                "{}",
+                r#"{"roles":{}}"#,
+                r#"{"data":[{"id":"holo3.1-0.8b-q4"},{"id":"other"}]}"#,
+            ] {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = [0; 2048];
+                stream.read(&mut request).unwrap();
+                write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).unwrap();
+            }
+        });
+        let settings = Settings {
+            base_url: format!("http://{address}"),
+            ..Settings::default()
+        };
+        let status = check(&reqwest::Client::new(), &settings, Some("test-key")).await;
+        assert!(status.reachable && status.auth_ok, "{:?}", status.error);
+        assert_eq!(
+            status
+                .models
+                .iter()
+                .map(|model| model.id.as_str())
+                .collect::<Vec<_>>(),
+            ["holo3.1-0.8b-q4", "other"]
+        );
+        server.join().unwrap();
     }
 
     #[tokio::test]

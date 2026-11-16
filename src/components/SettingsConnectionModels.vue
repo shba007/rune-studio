@@ -14,6 +14,7 @@ import AppIcon from './AppIcon.vue'
 import ConnectionEditor from './ConnectionEditor.vue'
 import ModelIcon from './ModelIcon.vue'
 import ModelLibrary from './ModelLibrary.vue'
+import InferEngineInventory from './InferEngineInventory.vue'
 import {
   useConnections,
   type ConnectionEdit,
@@ -30,7 +31,6 @@ const activeConnection = computed(() =>
 const checking = ref(false)
 const modelSearch = ref('')
 const embeddedAvailable = ref(false)
-const embeddedChecked = ref(false)
 const embeddedStarting = ref(false)
 const embeddedError = ref('')
 async function modelsChanged() {
@@ -43,7 +43,6 @@ onMounted(async () => {
   } catch {
     embeddedAvailable.value = false
   }
-  embeddedChecked.value = true
 })
 async function startLocalInfer() {
   embeddedStarting.value = true
@@ -120,8 +119,11 @@ watch(
     />
     <template v-else-if="!detail">
       <ModelLibrary
-        v-if="embeddedChecked"
-        :downloads="embeddedAvailable"
+        v-if="activeConnection"
+        :key="`${activeConnection.id}:${connections.catalog.value?.revision}`"
+        :connection-id="activeConnection.id"
+        :connection-revision="connections.catalog.value?.revision ?? 0"
+        :downloads="true"
         :busy="connections.pending.value || !!agent.isRunning?.value"
         :statuses="modelStatuses"
         @used="modelsChanged"
@@ -274,6 +276,11 @@ watch(
         </RuneButton>
         <span class="text-rune-caption text-rune-text-3">Model roles save automatically</span>
       </header>
+      <InferEngineInventory
+        :key="`${connections.catalog.value?.activeId}:${connections.catalog.value?.revision}`"
+        :connection-id="connections.catalog.value?.activeId ?? ''"
+        :connection-revision="connections.catalog.value?.revision ?? 0"
+      />
       <HubGroup title="Connection">
         <HubRow label="Backend">
           <div class="max-w-96 min-w-0">
