@@ -315,8 +315,16 @@ it('routes completion by task and retains other tasks across foreground starts',
     })
   start(1)
   start(2)
-  send('step_finished', { taskId: 2, step: 1, ok: false })
+  const result = {
+    text: 'Tool output',
+    structuredContent: { count: 2 },
+    outputSchema: { type: 'object' },
+  }
+  send('step_finished', { taskId: 2, step: 1, ok: false, error: 'Tool refused', result })
   expect(agent.steps.value.map((step) => step.ok)).toEqual([null, false])
+  expect(agent.steps.value[0]?.result).toBeUndefined()
+  expect(agent.steps.value[1]?.result).toEqual(result)
+  expect(agent.steps.value[1]?.error).toBe('Tool refused')
   send('task_started', { taskId: 3 })
   expect(agent.steps.value).toHaveLength(2)
   start(3)
@@ -333,5 +341,10 @@ it('routes completion by task and retains other tasks across foreground starts',
   send('task_started', { taskId: 3 })
   expect(agent.steps.value.some((step) => step.taskId === 3)).toBe(false)
   expect(agent.steps.value.some((step) => step.taskId === 1)).toBe(true)
+  send('task_started', { taskId: 2 })
+  expect(agent.steps.value.some((step) => step.taskId === 2)).toBe(false)
+  expect(agent.steps.value.some((step) => step.result !== undefined)).toBe(false)
+  start(2)
+  expect(agent.steps.value.at(-1)?.result).toBeUndefined()
   wrapper.unmount()
 })

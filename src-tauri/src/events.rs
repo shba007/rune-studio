@@ -262,6 +262,8 @@ pub struct StepFinished {
     pub step: u32,
     pub ok: bool,
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<crate::kit::client::StepToolResult>,
 }
 
 #[derive(Clone, Serialize)]
@@ -296,6 +298,7 @@ mod tests {
         assert_eq!(json["taskId"], 42);
         assert!(json.get("task_id").is_none());
         let finished = serde_json::to_value(super::StepFinished {
+            result: None,
             task_id: Some(42),
             step: 1,
             ok: true,

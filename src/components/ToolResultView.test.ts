@@ -73,7 +73,7 @@ it('renders text, mixed lists and empty collections without executing markup', (
   lists.unmount()
 })
 
-it('uses schema labels and descriptions and toggles to the unchanged text', async () => {
+it('uses schema labels and descriptions, orders by required and keeps the text collapsed', async () => {
   const text = '{"content":[{"type":"text","text":"Original response"}]}'
   const wrapper = mount(ToolResultView, {
     props: {
@@ -81,20 +81,26 @@ it('uses schema labels and descriptions and toggles to the unchanged text', asyn
       schema: {
         type: 'object',
         properties: {
+          alpha: { type: 'string' },
           count: { type: 'integer', title: 'Item count', description: 'Number of items' },
           enabled: { type: 'boolean' },
         },
+        required: ['count', 'enabled'],
       },
-      structuredContent: { enabled: false, count: 3 },
+      structuredContent: { enabled: false, count: 3, alpha: 'a' },
     },
   })
-  expect(wrapper.findAll('dt').map((field) => field.text())).toEqual(['Item count', 'Enabled'])
+  expect(wrapper.findAll('dt').map((field) => field.text())).toEqual([
+    'Item count',
+    'Enabled',
+    'Alpha',
+  ])
   expect(wrapper.get('dt').attributes('title')).toBe('Number of items')
-  expect(wrapper.findAll('dd').map((value) => value.text())).toEqual(['3', 'No'])
-  await wrapper.get('button').trigger('click')
-  expect(wrapper.get('button').attributes('aria-pressed')).toBe('true')
-  expect(wrapper.get('pre').text()).toBe(text)
-  await wrapper.get('button').trigger('click')
+  expect(wrapper.findAll('dd').map((value) => value.text())).toEqual(['3', 'No', 'a'])
+  expect(wrapper.find('button').exists()).toBe(false)
+  expect(wrapper.get('details pre').text()).toBe(text)
+  await wrapper.setProps({ compact: true })
+  expect(wrapper.find('details').exists()).toBe(false)
   expect(wrapper.find('dl').exists()).toBe(true)
   wrapper.unmount()
 })

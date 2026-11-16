@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { useIntervalFn, useTimeoutFn } from '@vueuse/core'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 
 import type { TaskTiming } from '@/config/eta'
 import type { LiveStep } from '@/config/liveSteps'
@@ -37,6 +37,7 @@ import {
   type ScreenRequestSnapshot,
   type StateChangedPayload,
   type StepStartedPayload,
+  type StepFinishedPayload,
   type TaskDonePayload,
   type TaskVerifiedPayload,
   type ThinkingPayload,
@@ -113,7 +114,7 @@ export function useAgent() {
   const thinking = ref<ThinkingPayload | null>(null)
   const response = ref<string | null>(null)
   const question = ref<ConfirmRequestPayload | null>(null)
-  const steps = ref<LiveStep[]>([])
+  const steps = shallowRef<LiveStep[]>([])
   const notice = ref<string | null>(null)
   const noticeKind = ref<'error' | 'info'>('error')
   const focusTick = ref(0)
@@ -490,16 +491,19 @@ export function useAgent() {
           },
         ]
       }),
-      await listen<{ step: number; taskId?: number | null; ok: boolean }>(
-        'step_finished',
-        (event) => {
-          steps.value = steps.value.map((s) =>
-            s.step === event.payload.step && s.taskId === (event.payload.taskId ?? null)
-              ? { ...s, ok: event.payload.ok, finishedAt: Date.now() }
-              : s,
-          )
-        },
-      ),
+      await listen<StepFinishedPayload>('step_finished', (event) => {
+        steps.value = steps.value.map((s) =>
+          s.step === event.payload.step && s.taskId === (event.payload.taskId ?? null)
+            ? {
+                ...s,
+                ok: event.payload.ok,
+                finishedAt: Date.now(),
+                result: s.kind === 'tool' ? event.payload.result : undefined,
+                error: event.payload.error,
+              }
+            : s,
+        )
+      }),
       await listen<TaskDonePayload>(TASK_DONE, (event) => {
         resultText.value = event.payload.summary
         response.value = event.payload.summary

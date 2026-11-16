@@ -952,7 +952,8 @@ async fn call_tool_from_settings(
 ) -> Result<ToolCallResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let config = read_config(&path)?;
-        call_result(&config, &name, &args, &CancelToken::default()).map(playground_result)
+        call_result(&config, &name, &args, &CancelToken::default())
+            .map(|(result, _)| playground_result(result))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -964,10 +965,10 @@ pub fn call(
     args: &Value,
     cancel: &CancelToken,
 ) -> Result<String, String> {
-    call_result(config, name, args, cancel).map(|result| bounded(&result))
+    call_result(config, name, args, cancel).map(|(result, _)| bounded(&result))
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolCallResult {
     pub text: String,
@@ -975,6 +976,27 @@ pub struct ToolCallResult {
     pub structured_content: Option<Value>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub structured_content_omitted: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StepToolResult {
+    #[serde(flatten)]
+    pub output: ToolCallResult,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_schema: Option<Value>,
+}
+
+pub fn call_for_step(
+    config: &Config,
+    name: &str,
+    args: &Value,
+    cancel: &CancelToken,
+) -> Result<StepToolResult, String> {
+    call_result(config, name, args, cancel).map(|(result, output_schema)| StepToolResult {
+        output: playground_result(result),
+        output_schema,
+    })
 }
 
 fn playground_result(result: Value) -> ToolCallResult {
@@ -999,7 +1021,7 @@ fn call_result(
     name: &str,
     args: &Value,
     cancel: &CancelToken,
-) -> Result<Value, String> {
+) -> Result<(Value, Option<Value>), String> {
     if args.to_string().len() > 8192 {
         return Err("Kit arguments exceed 8 KB".into());
     }
@@ -1041,7 +1063,7 @@ fn call_result(
     }) {
         return Err(format!("MCP error: {}", bounded(&result)));
     }
-    Ok(result)
+    Ok((result, tool.output_schema))
 }
 fn bounded(value: &Value) -> String {
     let mut safe = value.clone();
@@ -1068,6 +1090,76 @@ fn bounded(value: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tool_step_event_has_schema_and_redacted_result_without_changing_model_text() {
+        let (config, handle) = server("structured", 6);
+        let args = json!({"timezone":"UTC"});
+        let output = call_for_step(
+            &config,
+            "time__get_current_time",
+            &args,
+            &CancelToken::default(),
+        )
+        .unwrap();
+        let model_text = call(
+            &config,
+            "time__get_current_time",
+            &args,
+            &CancelToken::default(),
+        )
+        .unwrap();
+        handle.join().unwrap();
+        assert_eq!(output.output.text, model_text);
+        let event = serde_json::to_value(crate::events::StepFinished {
+            task_id: Some(12),
+            step: 1,
+            ok: true,
+            error: None,
+            result: Some(output),
+        })
+        .unwrap();
+        assert_eq!(event["result"]["text"], model_text);
+        assert_eq!(
+            event["result"]["structuredContent"],
+            json!({"count":3,"password":"[removed]"})
+        );
+        assert_eq!(
+            event["result"]["outputSchema"]["properties"]["count"]["type"],
+            "integer"
+        );
+        assert!(event["result"].get("structuredContentOmitted").is_none());
+    }
+
+    #[test]
+    fn tool_event_omits_oversized_structured_content_and_screen_event_omits_result() {
+        let result = StepToolResult {
+            output: playground_result(
+                json!({"content":[{"type":"text","text":"summary"}],"structuredContent":{"items":"x".repeat(16385)}}),
+            ),
+            output_schema: None,
+        };
+        let mut finished = crate::events::StepFinished {
+            task_id: Some(12),
+            step: 1,
+            ok: true,
+            error: None,
+            result: Some(result),
+        };
+        let event = serde_json::to_value(&finished).unwrap();
+        assert_eq!(event["result"]["structuredContentOmitted"], true);
+        assert!(event["result"].get("structuredContent").is_none());
+        assert!(
+            event["result"]["text"]
+                .as_str()
+                .unwrap()
+                .contains("summary")
+        );
+        finished.result = None;
+        let screen = serde_json::to_value(finished).unwrap();
+        assert!(screen.get("result").is_none());
+        assert_eq!(screen["ok"], true);
+    }
 
     #[test]
     fn output_schema_survives_discovery_and_absent_stays_absent() {

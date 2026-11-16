@@ -7,10 +7,12 @@ import {
   stepDuration,
   stepKey,
   stepStatus,
+  stepTitle,
   type LiveStep,
 } from '@/config/liveSteps'
 import AppIcon from './AppIcon.vue'
 import RuneButton from './RuneButton.vue'
+import ToolResultView from './ToolResultView.vue'
 
 const props = defineProps<{
   lanes: { id: number | null; label: string }[]
@@ -40,13 +42,26 @@ const selectedDuration = computed(() => {
   return ms === null ? '' : durationText(ms)
 })
 
+const selectedTitle = computed(() =>
+  selected.value ? stepTitle(selected.value) : { title: '', server: null },
+)
+// Kind, server and model. Status is on the title line already, so it is not repeated here.
+const selectedMeta = computed(() =>
+  selected.value
+    ? [STEP_KIND[selected.value.kind].label, selectedTitle.value.server, selected.value.model]
+        .filter(Boolean)
+        .join(' · ')
+    : '',
+)
+
 function describe(step: LiveStep) {
   const ms = stepDuration(step, props.now)
   return [
     STEP_KIND[step.kind].label,
-    step.text || step.tool,
+    stepTitle(step).title,
     ms === null ? '' : durationText(ms),
     stepStatus(step),
+    step.kind === 'tool' && step.result ? 'Result available' : '',
   ]
     .filter(Boolean)
     .join(' · ')
@@ -82,7 +97,14 @@ function describe(step: LiveStep) {
             :aria-pressed="!!selected && stepKey(selected) === stepKey(block.step)"
             :title="describe(block.step)"
             @click="picked = stepKey(block.step)"
-          />
+          >
+            <span
+              v-if="block.step.kind === 'tool' && block.step.result"
+              class="absolute right-0.5 top-0.5 size-1 rounded-full bg-rune-ink"
+              aria-hidden="true"
+              data-testid="lane-result-mark"
+            />
+          </RuneButton>
         </template>
       </div>
     </div>
@@ -109,28 +131,60 @@ function describe(step: LiveStep) {
           :class="selected.kind === 'tool' ? 'text-tool' : 'text-voice'"
         />
         <span class="min-w-0 flex-1 truncate" :title="selected.text || selected.tool">{{
-          selected.text || selected.tool
+          selectedTitle.title
         }}</span>
         <span
           class="shrink-0 tabular-nums"
           :class="selected.ok === false ? 'text-attention' : 'text-rune-text-2'"
-          >{{ selected.ok === false ? 'Failed' : selectedDuration || stepStatus(selected) }}</span
+          >{{ selected.ok === true ? selectedDuration || 'Done' : stepStatus(selected) }}</span
         >
       </div>
-      <div class="flex min-w-0 flex-wrap gap-x-2 gap-y-0.5 text-rune-caption text-rune-text-3">
-        <span>{{ STEP_KIND[selected.kind].label }}</span>
-        <span v-if="selected.model" class="max-w-full truncate" :title="selected.model">{{
-          selected.model
-        }}</span>
-        <span>{{ stepStatus(selected) }}</span>
-      </div>
       <p
-        v-if="selected.detail && selected.detail !== (selected.text || selected.tool)"
+        class="m-0 truncate text-rune-caption text-rune-text-3"
+        :title="selectedMeta"
+        data-testid="lane-meta"
+      >
+        {{ selectedMeta }}
+      </p>
+      <p
+        v-if="
+          selected.detail &&
+          selected.detail !== (selected.text || selected.tool) &&
+          !(selected.kind === 'tool' && (selected.result || selected.ok === false))
+        "
         class="m-0 line-clamp-2 text-rune-caption text-rune-text-2 [overflow-wrap:anywhere]"
         :title="selected.detail"
       >
         {{ selected.detail }}
       </p>
+      <div
+        v-if="selected.kind === 'tool' && (selected.result || selected.ok === false)"
+        data-testid="lane-result"
+        class="mt-1 min-w-0 border-t border-white/10 pt-2"
+      >
+        <p
+          v-if="selected.ok === false"
+          role="alert"
+          class="m-0 max-h-44 overflow-y-auto text-rune-caption text-attention whitespace-pre-wrap [overflow-wrap:anywhere]"
+        >
+          {{ selected.error || 'Tool call failed' }}
+        </p>
+        <template v-else-if="selected.result">
+          <p
+            v-if="selected.result.structuredContentOmitted"
+            class="m-0 text-rune-caption text-rune-text-2"
+          >
+            Structured result omitted for size.
+          </p>
+          <ToolResultView
+            :key="stepKey(selected)"
+            compact
+            :text="selected.result.text"
+            :schema="selected.result.outputSchema"
+            :structured-content="selected.result.structuredContent"
+          />
+        </template>
+      </div>
     </div>
   </section>
 </template>

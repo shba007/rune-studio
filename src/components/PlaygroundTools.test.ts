@@ -177,7 +177,7 @@ it('does not discover or run tools when Kit is disabled', async () => {
   wrapper.unmount()
 })
 
-it('marks schema tools and renders structured output with a Raw toggle', async () => {
+it('marks schema tools and renders structured output with the text collapsed below', async () => {
   harness.invoke.mockImplementation(async (command) => {
     if (command === 'kit_settings') return config
     if (command === 'kit_discover')
@@ -206,7 +206,6 @@ it('marks schema tools and renders structured output with a Raw toggle', async (
   const result = wrapper.get('[aria-label="Tool result"]')
   expect(result.get('dt').text()).toBe('Total items')
   expect(result.get('dd').text()).toBe('4')
-  await result.get('button').trigger('click')
-  expect(result.get('pre').text()).toBe('Original text')
+  expect(result.get('details pre').text()).toBe('Original text')
   wrapper.unmount()
 })

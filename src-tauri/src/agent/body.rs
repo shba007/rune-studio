@@ -167,6 +167,16 @@ pub fn finish_step(
     result: &Result<(), ExecError>,
     task_id: Option<u64>,
 ) {
+    finish_step_with_result(app, step, result, task_id, None);
+}
+
+pub fn finish_step_with_result(
+    app: &AppHandle,
+    step: u32,
+    result: &Result<(), ExecError>,
+    task_id: Option<u64>,
+    output: Option<crate::kit::client::StepToolResult>,
+) {
     let (ok, error) = match result {
         Ok(()) => (true, None),
         Err(err) => (false, Some(err.to_string())),
@@ -174,6 +184,7 @@ pub fn finish_step(
     let _ = app.emit(
         events::STEP_FINISHED,
         StepFinished {
+            result: output,
             step,
             ok,
             error,

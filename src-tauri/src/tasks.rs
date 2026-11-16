@@ -1315,7 +1315,7 @@ async fn background(
         let config = config.clone();
         let cancel = token.clone();
         let result = tauri::async_runtime::spawn_blocking(move || {
-            crate::kit::client::call(&config, &tool_name, &args, &cancel)
+            crate::kit::client::call_for_step(&config, &tool_name, &args, &cancel)
         })
         .await
         .map_err(|e| e.to_string())
@@ -1327,12 +1327,15 @@ async fn background(
                 step,
                 ok: result.is_ok(),
                 error: result.as_ref().err().cloned(),
+                result: result.as_ref().ok().cloned(),
             },
         );
         history.push_str(&format!(
             "{} -> {}\n",
             name,
-            result.unwrap_or_else(|e| format!("Failed: {e}"))
+            result
+                .map(|result| result.output.text)
+                .unwrap_or_else(|e| format!("Failed: {e}"))
         ));
         if history.len() > 65536 {
             return Err("Background evidence limit reached; narrow the request".into());

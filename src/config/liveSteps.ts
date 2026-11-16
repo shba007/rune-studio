@@ -1,14 +1,31 @@
-import type { StepStartedPayload } from '@/types/protocol'
+import type { StepStartedPayload, StepFinishedPayload } from '@/types/protocol'
 import type { IconName } from '@/icons'
 
 export type LiveStep = Pick<
   StepStartedPayload,
   'step' | 'taskId' | 'tool' | 'kind' | 'model' | 'text' | 'detail'
-> & { ok: boolean | null; startedAt?: number; finishedAt?: number | null }
+> & {
+  ok: boolean | null
+  startedAt?: number
+  finishedAt?: number | null
+  result?: StepFinishedPayload['result']
+  error?: string | null
+}
 
 export const STEP_KIND: Record<LiveStep['kind'], { label: string; icon: IconName }> = {
   tool: { label: 'Tool call', icon: 'plug' },
   screen: { label: 'Screen action', icon: 'mouse' },
+}
+
+// A Kit tool is named "<server>__<tool>" (the agent loop adds a "kit__" prefix). The card
+// shows the tool on the title line and the server beside the kind, like the Playground.
+export function stepTitle(step: LiveStep): { title: string; server: string | null } {
+  const text = step.text || step.tool
+  if (step.kind !== 'tool') return { title: text, server: null }
+  const parts = text.replace(/^kit__/, '').split('__')
+  if (parts.length < 2 || parts.some((part) => !part || /\s/.test(part)))
+    return { title: text, server: null }
+  return { title: parts.slice(1).join('__'), server: parts[0]! }
 }
 
 export const stepKey = (step: LiveStep) => `${step.taskId ?? 'run'}:${step.step}`

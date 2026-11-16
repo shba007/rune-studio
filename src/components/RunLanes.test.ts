@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils'
 import { expect, it } from 'vite-plus/test'
 import type { LiveStep } from '@/config/liveSteps'
 import RunLanes from './RunLanes.vue'
+import ToolResultView from './ToolResultView.vue'
 
 const step = (over: Partial<LiveStep>): LiveStep => ({
   taskId: 1,
@@ -64,5 +65,96 @@ it('stays hidden until a step has started', () => {
     props: { lanes: [{ id: 1, label: 'Task 1' }], steps: [], now: 0 },
   })
   expect(wrapper.find('[aria-label="Run timeline"]').exists()).toBe(false)
+  wrapper.unmount()
+})
+
+it('opens a tool result with schema in the existing detail card, compact and without a raw view', async () => {
+  const result = {
+    text: 'Original tool output',
+    structuredContent: { count: 4 },
+    outputSchema: {
+      type: 'object',
+      properties: { count: { type: 'integer', title: 'Item count' } },
+    },
+  }
+  const wrapper = mount(RunLanes, {
+    props: {
+      lanes: [{ id: 1, label: 'Task' }],
+      steps: [step({ kind: 'tool', result }), step({ step: 2 })],
+      now: 2000,
+    },
+  })
+  expect(wrapper.find('[data-testid="lane-result"]').exists()).toBe(false)
+  expect(wrapper.findAll('[data-testid="lane-result-mark"]')).toHaveLength(1)
+  expect(wrapper.findAll('.block-mark')[0]!.attributes('aria-label')).toContain('Result available')
+  await wrapper.findAll('.block-mark')[0]!.trigger('click')
+  const area = wrapper.get('[data-testid="lane-detail"] [data-testid="lane-result"]')
+  expect(area.get('dt').text()).toBe('Item count')
+  expect(area.get('dd').text()).toBe('4')
+  expect(wrapper.getComponent(ToolResultView).props('compact')).toBe(true)
+  expect(area.get('.compact-result').classes()).toContain('max-h-64')
+  expect(area.get('.compact-result').classes()).toContain('overflow-y-auto')
+  expect(area.find('button').exists()).toBe(false)
+  expect(area.find('details').exists()).toBe(false)
+  expect(area.text()).not.toContain('Original tool output')
+  await wrapper.findAll('.block-mark')[1]!.trigger('click')
+  expect(wrapper.find('[data-testid="lane-result"]').exists()).toBe(false)
+  wrapper.unmount()
+})
+
+it('shows legacy text without a schema and the omission hint', () => {
+  const wrapper = mount(RunLanes, {
+    props: {
+      lanes: [{ id: 1, label: 'Task' }],
+      steps: [
+        step({
+          kind: 'tool',
+          result: { text: 'Plain returned text', structuredContentOmitted: true },
+        }),
+      ],
+      now: 2000,
+    },
+  })
+  const area = wrapper.get('[data-testid="lane-result"]')
+  expect(area.text()).toContain('Plain returned text')
+  expect(area.text()).toContain('Structured result omitted for size')
+  wrapper.unmount()
+})
+
+it('shows failed tool errors and never renders results for screen steps', async () => {
+  const result = { text: 'Do not show this instead of the error' }
+  const wrapper = mount(RunLanes, {
+    props: {
+      lanes: [{ id: 1, label: 'Task' }],
+      steps: [
+        step({ kind: 'tool', ok: false, error: 'Kit tool error: refused', result }),
+        step({ step: 2, kind: 'screen', result }),
+      ],
+      now: 2000,
+    },
+  })
+  expect(wrapper.find('[data-testid="lane-result"]').exists()).toBe(false)
+  await wrapper.findAll('.block-mark')[0]!.trigger('click')
+  expect(wrapper.get('[role="alert"]').text()).toBe('Kit tool error: refused')
+  expect(wrapper.findComponent(ToolResultView).exists()).toBe(false)
+  await wrapper.setProps({
+    steps: [step({ kind: 'tool', ok: false, error: 'No result returned' })],
+  })
+  expect(wrapper.get('[role="alert"]').text()).toBe('No result returned')
+  wrapper.unmount()
+})
+it('shows a Kit tool by its own name with the server in the meta line', () => {
+  const wrapper = mount(RunLanes, {
+    props: {
+      lanes: [{ id: 1, label: 'Task' }],
+      steps: [
+        step({ kind: 'tool', text: 'kit__rune-time__get_current_time', model: 'local-model' }),
+      ],
+      now: 2000,
+    },
+  })
+  const detail = wrapper.get('[data-testid="lane-detail"]')
+  expect(detail.get('[title="kit__rune-time__get_current_time"]').text()).toBe('get_current_time')
+  expect(detail.get('[data-testid="lane-meta"]').text()).toBe('Tool call · rune-time · local-model')
   wrapper.unmount()
 })

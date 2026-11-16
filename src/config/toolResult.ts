@@ -27,6 +27,20 @@ const field = (key: string, schema: unknown): SchemaField => ({
   hint: record(schema) && typeof schema.description === 'string' ? schema.description : undefined,
 })
 
+// A schema's property order does not survive transport (JSON objects arrive with sorted
+// keys), but its `required` array does. Fields listed there come first, in that order.
+function ordered(schema: Record<string, unknown>, keys: string[]): string[] {
+  const required = Array.isArray(schema.required) ? schema.required.map(String) : []
+  const rank = (key: string) => {
+    const index = required.indexOf(key)
+    return index < 0 ? required.length : index
+  }
+  return keys
+    .map((key, position) => ({ key, position }))
+    .sort((a, b) => rank(a.key) - rank(b.key) || a.position - b.position)
+    .map((entry) => entry.key)
+}
+
 export function schemaView(schema: unknown, value: ResultValue, depth = 0): SchemaView {
   const fallback: SchemaView = { kind: 'json', value }
   if (
@@ -37,10 +51,10 @@ export function schemaView(schema: unknown, value: ResultValue, depth = 0): Sche
     return fallback
   if (schema.type === 'object' && record(value)) {
     const properties = record(schema.properties) ? schema.properties : {}
-    const keys = [
+    const keys = ordered(schema, [
       ...Object.keys(properties),
       ...Object.keys(value).filter((key) => !Object.hasOwn(properties, key)),
-    ]
+    ])
     return {
       kind: 'object',
       fields: keys.map((key) => ({
@@ -61,12 +75,12 @@ export function schemaView(schema: unknown, value: ResultValue, depth = 0): Sche
     ) {
       const properties = items.properties
       const rows = value as Record<string, ResultValue>[]
-      const keys = [
+      const keys = ordered(items, [
         ...Object.keys(properties),
         ...new Set(
           rows.flatMap((row) => Object.keys(row)).filter((key) => !Object.hasOwn(properties, key)),
         ),
-      ]
+      ])
       return {
         kind: 'table',
         columns: keys.map((key) => field(key, properties[key])),

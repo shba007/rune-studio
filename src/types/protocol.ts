@@ -243,6 +243,21 @@ export interface StepStartedPayload {
   durationMs: number
 }
 
+export interface StepToolResult {
+  text: string
+  structuredContent?: import('@/config/toolResult').ResultValue
+  structuredContentOmitted?: boolean
+  outputSchema?: unknown
+}
+
+export interface StepFinishedPayload {
+  taskId?: number | null
+  step: number
+  ok: boolean
+  error?: string | null
+  result?: StepToolResult
+}
+
 export interface TaskDonePayload {
   summary: string
   success: boolean
