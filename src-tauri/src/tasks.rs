@@ -1710,6 +1710,7 @@ mod tests {
     #[test]
     fn background_tools_never_expose_desktop_or_unselected_tools() {
         let make = |name: &str| crate::kit::client::Tool {
+            output_schema: None,
             name: name.into(),
             description: name.into(),
             input_schema: json!({"type":"object"}),

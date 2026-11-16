@@ -401,7 +401,7 @@ Evaluation suite:
 
 1. Build Rune Studio with the `eval` feature (it is not in releases).
 2. Make sure the model server is running and no Notepad or Calculator is open.
-3. Run `scripts/eval/run.ps1`.
+3. Run `scripts/eval/run.sh`.
 4. Compare two runs with `node scripts/eval/report.mjs`.
 
 Verifier:

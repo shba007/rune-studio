@@ -123,7 +123,7 @@ The window is a frameless, always-on-top, capture-excluded pill anchored to the 
 
 ### Recording a demo
 
-Rune's windows are excluded from screen capture, so Windows' Snipping Tool, Game Bar and OBS cannot record them. To record a demo, turn on **Settings > Recording > Show Rune in screen recordings** (`demoMode`, default off). Rune's windows can then be captured; **the model still never sees them**, because their rectangles (the pill, and the overlay's top bar and the analysis boxes area and screen-edge frame) are painted grey in every screenshot before it is downscaled, so the frame keeps its size and no coordinate moves. There is no built-in recorder: use OBS with **Display Capture** (Window Capture does not see the click-through overlay), or Game Bar when no program is in exclusive full screen. **Untested:** all of this needs a Windows desktop and was not run; the overlay's masked areas are estimates from the stylesheet, and how much the model's behaviour changes with the setting on is unmeasured (run `scripts/eval/run.ps1` with it off and on).
+Rune's windows are excluded from screen capture, so Windows' Snipping Tool, Game Bar and OBS cannot record them. To record a demo, turn on **Settings > Recording > Show Rune in screen recordings** (`demoMode`, default off). Rune's windows can then be captured; **the model still never sees them**, because their rectangles (the pill, and the overlay's top bar and the analysis boxes area and screen-edge frame) are painted grey in every screenshot before it is downscaled, so the frame keeps its size and no coordinate moves. There is no built-in recorder: use OBS with **Display Capture** (Window Capture does not see the click-through overlay), or Game Bar when no program is in exclusive full screen. **Untested:** all of this needs a Windows desktop and was not run; the overlay's masked areas are estimates from the stylesheet, and how much the model's behaviour changes with the setting on is unmeasured (run `scripts/eval/run.sh` with it off and on).
 
 ### Voice words
 
@@ -310,8 +310,8 @@ A fixed suite of 15 desktop tasks measures whether a change makes the agent wors
 ```bash
 cargo test --manifest-path src-tauri/Cargo.toml --lib --features eval,agent-bridge    # the harness's own tests
 bun run test:eval                                                 # the report and the gate
-pwsh scripts/eval/run.ps1 -DryRun                                 # validate the suite, print the plan
-pwsh scripts/eval/run.ps1 -Repeats 3 -FastChecks off              # the run (then again with -FastChecks on)
+bash scripts/eval/run.sh --dry-run                                 # validate the suite, print the plan
+bash scripts/eval/run.sh --repeats 3 --fast-checks off              # the run (then again with --fast-checks on)
 node scripts/eval/report.mjs <results.jsonl> --compare <baseline.jsonl>   # judge a change
 ```
 

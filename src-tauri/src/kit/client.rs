@@ -68,6 +68,8 @@ pub struct Tool {
     pub name: String,
     pub description: String,
     pub input_schema: Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_schema: Option<Value>,
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -853,6 +855,7 @@ impl Gateway {
                         .take(1024)
                         .collect(),
                     input_schema: entry["inputSchema"].clone(),
+                    output_schema: entry.get("outputSchema").cloned(),
                 });
             }
         }
@@ -929,7 +932,11 @@ pub async fn kit_discover(config: Config) -> Result<Discovery, String> {
         .map_err(|e| e.to_string())?
 }
 #[tauri::command]
-pub async fn kit_call_tool(app: AppHandle, name: String, args: Value) -> Result<String, String> {
+pub async fn kit_call_tool(
+    app: AppHandle,
+    name: String,
+    args: Value,
+) -> Result<ToolCallResult, String> {
     let path = app
         .path()
         .app_config_dir()
@@ -942,10 +949,10 @@ async fn call_tool_from_settings(
     path: std::path::PathBuf,
     name: String,
     args: Value,
-) -> Result<String, String> {
+) -> Result<ToolCallResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let config = read_config(&path)?;
-        call(&config, &name, &args, &CancelToken::default())
+        call_result(&config, &name, &args, &CancelToken::default()).map(playground_result)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -957,6 +964,42 @@ pub fn call(
     args: &Value,
     cancel: &CancelToken,
 ) -> Result<String, String> {
+    call_result(config, name, args, cancel).map(|result| bounded(&result))
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolCallResult {
+    pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub structured_content: Option<Value>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub structured_content_omitted: bool,
+}
+
+fn playground_result(result: Value) -> ToolCallResult {
+    let mut output = ToolCallResult {
+        text: bounded(&result),
+        structured_content: None,
+        structured_content_omitted: false,
+    };
+    if let Some(value) = result.get("structuredContent") {
+        let safe = crate::trace::redact(value).0;
+        if safe.len() > 16384 {
+            output.structured_content_omitted = true;
+        } else {
+            output.structured_content = serde_json::from_str(&safe).ok();
+        }
+    }
+    output
+}
+
+fn call_result(
+    config: &Config,
+    name: &str,
+    args: &Value,
+    cancel: &CancelToken,
+) -> Result<Value, String> {
     if args.to_string().len() > 8192 {
         return Err("Kit arguments exceed 8 KB".into());
     }
@@ -998,7 +1041,7 @@ pub fn call(
     }) {
         return Err(format!("MCP error: {}", bounded(&result)));
     }
-    Ok(bounded(&result))
+    Ok(result)
 }
 fn bounded(value: &Value) -> String {
     let mut safe = value.clone();
@@ -1025,6 +1068,88 @@ fn bounded(value: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn output_schema_survives_discovery_and_absent_stays_absent() {
+        for mode in ["structured", "json"] {
+            let (config, handle) = server(mode, 2);
+            let discovery = discover(&config, &CancelToken::default()).unwrap();
+            let json = serde_json::to_value(&discovery.tools[0]).unwrap();
+            if mode == "structured" {
+                assert_eq!(
+                    json["outputSchema"]["properties"]["count"]["title"],
+                    "Count"
+                );
+            } else {
+                assert!(json.get("outputSchema").is_none());
+            }
+            handle.join().unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn playground_returns_redacted_structured_content_and_legacy_text_is_unchanged() {
+        let (config, handle) = server("structured", 3);
+        let path = std::env::temp_dir().join(format!(
+            "studio-kit-structured-{}.json",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
+        let result = call_tool_from_settings(
+            path.clone(),
+            "time__get_current_time".into(),
+            json!({"timezone":"UTC"}),
+        )
+        .await
+        .unwrap();
+        std::fs::remove_file(path).unwrap();
+        handle.join().unwrap();
+        assert_eq!(
+            result.structured_content,
+            Some(json!({"count":3,"password":"[removed]"}))
+        );
+        assert!(!result.text.contains("private"));
+        let (config, handle) = server("structured", 3);
+        let legacy = tauri::async_runtime::spawn_blocking(move || {
+            call(
+                &config,
+                "time__get_current_time",
+                &json!({"timezone":"UTC"}),
+                &CancelToken::default(),
+            )
+        })
+        .await
+        .unwrap()
+        .unwrap();
+        handle.join().unwrap();
+        let expected = bounded(
+            &json!({"resultType":"complete","content":[{"type":"text","text":"UTC"}],"structuredContent":{"count":3,"password":"private"},"isError":false}),
+        );
+        assert_eq!(legacy, expected);
+        assert_eq!(result.text, legacy);
+        assert!(
+            serde_json::to_value(result)
+                .unwrap()
+                .get("structuredContentOmitted")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn oversized_structured_content_is_omitted_whole_and_text_keeps_its_old_bound() {
+        let value = json!({"content":[{"type":"text","text":"summary"}],"structuredContent":{"items":"x".repeat(16385)}});
+        let expected = bounded(&value);
+        let result = serde_json::to_value(playground_result(value)).unwrap();
+        assert_eq!(result["text"], expected);
+        assert_eq!(result["structuredContentOmitted"], true);
+        assert!(result.get("structuredContent").is_none());
+        let result = serde_json::to_value(playground_result(json!({"content":[]}))).unwrap();
+        assert!(result.get("structuredContent").is_none());
+        assert!(result.get("structuredContentOmitted").is_none());
+    }
 
     #[tokio::test]
     async fn playground_call_refuses_unselected_tools_from_saved_settings() {
@@ -1354,7 +1479,10 @@ mod tests {
                         } else {
                             "time__get_current_time"
                         };
-                        let safe = json!({"name":name,"description":"time","annotations":{"readOnlyHint":true,"destructiveHint":false},"inputSchema":{"type":"object","properties":{"timezone":{"type":"string","x-mcp-header":"Zone"}},"additionalProperties":false,"x-rune-rules":{"read_only":true,"risk":"low","effects":["read"]}}});
+                        let mut safe = json!({"name":name,"description":"time","annotations":{"readOnlyHint":true,"destructiveHint":false},"inputSchema":{"type":"object","properties":{"timezone":{"type":"string","x-mcp-header":"Zone"}},"additionalProperties":false,"x-rune-rules":{"read_only":true,"risk":"low","effects":["read"]}}});
+                        if mode == "structured" {
+                            safe["outputSchema"] = json!({"type":"object","properties":{"count":{"type":"integer","title":"Count"},"password":{"type":"string"}}});
+                        }
                         let mut tools = vec![safe.clone()];
                         if mode == "remote" {
                             let mut unsafe_tool = safe.clone();
@@ -1373,7 +1501,11 @@ mod tests {
                         if mode == "slow" {
                             std::thread::sleep(Duration::from_millis(500));
                         }
-                        json!({"resultType":"complete","content":[{"type":"text","text":"UTC"}],"isError":mode=="error"})
+                        if mode == "structured" {
+                            json!({"resultType":"complete","content":[{"type":"text","text":"UTC"}],"structuredContent":{"count":3,"password":"private"},"isError":false})
+                        } else {
+                            json!({"resultType":"complete","content":[{"type":"text","text":"UTC"}],"isError":mode=="error"})
+                        }
                     }
                     _ => panic!("unexpected method"),
                 };

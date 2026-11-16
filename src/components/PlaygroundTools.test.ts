@@ -36,7 +36,7 @@ beforeEach(() => {
         tools: [tool, { ...tool, name: 'rune-time__convert_time' }],
         unavailable: ['write__file: plugin metadata is missing, conflicting or not read-only'],
       }
-    if (command === 'kit_call_tool') return '{"time":"12:30"}'
+    if (command === 'kit_call_tool') return { text: '{"time":"12:30"}' }
     return null
   })
 })
@@ -174,5 +174,39 @@ it('does not discover or run tools when Kit is disabled', async () => {
   await flushPromises()
   expect(wrapper.get('[role="alert"]').text()).toContain('Kit is disabled')
   expect(harness.invoke.mock.calls.map(([command]) => command)).toEqual(['kit_settings'])
+  wrapper.unmount()
+})
+
+it('marks schema tools and renders structured output with a Raw toggle', async () => {
+  harness.invoke.mockImplementation(async (command) => {
+    if (command === 'kit_settings') return config
+    if (command === 'kit_discover')
+      return {
+        tools: [
+          {
+            ...tool,
+            outputSchema: {
+              type: 'object',
+              properties: { total: { type: 'integer', title: 'Total items' } },
+            },
+          },
+        ],
+        unavailable: [],
+      }
+    if (command === 'kit_call_tool')
+      return { text: 'Original text', structuredContent: { total: 4 } }
+    return null
+  })
+  const wrapper = mount(PlaygroundTools)
+  await flushPromises()
+  expect(wrapper.get(`[title="${tool.name}"]`).text()).toContain('View')
+  await wrapper.get('[aria-label="timezone"]').setValue('UTC')
+  await wrapper.get('form').trigger('submit')
+  await flushPromises()
+  const result = wrapper.get('[aria-label="Tool result"]')
+  expect(result.get('dt').text()).toBe('Total items')
+  expect(result.get('dd').text()).toBe('4')
+  await result.get('button').trigger('click')
+  expect(result.get('pre').text()).toBe('Original text')
   wrapper.unmount()
 })

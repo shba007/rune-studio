@@ -2,6 +2,7 @@ export interface KitTool {
   name: string
   description: string
   inputSchema: unknown
+  outputSchema?: unknown
 }
 export interface ToolField {
   name: string

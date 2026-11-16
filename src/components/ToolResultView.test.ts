@@ -72,3 +72,42 @@ it('renders text, mixed lists and empty collections without executing markup', (
   expect(lists.text()).toContain('No fields')
   lists.unmount()
 })
+
+it('uses schema labels and descriptions and toggles to the unchanged text', async () => {
+  const text = '{"content":[{"type":"text","text":"Original response"}]}'
+  const wrapper = mount(ToolResultView, {
+    props: {
+      text,
+      schema: {
+        type: 'object',
+        properties: {
+          count: { type: 'integer', title: 'Item count', description: 'Number of items' },
+          enabled: { type: 'boolean' },
+        },
+      },
+      structuredContent: { enabled: false, count: 3 },
+    },
+  })
+  expect(wrapper.findAll('dt').map((field) => field.text())).toEqual(['Item count', 'Enabled'])
+  expect(wrapper.get('dt').attributes('title')).toBe('Number of items')
+  expect(wrapper.findAll('dd').map((value) => value.text())).toEqual(['3', 'No'])
+  await wrapper.get('button').trigger('click')
+  expect(wrapper.get('button').attributes('aria-pressed')).toBe('true')
+  expect(wrapper.get('pre').text()).toBe(text)
+  await wrapper.get('button').trigger('click')
+  expect(wrapper.find('dl').exists()).toBe(true)
+  wrapper.unmount()
+})
+
+it('keeps the existing text view when either schema or structured content is absent', () => {
+  for (const extra of [
+    { schema: { type: 'object' } },
+    { structuredContent: { ignored: 'not schema-driven' } },
+  ]) {
+    const wrapper = mount(ToolResultView, { props: { text: 'plain text as before', ...extra } })
+    expect(wrapper.get('p').text()).toBe('plain text as before')
+    expect(wrapper.find('button').exists()).toBe(false)
+    expect(wrapper.get('details pre').text()).toBe('plain text as before')
+    wrapper.unmount()
+  }
+})

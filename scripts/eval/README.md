@@ -5,7 +5,7 @@ agent by the **eval mode** (`cargo build --features eval`). Each run is judged b
 machine (files, windows, processes), never by what the model says. The model's own claim is recorded
 next to the result: the disagreement between the two is the data the verifier needs.
 
-Run it with `pwsh scripts/eval/run.ps1` (see the script's header), then read the report it prints.
+Run it with `bash scripts/eval/run.sh` (see the script's header), then read the report it prints.
 Nothing here runs in a normal or release build: the `eval` feature is off by default and is not in
 the release workflow.
 

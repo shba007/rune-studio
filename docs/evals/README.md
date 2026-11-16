@@ -26,12 +26,12 @@ Every `results.jsonl` row and `env.json` file records the served `model` and the
 
 1. Windows 11, a clean desktop (no Notepad, Calculator, Settings or Paint open), rune-infer running,
    Rune Studio closed. Read `scripts/eval/README.md`: the run moves your real mouse and types.
-2. Check the plan: `pwsh scripts/eval/run.ps1 -DryRun`
+2. Check the plan: `bash scripts/eval/run.sh --dry-run`
 3. Run it twice, with the fast checks off and on:
 
    ```powershell
-   pwsh scripts/eval/run.ps1 -Repeats 3 -FastChecks off -Out eval-out\baseline-off
-   pwsh scripts/eval/run.ps1 -Repeats 3 -FastChecks on  -Out eval-out\baseline-on
+   bash scripts/eval/run.sh --repeats 3 --fast-checks off --out eval-out/baseline-off
+   bash scripts/eval/run.sh --repeats 3 --fast-checks on  --out eval-out/baseline-on
    ```
 
    Each prints where `results.jsonl`, `env.json` and `report.md` are. If it refuses to start, read
@@ -56,7 +56,7 @@ Do not commit the output folder itself: `work\` holds scratch files and `suite.j
 ## Judge a change against a baseline
 
 ```powershell
-pwsh scripts/eval/run.ps1 -Repeats 3 -FastChecks off -Out eval-out\candidate
+bash scripts/eval/run.sh --repeats 3 --fast-checks off --out eval-out/candidate
 node scripts/eval/report.mjs eval-out\candidate\results.jsonl --compare docs\evals\baseline-<date>-fast-off.results.jsonl
 ```
 
@@ -75,9 +75,9 @@ mode by setting `config.verify_mode` (`"off"`, `"background"` or `"blocking"`), 
 Fast checks stay as in your baseline (use the same `-FastChecks` for all three).
 
 ```powershell
-pwsh scripts/eval/run.ps1 -Repeats 3 -FastChecks off -Out eval-out\verify-off
-pwsh scripts/eval/run.ps1 -Suite scripts\eval\suite.verify-background.json -Repeats 3 -FastChecks off -Out eval-out\verify-background
-pwsh scripts/eval/run.ps1 -Suite scripts\eval\suite.verify-blocking.json   -Repeats 3 -FastChecks off -Out eval-out\verify-blocking
+bash scripts/eval/run.sh --repeats 3 --fast-checks off --out eval-out/verify-off
+bash scripts/eval/run.sh --suite scripts/eval/suite.verify-background.json --repeats 3 --fast-checks off --out eval-out/verify-background
+bash scripts/eval/run.sh --suite scripts/eval/suite.verify-blocking.json   --repeats 3 --fast-checks off --out eval-out/verify-blocking
 ```
 
 Then, for each of the two checking runs, compare with the one that had the check off and read the report:

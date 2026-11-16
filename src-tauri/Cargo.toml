@@ -36,7 +36,7 @@ embedded-kit = ["dep:rune-kit"]
 rune-infer = { git = "https://github.com/shba007/rune-infer.git", rev = "040c01df948b0f2c5e2442095db67297cd0ff595", default-features = false, features = [
   "cpu",
 ], optional = true }
-rune-kit = { git = "https://github.com/shba007/rune-kit.git", rev = "f36ba4c108fd1b298b7c1f45a36fce0f3f037e70", optional = true }
+rune-kit = { git = "https://github.com/shba007/rune-kit.git", rev = "aa60007ef89139984e9af4febe6dfb6651c78a5c", optional = true }
 dirs = "7"
 axum = { version = "0.8", optional = true, default-features = false, features = [
   "http1",

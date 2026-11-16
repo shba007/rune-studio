@@ -14,6 +14,7 @@ import RuneNavItem from './RuneNavItem.vue'
 import RuneChoice from './RuneChoice.vue'
 import AppIcon from './AppIcon.vue'
 import ToolResultView from './ToolResultView.vue'
+import type { ResultValue } from '@/config/toolResult'
 
 interface Config {
   enabled: boolean
@@ -34,7 +35,12 @@ const running = ref(false)
 const error = ref('')
 const values = ref<Record<string, string>>({})
 const raw = ref('{}')
-const result = ref<{ ok: boolean; text: string; ms: number } | null>(null)
+interface ToolCallResult {
+  text: string
+  structuredContent?: ResultValue
+  structuredContentOmitted?: boolean
+}
+const result = ref<(ToolCallResult & { ok: boolean; ms: number }) | null>(null)
 interface Entry {
   id: string
   name: string
@@ -118,10 +124,12 @@ async function run() {
   result.value = null
   try {
     const args = toolArguments(form.value, values.value, raw.value)
-    const text = await invoke<string>('kit_call_tool', { name, args })
+    const output = await invoke<ToolCallResult>('kit_call_tool', { name, args })
     result.value = {
       ok: true,
-      text: toolResultText(text),
+      text: toolResultText(output.text),
+      structuredContent: output.structuredContent,
+      structuredContentOmitted: output.structuredContentOmitted,
       ms: Math.round(performance.now() - started),
     }
   } catch (cause) {
@@ -168,6 +176,11 @@ onMounted(discover)
           >
             <AppIcon name="plug" />
             <span class="min-w-0 flex-1 truncate">{{ entry.label }}</span>
+            <span
+              v-if="entry.tool?.outputSchema !== undefined"
+              class="text-rune-caption text-rune-text-3"
+              >View</span
+            >
             <span
               v-if="entry.reason || !selectedNames.includes(entry.name)"
               class="text-rune-caption text-rune-text-3"
@@ -273,7 +286,15 @@ onMounted(discover)
           <p role="status" class="text-rune-caption text-rune-text-2">
             {{ result.ok ? 'Succeeded' : 'Failed' }} · {{ result.ms }} ms
           </p>
-          <ToolResultView v-if="result.ok" :text="result.text" />
+          <p v-if="result.structuredContentOmitted" class="text-rune-caption text-rune-text-2">
+            Structured result omitted for size.
+          </p>
+          <ToolResultView
+            v-if="result.ok"
+            :text="result.text"
+            :schema="chosen?.outputSchema"
+            :structured-content="result.structuredContent"
+          />
           <pre
             v-else
             role="alert"
