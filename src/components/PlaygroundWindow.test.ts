@@ -779,6 +779,60 @@ describe('playground window', () => {
     wrapper.unmount()
   })
 
+  it('keeps Tools as a persistent top-level tab and hides operation controls', async () => {
+    const wrapper = mount(PlaygroundWindow)
+    await flushPromises()
+    const sections = wrapper.get('[aria-label="Playground sections"]')
+    expect(sections.findAll('button').map((button) => button.text())).toEqual([
+      'Tools',
+      'Operations',
+      'Flows',
+    ])
+    expect(wrapper.find('[data-testid="tools-section"]').exists()).toBe(false)
+    await sections
+      .findAll('button')
+      .find((button) => button.text() === 'Tools')!
+      .trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="tools-section"]').attributes('style') ?? '').not.toContain(
+      'display: none',
+    )
+    expect(wrapper.find('button[aria-label="Menu"]').exists()).toBe(false)
+    expect(wrapper.find('button[aria-label="Back"]').exists()).toBe(false)
+    await wrapper.get('button[aria-label="Hide sidebar"]').trigger('click')
+    expect(wrapper.get('nav[aria-label="Tools"]').attributes('style')).toContain('display: none')
+    await wrapper.get('button[aria-label="Show sidebar"]').trigger('click')
+    expect(wrapper.get('nav[aria-label="Tools"]').attributes('style') ?? '').not.toContain(
+      'display: none',
+    )
+    expect(
+      wrapper.get('[data-testid="playground-params"]').element.parentElement?.style.display,
+    ).toBe('none')
+    expect(wrapper.get('[data-testid="playground-nav"]').element.parentElement?.style.display).toBe(
+      'none',
+    )
+    const tools = wrapper.get('[data-testid="tools-section"]').element
+    await sections
+      .findAll('button')
+      .find((button) => button.text() === 'Operations')!
+      .trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="tools-section"]').attributes('style')).toContain(
+      'display: none',
+    )
+    expect(
+      wrapper.get('[data-testid="playground-params"]').element.parentElement?.style.display,
+    ).not.toBe('none')
+    expect(wrapper.find('button[aria-label="Menu"]').exists()).toBe(true)
+    await sections
+      .findAll('button')
+      .find((button) => button.text() === 'Tools')!
+      .trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="tools-section"]').element).toBe(tools)
+    wrapper.unmount()
+  })
+
   it('shows a placeholder for pipelines that are not ready', async () => {
     const wrapper = mount(PlaygroundWindow)
     await wrapper.get('[data-testid="pipeline-transform"]').trigger('click')

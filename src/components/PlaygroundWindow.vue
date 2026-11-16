@@ -67,6 +67,7 @@ import PlaygroundCaption from './PlaygroundCaption.vue'
 import PlaygroundVisualResult from './PlaygroundVisualResult.vue'
 import PlaygroundFlows from './PlaygroundFlows.vue'
 import PlaygroundRawDevelop from './PlaygroundRawDevelop.vue'
+import PlaygroundTools from './PlaygroundTools.vue'
 import PlaygroundSettingsPanel from './PlaygroundSettingsPanel.vue'
 import RuneButton from './RuneButton.vue'
 import RuneChip from './RuneChip.vue'
@@ -147,8 +148,9 @@ const windowRoot = useTemplateRef<HTMLElement>('windowRoot')
 useNativeBlur(windowRoot, true)
 
 const selectedId = ref(DEFAULT_PIPELINE)
-const playgroundSection = ref<'operations' | 'flows'>('operations')
+const playgroundSection = ref<'operations' | 'flows' | 'tools'>('operations')
 const flowVisited = ref(false)
+const toolsVisited = ref(false)
 const requestedFlow = ref('')
 const flowRequest = ref(0)
 function showFlow(id: string) {
@@ -172,6 +174,10 @@ onUnmounted(() => {
   flowDisposed = true
   unlistenFlow?.()
 })
+function openTools() {
+  toolsVisited.value = true
+  playgroundSection.value = 'tools'
+}
 function openFlows() {
   flowVisited.value = true
   playgroundSection.value = 'flows'
@@ -669,7 +675,7 @@ async function runModel(id: string, pipeline: ModelPipeline) {
 }
 
 function run() {
-  if (selectedId.value === 'develop-raw') return
+  if (playgroundSection.value !== 'operations' || selectedId.value === 'develop-raw') return
   if (!canRun.value) return
   if (modelPipeline.value) {
     void runModel(selectedId.value, modelPipeline.value)
@@ -733,7 +739,7 @@ onKeyStroke('Enter', (event) => {
   run()
 })
 onKeyStroke('Escape', () => {
-  if (playgroundSection.value === 'flows' || selectedId.value === 'develop-raw') return
+  if (playgroundSection.value !== 'operations' || selectedId.value === 'develop-raw') return
   if (isModelRun.value && loading.value) cancelModel(selectedId.value)
   else if (!isModelRun.value && analysis.busy.value) void analysis.cancel()
   else history.clearView()
@@ -747,7 +753,8 @@ onKeyStroke('Escape', () => {
     data-testid="playground"
   >
     <TitleBar
-      sidebar
+      :sidebar="playgroundSection !== 'flows'"
+      :navigation="playgroundSection === 'operations'"
       title="Playground"
       :collapsed="!sidebarOpen"
       :menu="menuItems"
@@ -761,6 +768,12 @@ onKeyStroke('Escape', () => {
     <nav aria-label="Playground sections" class="flex gap-2 bg-rune-sunken px-4 py-2">
       <RuneButton
         size="sm"
+        :variant="playgroundSection === 'tools' ? 'primary' : 'ghost'"
+        @click="openTools"
+        >Tools</RuneButton
+      >
+      <RuneButton
+        size="sm"
         :variant="playgroundSection === 'operations' ? 'primary' : 'ghost'"
         @click="playgroundSection = 'operations'"
         >Operations</RuneButton
@@ -772,6 +785,11 @@ onKeyStroke('Escape', () => {
         >Flows</RuneButton
       >
     </nav>
+    <PlaygroundTools
+      v-if="toolsVisited"
+      v-show="playgroundSection === 'tools'"
+      :sidebar-open="sidebarOpen"
+    />
     <PlaygroundFlows
       v-if="flowVisited"
       v-show="playgroundSection === 'flows'"

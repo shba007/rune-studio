@@ -12,6 +12,7 @@ withDefaults(
     title: string
     controls?: 'all' | 'close'
     sidebar?: boolean
+    navigation?: boolean
     bare?: boolean
     collapsed?: boolean
     canBack?: boolean
@@ -22,6 +23,7 @@ withDefaults(
   {
     controls: 'all',
     sidebar: false,
+    navigation: true,
     bare: false,
     collapsed: false,
     canBack: false,
@@ -86,7 +88,7 @@ const button =
       class="flex h-full shrink-0 items-center gap-1 px-3"
       :class="collapsed ? 'w-auto' : 'w-64'"
     >
-      <div ref="menuRoot" class="relative">
+      <div v-if="navigation" ref="menuRoot" class="relative">
         <RuneIconButton variant="ghost" size="sm" label="Menu" @click="menuOpen = !menuOpen">
           <AppIcon name="menu" />
         </RuneIconButton>
@@ -120,6 +122,7 @@ const button =
         variant="ghost"
         size="sm"
         label="Back"
+        v-if="navigation"
         :disabled="!canBack"
         @click="emit('back')"
       >
@@ -129,6 +132,7 @@ const button =
         variant="ghost"
         size="sm"
         label="Forward"
+        v-if="navigation"
         :disabled="!canForward"
         @click="emit('forward')"
       >

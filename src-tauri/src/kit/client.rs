@@ -928,6 +928,29 @@ pub async fn kit_discover(config: Config) -> Result<Discovery, String> {
         .await
         .map_err(|e| e.to_string())?
 }
+#[tauri::command]
+pub async fn kit_call_tool(app: AppHandle, name: String, args: Value) -> Result<String, String> {
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| e.to_string())?
+        .join("kit.json");
+    call_tool_from_settings(path, name, args).await
+}
+
+async fn call_tool_from_settings(
+    path: std::path::PathBuf,
+    name: String,
+    args: Value,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let config = read_config(&path)?;
+        call(&config, &name, &args, &CancelToken::default())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 pub fn call(
     config: &Config,
     name: &str,
@@ -1002,6 +1025,32 @@ fn bounded(value: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn playground_call_refuses_unselected_tools_from_saved_settings() {
+        let path = std::env::temp_dir().join(format!(
+            "studio-kit-playground-{}-{}.json",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let config = Config {
+            enabled: true,
+            endpoint: "http://127.0.0.1:1/mcp".into(),
+            selected: vec!["time__convert_time".into()],
+        };
+        std::fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
+        let result = call_tool_from_settings(
+            path.clone(),
+            "time__get_current_time".into(),
+            json!({"timezone":"UTC"}),
+        )
+        .await;
+        std::fs::remove_file(path).unwrap();
+        assert_eq!(result.unwrap_err(), "Tool is not selected or approved");
+    }
 
     #[tokio::test]
     async fn sandbox_inventory_uses_authenticated_kit_management() {

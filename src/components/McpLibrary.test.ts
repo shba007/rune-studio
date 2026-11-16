@@ -57,6 +57,27 @@ it('shows installed MCP servers with their enabled state and toggles their tools
   })
   wrapper.unmount()
 })
+it('enables a package switch when discovery uses the full rune namespace', async () => {
+  const original = api.invoke.getMockImplementation()!
+  api.invoke.mockImplementation(async (command, args) =>
+    command === 'kit_discover'
+      ? { tools: [{ name: 'rune-time__get_current_time' }] }
+      : original(command, args),
+  )
+  const wrapper = await setup()
+  const toggle = wrapper.get('[aria-label="Enable rune-time"]')
+  expect(toggle.attributes('disabled')).toBeUndefined()
+  await toggle.trigger('click')
+  await flushPromises()
+  expect(api.invoke).toHaveBeenCalledWith('kit_save', {
+    config: expect.objectContaining({
+      selected: expect.arrayContaining(['rune-time__get_current_time']),
+    }),
+  })
+  expect(toggle.attributes('aria-checked')).toBe('true')
+  wrapper.unmount()
+})
+
 it('installs a registry MCP from Discover and enables its tools', async () => {
   const wrapper = await setup()
   await wrapper

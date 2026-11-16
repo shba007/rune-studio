@@ -4,7 +4,10 @@ export function mcpNamespace(packageName: string): string {
 
 export function toolsOf(packageName: string, toolNames: string[]): string[] {
   const namespace = mcpNamespace(packageName)
-  return toolNames.filter((name) => name.split('__')[0] === namespace)
+  return toolNames.filter((name) => {
+    const toolNamespace = name.split('__')[0]
+    return toolNamespace === packageName || toolNamespace === namespace
+  })
 }
 
 export function isEnabled(packageName: string, toolNames: string[], selected: string[]): boolean {
