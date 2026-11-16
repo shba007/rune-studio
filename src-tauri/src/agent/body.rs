@@ -104,6 +104,7 @@ pub fn announce(
     action: &Action,
     monitor: &Monitor,
     model: Option<&str>,
+    task_id: Option<u64>,
 ) -> String {
     let described = action.describe();
     let (detail, point, double, button) = visual(action, monitor);
@@ -126,6 +127,7 @@ pub fn announce(
         events::STEP_STARTED,
         StepStarted {
             step,
+            task_id,
             kind: if matches!(action, Action::External { .. }) {
                 "tool"
             } else {
@@ -159,12 +161,25 @@ pub fn announce_observe(app: &AppHandle, region: Option<[f64; 4]>) {
     );
 }
 
-pub fn finish_step(app: &AppHandle, step: u32, result: &Result<(), ExecError>) {
+pub fn finish_step(
+    app: &AppHandle,
+    step: u32,
+    result: &Result<(), ExecError>,
+    task_id: Option<u64>,
+) {
     let (ok, error) = match result {
         Ok(()) => (true, None),
         Err(err) => (false, Some(err.to_string())),
     };
-    let _ = app.emit(events::STEP_FINISHED, StepFinished { step, ok, error });
+    let _ = app.emit(
+        events::STEP_FINISHED,
+        StepFinished {
+            step,
+            ok,
+            error,
+            task_id,
+        },
+    );
 }
 
 pub fn execute_reporting(

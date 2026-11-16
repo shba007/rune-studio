@@ -40,14 +40,6 @@ import { pillCards, type PillCard } from '@/config/pillCards'
 import { orbHint } from '@/config/orbHint'
 
 const agent = useAgent()
-const liveStepsExpanded = ref(false)
-const currentStep = computed(() => agent.steps.value.at(-1))
-watch(
-  () => agent.steps.value.length,
-  (length) => {
-    if (!length) liveStepsExpanded.value = false
-  },
-)
 const modelActivity = useModelActivity()
 const activeModels = modelActivity.models
 const modelTooltip = computed(() =>
@@ -398,79 +390,6 @@ function onOrb() {
             <div key="main" class="flex min-h-0 flex-col gap-2">
               <div ref="cardScroll" class="min-h-0 overflow-y-auto">
                 <div ref="cards" class="flex flex-col gap-2">
-                  <section
-                    v-if="currentStep"
-                    class="rounded-rune-panel bg-rune-surface p-rune-2 text-rune-caption text-rune-ink"
-                    aria-label="Live steps"
-                  >
-                    <RuneButton
-                      variant="ghost"
-                      size="sm"
-                      class="w-full !justify-start"
-                      :aria-expanded="liveStepsExpanded"
-                      aria-controls="live-step-list"
-                      @click="liveStepsExpanded = !liveStepsExpanded"
-                    >
-                      <span class="shrink-0">{{ liveStepsExpanded ? '▾' : '▸' }}</span>
-                      <span
-                        class="size-2 shrink-0 rounded-full"
-                        :class="currentStep.kind === 'tool' ? 'bg-primary' : 'bg-voice'"
-                        role="img"
-                        :aria-label="currentStep.kind === 'tool' ? 'Tool' : 'Screen'"
-                        :title="currentStep.kind === 'tool' ? 'Tool' : 'Screen'"
-                      />
-                      <span class="min-w-0 truncate text-left normal-case">
-                        {{ currentStep.step }} · {{ currentStep.text || currentStep.tool }}
-                      </span>
-                      <span class="ml-auto shrink-0 text-rune-text-2">
-                        {{
-                          currentStep.ok === null ? 'Running' : currentStep.ok ? 'Done' : 'Failed'
-                        }}
-                      </span>
-                    </RuneButton>
-                    <p
-                      v-if="currentStep.model && !liveStepsExpanded"
-                      class="truncate px-3 text-rune-text-2"
-                      :title="currentStep.model"
-                    >
-                      {{ currentStep.model }}
-                    </p>
-                    <ol
-                      v-show="liveStepsExpanded"
-                      id="live-step-list"
-                      class="max-h-64 overflow-y-auto"
-                    >
-                      <li v-for="step in agent.steps.value" :key="step.step" class="py-1">
-                        <details>
-                          <summary class="cursor-pointer text-rune-ink">
-                            <span
-                              class="inline-block size-2 rounded-full"
-                              :class="step.kind === 'tool' ? 'bg-primary' : 'bg-voice'"
-                              role="img"
-                              :aria-label="step.kind === 'tool' ? 'Tool' : 'Screen'"
-                              :title="step.kind === 'tool' ? 'Tool' : 'Screen'"
-                            />
-                            {{ step.step }} · {{ step.text || step.tool }}
-                            <span
-                              :class="step.ok === false ? 'text-attention' : 'text-rune-text-2'"
-                            >
-                              · {{ step.ok === null ? 'Running' : step.ok ? 'Done' : 'Failed' }}
-                            </span>
-                            <span
-                              v-if="step.model"
-                              class="block truncate pl-4 text-rune-text-2"
-                              :title="step.model"
-                              >{{ step.model }}</span
-                            >
-                          </summary>
-                          <p class="pl-4 text-rune-text-2 break-words whitespace-pre-wrap">
-                            {{ step.tool
-                            }}<template v-if="step.detail"> · {{ step.detail }}</template>
-                          </p>
-                        </details>
-                      </li>
-                    </ol>
-                  </section>
                   <IntakeStatus
                     :classifying="
                       decisions.entries.value.some((entry) => entry.status === 'classifying')
@@ -480,7 +399,11 @@ function onOrb() {
                   <Transition name="page">
                     <TaskPanel v-if="shows('taskPanel')" :agent="agent" />
                   </Transition>
-                  <TaskBoard v-if="shows('board')" :board="taskBoard" />
+                  <TaskBoard
+                    v-if="shows('board')"
+                    :board="taskBoard"
+                    :live-steps="agent.steps.value"
+                  />
                   <TaskReminder v-if="shows('reminder')" :agent="agent" />
                   <DecisionInbox v-if="shows('decision')" compact :model="decisions" />
                   <button

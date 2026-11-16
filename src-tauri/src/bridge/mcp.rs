@@ -627,7 +627,7 @@ fn analysis_failure(
 ) -> Reply {
     let message = trace::cap(message, 2000);
     row.fail(&message);
-    body::finish_step(app, step, &Err(ExecError::Input(message.clone())));
+    body::finish_step(app, step, &Err(ExecError::Input(message.clone())), None);
     Reply::error(code, message)
 }
 
@@ -670,6 +670,7 @@ async fn analyze(app: &AppHandle, arguments: &Value) -> Reply {
         events::STEP_STARTED,
         events::StepStarted {
             step,
+            task_id: None,
             kind: "screen",
             model: None,
             tool: "analyze",
@@ -692,7 +693,7 @@ async fn analyze(app: &AppHandle, arguments: &Value) -> Reply {
     .await;
     let frame = match captured {
         None => {
-            body::finish_step(app, step, &Err(ExecError::Cancelled));
+            body::finish_step(app, step, &Err(ExecError::Cancelled), None);
             return LeaseError::StoppedByUser.into();
         }
         Some(Err(_)) => {
@@ -731,7 +732,7 @@ async fn analyze(app: &AppHandle, arguments: &Value) -> Reply {
         || state.current_scope().id != scope.id
         || state.lease.locked().current().is_none()
     {
-        body::finish_step(app, step, &Err(ExecError::Cancelled));
+        body::finish_step(app, step, &Err(ExecError::Cancelled), None);
         return LeaseError::StoppedByUser.into();
     }
     if let Some(id) = request_id {
@@ -750,7 +751,7 @@ async fn analyze(app: &AppHandle, arguments: &Value) -> Reply {
     state
         .trace
         .event(&run_id, "analysis_result", &trace::redact(&payload).0);
-    body::finish_step(app, step, &Ok(()));
+    body::finish_step(app, step, &Ok(()), None);
     Reply::shot(payload.to_string(), frame.jpeg)
 }
 
@@ -909,7 +910,7 @@ async fn act_turn(
     };
 
     let action = decision.action;
-    let described = body::announce(app, step, &decision.reason, &action, &monitor, None);
+    let described = body::announce(app, step, &decision.reason, &action, &monitor, None, None);
     events::set_agent_state(app, AgentState::Acting);
     let settle = body::settle_time(&action);
     let worker_cancel = cancel.clone();
@@ -944,7 +945,7 @@ async fn act_turn(
     if matches!(result, Err(ExecError::Cancelled)) || cancel.is_cancelled() {
         return LeaseError::StoppedByUser.into();
     }
-    body::finish_step(app, step, &result);
+    body::finish_step(app, step, &result, None);
     events::set_agent_state(app, AgentState::Observing);
     if let Err(err) = result {
         row.fail(&err.to_string());

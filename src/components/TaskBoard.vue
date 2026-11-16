@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import RuneButton from './RuneButton.vue'
+import LiveStepRows from './LiveStepRows.vue'
+import RunLanes from './RunLanes.vue'
+import type { LiveStep } from '@/config/liveSteps'
 import RuneIconButton from './RuneIconButton.vue'
 import { useIntervalFn, useNow, usePreferredReducedMotion } from '@vueuse/core'
 import { computed, nextTick, ref, watch, type ComponentPublicInstance } from 'vue'
@@ -16,7 +19,7 @@ import {
 } from '@/config/taskProgress'
 import AppIcon from './AppIcon.vue'
 import RuneLoader from './RuneLoader.vue'
-const props = defineProps<{ board: TaskBoardModel }>()
+const props = defineProps<{ board: TaskBoardModel; liveSteps?: LiveStep[] }>()
 const now = useNow({ scheduler: (update) => useIntervalFn(update, 1000) })
 const reduceMotion = usePreferredReducedMotion()
 const request = computed(() => visibleGoal(props.board.requests.value))
@@ -37,6 +40,7 @@ const etaText = computed(() => {
   if (!tasks.value.length || eta.value === null) return 'Estimating…'
   return eta.value > 0 ? `ETA ~${clockText(eta.value)}` : 'Updating estimate…'
 })
+const liveExpanded = ref(new Set<number>())
 const expanded = ref(new Set<number>())
 const collapsed = ref(new Set<number>())
 function isExpanded(task: IndependentTask) {
@@ -215,6 +219,11 @@ function stepLabel(phase: TaskPhase) {
         </RuneIconButton>
       </div>
     </div>
+    <RunLanes
+      :lanes="tasks.map((task, index) => ({ id: task.id, label: `Task ${index + 1}` }))"
+      :steps="liveSteps ?? []"
+      :now="now.getTime()"
+    />
     <div
       v-if="tasks.length"
       ref="carousel"
@@ -260,7 +269,19 @@ function stepLabel(phase: TaskPhase) {
         <div
           class="mt-2 flex items-center justify-between gap-3 text-rune-caption text-rune-text-2 tabular-nums"
         >
-          <span data-testid="step-count">Step {{ currentStep(task) }}/{{ task.steps.length }}</span>
+          <RuneButton
+            variant="ghost"
+            size="sm"
+            data-testid="step-count"
+            class="!min-h-0 !p-0 !text-rune-caption normal-case"
+            :aria-expanded="liveExpanded.has(task.id)"
+            :aria-controls="`live-steps-${task.id}`"
+            @click="
+              liveExpanded.has(task.id) ? liveExpanded.delete(task.id) : liveExpanded.add(task.id)
+            "
+          >
+            Step {{ currentStep(task) }}/{{ task.steps.length }}
+          </RuneButton>
           <span class="flex items-center gap-1.5"
             ><span class="text-rune-text-3">Elapsed</span
             ><time data-testid="task-elapsed">{{
@@ -268,6 +289,11 @@ function stepLabel(phase: TaskPhase) {
             }}</time></span
           >
         </div>
+        <LiveStepRows
+          v-if="liveExpanded.has(task.id)"
+          :id="`live-steps-${task.id}`"
+          :steps="(liveSteps ?? []).filter((step) => step.taskId === task.id)"
+        />
         <div
           v-if="isExpanded(task)"
           :id="`task-steps-${task.id}`"

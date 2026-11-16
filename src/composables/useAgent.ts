@@ -4,6 +4,7 @@ import { useIntervalFn, useTimeoutFn } from '@vueuse/core'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import type { TaskTiming } from '@/config/eta'
+import type { LiveStep } from '@/config/liveSteps'
 import { REVIEW_SECONDS, readOffer, type ReviewOffer } from '@/config/review'
 import {
   AUDIO_LEVEL,
@@ -112,17 +113,7 @@ export function useAgent() {
   const thinking = ref<ThinkingPayload | null>(null)
   const response = ref<string | null>(null)
   const question = ref<ConfirmRequestPayload | null>(null)
-  const steps = ref<
-    {
-      step: number
-      tool: string
-      kind: StepStartedPayload['kind']
-      model: string | null
-      text: string
-      detail: string
-      ok: boolean | null
-    }[]
-  >([])
+  const steps = ref<LiveStep[]>([])
   const notice = ref<string | null>(null)
   const noticeKind = ref<'error' | 'info'>('error')
   const focusTick = ref(0)
@@ -318,7 +309,9 @@ export function useAgent() {
     await refreshBackend()
   }
 
-  function resetTaskView() {
+  let activeTaskId: number | null = null
+  function resetTaskView(taskId: number | null = null) {
+    activeTaskId = taskId
     stepText.value = null
     resultText.value = null
     plan.value = null
@@ -326,7 +319,7 @@ export function useAgent() {
     reviewOffer.value = null
     thinking.value = null
     response.value = null
-    steps.value = []
+    steps.value = steps.value.filter((step) => step.taskId !== taskId)
   }
 
   async function startTask(text: string): Promise<boolean> {
@@ -440,7 +433,7 @@ export function useAgent() {
     timing.value = null
     thinking.value = null
     response.value = null
-    steps.value = []
+    steps.value = steps.value.filter((step) => step.taskId !== null)
     if (mode.value === 'task') void setMode('open')
   }
 
@@ -469,32 +462,44 @@ export function useAgent() {
           focusTick.value++
         })
       }),
-      await listen('task_started', resetTaskView),
+      await listen<{ taskId?: number | null }>('task_started', (event) =>
+        resetTaskView(event.payload?.taskId ?? null),
+      ),
       await listen<StateChangedPayload>(STATE_CHANGED, (event) => {
         state.value = event.payload.state
       }),
       await listen<StepStartedPayload>(STEP_STARTED, (event) => {
-        stepText.value = event.payload.text
-        response.value = event.payload.text
-        thinking.value = null
+        if (event.payload.taskId == null || event.payload.taskId === activeTaskId) {
+          stepText.value = event.payload.text
+          response.value = event.payload.text
+          thinking.value = null
+        }
         steps.value = [
           ...steps.value,
           {
             step: event.payload.step,
+            taskId: event.payload.taskId ?? null,
             tool: event.payload.tool,
             kind: event.payload.kind,
             model: event.payload.model,
             text: event.payload.text,
             detail: event.payload.detail,
             ok: null,
+            startedAt: Date.now(),
+            finishedAt: null,
           },
         ]
       }),
-      await listen<{ step: number; ok: boolean }>('step_finished', (event) => {
-        steps.value = steps.value.map((s) =>
-          s.step === event.payload.step ? { ...s, ok: event.payload.ok } : s,
-        )
-      }),
+      await listen<{ step: number; taskId?: number | null; ok: boolean }>(
+        'step_finished',
+        (event) => {
+          steps.value = steps.value.map((s) =>
+            s.step === event.payload.step && s.taskId === (event.payload.taskId ?? null)
+              ? { ...s, ok: event.payload.ok, finishedAt: Date.now() }
+              : s,
+          )
+        },
+      ),
       await listen<TaskDonePayload>(TASK_DONE, (event) => {
         resultText.value = event.payload.summary
         response.value = event.payload.summary

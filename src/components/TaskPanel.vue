@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import RuneIconButton from './RuneIconButton.vue'
+import RuneButton from './RuneButton.vue'
+import LiveStepRows from './LiveStepRows.vue'
 import { useIntervalFn, useNow } from '@vueuse/core'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
 import type { Agent } from '@/composables/useAgent'
 import { clockText, remainingMs } from '@/config/eta'
@@ -11,6 +13,8 @@ import AppIcon from './AppIcon.vue'
 
 const props = defineProps<{ agent: Agent }>()
 const agent = props.agent
+const liveExpanded = ref(false)
+const liveSteps = computed(() => agent.steps.value.filter((step) => step.taskId === null))
 
 const goals = computed(() => agent.plan.value?.goals ?? [])
 const current = computed(() => agent.plan.value?.current ?? 0)
@@ -33,7 +37,7 @@ const goalElapsed = computed(() => {
     : null
 })
 
-const last = computed(() => agent.steps.value.at(-1) ?? null)
+const last = computed(() => liveSteps.value.at(-1) ?? null)
 const lastLabel = computed(() =>
   last.value ? (TOOL_LABEL[last.value.tool] ?? last.value.tool) : '',
 )
@@ -85,9 +89,17 @@ function statusOf(index: number): 'done' | 'current' | 'pending' {
       <span v-if="goals.length" class="text-rune-caption text-rune-text-2 uppercase tabular-nums">
         {{ done }}/{{ goals.length }}
       </span>
-      <span v-if="agent.steps.value.length" class="text-rune-caption text-rune-text-2 uppercase">
-        · {{ agent.steps.value.length }} {{ agent.steps.value.length === 1 ? 'step' : 'steps' }}
-      </span>
+      <RuneButton
+        variant="ghost"
+        size="sm"
+        v-if="liveSteps.length"
+        :aria-expanded="liveExpanded"
+        aria-controls="task-live-steps"
+        class="!min-h-0 !p-0 !text-rune-caption text-rune-text-2 uppercase"
+        @click="liveExpanded = !liveExpanded"
+      >
+        · {{ liveSteps.length }} {{ liveSteps.length === 1 ? 'step' : 'steps' }}
+      </RuneButton>
       <span
         v-if="eta"
         class="ml-auto text-rune-caption text-(--accent) uppercase tabular-nums"
@@ -105,6 +117,8 @@ function statusOf(index: number): 'done' | 'current' | 'pending' {
         <AppIcon name="close" size="sm" />
       </RuneIconButton>
     </header>
+
+    <LiveStepRows v-if="liveExpanded" id="task-live-steps" :steps="liveSteps" />
 
     <p v-if="!goals.length" class="flex h-6 items-center gap-2 text-rune-caption text-rune-text-2">
       <span class="planning size-2 rounded-full bg-primary" />

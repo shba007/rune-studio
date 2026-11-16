@@ -1,0 +1,49 @@
+import type { StepStartedPayload } from '@/types/protocol'
+import type { IconName } from '@/icons'
+
+export type LiveStep = Pick<
+  StepStartedPayload,
+  'step' | 'taskId' | 'tool' | 'kind' | 'model' | 'text' | 'detail'
+> & { ok: boolean | null; startedAt?: number; finishedAt?: number | null }
+
+export const STEP_KIND: Record<LiveStep['kind'], { label: string; icon: IconName }> = {
+  tool: { label: 'Tool call', icon: 'plug' },
+  screen: { label: 'Screen action', icon: 'mouse' },
+}
+
+export const stepKey = (step: LiveStep) => `${step.taskId ?? 'run'}:${step.step}`
+
+export const stepStatus = (step: LiveStep) =>
+  step.ok === null ? 'Running' : step.ok ? 'Done' : 'Failed'
+
+export function stepDuration(step: LiveStep, now: number): number | null {
+  if (step.startedAt === undefined) return null
+  return Math.max(0, (step.finishedAt ?? now) - step.startedAt)
+}
+
+export function durationText(ms: number): string {
+  if (ms < 1000) return '<1 s'
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)} s`
+  const total = Math.round(ms / 1000)
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
+}
+
+export interface LaneBlock {
+  step: LiveStep
+  left: number
+  width: number
+}
+
+export function laneLayout(steps: LiveStep[], now: number) {
+  const timed = steps.filter((step) => step.startedAt !== undefined)
+  if (!timed.length) return { span: 0, blocks: [] as LaneBlock[] }
+  const start = Math.min(...timed.map((step) => step.startedAt!))
+  const end = Math.max(...timed.map((step) => step.finishedAt ?? Math.max(now, step.startedAt!)))
+  const span = Math.max(1000, end - start)
+  const blocks = timed.map((step) => ({
+    step,
+    left: ((step.startedAt! - start) / span) * 100,
+    width: (((step.finishedAt ?? Math.max(now, step.startedAt!)) - step.startedAt!) / span) * 100,
+  }))
+  return { span, blocks }
+}

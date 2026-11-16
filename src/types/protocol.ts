@@ -229,6 +229,7 @@ export interface StateChangedPayload {
   state: AgentState
 }
 export interface StepStartedPayload {
+  taskId: number | null
   step: number
   kind: 'tool' | 'screen'
   model: string | null

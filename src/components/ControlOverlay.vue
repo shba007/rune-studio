@@ -40,6 +40,7 @@ const DOT = 1.15
 const DROP_INTERVAL = 2.4
 
 const canvas = useTemplateRef<HTMLCanvasElement>('canvas')
+let activeTaskId: number | null = null
 const active = ref(false)
 const recording = ref(false)
 const standaloneRecording = ref<ScreenRecording | null>(null)
@@ -568,7 +569,11 @@ onMounted(async () => {
         bubbleThinking.value = ''
       }
     }),
+    await listen<{ taskId?: number | null }>('task_started', (event) => {
+      activeTaskId = event.payload?.taskId ?? null
+    }),
     await listen<StepStartedPayload>('step_started', (event) => {
+      if (event.payload.taskId != null && event.payload.taskId !== activeTaskId) return
       showStep(event.payload)
       onSays(event.payload.text, configuredModelLabel())
     }),

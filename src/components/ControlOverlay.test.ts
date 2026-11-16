@@ -54,6 +54,41 @@ it('shows thinking and speech beside the orb with an expanded scaled task window
   await flushPromises()
   expect(wrapper.text()).toContain('Checking the current step')
   expect(wrapper.text()).toContain('qwen3.8-27b-Q4_K_M · requested')
+  harness.handlers.get('task_started')!({ payload: { taskId: 1 } })
+  const step = {
+    taskId: 2,
+    step: 1,
+    kind: 'tool',
+    model: 'local',
+    tool: 'kit_tool',
+    text: 'Background lookup',
+    detail: '',
+    durationMs: 0,
+    point: null,
+    double: false,
+    button: 'left',
+    reason: '',
+  }
+  harness.handlers.get('step_started')!({ payload: step })
+  await flushPromises()
+  expect(wrapper.text()).not.toContain('Background lookup')
+  harness.handlers.get('step_started')!({
+    payload: {
+      ...step,
+      taskId: 1,
+      kind: 'screen',
+      tool: 'click',
+      text: 'Click the document',
+      durationMs: 250,
+    },
+  })
+  await flushPromises()
+  expect(wrapper.text()).toContain('Click the document')
+  harness.handlers.get('step_started')!({
+    payload: { ...step, taskId: null, kind: 'screen', tool: 'click', text: 'External click' },
+  })
+  await flushPromises()
+  expect(wrapper.text()).toContain('External click')
   const bubble = wrapper.get('.w-\\[280px\\]')
   expect((bubble.element as HTMLElement).style.right).toBe(
     `${window.innerWidth - 596 + window.screenX}px`,

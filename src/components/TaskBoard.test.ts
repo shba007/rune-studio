@@ -3,6 +3,7 @@ import { nextTick, ref } from 'vue'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import type { IndependentTask, TaskBoardModel } from '@/composables/useTaskBoard'
 import TaskBoard from './TaskBoard.vue'
+import type { LiveStep } from '@/config/liveSteps'
 const NOW = 100000
 function fixture(): TaskBoardModel {
   const base = Date.now()
@@ -66,6 +67,29 @@ function fixture(): TaskBoardModel {
   }
 }
 afterEach(() => vi.useRealTimers())
+it('expands live actions under their owning task without mixing matching step numbers', async () => {
+  const board = fixture()
+  const liveSteps: LiveStep[] = [1, 2].map((taskId) => ({
+    taskId,
+    step: 1,
+    kind: 'tool',
+    model: 'local',
+    tool: 'kit_tool',
+    text: `Live action for ${taskId}`,
+    detail: '',
+    ok: null,
+  }))
+  const wrapper = mount(TaskBoard, { props: { board, liveSteps } })
+  expect(wrapper.find('[aria-label="Live steps"]').exists()).toBe(false)
+  await wrapper.findAll('[data-testid="step-count"]')[0]!.trigger('click')
+  expect(wrapper.get('#live-steps-1').text()).toContain('Live action for 1')
+  expect(wrapper.get('#live-steps-1').text()).not.toContain('Live action for 2')
+  await wrapper.findAll('[data-testid="step-count"]')[1]!.trigger('click')
+  expect(wrapper.get('#live-steps-2').text()).toContain('Live action for 2')
+  await wrapper.findAll('[data-testid="step-count"]')[0]!.trigger('click')
+  expect(wrapper.find('#live-steps-1').exists()).toBe(false)
+  wrapper.unmount()
+})
 it('shows the shared loader while planning and retains the request title and estimate', () => {
   const board = fixture()
   board.tasks.value = []

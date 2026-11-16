@@ -287,3 +287,51 @@ it('remembers the latest height reported while closed when nothing can be measur
   expect(heights).toEqual([152])
   wrapper.unmount()
 })
+it('routes completion by task and retains other tasks across foreground starts', async () => {
+  harness.invoke.mockImplementation(async (command) =>
+    command === 'get_settings' ? { externalAgent: false } : null,
+  )
+  let agent!: Agent
+  const wrapper = mount(
+    defineComponent({
+      setup() {
+        agent = useAgent()
+        return () => null
+      },
+    }),
+  )
+  await flushPromises()
+  const send = (name: string, payload: unknown) =>
+    harness.handlers.get(name)!.forEach((handler) => handler({ payload }))
+  const start = (taskId: number | null) =>
+    send('step_started', {
+      taskId,
+      step: 1,
+      kind: 'tool',
+      tool: 'kit_tool',
+      text: `Task ${taskId}`,
+      detail: '',
+      model: 'test',
+    })
+  start(1)
+  start(2)
+  send('step_finished', { taskId: 2, step: 1, ok: false })
+  expect(agent.steps.value.map((step) => step.ok)).toEqual([null, false])
+  send('task_started', { taskId: 3 })
+  expect(agent.steps.value).toHaveLength(2)
+  start(3)
+  start(2)
+  expect(agent.response.value).toBe('Task 3')
+  send('task_started', { taskId: null })
+  expect(agent.steps.value).toHaveLength(4)
+  start(null)
+  send('step_finished', { step: 1, ok: true })
+  expect(
+    agent.steps.value.filter((step) => step.taskId !== null).every((step) => step.ok !== true),
+  ).toBe(true)
+  expect(agent.steps.value.at(-1)?.ok).toBe(true)
+  send('task_started', { taskId: 3 })
+  expect(agent.steps.value.some((step) => step.taskId === 3)).toBe(false)
+  expect(agent.steps.value.some((step) => step.taskId === 1)).toBe(true)
+  wrapper.unmount()
+})
