@@ -28,6 +28,9 @@ interface Blocked {
   reason: string
   inputSchema?: KitTool['inputSchema']
 }
+interface Endpoint {
+  endpoint: string
+}
 interface Discovery {
   tools: KitTool[]
   blocked?: Blocked[]
@@ -36,6 +39,8 @@ withDefaults(defineProps<{ sidebarOpen?: boolean }>(), { sidebarOpen: true })
 const selectedNames = ref<string[]>([])
 const tools = ref<KitTool[]>([])
 const blocked = ref<Blocked[]>([])
+// Plugins whose changes Kit stages for review instead of applying at once.
+const staged = ref<string[]>([])
 const selected = ref('')
 const loading = ref(false)
 const running = ref(false)
@@ -102,6 +107,10 @@ const canRun = computed(
 )
 const canReview = computed(() => !!writer.value && !running.value)
 const form = computed(() => toolForm(formTool.value?.inputSchema))
+const namespaceOf = (name: string) => name.split('__')[0] ?? name
+const writerStaged = computed(
+  () => !!writer.value && staged.value.includes(namespaceOf(writer.value.name)),
+)
 const confirming = ref<{ name: string; args: Record<string, unknown> } | null>(null)
 const confirmingText = computed(() => JSON.stringify(confirming.value?.args ?? {}, null, 2))
 watch(selected, () => {
@@ -121,6 +130,21 @@ function options(field: ToolField) {
         ]),
   ]
 }
+async function stagedPlugins(config: Config & Endpoint, items: Blocked[]) {
+  const names = new Set(
+    items.filter((item) => item.kind === 'writes').map((i) => namespaceOf(i.name)),
+  )
+  const staged: string[] = []
+  for (const plugin of names) {
+    try {
+      if (await invoke<boolean>('kit_plugin_staged', { endpoint: config.endpoint, plugin }))
+        staged.push(plugin)
+    } catch {
+      // Not embedded, or unknown: treat as not staged, which shows the stronger warning.
+    }
+  }
+  return staged
+}
 async function discover() {
   if (loading.value || running.value) return
   loading.value = true
@@ -139,6 +163,7 @@ async function discover() {
     selectedNames.value = config.selected
     tools.value = discovery.tools
     blocked.value = discovery.blocked ?? []
+    staged.value = await stagedPlugins(config, blocked.value)
     selected.value = groups.value.flatMap((group) => group.entries)[0]?.id ?? ''
   } catch (cause) {
     error.value = String(cause)
@@ -315,7 +340,11 @@ onMounted(discover)
           aria-label="Confirm change"
           class="mb-3 flex flex-col gap-3 rounded-rune-tile bg-rune-sunken p-3"
         >
-          <p class="m-0 text-rune-body text-attention">
+          <p v-if="writerStaged" class="m-0 text-rune-body text-rune-text-2">
+            Kit stages this change. Nothing in the folder changes until you apply it in Tools
+            settings, and you can undo it there.
+          </p>
+          <p v-else class="m-0 text-rune-body text-attention">
             This changes the real folder now. Kit does not stage or undo it.
           </p>
           <p class="m-0 text-rune-caption text-rune-text-2">{{ confirming.name }}</p>
@@ -363,6 +392,13 @@ onMounted(discover)
       >
         <p v-if="running" role="status" class="text-rune-body text-rune-text-2">Running…</p>
         <div v-else-if="result" class="max-h-full w-full max-w-3xl overflow-auto p-6">
+          <p
+            v-if="result.ok && result.structuredContent?.staged === true"
+            role="status"
+            class="text-rune-body text-attention"
+          >
+            Staged, not applied yet. Review and apply it in Tools settings.
+          </p>
           <p role="status" class="text-rune-caption text-rune-text-2">
             {{ result.ok ? 'Succeeded' : 'Failed' }} · {{ result.ms }} ms
           </p>

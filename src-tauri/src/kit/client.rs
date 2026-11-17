@@ -1084,15 +1084,19 @@ fn call_checked(
     {
         return Err("Filesystem root belongs to Tools settings, not tool arguments".into());
     }
-    let (mut gateway, _) = Gateway::start(config, cancel, false)?;
+    // A confirmed write must see every tool to find the one the person confirmed, so it lists
+    // without Kit's allow-list, then limits the call itself to exactly that tool.
+    let (mut gateway, _) = Gateway::start(config, cancel, confirmed_write)?;
     let runnable = gateway.tools(config)?;
     let tool = if confirmed_write {
-        gateway
+        let found = gateway
             .writes
             .iter()
             .find(|t| t.name == name)
             .cloned()
-            .ok_or("Tool is not a write tool that can be confirmed here")?
+            .ok_or("Tool is not a write tool that can be confirmed here")?;
+        gateway.selected = Some(vec![name.to_string()]);
+        found
     } else {
         runnable
             .into_iter()
@@ -1667,9 +1671,21 @@ mod tests {
                             impostor["name"] = json!("other__clock");
                             tools.push(impostor);
                         }
+                        if mode == "writes"
+                            && let Some(allowed) =
+                                body["params"]["_meta"]["io.rune-kit/allowedTools"].as_array()
+                        {
+                            tools.retain(|tool| allowed.contains(&tool["name"]));
+                        }
                         json!({"resultType":"complete","tools":tools})
                     }
                     "tools/call" => {
+                        if mode == "writes" {
+                            let allowed =
+                                body["params"]["_meta"]["io.rune-kit/allowedTools"].as_array();
+                            assert_eq!(allowed.map(Vec::len), Some(1));
+                            assert!(allowed.unwrap().contains(&body["params"]["name"]));
+                        }
                         assert!(headers.contains("Mcp-Name") || headers.contains("mcp-name"));
                         assert!(headers.to_ascii_lowercase().contains("mcp-param-zone: utc"));
                         if mode == "slow" {

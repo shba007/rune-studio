@@ -335,6 +335,7 @@ pub fn run() {
             tasks::dismiss_planned_request,
             video::video_recording_state,
             embedded_kit::kit_plugin_folder,
+            embedded_kit::kit_plugin_staged,
             embedded_kit::kit_set_plugin_folder,
             kit::client::kit_settings,
             kit::client::kit_save,

@@ -94,7 +94,7 @@ it('groups all tools, keeps descriptions in the middle, and submits selected too
   expect(wrapper.get('[aria-label="Tool result"]').text()).toMatch(/\d+ ms/)
   expect(
     harness.invoke.mock.calls.every(([command]) =>
-      ['kit_settings', 'kit_discover', 'kit_call_tool'].includes(command),
+      ['kit_settings', 'kit_discover', 'kit_call_tool', 'kit_plugin_staged'].includes(command),
     ),
   ).toBe(true)
   wrapper.unmount()
@@ -235,9 +235,10 @@ it('marks schema tools and renders structured output with the text collapsed bel
   expect(result.get('details pre').text()).toBe('Original text')
   wrapper.unmount()
 })
-function serveWriter() {
+function serveWriter(staged = false) {
   harness.invoke.mockImplementation(async (command) => {
     if (command === 'kit_settings') return config
+    if (command === 'kit_plugin_staged') return staged
     if (command === 'kit_discover')
       return {
         tools: [tool],
@@ -255,7 +256,8 @@ function serveWriter() {
           },
         ],
       }
-    if (command === 'kit_call_write_tool') return { text: '{"ok":true}' }
+    if (command === 'kit_call_write_tool')
+      return { text: '{"ok":true}', structuredContent: staged ? { staged: true } : {} }
     return null
   })
 }
@@ -325,5 +327,36 @@ it('closes the confirm card when another tool is chosen', async () => {
   expect(wrapper.find('[role="alertdialog"]').exists()).toBe(true)
   await wrapper.get('[title="rune-time__get_current_time"]').trigger('click')
   expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false)
+  wrapper.unmount()
+})
+it('says a change is staged, and that it still needs applying, when Kit stages the plugin', async () => {
+  serveWriter(true)
+  const wrapper = mount(PlaygroundTools)
+  await flushPromises()
+  await wrapper.get('[title="rune-filesystem__write_file"]').trigger('click')
+  await wrapper.get('[aria-label="path"]').setValue('a.txt')
+  await wrapper.get('[aria-label="content"]').setValue('x')
+  await wrapper.get('form').trigger('submit')
+  const card = wrapper.get('[role="alertdialog"]')
+  expect(card.text()).toContain('Kit stages this change')
+  expect(card.text()).not.toContain('changes the real folder now')
+  await card
+    .findAll('button')
+    .find((item) => item.text() === 'Confirm and run')!
+    .trigger('click')
+  await flushPromises()
+  expect(wrapper.get('[aria-label="Tool result"]').text()).toContain('Staged, not applied yet')
+  wrapper.unmount()
+})
+
+it('keeps the strong warning when staging cannot be confirmed', async () => {
+  serveWriter(false)
+  const wrapper = mount(PlaygroundTools)
+  await flushPromises()
+  await wrapper.get('[title="rune-filesystem__write_file"]').trigger('click')
+  await wrapper.get('[aria-label="path"]').setValue('a.txt')
+  await wrapper.get('[aria-label="content"]').setValue('x')
+  await wrapper.get('form').trigger('submit')
+  expect(wrapper.get('[role="alertdialog"]').text()).toContain('changes the real folder now')
   wrapper.unmount()
 })
