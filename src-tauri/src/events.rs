@@ -266,6 +266,15 @@ pub struct StepFinished {
     pub result: Option<crate::kit::client::StepToolResult>,
 }
 
+pub fn emit_step_started(app: &tauri::AppHandle, event: StepStarted) {
+    crate::live_run::started(&event);
+    let _ = app.emit(STEP_STARTED, event);
+}
+pub fn emit_step_finished(app: &tauri::AppHandle, event: StepFinished) {
+    crate::live_run::finished(&event);
+    let _ = app.emit(STEP_FINISHED, event);
+}
+
 #[derive(Clone, Serialize)]
 pub struct TaskDone {
     pub summary: String,

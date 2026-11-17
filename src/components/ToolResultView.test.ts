@@ -117,3 +117,11 @@ it('keeps the existing text view when either schema or structured content is abs
     wrapper.unmount()
   }
 })
+
+it('suppresses only the Raw disclosure when used in Workspace', () => {
+  const wrapper = mount(ToolResultView, { props: { text: 'Tool text', showRaw: false } })
+  expect(wrapper.get('p').text()).toBe('Tool text')
+  expect(wrapper.find('details').exists()).toBe(false)
+  expect(wrapper.find('.compact-result').exists()).toBe(false)
+  wrapper.unmount()
+})

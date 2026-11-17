@@ -1,6 +1,6 @@
 import RuneNavItem from './RuneNavItem.vue'
 import { flushPromises, shallowMount } from '@vue/test-utils'
-import { ref } from 'vue'
+import { ref, shallowRef } from 'vue'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import WorkspaceWindow from './WorkspaceWindow.vue'
 import TaskHistory from './TaskHistory.vue'
@@ -9,9 +9,14 @@ import DecisionInbox from './DecisionInbox.vue'
 import GoalsTable from './GoalsTable.vue'
 import LifeGraph from './LifeGraph.vue'
 import KnowledgeOverview from './KnowledgeOverview.vue'
+import CurrentRun from './CurrentRun.vue'
+import type { LiveStepsModel } from '@/composables/useLiveSteps'
 
 const harness = vi.hoisted(() => ({
-  handler: null as null | ((event: { payload: { section?: string; runId?: string } }) => void),
+  handler: null as
+    | null
+    | ((event: { payload: { section?: string; runId?: string; stepKey?: string } }) => void),
+  liveRun: null as LiveStepsModel | null,
   off: vi.fn<() => void>(),
   settings: vi.fn<() => void>(),
 }))
@@ -22,7 +27,7 @@ vi.mock('@tauri-apps/api/event', () => ({
   },
 }))
 vi.mock('@/composables/useAgent', () => ({
-  useAgent: () => ({ notice: ref(null), openSettings: harness.settings }),
+  useAgent: () => ({ notice: ref(null), openSettings: harness.settings, liveRun: harness.liveRun }),
 }))
 vi.mock('@/composables/useDecisions', () => ({
   useDecisions: () => ({ entries: ref([]), error: ref(''), refresh: async () => {} }),
@@ -33,6 +38,31 @@ vi.mock('@/composables/useWorkspaceTasks', () => ({
 afterEach(() => {
   window.history.replaceState({}, '', '/')
   vi.clearAllMocks()
+  harness.liveRun = null
+})
+
+it('routes initial and existing-window Open selections to Current run above the same history', async () => {
+  harness.liveRun = {
+    steps: shallowRef([]),
+    snapshot: shallowRef(null),
+    error: ref(''),
+    clearTask: vi.fn<(id: number | null) => void>(),
+    refresh: vi.fn<() => Promise<void>>(async () => {}),
+  }
+  window.history.replaceState({}, '', '/?view=workspace&section=tasks&step=1%3A2')
+  const wrapper = shallowMount(WorkspaceWindow, { global: { stubs: { RuneNavItem } } })
+  await flushPromises()
+  const history = wrapper.getComponent(TaskHistory)
+  expect(wrapper.getComponent(CurrentRun).props('focus')).toEqual({ key: '1:2', serial: 0 })
+  expect(wrapper.html().indexOf('<current-run-stub')).toBeLessThan(
+    wrapper.html().indexOf('<task-history-stub'),
+  )
+  harness.handler!({ payload: { section: 'tasks', stepKey: '2:3' } })
+  await flushPromises()
+  expect(wrapper.getComponent(CurrentRun).props('focus')).toEqual({ key: '2:3', serial: 1 })
+  expect(wrapper.getComponent(TaskHistory).vm).toBe(history.vm)
+  expect(wrapper.findComponent(PreviewPlayer).exists()).toBe(false)
+  wrapper.unmount()
 })
 
 it('keeps task history mounted while switching workspace sections', async () => {

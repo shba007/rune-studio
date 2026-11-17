@@ -403,6 +403,7 @@ function onOrb() {
                     v-if="shows('board')"
                     :board="taskBoard"
                     :live-steps="agent.steps.value"
+                    :open-step="(key) => agent.openWorkspace('tasks', key)"
                   />
                   <TaskReminder v-if="shows('reminder')" :agent="agent" />
                   <DecisionInbox v-if="shows('decision')" compact :model="decisions" />

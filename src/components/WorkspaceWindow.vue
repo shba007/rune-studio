@@ -8,6 +8,7 @@ import AppIcon from './AppIcon.vue'
 import RuneNotice from './RuneNotice.vue'
 import type { IconName } from '@/icons'
 import TaskHistory from './TaskHistory.vue'
+import CurrentRun from './CurrentRun.vue'
 import { useNativeBlur } from '@/composables/useNativeBlur'
 import { useSectionHistory } from '@/composables/useSectionHistory'
 import TitleBar from './TitleBar.vue'
@@ -45,6 +46,10 @@ const resolveSection = (value: string | null | undefined): Section | null => {
     : null
 }
 const agent = useAgent()
+const initialStep = new URLSearchParams(location.search).get('step')
+const liveFocus = ref<{ key: string; serial: number } | null>(
+  initialStep ? { key: initialStep, serial: 0 } : null,
+)
 const mindsets = ref<InstanceType<typeof MindsetsPanel> | null>(null)
 const decisions = useDecisions()
 const workspace = useWorkspaceTasks()
@@ -189,9 +194,15 @@ let unlisten: (() => void) | undefined
 let disposed = false
 onMounted(async () => {
   try {
-    const off = await listen<{ section?: string; runId?: string }>(
+    const off = await listen<{ section?: string; runId?: string; stepKey?: string }>(
       'workspace_section',
       ({ payload }) => {
+        if (payload.stepKey) {
+          section.value = 'tasks'
+          previewTask.value = null
+          liveFocus.value = { key: payload.stepKey, serial: (liveFocus.value?.serial ?? 0) + 1 }
+          return
+        }
         if (payload.runId) {
           section.value = 'tasks'
           previewTask.value = payload.runId
@@ -270,9 +281,13 @@ onBeforeUnmount(() => {
           :class="
             section === 'life'
               ? 'min-h-0 max-w-none flex-1'
-              : section === 'goals'
-                ? 'max-w-6xl'
-                : 'max-w-4xl'
+              : section === 'tasks' &&
+                  agent.liveRun?.snapshot.value?.request &&
+                  agent.liveRun.snapshot.value.request.phase !== 'queued'
+                ? 'max-w-none'
+                : section === 'goals'
+                  ? 'max-w-6xl'
+                  : 'max-w-4xl'
           "
         >
           <header
@@ -304,6 +319,11 @@ onBeforeUnmount(() => {
             @saved="created"
           />
           <RuneNotice v-if="agent.notice.value">{{ agent.notice.value }}</RuneNotice>
+          <CurrentRun
+            v-if="section === 'tasks' && !previewTask && agent.liveRun"
+            :live="agent.liveRun"
+            :focus="liveFocus"
+          />
           <TaskHistory
             v-show="section === 'tasks'"
             :active="section === 'tasks' && !previewTask"

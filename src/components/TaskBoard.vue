@@ -19,7 +19,11 @@ import {
 } from '@/config/taskProgress'
 import AppIcon from './AppIcon.vue'
 import RuneLoader from './RuneLoader.vue'
-const props = defineProps<{ board: TaskBoardModel; liveSteps?: LiveStep[] }>()
+const props = defineProps<{
+  board: TaskBoardModel
+  liveSteps?: LiveStep[]
+  openStep?: (key: string) => unknown
+}>()
 const now = useNow({ scheduler: (update) => useIntervalFn(update, 1000) })
 const reduceMotion = usePreferredReducedMotion()
 const request = computed(() => visibleGoal(props.board.requests.value))
@@ -220,6 +224,7 @@ function stepLabel(phase: TaskPhase) {
       </div>
     </div>
     <RunLanes
+      :open-step="openStep"
       :lanes="tasks.map((task, index) => ({ id: task.id, label: `Task ${index + 1}` }))"
       :steps="liveSteps ?? []"
       :now="now.getTime()"

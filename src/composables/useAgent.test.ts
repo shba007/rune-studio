@@ -331,7 +331,7 @@ it('routes completion by task and retains other tasks across foreground starts',
   start(2)
   expect(agent.response.value).toBe('Task 3')
   send('task_started', { taskId: null })
-  expect(agent.steps.value).toHaveLength(4)
+  expect(agent.steps.value).toHaveLength(3)
   start(null)
   send('step_finished', { step: 1, ok: true })
   expect(

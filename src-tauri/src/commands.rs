@@ -613,9 +613,17 @@ pub fn set_api_key(app: AppHandle, state: State<'_, AppState>, key: String) -> A
 }
 
 #[tauri::command]
-pub async fn open_workspace(app: AppHandle, section: Option<String>) -> AppResult<()> {
-    crate::workspace::open(&app, section.as_deref())
-        .map_err(|err| AppError::Invalid(format!("Could not open Workspace: {err}")))
+pub async fn open_workspace(
+    app: AppHandle,
+    section: Option<String>,
+    step_key: Option<String>,
+) -> AppResult<()> {
+    (if let Some(key) = step_key {
+        crate::workspace::open_live(&app, &key)
+    } else {
+        crate::workspace::open(&app, section.as_deref())
+    })
+    .map_err(|err| AppError::Invalid(format!("Could not open Workspace: {err}")))
 }
 
 #[tauri::command]

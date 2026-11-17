@@ -3,6 +3,7 @@ import { expect, it } from 'vite-plus/test'
 import type { LiveStep } from '@/config/liveSteps'
 import RunLanes from './RunLanes.vue'
 import ToolResultView from './ToolResultView.vue'
+import { vi } from 'vite-plus/test'
 
 const step = (over: Partial<LiveStep>): LiveStep => ({
   taskId: 1,
@@ -65,6 +66,16 @@ it('stays hidden until a step has started', () => {
     props: { lanes: [{ id: 1, label: 'Task 1' }], steps: [], now: 0 },
   })
   expect(wrapper.find('[aria-label="Run timeline"]').exists()).toBe(false)
+  wrapper.unmount()
+})
+
+it('opens the selected step through the supplied Workspace path', async () => {
+  const openStep = vi.fn<(key: string) => void>()
+  const wrapper = mount(RunLanes, {
+    props: { lanes: [{ id: 1, label: 'Task' }], steps: [step({})], now: 2000, openStep },
+  })
+  await wrapper.get('[data-testid="lane-detail"] button').trigger('click')
+  expect(openStep).toHaveBeenCalledExactlyOnceWith('1:1')
   wrapper.unmount()
 })
 

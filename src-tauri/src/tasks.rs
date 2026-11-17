@@ -621,6 +621,7 @@ impl Board {
 }
 fn publish(app: &AppHandle) {
     let snapshot = tasks_state();
+    crate::live_run::sync_tasks(&snapshot);
     let answer = snapshot
         .requests
         .iter()
@@ -1294,8 +1295,8 @@ async fn background(
             .ok_or("Unknown background tool")?
             .to_string();
         let step = call_index + 1;
-        let _ = app.emit(
-            crate::events::STEP_STARTED,
+        crate::events::emit_step_started(
+            app,
             crate::events::StepStarted {
                 task_id: Some(task.id),
                 step,
@@ -1320,8 +1321,8 @@ async fn background(
         .await
         .map_err(|e| e.to_string())
         .and_then(|result| result);
-        let _ = app.emit(
-            crate::events::STEP_FINISHED,
+        crate::events::emit_step_finished(
+            app,
             crate::events::StepFinished {
                 task_id: Some(task.id),
                 step,

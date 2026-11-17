@@ -72,6 +72,7 @@ pub fn start_planned(
 ) {
     let scope = app.state::<AppState>().begin_run();
     log::info!("run {} started", scope.id);
+    crate::live_run::clear_task(board_id);
     let _ = app.emit(
         "task_started",
         serde_json::json!({"scopeId": scope.id, "taskId": board_id}),

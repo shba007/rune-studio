@@ -123,8 +123,8 @@ pub fn announce(
         (Action::TypeText { text }, _) => typing_duration(text).as_millis() as u64,
         _ => 0,
     };
-    let _ = app.emit(
-        events::STEP_STARTED,
+    crate::events::emit_step_started(
+        app,
         StepStarted {
             step,
             task_id,
@@ -181,8 +181,8 @@ pub fn finish_step_with_result(
         Ok(()) => (true, None),
         Err(err) => (false, Some(err.to_string())),
     };
-    let _ = app.emit(
-        events::STEP_FINISHED,
+    crate::events::emit_step_finished(
+        app,
         StepFinished {
             result: output,
             step,

@@ -9,8 +9,9 @@ const props = withDefaults(
     schema?: unknown
     structuredContent?: ResultValue
     compact?: boolean
+    showRaw?: boolean
   }>(),
-  { structuredContent: undefined },
+  { structuredContent: undefined, showRaw: true },
 )
 const content = computed(() => resultContent(props.text))
 const view = computed(() =>
@@ -30,7 +31,7 @@ const view = computed(() =>
       <ToolResultValue v-for="(value, index) in content" :key="index" :value="value" />
     </template>
     <!-- The test bench keeps the exact text one click away; the pill shows the view only. -->
-    <details v-if="!compact" class="text-rune-caption text-rune-text-2">
+    <details v-if="!compact && showRaw" class="text-rune-caption text-rune-text-2">
       <summary class="cursor-pointer">Raw JSON</summary>
       <pre
         class="mt-3 max-h-96 overflow-auto rounded-rune-tile bg-rune-sunken p-4 text-rune-body whitespace-pre-wrap break-words"

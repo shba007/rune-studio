@@ -1,10 +1,10 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { useIntervalFn, useTimeoutFn } from '@vueuse/core'
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import type { TaskTiming } from '@/config/eta'
-import type { LiveStep } from '@/config/liveSteps'
+import { useLiveSteps } from './useLiveSteps'
 import { REVIEW_SECONDS, readOffer, type ReviewOffer } from '@/config/review'
 import {
   AUDIO_LEVEL,
@@ -37,7 +37,6 @@ import {
   type ScreenRequestSnapshot,
   type StateChangedPayload,
   type StepStartedPayload,
-  type StepFinishedPayload,
   type TaskDonePayload,
   type TaskVerifiedPayload,
   type ThinkingPayload,
@@ -114,7 +113,8 @@ export function useAgent() {
   const thinking = ref<ThinkingPayload | null>(null)
   const response = ref<string | null>(null)
   const question = ref<ConfirmRequestPayload | null>(null)
-  const steps = shallowRef<LiveStep[]>([])
+  const liveRun = useLiveSteps()
+  const steps = liveRun.steps
   const notice = ref<string | null>(null)
   const noticeKind = ref<'error' | 'info'>('error')
   const focusTick = ref(0)
@@ -320,7 +320,7 @@ export function useAgent() {
     reviewOffer.value = null
     thinking.value = null
     response.value = null
-    steps.value = steps.value.filter((step) => step.taskId !== taskId)
+    liveRun.clearTask(taskId)
   }
 
   async function startTask(text: string): Promise<boolean> {
@@ -397,7 +397,8 @@ export function useAgent() {
       void refreshScreenRequest()
   }, 1000)
   const openSettings = (section = 'general') => call('open_settings_window', { section })
-  const openWorkspace = (section = 'life') => call('open_workspace', { section })
+  const openWorkspace = (section = 'life', stepKey?: string) =>
+    call('open_workspace', { section, ...(stepKey ? { stepKey } : {}) })
   const openPlayground = (flow?: string) => call('open_playground', { flow: flow ?? null })
   const toggleListening = () => call('toggle_listening')
   async function answer(approved: boolean) {
@@ -434,7 +435,7 @@ export function useAgent() {
     timing.value = null
     thinking.value = null
     response.value = null
-    steps.value = steps.value.filter((step) => step.taskId !== null)
+    liveRun.clearTask(null)
     if (mode.value === 'task') void setMode('open')
   }
 
@@ -475,34 +476,6 @@ export function useAgent() {
           response.value = event.payload.text
           thinking.value = null
         }
-        steps.value = [
-          ...steps.value,
-          {
-            step: event.payload.step,
-            taskId: event.payload.taskId ?? null,
-            tool: event.payload.tool,
-            kind: event.payload.kind,
-            model: event.payload.model,
-            text: event.payload.text,
-            detail: event.payload.detail,
-            ok: null,
-            startedAt: Date.now(),
-            finishedAt: null,
-          },
-        ]
-      }),
-      await listen<StepFinishedPayload>('step_finished', (event) => {
-        steps.value = steps.value.map((s) =>
-          s.step === event.payload.step && s.taskId === (event.payload.taskId ?? null)
-            ? {
-                ...s,
-                ok: event.payload.ok,
-                finishedAt: Date.now(),
-                result: s.kind === 'tool' ? event.payload.result : undefined,
-                error: event.payload.error,
-              }
-            : s,
-        )
       }),
       await listen<TaskDonePayload>(TASK_DONE, (event) => {
         resultText.value = event.payload.summary
@@ -583,6 +556,7 @@ export function useAgent() {
     thinking,
     response,
     steps,
+    liveRun,
     home,
     clearTask,
     notice,

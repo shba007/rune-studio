@@ -666,8 +666,8 @@ async fn analyze(app: &AppHandle, arguments: &Value) -> Reply {
     row.rec.tool = Some("analyze".into());
     row.rec.args_json = Some(trace::redact(&json!({"question":question})).0);
     row.rec.reason = Some(question.clone());
-    let _ = app.emit(
-        events::STEP_STARTED,
+    crate::events::emit_step_started(
+        app,
         events::StepStarted {
             step,
             task_id: None,

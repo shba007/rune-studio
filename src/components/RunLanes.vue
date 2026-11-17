@@ -14,11 +14,18 @@ import AppIcon from './AppIcon.vue'
 import RuneButton from './RuneButton.vue'
 import ToolResultView from './ToolResultView.vue'
 
-const props = defineProps<{
-  lanes: { id: number | null; label: string }[]
-  steps: LiveStep[]
-  now: number
-}>()
+const props = withDefaults(
+  defineProps<{
+    lanes: { id: number | null; label: string }[]
+    steps: LiveStep[]
+    now: number
+    selectedKey?: string | null
+    showDetail?: boolean
+    openStep?: (key: string) => unknown
+  }>(),
+  { showDetail: true },
+)
+const emit = defineEmits<{ select: [key: string] }>()
 
 const laneIds = computed(() => new Set(props.lanes.map((lane) => lane.id)))
 const shown = computed(() => props.steps.filter((step) => laneIds.value.has(step.taskId)))
@@ -32,7 +39,10 @@ const kinds = computed(() =>
 const picked = ref<string | null>(null)
 const selected = computed(
   () =>
-    shown.value.find((step) => stepKey(step) === picked.value) ??
+    shown.value.find(
+      (step) =>
+        stepKey(step) === (props.selectedKey === undefined ? picked.value : props.selectedKey),
+    ) ??
     shown.value.filter((step) => step.ok === null).at(-1) ??
     shown.value.at(-1) ??
     null,
@@ -96,7 +106,7 @@ function describe(step: LiveStep) {
             :aria-label="describe(block.step)"
             :aria-pressed="!!selected && stepKey(selected) === stepKey(block.step)"
             :title="describe(block.step)"
-            @click="picked = stepKey(block.step)"
+            @click="((picked = stepKey(block.step)), emit('select', stepKey(block.step)))"
           >
             <span
               v-if="block.step.kind === 'tool' && block.step.result"
@@ -119,11 +129,19 @@ function describe(step: LiveStep) {
     </div>
 
     <div
-      v-if="selected"
+      v-if="selected && showDetail !== false"
       data-testid="lane-detail"
       class="flex flex-col gap-1 rounded-rune-tile bg-rune-sunken p-2"
     >
       <div class="flex min-w-0 items-center gap-1.5 text-rune-caption text-rune-ink">
+        <RuneButton
+          v-if="openStep"
+          variant="ghost"
+          size="sm"
+          class="!min-h-0 !p-0"
+          @click="openStep(stepKey(selected))"
+          >Open</RuneButton
+        >
         <AppIcon
           :name="STEP_KIND[selected.kind].icon"
           size="sm"

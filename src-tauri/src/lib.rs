@@ -31,6 +31,7 @@ mod intake_pathways;
 mod intake_subdomains;
 mod kit;
 pub mod life;
+mod live_run;
 mod model;
 mod observe;
 mod onboarding;
@@ -323,6 +324,7 @@ pub fn run() {
             commands::installed_versions,
             commands::open_project_link,
             tasks::tasks_state,
+            live_run::live_run_snapshot,
             personalities::personalities_state,
             personalities::personality_save,
             personalities::personality_propose,
