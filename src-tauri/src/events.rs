@@ -235,6 +235,13 @@ impl ExternalAgent {
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StepStarted {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub step_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub purpose: Option<&'static str>,
+
     pub task_id: Option<u64>,
     pub step: u32,
     pub kind: &'static str,
@@ -258,6 +265,21 @@ pub struct Point {
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StepFinished {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub step_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub purpose: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completion_tokens: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tokens_estimated: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attempts: Option<u32>,
+
     pub task_id: Option<u64>,
     pub step: u32,
     pub ok: bool,
@@ -288,6 +310,9 @@ mod tests {
     #[test]
     fn step_started_is_sent_with_the_camel_case_names_the_ui_reads() {
         let mut started = super::StepStarted {
+            request_id: None,
+            step_id: None,
+            purpose: None,
             task_id: Some(42),
             step: 1,
             kind: "screen",
@@ -307,6 +332,13 @@ mod tests {
         assert_eq!(json["taskId"], 42);
         assert!(json.get("task_id").is_none());
         let finished = serde_json::to_value(super::StepFinished {
+            request_id: None,
+            step_id: None,
+            purpose: None,
+            model: None,
+            completion_tokens: None,
+            tokens_estimated: None,
+            attempts: None,
             result: None,
             task_id: Some(42),
             step: 1,

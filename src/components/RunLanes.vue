@@ -2,6 +2,8 @@
 import { computed, ref } from 'vue'
 import {
   STEP_KIND,
+  kindColor,
+  modelUsage,
   durationText,
   laneLayout,
   stepDuration,
@@ -149,7 +151,7 @@ function describe(step: LiveStep) {
           :name="STEP_KIND[selected.kind].icon"
           size="sm"
           class="shrink-0"
-          :class="selected.kind === 'tool' ? 'text-tool' : 'text-voice'"
+          :class="kindColor(selected.kind)"
         />
         <span class="min-w-0 flex-1 truncate" :title="selected.text || selected.tool">{{
           selectedTitle.title
@@ -166,6 +168,16 @@ function describe(step: LiveStep) {
         data-testid="lane-meta"
       >
         {{ selectedMeta }}
+      </p>
+      <p v-if="selected.kind === 'model'" class="m-0 text-rune-caption text-rune-text-2">
+        {{ selectedDuration }}<span v-if="modelUsage(selected)"> · {{ modelUsage(selected) }}</span>
+      </p>
+      <p
+        v-if="selected.kind === 'model' && selected.error"
+        role="alert"
+        class="m-0 text-rune-caption text-attention"
+      >
+        {{ selected.error }}
       </p>
       <p
         v-if="
@@ -240,6 +252,10 @@ function describe(step: LiveStep) {
 .block-mark[data-kind='tool'],
 .legend-mark[data-kind='tool'] {
   background: var(--color-tool);
+}
+.block-mark[data-kind='model'],
+.legend-mark[data-kind='model'] {
+  background: var(--color-model);
 }
 .block-failed {
   background: var(--color-attention) !important;

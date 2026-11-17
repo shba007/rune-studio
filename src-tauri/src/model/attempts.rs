@@ -60,3 +60,12 @@ impl Drop for Guard<'_> {
         }
     }
 }
+
+// Keep live telemetry and evaluation's existing usage fallback identical.
+pub fn tokens_of(reported: Option<i64>, chars: i64) -> Option<(i64, bool)> {
+    match reported {
+        Some(tokens) if tokens >= 2 => Some((tokens, false)),
+        _ if chars > 0 => Some(((chars + 3) / 4, true)),
+        _ => reported.map(|tokens| (tokens, false)),
+    }
+}

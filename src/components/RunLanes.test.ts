@@ -169,3 +169,34 @@ it('shows a Kit tool by its own name with the server in the meta line', () => {
   expect(detail.get('[data-testid="lane-meta"]').text()).toBe('Tool call · rune-time · local-model')
   wrapper.unmount()
 })
+it('shows model usage and repeated attempts without a result, and only lists its legend when present', async () => {
+  const action = step({})
+  const model = step({
+    kind: 'model',
+    stepId: 'model:1',
+    text: 'Decide',
+    purpose: 'Decide',
+    model: 'served',
+    completionTokens: 32,
+    tokensEstimated: true,
+    attempts: 3,
+  })
+  const wrapper = mount(RunLanes, {
+    props: { lanes: [{ id: 1, label: 'Task' }], steps: [action], now: 2000 },
+  })
+  expect(wrapper.text()).not.toContain('Model call')
+  await wrapper.setProps({ steps: [action, model] })
+  expect(wrapper.text()).toContain('Model call')
+  await wrapper.get('[data-kind="model"].block-mark').trigger('click')
+  const detail = wrapper.get('[data-testid="lane-detail"]')
+  expect(detail.text()).toContain('Decide')
+  expect(detail.text()).toContain('served')
+  expect(detail.text()).toContain('1.0 s')
+  expect(detail.text()).toContain('~32 tokens')
+  expect(detail.text()).toContain('3 attempts')
+  expect(wrapper.find('[data-testid="lane-result"]').exists()).toBe(false)
+  expect(wrapper.find('[data-testid="lane-result-mark"]').exists()).toBe(false)
+  await wrapper.setProps({ steps: [action, { ...model, attempts: 1 }] })
+  expect(detail.text()).not.toContain('1 attempts')
+  wrapper.unmount()
+})

@@ -119,3 +119,65 @@ it('keeps two windows consistent, deduplicates starts, and clears dismissed snap
   first.wrapper.unmount()
   second.wrapper.unmount()
 })
+it('pairs model and action with the same number using IDs for both events and snapshots', () => {
+  const model = {
+    ...start,
+    kind: 'model' as const,
+    stepId: 'model:1',
+    requestId: 9,
+    purpose: 'Decide',
+  }
+  const modelFinish = {
+    taskId: 1,
+    requestId: 9,
+    stepId: 'model:1',
+    step: 88,
+    ok: true,
+    model: 'served',
+    completionTokens: 12,
+    tokensEstimated: false,
+    attempts: 2,
+  }
+  let events = startLiveStep(startLiveStep([], model, 100), start, 200)
+  events = finishLiveStep(events, modelFinish, 300)
+  expect(events[0]).toMatchObject({ ok: true, model: 'served', completionTokens: 12, attempts: 2 })
+  expect(events[1]!.ok).toBeNull()
+  events = finishLiveStep(events, finish, 400)
+  expect(events[1]!.result).toEqual(finish.result)
+  expect(
+    snapshotLiveSteps({
+      ...snapshot,
+      steps: [
+        { start: model, finish: modelFinish, startedAt: 100, finishedAt: 300 },
+        { start, finish, startedAt: 200, finishedAt: 400 },
+      ],
+    }),
+  ).toEqual(events)
+})
+
+it('keeps the tool result when metadata-only model events exceed the bound', () => {
+  let steps = finishLiveStep(startLiveStep([], start, 1), finish, 2)
+  for (let i = 0; i < 540; i++) {
+    steps = startLiveStep(steps, { ...start, kind: 'model', stepId: 'model:' + i }, i + 3)
+  }
+  expect(steps).toHaveLength(512)
+  expect(steps[0]!.result).toEqual(finish.result)
+})
+it('accepts the newest tool result when all retained steps already have results', () => {
+  let steps = Array.from({ length: 512 }, (_, i) => ({
+    ...start,
+    step: i + 1,
+    ok: true,
+    result: { text: 'old' },
+    startedAt: i,
+    finishedAt: i + 1,
+  }))
+  const pending = { ...start, step: 513 }
+  steps = finishLiveStep(
+    startLiveStep(steps, pending, 600),
+    { ...finish, step: 513, result: { text: 'new' } },
+    700,
+  ) as typeof steps
+  expect(steps).toHaveLength(512)
+  expect(steps.at(-1)!.result.text).toBe('new')
+})

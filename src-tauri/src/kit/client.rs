@@ -1112,6 +1112,13 @@ mod tests {
         handle.join().unwrap();
         assert_eq!(output.output.text, model_text);
         let event = serde_json::to_value(crate::events::StepFinished {
+            request_id: None,
+            step_id: None,
+            purpose: None,
+            model: None,
+            completion_tokens: None,
+            tokens_estimated: None,
+            attempts: None,
             task_id: Some(12),
             step: 1,
             ok: true,
@@ -1140,6 +1147,13 @@ mod tests {
             output_schema: None,
         };
         let mut finished = crate::events::StepFinished {
+            request_id: None,
+            step_id: None,
+            purpose: None,
+            model: None,
+            completion_tokens: None,
+            tokens_estimated: None,
+            attempts: None,
             task_id: Some(12),
             step: 1,
             ok: true,

@@ -183,3 +183,48 @@ it('selects and marks a waiting step, shows its latest tool content, then record
   expect(wrapper.find('.block-waiting').exists()).toBe(false)
   wrapper.unmount()
 })
+it('shows model metadata in row and lane selection and request planning on a Plan lane', async () => {
+  const live = fixture()
+  live.steps.value = [
+    ...live.steps.value,
+    {
+      ...live.steps.value[0]!,
+      kind: 'model',
+      stepId: 'model:1',
+      purpose: 'Decide',
+      text: 'Decide',
+      startedAt: 3000,
+      finishedAt: 4000,
+      model: 'served',
+      result: undefined,
+      completionTokens: 45,
+      tokensEstimated: false,
+      attempts: 2,
+    },
+  ]
+  const wrapper = mount(CurrentRun, { props: { live } })
+  const detail = wrapper.get('[aria-label="Selected live step"]')
+  expect(detail.text()).toContain('Decide')
+  expect(detail.text()).toContain('served')
+  expect(detail.text()).toContain('45 tokens · 2 attempts')
+  expect(wrapper.find('[aria-label="Live tool result"]').exists()).toBe(false)
+  expect(wrapper.get('[data-step-key="1:model:1"]').classes()).toContain('opacity-70')
+  await wrapper.get('[data-step-key="1:1"] button').trigger('click')
+  expect(wrapper.find('[aria-label="Live tool result"]').exists()).toBe(true)
+  await wrapper.get('.block-mark[data-kind="model"]').trigger('click')
+  expect(detail.attributes('data-selected-step')).toBe('1:model:1')
+  live.steps.value = [
+    {
+      ...live.steps.value[2]!,
+      taskId: null,
+      requestId: 1,
+      stepId: 'model:plan',
+      text: 'Plan',
+      purpose: 'Plan',
+    },
+  ]
+  await wrapper.vm.$nextTick()
+  expect(wrapper.get('[data-lane="run"]').text()).toContain('Plan')
+  expect(wrapper.get('[data-step-key="request:1:model:plan"]').text()).toContain('Plan')
+  wrapper.unmount()
+})

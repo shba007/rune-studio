@@ -114,24 +114,14 @@ pub fn file_url(path: &Path) -> String {
     }
 }
 
-const USAGE_BELIEVED_FROM: i64 = 2;
-
 pub fn tokens_of(step: &StepRecord) -> Option<(i64, bool)> {
-    match step.completion_tokens {
-        Some(tokens) if tokens >= USAGE_BELIEVED_FROM => Some((tokens, false)),
-        reported => {
-            let chars = step
-                .args_json
-                .as_ref()
-                .map_or(0, |args| args.chars().count() as i64)
-                + step.thinking_chars.unwrap_or(0);
-            if chars > 0 {
-                Some(((chars + 3) / 4, true))
-            } else {
-                reported.map(|tokens| (tokens, false))
-            }
-        }
-    }
+    crate::model::attempts::tokens_of(
+        step.completion_tokens,
+        step.args_json
+            .as_ref()
+            .map_or(0, |args| args.chars().count() as i64)
+            + step.thinking_chars.unwrap_or(0),
+    )
 }
 
 pub fn totals(steps: &[StepRecord]) -> (i64, i64, i64, i64) {

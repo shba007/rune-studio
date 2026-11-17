@@ -193,3 +193,30 @@ it('defaults to active-only expansion, preserves manual expansion, and scrolls t
   expect(board.cancel).toHaveBeenCalledExactlyOnceWith(3)
   wrapper.unmount()
 })
+it('model rows leave action progress and ETA unchanged', async () => {
+  const board = fixture()
+  const wrapper = mount(TaskBoard, { props: { board, liveSteps: [] } })
+  const counts = wrapper.findAll('[data-testid="step-count"]').map((row) => row.text())
+  const eta = wrapper.get('[data-testid="goal-eta"]').text()
+  const liveSteps: LiveStep[] = Array.from({ length: 4 }, (_, i) => ({
+    taskId: 1,
+    step: 2,
+    stepId: 'model:' + i,
+    kind: 'model',
+    model: 'served',
+    purpose: 'Decide',
+    tool: 'model',
+    text: 'Decide',
+    detail: '',
+    ok: true,
+    startedAt: 1000,
+    finishedAt: 2000,
+  }))
+  await wrapper.setProps({ liveSteps })
+  expect(wrapper.findAll('[data-testid="step-count"]').map((row) => row.text())).toEqual(counts)
+  expect(counts[0]).toBe('Step 2/2')
+  expect(wrapper.get('[data-testid="goal-eta"]').text()).toBe(eta)
+  await wrapper.findAll('[data-testid="step-count"]')[0]!.trigger('click')
+  expect(wrapper.get('#live-steps-1').findAll('li')).toHaveLength(4)
+  wrapper.unmount()
+})

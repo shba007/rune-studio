@@ -1151,8 +1151,18 @@ async fn make_plan(
         background: false,
         http_timeout: None,
     };
-    let plan = crate::agent::unless_stopped(cancel, client.call_json_retrying(&request, &schema))
-        .await
+    let mut model_step =
+        crate::model_step::ModelStep::start(app, &client, None, Some(request_id), "Plan");
+    let result = {
+        let client = model_step.client(&client);
+        crate::agent::unless_stopped(cancel, client.call_json_retrying(&request, &schema)).await
+    };
+    model_step.finish(match &result {
+        None => Some("Planning cancelled".into()),
+        Some(Err(error)) => Some(error.to_string()),
+        _ => None,
+    });
+    let plan = result
         .ok_or("Planning cancelled")?
         .map_err(|e| e.to_string())?;
     plan::Plan::parse(plan)
@@ -1251,19 +1261,39 @@ async fn background(
             background: false,
             http_timeout: None,
         };
-        let (name, arguments, served_model) = if let Some(schema) = &result_schema {
-            let result =
-                crate::agent::unless_stopped(token, client.call_json_retrying(&request, schema))
-                    .await
-                    .ok_or("Cancelled")?
-                    .map_err(|e| e.to_string())?;
-            ("done".to_string(), result, None)
-        } else {
-            let reply =
+        let mut model_step = crate::model_step::ModelStep::start(
+            app,
+            &client,
+            Some(task.id),
+            Some(task.request_id),
+            if result_schema.is_some() {
+                "Answer"
+            } else {
+                "Decide"
+            },
+        );
+        let turn = {
+            let client = model_step.client(&client);
+            if let Some(schema) = &result_schema {
+                crate::agent::unless_stopped(
+                    token,
+                    client.call_json_reply_retrying(&request, schema),
+                )
+                .await
+            } else {
                 crate::agent::unless_stopped(token, client.call_retrying(&request, &mut |_| {}))
                     .await
-                    .ok_or("Cancelled")?
-                    .map_err(|e| e.to_string())?;
+            }
+        };
+        model_step.finish(match &turn {
+            None => Some("Cancelled".into()),
+            Some(Err(error)) => Some(error.to_string()),
+            _ => None,
+        });
+        let reply = turn.ok_or("Cancelled")?.map_err(|e| e.to_string())?;
+        let (name, arguments, served_model) = if result_schema.is_some() {
+            ("done".to_string(), reply.call.arguments, reply.served_model)
+        } else {
             (reply.call.name, reply.call.arguments, reply.served_model)
         };
         if name == "done" {
@@ -1313,6 +1343,9 @@ async fn background(
         crate::events::emit_step_started(
             app,
             crate::events::StepStarted {
+                request_id: None,
+                step_id: None,
+                purpose: None,
                 task_id: Some(task.id),
                 step,
                 kind: "tool",
@@ -1339,6 +1372,13 @@ async fn background(
         crate::events::emit_step_finished(
             app,
             crate::events::StepFinished {
+                request_id: None,
+                step_id: None,
+                purpose: None,
+                model: None,
+                completion_tokens: None,
+                tokens_estimated: None,
+                attempts: None,
                 task_id: Some(task.id),
                 step,
                 ok: result.is_ok(),

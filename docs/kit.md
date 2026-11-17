@@ -19,8 +19,12 @@ The shared installation root is the actual user home plus `/.rune`: binaries
 with configuration in `infer/config`. Preserve explicit overrides. Kit/Infer own
 migration from legacy roots; Studio does not move or overwrite their data.
 Kit owns installation, plugins, filesystem roots and their migrations. Filesystem
-reads need an explicit server `-p allowed_dir=<absolute existing folder>` and
-read-only/allow-tool configuration. Studio cannot replace that root in a call.
+reads need an explicit allowed_dir and read-only/allow-tool configuration.
+For embedded Kit, choose the rune-filesystem folder in Settings → Tools. Studio
+passes the chosen path unchanged to Kit's host API on a blocking worker; Kit
+validates, saves and reloads that plugin. External Kit roots stay server-owned
+(for example `-p allowed_dir=<absolute existing folder>`). Tool calls cannot
+replace the root. File contents are sent to the selected model.
 An optional `RUNE_KIT_HTTP_TOKEN` environment value supplies bearer authentication;
 restart Studio after setting it. It is not written into Studio's Kit settings.
 

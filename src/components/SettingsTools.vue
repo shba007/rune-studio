@@ -72,6 +72,54 @@ interface ChangesInventory {
     }>
   }>
 }
+const library = ref<{ refreshTools: () => Promise<void> } | null>(null)
+const folder = ref<string | null>(null)
+const folderReason = ref('')
+const folderLoading = ref(true)
+const folderBusy = ref(false)
+let folderLoad = 0
+async function loadFolder() {
+  const serial = ++folderLoad
+  const endpoint = config.value.endpoint
+  folderLoading.value = true
+  folder.value = null
+  folderReason.value = ''
+  try {
+    const value = await invoke<string | null>('kit_plugin_folder', {
+      endpoint,
+      plugin: 'rune-filesystem',
+    })
+    if (serial === folderLoad) folder.value = value
+  } catch (error) {
+    if (serial === folderLoad) folderReason.value = String(error)
+  } finally {
+    if (serial === folderLoad) folderLoading.value = false
+  }
+}
+async function chooseFolder() {
+  if (folderBusy.value || folderLoading.value || folderReason.value) return
+  const endpoint = config.value.endpoint
+  folderBusy.value = true
+  try {
+    const value = await invoke<string | null>('pick_folder')
+    if (value == null || config.value.endpoint !== endpoint) return
+    await invoke('kit_set_plugin_folder', {
+      endpoint,
+      plugin: 'rune-filesystem',
+      key: 'allowed_dir',
+      value,
+    })
+    if (config.value.endpoint !== endpoint) return
+    await loadFolder()
+    await refresh()
+    await library.value?.refreshTools()
+    if (config.value.endpoint === endpoint) status.value = 'Folder saved by Kit. ' + status.value
+  } catch (error) {
+    if (config.value.endpoint === endpoint) status.value = String(error)
+  } finally {
+    folderBusy.value = false
+  }
+}
 const config = ref<Config>({ enabled: false, endpoint: 'http://127.0.0.1:47601/mcp', selected: [] })
 const tools = ref<Tool[]>([])
 const status = ref(
@@ -119,6 +167,7 @@ const changeConfirmation = ref<{
 watch(
   () => config.value.endpoint,
   () => {
+    if (configReady.value) void loadFolder()
     sandbox.value = null
     sandboxStatus.value = 'Load sandbox information from Kit.'
     changes.value = null
@@ -394,6 +443,7 @@ onMounted(async () => {
     status.value = String(error)
   }
   configReady.value = true
+  await loadFolder()
 })
 function setEnabled(value: boolean) {
   config.value.enabled = value
@@ -415,7 +465,27 @@ function setSelected(name: string, value: boolean) {
       The selected agent model does not support tool calling. Choose a tool-capable model in Models
       settings.
     </p>
-    <McpLibrary v-if="configReady" v-model:config="config" />
+    <McpLibrary v-if="configReady" ref="library" v-model:config="config">
+      <template #installed-details="{ plugin }">
+        <HubRow
+          v-if="plugin === 'rune-filesystem'"
+          label="Filesystem folder"
+          :hint="folderReason"
+          class="w-full"
+          data-testid="filesystem-folder"
+        >
+          <span class="min-w-0 max-w-sm break-words text-rune-caption text-rune-text-2">{{
+            folder || 'No folder set'
+          }}</span>
+          <RuneButton
+            size="sm"
+            :disabled="folderLoading || folderBusy || !!folderReason"
+            @click="chooseFolder"
+            >{{ folderBusy ? 'Saving…' : 'Choose folder' }}</RuneButton
+          >
+        </HubRow>
+      </template>
+    </McpLibrary>
     <HubGroup title="Kit tools">
       <HubToggle
         :model-value="config.enabled"
@@ -462,8 +532,8 @@ function setSelected(name: string, value: boolean) {
           {{ status }}
         </p>
         <p class="m-0 px-rune-2 text-rune-caption text-rune-text-3">
-          Configure filesystem confinement on the Kit server using an explicit allowed_dir. Studio
-          cannot change that root. File contents are sent to the selected model.
+          Change the filesystem folder here for embedded Kit; for an external Kit, set it on your
+          Kit server. File contents are sent to the selected model.
         </p>
       </template>
     </HubGroup>

@@ -10,6 +10,8 @@ type Config = { enabled: boolean; endpoint: string; selected: string[] }
 type Installed = { name: string; version: string; description?: string | null }
 type Entry = { name: string; description: string; latest: string; has_icon: boolean }
 
+defineExpose({ refreshTools: loadTools })
+
 const config = defineModel<Config>('config', { required: true })
 const emit = defineEmits<{ changed: [] }>()
 
@@ -212,6 +214,7 @@ onMounted(load)
             :disabled="!!busy || !toolsOf(item.name, toolNames).length"
             @update:model-value="toggle(item, $event)"
           />
+          <slot name="installed-details" :plugin="item.name" />
           <div
             v-if="removing === item.name"
             class="flex w-full flex-wrap items-center gap-rune-2 rounded-rune-tile bg-rune-sunken p-rune-2 text-rune-caption text-rune-text-2"

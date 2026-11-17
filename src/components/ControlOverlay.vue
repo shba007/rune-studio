@@ -573,6 +573,7 @@ onMounted(async () => {
       activeTaskId = event.payload?.taskId ?? null
     }),
     await listen<StepStartedPayload>('step_started', (event) => {
+      if (event.payload.kind === 'model') return
       if (event.payload.taskId != null && event.payload.taskId !== activeTaskId) return
       showStep(event.payload)
       onSays(event.payload.text, configuredModelLabel())

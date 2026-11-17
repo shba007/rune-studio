@@ -126,6 +126,9 @@ pub fn announce(
     crate::events::emit_step_started(
         app,
         StepStarted {
+            request_id: None,
+            step_id: None,
+            purpose: None,
             step,
             task_id,
             kind: if matches!(action, Action::External { .. }) {
@@ -184,6 +187,13 @@ pub fn finish_step_with_result(
     crate::events::emit_step_finished(
         app,
         StepFinished {
+            request_id: None,
+            step_id: None,
+            purpose: None,
+            model: None,
+            completion_tokens: None,
+            tokens_estimated: None,
+            attempts: None,
             result: output,
             step,
             ok,

@@ -3,8 +3,20 @@ import type { IconName } from '@/icons'
 
 export type LiveStep = Pick<
   StepStartedPayload,
-  'step' | 'taskId' | 'tool' | 'kind' | 'model' | 'text' | 'detail'
+  | 'step'
+  | 'taskId'
+  | 'tool'
+  | 'kind'
+  | 'model'
+  | 'text'
+  | 'detail'
+  | 'stepId'
+  | 'requestId'
+  | 'purpose'
 > & {
+  completionTokens?: number
+  tokensEstimated?: boolean
+  attempts?: number
   ok: boolean | null
   startedAt?: number
   finishedAt?: number | null
@@ -13,6 +25,7 @@ export type LiveStep = Pick<
 }
 
 export const STEP_KIND: Record<LiveStep['kind'], { label: string; icon: IconName }> = {
+  model: { label: 'Model call', icon: 'thinking' },
   tool: { label: 'Tool call', icon: 'plug' },
   screen: { label: 'Screen action', icon: 'mouse' },
 }
@@ -28,7 +41,8 @@ export function stepTitle(step: LiveStep): { title: string; server: string | nul
   return { title: parts.slice(1).join('__'), server: parts[0]! }
 }
 
-export const stepKey = (step: LiveStep) => `${step.taskId ?? 'run'}:${step.step}`
+export const stepKey = (step: Pick<LiveStep, 'taskId' | 'requestId' | 'stepId' | 'step'>) =>
+  `${step.taskId ?? (step.requestId != null ? `request:${step.requestId}` : 'run')}:${step.stepId ?? step.step}`
 
 export const stepStatus = (step: LiveStep) =>
   step.ok === null ? 'Running' : step.ok ? 'Done' : 'Failed'
@@ -64,3 +78,15 @@ export function laneLayout(steps: LiveStep[], now: number) {
   }))
   return { span, blocks }
 }
+export const kindColor = (kind: LiveStep['kind']) =>
+  kind === 'model' ? 'text-model' : kind === 'tool' ? 'text-tool' : 'text-voice'
+export const modelUsage = (step: LiveStep) =>
+  [
+    step.completionTokens == null
+      ? ''
+      : `${step.tokensEstimated ? '~' : ''}${step.completionTokens} tokens`,
+    (step.attempts ?? 0) > 1 ? `${step.attempts} attempts` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ')
+export const actionSteps = (steps: LiveStep[]) => steps.filter((step) => step.kind !== 'model')

@@ -74,11 +74,15 @@ impl Store {
         self.snapshot.revision += 1;
     }
     fn start(&mut self, event: &StepStarted, now: u64) {
-        if !self
-            .snapshot
-            .tasks
-            .iter()
-            .any(|t| Some(t.id) == event.task_id)
+        if !(event.kind == "model"
+            && event.task_id.is_none()
+            && event.request_id.is_some()
+            && event.request_id == self.snapshot.request.as_ref().map(|r| r.id))
+            && !self
+                .snapshot
+                .tasks
+                .iter()
+                .any(|t| Some(t.id) == event.task_id)
             && !self.snapshot.request.as_ref().is_some_and(|r| {
                 r.goals
                     .iter()
@@ -87,12 +91,16 @@ impl Store {
         {
             return;
         }
-        if self
-            .snapshot
-            .steps
-            .iter()
-            .any(|s| s.start.task_id == event.task_id && s.start.step == event.step)
-        {
+        if self.snapshot.steps.iter().any(|s| {
+            s.start.task_id == event.task_id
+                && (event.task_id.is_some() || s.start.request_id == event.request_id)
+                && same_step(
+                    s.start.step_id.as_deref(),
+                    s.start.step,
+                    event.step_id.as_deref(),
+                    event.step,
+                )
+        }) {
             return;
         }
         self.snapshot.steps.push(Step {
@@ -105,12 +113,16 @@ impl Store {
         self.snapshot.revision += 1;
     }
     fn finish(&mut self, event: &StepFinished, now: u64) {
-        let Some(step) = self
-            .snapshot
-            .steps
-            .iter_mut()
-            .find(|s| s.start.task_id == event.task_id && s.start.step == event.step)
-        else {
+        let Some(step) = self.snapshot.steps.iter_mut().find(|s| {
+            s.start.task_id == event.task_id
+                && (event.task_id.is_some() || s.start.request_id == event.request_id)
+                && same_step(
+                    s.start.step_id.as_deref(),
+                    s.start.step,
+                    event.step_id.as_deref(),
+                    event.step,
+                )
+        }) else {
             return;
         };
         step.finish = Some(event.clone());
@@ -140,12 +152,28 @@ impl Store {
             }
         }
         while self.snapshot.steps.len() > MAX_STEPS {
-            let old = self.snapshot.steps.remove(0);
+            // Preserve result-bearing steps while metadata-only entries can be removed.
+            let index = self
+                .snapshot
+                .steps
+                .iter()
+                .position(|s| {
+                    s.start.kind == "model" || s.finish.as_ref().is_some_and(|f| f.result.is_none())
+                })
+                .unwrap_or(0);
+            let old = self.snapshot.steps.remove(index);
             if old.finish.and_then(|f| f.result).is_some() {
                 self.snapshot.dropped_results += 1;
             }
             self.snapshot.dropped_steps += 1;
         }
+    }
+}
+fn same_step(start_id: Option<&str>, start: u32, finish_id: Option<&str>, finish: u32) -> bool {
+    if start_id.is_some() || finish_id.is_some() {
+        start_id == finish_id
+    } else {
+        start == finish
     }
 }
 static STORE: LazyLock<Mutex<Store>> = LazyLock::new(|| Mutex::new(Store::default()));
@@ -184,7 +212,7 @@ pub fn context_step(task_id: Option<u64>) -> Option<u32> {
         .steps
         .iter()
         .rev()
-        .find(|step| step.start.task_id == task_id)
+        .find(|step| step.start.task_id == task_id && step.start.kind != "model")
         .map(|step| step.start.step)
 }
 pub fn question_opened(request: &crate::safety::gate::ConfirmRequest) {
@@ -247,6 +275,9 @@ mod tests {
     }
     fn start(step: u32) -> StepStarted {
         StepStarted {
+            request_id: None,
+            step_id: None,
+            purpose: None,
             task_id: Some(1),
             step,
             kind: "tool",
@@ -263,6 +294,13 @@ mod tests {
     }
     fn finish(step: u32, text: String) -> StepFinished {
         StepFinished {
+            request_id: None,
+            step_id: None,
+            purpose: None,
+            model: None,
+            completion_tokens: None,
+            tokens_estimated: None,
+            attempts: None,
             task_id: Some(1),
             step,
             ok: true,
@@ -332,5 +370,147 @@ mod tests {
         assert_eq!(store.snapshot.steps.len(), MAX_STEPS);
         assert_eq!(store.snapshot.dropped_steps, 2);
         assert_eq!(store.snapshot.steps[0].start.step, 3);
+    }
+    #[test]
+    fn model_identity_pairs_by_id_even_when_action_numbers_match() {
+        let mut store = Store::default();
+        store.sync(&board());
+        let action = start(1);
+        let mut model = start(1);
+        model.kind = "model";
+        model.step_id = Some("model:1".into());
+        model.request_id = Some(1);
+        model.purpose = Some("Decide");
+        store.start(&model, 10);
+        store.start(&action, 20);
+        let mut done = finish(99, String::new()); // ID wins over the numeric field.
+        done.step_id = model.step_id.clone();
+        done.request_id = Some(1);
+        done.result = None;
+        done.completion_tokens = Some(12);
+        done.model = Some("served".into());
+        store.finish(&done, 30);
+        assert!(store.snapshot.steps[1].finish.is_none());
+        store.finish(&finish(1, "unchanged tool output".into()), 40);
+        assert_eq!(store.snapshot.steps.len(), 2);
+        assert_eq!(
+            store.snapshot.steps[0]
+                .finish
+                .as_ref()
+                .unwrap()
+                .completion_tokens,
+            Some(12)
+        );
+        assert_eq!(
+            store.snapshot.steps[1]
+                .finish
+                .as_ref()
+                .unwrap()
+                .result
+                .as_ref()
+                .unwrap()
+                .output
+                .text,
+            "unchanged tool output"
+        );
+        assert_eq!(
+            store
+                .snapshot
+                .steps
+                .iter()
+                .map(|s| s.started_at)
+                .collect::<Vec<_>>(),
+            vec![10, 20]
+        );
+        let json = serde_json::to_value(&store.snapshot).unwrap();
+        assert_eq!(json["steps"][0]["finish"]["stepId"], "model:1");
+    }
+    #[test]
+    fn more_than_the_bound_of_model_steps_preserves_a_newer_tool_result() {
+        let mut store = Store::default();
+        store.sync(&board());
+        for index in 0..MAX_STEPS + 20 {
+            let mut model = start(1);
+            model.kind = "model";
+            model.step_id = Some(format!("model:{index}"));
+            model.request_id = Some(1);
+            store.start(&model, index as u64);
+            let mut done = finish(1, String::new());
+            done.step_id = model.step_id.clone();
+            done.request_id = Some(1);
+            done.result = None;
+            store.finish(&done, index as u64 + 1);
+            if index == 1 {
+                store.start(&start(2), 2);
+                store.finish(&finish(2, "keep this result".into()), 3);
+            }
+        }
+        assert_eq!(store.snapshot.steps.len(), MAX_STEPS);
+        assert_eq!(store.snapshot.dropped_steps, 21);
+        assert_eq!(store.snapshot.dropped_results, 0);
+        assert_eq!(
+            store
+                .snapshot
+                .steps
+                .iter()
+                .find_map(|s| s.finish.as_ref()?.result.as_ref())
+                .unwrap()
+                .output
+                .text,
+            "keep this result"
+        );
+        assert!(
+            !store
+                .snapshot
+                .steps
+                .iter()
+                .any(|s| s.start.step_id.as_deref() == Some("model:0"))
+        );
+    }
+    #[test]
+    fn request_planning_is_retained_without_a_task() {
+        let mut store = Store::default();
+        store.sync(&board());
+        let mut plan = start(0);
+        plan.task_id = None;
+        plan.request_id = Some(1);
+        plan.step_id = Some("model:plan".into());
+        plan.kind = "model";
+        store.start(&plan, 10);
+        assert_eq!(store.snapshot.steps.len(), 1);
+        plan.request_id = Some(2);
+        plan.step_id = Some("model:other".into());
+        store.start(&plan, 20);
+        assert_eq!(store.snapshot.steps.len(), 1);
+    }
+    #[test]
+    fn a_new_tool_can_finish_when_the_snapshot_is_full_of_results() {
+        let mut store = Store::default();
+        store.sync(&board());
+        for step in 1..=MAX_STEPS as u32 {
+            store.start(&start(step), step as u64);
+            store.finish(&finish(step, "result".into()), step as u64 + 1);
+        }
+        let next = MAX_STEPS as u32 + 1;
+        store.start(&start(next), next as u64);
+        store.finish(&finish(next, "newest result".into()), next as u64 + 1);
+        assert_eq!(store.snapshot.steps.len(), MAX_STEPS);
+        assert_eq!(store.snapshot.dropped_results, 1);
+        assert_eq!(
+            store
+                .snapshot
+                .steps
+                .last()
+                .unwrap()
+                .finish
+                .as_ref()
+                .unwrap()
+                .result
+                .as_ref()
+                .unwrap()
+                .output
+                .text,
+            "newest result"
+        );
     }
 }

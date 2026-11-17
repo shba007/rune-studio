@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { onMounted, onBeforeUnmount, ref, shallowRef } from 'vue'
-import type { LiveStep } from '@/config/liveSteps'
+import { stepKey, type LiveStep } from '@/config/liveSteps'
 import type { StepStartedPayload, StepFinishedPayload } from '@/types/protocol'
 import type { ConfirmRequestPayload, ChoiceRecord } from '@/types/protocol'
 import type { PlannedRequest, IndependentTask } from './useTaskBoard'
@@ -27,10 +27,11 @@ export function startLiveStep(
   now: number,
 ): LiveStep[] {
   const taskId = payload.taskId ?? null
-  if (steps.some((step) => step.taskId === taskId && step.step === payload.step)) return steps
-  return [
+  if (steps.some((step) => stepKey(step) === stepKey({ ...payload, taskId }))) return steps
+  const next: LiveStep[] = [
     ...steps,
     {
+      ...payload,
       step: payload.step,
       taskId,
       tool: payload.tool,
@@ -42,7 +43,14 @@ export function startLiveStep(
       startedAt: now,
       finishedAt: null,
     },
-  ].slice(-512)
+  ]
+  while (next.length > 512) {
+    const index = next.findIndex(
+      (step) => !step.result && (step.kind === 'model' || step.ok !== null),
+    )
+    next.splice(index < 0 ? 0 : index, 1)
+  }
+  return next
 }
 export function finishLiveStep(
   steps: LiveStep[],
@@ -50,10 +58,21 @@ export function finishLiveStep(
   now: number,
 ): LiveStep[] {
   return steps.map((step) =>
-    step.taskId === (payload.taskId ?? null) && step.step === payload.step && step.ok === null
+    stepKey(step) ===
+      stepKey({
+        ...step,
+        taskId: payload.taskId ?? null,
+        requestId: payload.requestId,
+        stepId: payload.stepId,
+        step: payload.step,
+      }) && step.ok === null
       ? {
           ...step,
           ok: payload.ok,
+          model: payload.model ?? step.model,
+          completionTokens: payload.completionTokens,
+          tokensEstimated: payload.tokensEstimated,
+          attempts: payload.attempts,
           error: payload.error,
           result: step.kind === 'tool' ? payload.result : undefined,
           finishedAt: now,
@@ -103,7 +122,7 @@ export function useLiveSteps() {
         question.value = value.question ?? null
         choices.value = value.choices ?? []
         steps.value = [
-          ...steps.value.filter((step) => step.taskId === null),
+          ...steps.value.filter((step) => step.taskId === null && step.requestId == null),
           ...snapshotLiveSteps(value),
         ]
         for (const apply of buffered) apply()

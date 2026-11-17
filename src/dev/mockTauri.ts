@@ -137,6 +137,30 @@ export function installTauriMock() {
     (command, args) => {
       const given = (args ?? {}) as Record<string, unknown>
       switch (command) {
+        // Browser mock only: no native folder is opened or saved by Kit.
+        case 'kit_settings':
+          return { enabled: false, endpoint: 'http://127.0.0.1:47601/mcp', selected: [] }
+        case 'kit_packages':
+          return {
+            mcps: [
+              { name: 'rune-filesystem', version: 'Mock only', description: 'Browser mock only' },
+            ],
+            skills: [],
+          }
+        case 'kit_registry':
+          return []
+        case 'kit_discover':
+          return { version: 'Mock only', tools: [], unavailable: [] }
+        case 'kit_token_present':
+          return false
+        case 'kit_save':
+          return null
+        case 'kit_plugin_folder':
+          return 'C:/Mock-only/Filesystem'
+        case 'kit_set_plugin_folder':
+          return null
+        case 'pick_folder':
+          return 'C:/Mock-only/Filesystem'
         case 'start_task':
           void scriptedRun()
           return null

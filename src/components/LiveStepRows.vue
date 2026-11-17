@@ -2,6 +2,8 @@
 import { useIntervalFn, useNow } from '@vueuse/core'
 import {
   STEP_KIND,
+  kindColor,
+  stepKey,
   durationText,
   stepDuration,
   stepStatus,
@@ -21,15 +23,15 @@ function outcome(step: LiveStep) {
   <ol class="m-0 max-h-64 list-none overflow-y-auto p-0" aria-label="Live steps">
     <li
       v-for="(step, index) in steps"
-      :key="step.step"
+      :key="stepKey(step)"
       class="flex min-w-0 items-center gap-1.5 py-1 text-rune-caption"
       :title="`${step.text || step.tool} · ${step.detail}`"
     >
       <span
         class="flex size-3 shrink-0 items-center justify-center"
-        :class="step.kind === 'tool' ? 'text-tool' : 'text-voice'"
+        :class="kindColor(step.kind)"
         role="img"
-        :aria-label="step.kind === 'tool' ? 'Tool' : 'Screen'"
+        :aria-label="step.kind === 'model' ? 'Model' : step.kind === 'tool' ? 'Tool' : 'Screen'"
       >
         <AppIcon :name="STEP_KIND[step.kind].icon" size="sm" />
       </span>

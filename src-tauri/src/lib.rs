@@ -33,6 +33,7 @@ mod kit;
 pub mod life;
 mod live_run;
 mod model;
+mod model_step;
 mod observe;
 mod onboarding;
 mod overlay;
@@ -333,6 +334,8 @@ pub fn run() {
             tasks::cancel_planned_request,
             tasks::dismiss_planned_request,
             video::video_recording_state,
+            embedded_kit::kit_plugin_folder,
+            embedded_kit::kit_set_plugin_folder,
             kit::client::kit_settings,
             kit::client::kit_save,
             kit::client::kit_discover,

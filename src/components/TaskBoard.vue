@@ -225,7 +225,12 @@ function stepLabel(phase: TaskPhase) {
     </div>
     <RunLanes
       :open-step="openStep"
-      :lanes="tasks.map((task, index) => ({ id: task.id, label: `Task ${index + 1}` }))"
+      :lanes="[
+        ...((liveSteps ?? []).some((step) => step.taskId === null && step.kind === 'model')
+          ? [{ id: null, label: 'Plan' }]
+          : []),
+        ...tasks.map((task, index) => ({ id: task.id, label: `Task ${index + 1}` })),
+      ]"
       :steps="liveSteps ?? []"
       :now="now.getTime()"
     />

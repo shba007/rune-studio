@@ -586,7 +586,7 @@ pub fn tools() -> Value {
         ),
         tool(
             "ask_user",
-            "Ask the user a yes/no question when you cannot tell what they want or something unexpected needs their decision. Do not ask what you can see on the screen.",
+            "Ask the user a yes/no question or offer options when you cannot tell what they want or something unexpected needs their decision. Do not ask what you can see on the screen.",
             json!({ "question": { "type": "string", "description": "A short question that can be answered yes or no" }, "options": { "type":"array", "minItems":2, "maxItems":4, "description":"Optional choices. Each short label states a one-line outcome; these answer a question and never approve an action.", "items":{"type":"object","properties":{"label":{"type":"string","maxLength":48},"outcome":{"type":"string","maxLength":160}},"required":["label","outcome"],"additionalProperties":false}}, "suggested":{"type":"integer","minimum":0,"maximum":3,"description":"Required with options: zero-based index of the suggested choice."} }),
             &["question"],
         ),
@@ -1068,7 +1068,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             ask["function"]["description"],
-            "Ask the user a yes/no question when you cannot tell what they want or something unexpected needs their decision. Do not ask what you can see on the screen."
+            "Ask the user a yes/no question or offer options when you cannot tell what they want or something unexpected needs their decision. Do not ask what you can see on the screen."
         );
         assert!(parse_choices(&json!({"question":"Ok?"})).unwrap().is_none());
     }

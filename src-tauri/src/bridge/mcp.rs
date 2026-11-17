@@ -669,6 +669,9 @@ async fn analyze(app: &AppHandle, arguments: &Value) -> Reply {
     crate::events::emit_step_started(
         app,
         events::StepStarted {
+            request_id: None,
+            step_id: None,
+            purpose: None,
             step,
             task_id: None,
             kind: "screen",

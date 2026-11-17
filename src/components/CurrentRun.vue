@@ -4,6 +4,8 @@ import { useIntervalFn, useNow } from '@vueuse/core'
 import type { LiveStepsModel } from '@/composables/useLiveSteps'
 import {
   STEP_KIND,
+  kindColor,
+  modelUsage,
   stepKey,
   stepDuration,
   durationText,
@@ -59,10 +61,18 @@ const request = computed(() =>
 const tasks = computed(() => props.live.snapshot.value?.tasks ?? [])
 const steps = computed(() =>
   props.live.steps.value
-    .filter((step) => tasks.value.some((task) => task.id === step.taskId))
+    .filter(
+      (step) =>
+        tasks.value.some((task) => task.id === step.taskId) ||
+        (step.taskId === null && step.requestId === request.value?.id),
+    )
     .slice()
     .sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0)),
 )
+const lanes = computed(() => [
+  ...(steps.value.some((step) => step.taskId === null) ? [{ id: null, label: 'Plan' }] : []),
+  ...tasks.value.map((task) => ({ id: task.id, label: task.text })),
+])
 const picked = ref<string | null>(props.focus?.key ?? null)
 watch(
   () => pending.value?.id,
@@ -151,7 +161,7 @@ const timing = (step: LiveStep) => {
       {{ live.snapshot.value?.droppedSteps }} older steps omitted from this view.
     </p>
     <RunLanes
-      :lanes="tasks.map((task) => ({ id: task.id, label: task.text }))"
+      :lanes="lanes"
       :steps="steps"
       :now="now.getTime()"
       :show-detail="false"
@@ -161,8 +171,8 @@ const timing = (step: LiveStep) => {
     />
     <div class="grid min-w-0 gap-4 md:grid-cols-[minmax(180px,1fr)_minmax(0,2fr)]">
       <div class="max-h-[36rem] min-w-0 overflow-y-auto" aria-label="Current run steps">
-        <section v-for="task in tasks" :key="task.id" class="mb-3">
-          <h3 class="m-0 px-2 py-2 text-rune-caption text-rune-text-2">{{ task.text }}</h3>
+        <section v-for="task in lanes" :key="task.id" class="mb-3">
+          <h3 class="m-0 px-2 py-2 text-rune-caption text-rune-text-2">{{ task.label }}</h3>
           <WorkRow
             v-for="choice in live.choices.value.filter(
               (choice) => choice.taskId === task.id && choice.step == null,
@@ -182,14 +192,14 @@ const timing = (step: LiveStep) => {
               interactive
               :selected="!!selected && stepKey(selected) === stepKey(step)"
               :data-step-key="stepKey(step)"
-              :class="stepKey(step) === waitingKey ? 'ring-1 ring-attention' : ''"
+              :class="[
+                stepKey(step) === waitingKey ? 'ring-1 ring-attention' : '',
+                step.kind === 'model' ? 'opacity-70' : '',
+              ]"
               @open="picked = stepKey(step)"
             >
               <template #leading
-                ><AppIcon
-                  :name="STEP_KIND[step.kind].icon"
-                  size="sm"
-                  :class="step.kind === 'tool' ? 'text-tool' : 'text-voice'"
+                ><AppIcon :name="STEP_KIND[step.kind].icon" size="sm" :class="kindColor(step.kind)"
               /></template>
             </WorkRow>
             <p
@@ -200,7 +210,8 @@ const timing = (step: LiveStep) => {
             </p>
             <WorkRow
               v-for="choice in live.choices.value.filter(
-                (choice) => choice.taskId === task.id && choice.step === step.step,
+                (choice) =>
+                  step.kind !== 'model' && choice.taskId === task.id && choice.step === step.step,
               )"
               :key="choice.id"
               :title="`You chose ${choice.label}`"
@@ -221,6 +232,10 @@ const timing = (step: LiveStep) => {
             <dt class="text-rune-text-2">Kind</dt>
             <dd class="m-0">{{ STEP_KIND[selected.kind].label }}</dd>
           </div>
+          <div v-if="selected.kind === 'model' && selected.purpose">
+            <dt class="text-rune-text-2">Purpose</dt>
+            <dd class="m-0">{{ selected.purpose }}</dd>
+          </div>
           <div v-if="server">
             <dt class="text-rune-text-2">Server</dt>
             <dd class="m-0 break-words">{{ server }}</dd>
@@ -240,6 +255,10 @@ const timing = (step: LiveStep) => {
           <div v-if="selected.finishedAt != null">
             <dt class="text-rune-text-2">Finished</dt>
             <dd class="m-0">{{ new Date(selected.finishedAt).toLocaleTimeString() }}</dd>
+          </div>
+          <div v-if="selected.kind === 'model' && modelUsage(selected)">
+            <dt class="text-rune-text-2">Usage</dt>
+            <dd class="m-0">{{ modelUsage(selected) }}</dd>
           </div>
         </dl>
         <p class="text-rune-body whitespace-pre-wrap break-words">{{ selected.detail }}</p>

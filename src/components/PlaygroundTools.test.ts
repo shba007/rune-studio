@@ -60,11 +60,11 @@ it('groups all tools, keeps descriptions in the middle, and submits selected too
   await wrapper.get('[aria-label="count"]').setValue('3')
   wrapper
     .findAllComponents(RuneChoice)
-    .find((choice) => choice.props('label') === 'enabled')!
+    .find((choice) => choice.props().label === 'enabled')!
     .vm.$emit('update:modelValue', 'false')
   wrapper
     .findAllComponents(RuneChoice)
-    .find((choice) => choice.props('label') === 'format')!
+    .find((choice) => choice.props().label === 'format')!
     .vm.$emit('update:modelValue', '1')
   await wrapper.get('form').trigger('submit')
   await flushPromises()

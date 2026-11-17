@@ -7,6 +7,7 @@ import { computed, ref } from 'vue'
 
 import type { Agent } from '@/composables/useAgent'
 import { clockText, remainingMs } from '@/config/eta'
+import { actionSteps } from '@/config/liveSteps'
 import { KIND_ICON, TOOL_LABEL, kindOf } from '@/config/actions'
 
 import AppIcon from './AppIcon.vue'
@@ -98,7 +99,8 @@ function statusOf(index: number): 'done' | 'current' | 'pending' {
         class="!min-h-0 !p-0 !text-rune-caption text-rune-text-2 uppercase"
         @click="liveExpanded = !liveExpanded"
       >
-        · {{ liveSteps.length }} {{ liveSteps.length === 1 ? 'step' : 'steps' }}
+        · {{ actionSteps(liveSteps).length }}
+        {{ actionSteps(liveSteps).length === 1 ? 'step' : 'steps' }}
       </RuneButton>
       <span
         v-if="eta"

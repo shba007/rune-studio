@@ -196,9 +196,14 @@ pub fn start_planned(
         }
         match next {
             AfterRun::Nothing => {}
-            AfterRun::Check => {
-                spawn_background_check(&app, run_id, evidence, background_settings, background_key)
-            }
+            AfterRun::Check => spawn_background_check(
+                &app,
+                run_id,
+                evidence,
+                background_settings,
+                background_key,
+                board_id,
+            ),
             AfterRun::Skip => trace.verdict(skipped_record(
                 &run_id,
                 mode,
@@ -331,7 +336,19 @@ async fn blocking_check(
     input: VerifyInput<'_>,
 ) -> Blocking {
     let started = Instant::now();
-    let Some(checked) = unless_stopped(cancel, verify::verify(client, input)).await else {
+    let task_id = handoff.locked().board_id;
+    let mut model_step =
+        crate::model_step::ModelStep::start(client.app.unwrap(), client, task_id, None, "Check");
+    let result = {
+        let client = model_step.client(client);
+        unless_stopped(cancel, verify::verify(&client, input)).await
+    };
+    model_step.finish(match &result {
+        None => Some("Cancelled".into()),
+        Some(Err(error)) => Some(error.clone()),
+        _ => None,
+    });
+    let Some(checked) = result else {
         return Blocking::Stopped;
     };
     let challenge = checked.as_ref().is_ok_and(|verdict| {
@@ -369,6 +386,7 @@ fn spawn_background_check(
     evidence: Option<Evidence>,
     settings: settings::Settings,
     api_key: Option<String>,
+    task_id: Option<u64>,
 ) {
     let state = app.state::<AppState>();
     let token = state.begin_verification();
@@ -453,10 +471,17 @@ fn spawn_background_check(
                     screenshot,
                     front,
                 };
-                tokio::select! {
-                    checked = verify::verify(&client, input) => checked,
-                    () = until_the_user_needs_the_screen(&app, &token) => Err("cancelled: the screen was needed for something else".into()),
-                }
+                let mut model_step =
+                    crate::model_step::ModelStep::start(&app, &client, task_id, None, "Check");
+                let checked = {
+                    let client = model_step.client(&client);
+                    tokio::select! {
+                        checked = verify::verify(&client, input) => checked,
+                        () = until_the_user_needs_the_screen(&app, &token) => Err("cancelled: the screen was needed for something else".into()),
+                    }
+                };
+                model_step.finish(checked.as_ref().err().cloned());
+                checked
             }
             _ => Err("no final screen was kept to check".into()),
         };
@@ -637,6 +662,7 @@ async fn make_plan(
     cancel: &CancelToken,
     task: &str,
     think: bool,
+    task_id: Option<u64>,
 ) -> Result<Vec<String>, Outcome> {
     let schema = protocol::plan_schema();
     let request = Request {
@@ -654,12 +680,21 @@ async fn make_plan(
     };
     let mut send_thinking = thinking_sender(app, client.model);
     let started = Instant::now();
-    let Some(result) = unless_stopped(
-        cancel,
-        client.call_json_thinking_retrying(&request, &schema, &mut send_thinking),
-    )
-    .await
-    else {
+    let mut model_step = crate::model_step::ModelStep::start(app, client, task_id, None, "Plan");
+    let result = {
+        let client = model_step.client(client);
+        unless_stopped(
+            cancel,
+            client.call_json_thinking_retrying(&request, &schema, &mut send_thinking),
+        )
+        .await
+    };
+    model_step.finish(match &result {
+        None => Some("Cancelled".into()),
+        Some(Err(error)) => Some(error.to_string()),
+        _ => None,
+    });
+    let Some(result) = result else {
         return Err(Outcome::Stopped);
     };
     let fallback = || vec![task.trim().chars().take(80).collect::<String>()];
@@ -811,7 +846,8 @@ async fn run(
         vec![task.trim().chars().take(80).collect::<String>()]
     } else {
         call_log.set("plan", None);
-        match make_plan(app, &client, &cancel, task, think).await {
+        let task_id = handoff.locked().board_id;
+        match make_plan(app, &client, &cancel, task, think, task_id).await {
             Ok(plan) => plan,
             Err(outcome) => return outcome,
         }
@@ -1111,9 +1147,19 @@ async fn run(
         let started = Instant::now();
         call_log.set("decide", Some(step));
         row.rec.prompt_text = Some(text.clone());
-        let Some(reply) =
+        let task_id = handoff.locked().board_id;
+        let mut model_step =
+            crate::model_step::ModelStep::start(app, &client, task_id, None, "Decide");
+        let reply = {
+            let client = model_step.client(&client);
             unless_stopped(&cancel, client.call_retrying(&request, &mut send_thinking)).await
-        else {
+        };
+        model_step.finish(match &reply {
+            None => Some("Cancelled".into()),
+            Some(Err(error)) => Some(error.to_string()),
+            _ => None,
+        });
+        let Some(reply) = reply else {
             return Outcome::Stopped;
         };
         row.rec.decide_ms = millis(started);

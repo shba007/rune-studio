@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { invoke } from '@tauri-apps/api/core'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, shallowRef, watch } from 'vue'
 import {
   toolArguments,
   toolForm,
@@ -40,7 +40,7 @@ interface ToolCallResult {
   structuredContent?: ResultValue
   structuredContentOmitted?: boolean
 }
-const result = ref<(ToolCallResult & { ok: boolean; ms: number }) | null>(null)
+const result = shallowRef<(ToolCallResult & { ok: boolean; ms: number }) | null>(null)
 interface Entry {
   id: string
   name: string

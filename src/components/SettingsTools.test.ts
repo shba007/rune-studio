@@ -283,3 +283,101 @@ it('requires confirmation before removing a Kit skill', async () => {
     expect.objectContaining({ action: 'remove', kind: 'skill', name: 'review' }),
   )
 })
+const kitEndpoint = 'http://127.0.0.1:47601/mcp'
+function folderApi(
+  initial: string | null,
+  picked: string | null = null,
+  failure?: string,
+  external = false,
+) {
+  let current = initial
+  api.invoke.mockReset()
+  api.invoke.mockImplementation(async (command, args) => {
+    if (command === 'kit_settings') return { enabled: true, endpoint: kitEndpoint, selected: [] }
+    if (command === 'kit_packages')
+      return { mcps: [{ name: 'rune-filesystem', version: '1' }], skills: [] }
+    if (command === 'kit_registry') return []
+    if (command === 'kit_token_present') return false
+    if (command === 'kit_discover') return { version: 'Kit', tools: [] }
+    if (command === 'kit_plugin_folder') {
+      if (external) throw 'Kit is not embedded; set the folder on your Kit server'
+      return current
+    }
+    if (command === 'pick_folder') return picked
+    if (command === 'kit_set_plugin_folder') {
+      if (failure) throw failure
+      current = String(args?.value)
+      return null
+    }
+  })
+}
+it.each([null, 'D:/Documents'])('shows the current filesystem folder: %s', async (current) => {
+  folderApi(current)
+  const wrapper = mount(SettingsTools)
+  await flushPromises()
+  const row = wrapper.get('[data-testid="filesystem-folder"]')
+  expect(row.text()).toContain(current || 'No folder set')
+  expect(row.get('button').attributes('disabled')).toBeUndefined()
+  expect(row.find('input').exists()).toBe(false)
+  expect(api.invoke).toHaveBeenCalledWith('kit_plugin_folder', {
+    endpoint: kitEndpoint,
+    plugin: 'rune-filesystem',
+  })
+  wrapper.unmount()
+})
+it('cancelling the native folder dialog saves nothing', async () => {
+  folderApi(null)
+  const wrapper = mount(SettingsTools)
+  await flushPromises()
+  await wrapper.get('[data-testid="filesystem-folder"] button').trigger('click')
+  await flushPromises()
+  expect(api.invoke).toHaveBeenCalledWith('pick_folder')
+  expect(api.invoke.mock.calls.some(([command]) => command === 'kit_set_plugin_folder')).toBe(false)
+  expect(wrapper.get('[data-testid="filesystem-folder"]').text()).toContain('No folder set')
+  wrapper.unmount()
+})
+it('sends only the dialog path unchanged, reloads the folder and discovers again after saving', async () => {
+  const picked = 'D:/Chosen folder/../Chosen folder'
+  folderApi(null, picked)
+  const wrapper = mount(SettingsTools)
+  await flushPromises()
+  const discovers = api.invoke.mock.calls.filter(([command]) => command === 'kit_discover').length
+  await wrapper.get('[data-testid="filesystem-folder"] button').trigger('click')
+  await flushPromises()
+  expect(api.invoke).toHaveBeenCalledWith('kit_set_plugin_folder', {
+    endpoint: kitEndpoint,
+    plugin: 'rune-filesystem',
+    key: 'allowed_dir',
+    value: picked,
+  })
+  expect(wrapper.get('[data-testid="filesystem-folder"]').text()).toContain(picked)
+  expect(
+    wrapper.findAll('[role="status"]').some((row) => row.text().includes('Folder saved by Kit.')),
+  ).toBe(true)
+  expect(
+    api.invoke.mock.calls.filter(([command]) => command === 'kit_discover').length,
+  ).toBeGreaterThan(discovers)
+  wrapper.unmount()
+})
+it('shows the exact Kit save error in the existing status line and keeps the old folder', async () => {
+  folderApi('D:/Previous', 'D:/Chosen', 'Configuration is busy; retry')
+  const wrapper = mount(SettingsTools)
+  await flushPromises()
+  await wrapper.get('[data-testid="filesystem-folder"] button').trigger('click')
+  await flushPromises()
+  expect(
+    wrapper.findAll('[role="status"]').some((row) => row.text() === 'Configuration is busy; retry'),
+  ).toBe(true)
+  expect(wrapper.get('[data-testid="filesystem-folder"]').text()).toContain('D:/Previous')
+  wrapper.unmount()
+})
+it('disables the picker and shows the server-owned folder reason for external Kit', async () => {
+  folderApi(null, null, undefined, true)
+  const wrapper = mount(SettingsTools)
+  await flushPromises()
+  const row = wrapper.get('[data-testid="filesystem-folder"]')
+  expect(row.text()).toContain('Kit is not embedded; set the folder on your Kit server')
+  expect(row.get('button').attributes('disabled')).toBeDefined()
+  expect(api.invoke.mock.calls.some(([command]) => command === 'pick_folder')).toBe(false)
+  wrapper.unmount()
+})

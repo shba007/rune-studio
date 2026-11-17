@@ -240,9 +240,12 @@ export interface StateChangedPayload {
   state: AgentState
 }
 export interface StepStartedPayload {
+  requestId?: number
+  stepId?: string
+  purpose?: string
   taskId: number | null
   step: number
-  kind: 'tool' | 'screen'
+  kind: 'tool' | 'screen' | 'model'
   model: string | null
   tool: string
   reason: string
@@ -262,6 +265,13 @@ export interface StepToolResult {
 }
 
 export interface StepFinishedPayload {
+  requestId?: number
+  stepId?: string
+  purpose?: string
+  model?: string | null
+  completionTokens?: number
+  tokensEstimated?: boolean
+  attempts?: number
   taskId?: number | null
   step: number
   ok: boolean
