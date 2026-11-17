@@ -842,12 +842,27 @@ pub fn dismiss_planned_request(app: AppHandle, id: u64) -> Result<(), String> {
         && !b.entries.iter().any(|e| {
             e.task.request_id == id && (!e.task.phase.terminal() || b.workers.contains(&e.task.id))
         });
+    let dismissed_question = if can {
+        crate::live_run::live_run_snapshot()
+            .question
+            .filter(|question| {
+                b.entries.iter().any(|entry| {
+                    entry.task.request_id == id && Some(entry.task.id) == question.task_id
+                })
+            })
+            .map(|question| question.id)
+    } else {
+        None
+    };
     if can {
         b.requests.retain(|r| r.request.id != id);
         b.entries.retain(|e| e.task.request_id != id);
         b.revision += 1;
     }
     drop(b);
+    if let Some(id) = dismissed_question {
+        crate::safety::gate::answer(&app, &id, false);
+    }
     publish(&app);
     Ok(())
 }

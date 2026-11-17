@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { onMounted, onBeforeUnmount, ref, shallowRef } from 'vue'
 import type { LiveStep } from '@/config/liveSteps'
 import type { StepStartedPayload, StepFinishedPayload } from '@/types/protocol'
+import type { ConfirmRequestPayload, ChoiceRecord } from '@/types/protocol'
 import type { PlannedRequest, IndependentTask } from './useTaskBoard'
 
 export interface LiveRunSnapshot {
@@ -17,6 +18,8 @@ export interface LiveRunSnapshot {
   }[]
   droppedResults: number
   droppedSteps: number
+  question?: ConfirmRequestPayload | null
+  choices?: ChoiceRecord[]
 }
 export function startLiveStep(
   steps: LiveStep[],
@@ -69,6 +72,8 @@ export function snapshotLiveSteps(snapshot: LiveRunSnapshot): LiveStep[] {
 export function useLiveSteps() {
   const steps = shallowRef<LiveStep[]>([])
   const snapshot = shallowRef<LiveRunSnapshot | null>(null)
+  const question = shallowRef<ConfirmRequestPayload | null>(null)
+  const choices = shallowRef<ChoiceRecord[]>([])
   const error = ref('')
   const offs: UnlistenFn[] = []
   let disposed = false
@@ -95,6 +100,8 @@ export function useLiveSteps() {
         value.revision >= (snapshot.value?.revision ?? -1)
       ) {
         snapshot.value = value
+        question.value = value.question ?? null
+        choices.value = value.choices ?? []
         steps.value = [
           ...steps.value.filter((step) => step.taskId === null),
           ...snapshotLiveSteps(value),
@@ -144,6 +151,30 @@ export function useLiveSteps() {
       await subscribe('tasks_updated', () => {
         void refresh()
       })
+      await subscribe<ConfirmRequestPayload>('confirm_request', (payload) =>
+        apply(() => {
+          question.value = payload
+        }),
+      )
+      await subscribe<{ id: string; choice?: string }>('confirm_resolved', (payload) =>
+        apply(() => {
+          const waiting = question.value
+          if (waiting?.id === payload.id) {
+            if (payload.choice && !choices.value.some((choice) => choice.id === payload.id))
+              choices.value = [
+                ...choices.value,
+                {
+                  id: payload.id,
+                  taskId: waiting.taskId,
+                  step: waiting.step,
+                  label: payload.choice,
+                  at: Date.now(),
+                },
+              ].slice(-512)
+            question.value = null
+          }
+        }),
+      )
       await refresh()
     } catch (cause) {
       if (!disposed) error.value = String(cause)
@@ -153,6 +184,6 @@ export function useLiveSteps() {
     disposed = true
     offs.forEach((off) => off())
   })
-  return { steps, snapshot, error, clearTask, refresh }
+  return { steps, snapshot, question, choices, error, clearTask, refresh }
 }
 export type LiveStepsModel = ReturnType<typeof useLiveSteps>

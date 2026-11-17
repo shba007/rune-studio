@@ -187,6 +187,17 @@ export interface ConfirmRequestPayload {
   reasons: string[]
   timeoutSecs: number
   kind: 'approval' | 'question' | 'restart'
+  options?: { label: string; outcome: string }[]
+  suggested?: number
+  taskId?: number | null
+  step?: number | null
+}
+export interface ChoiceRecord {
+  id: string
+  taskId?: number | null
+  step?: number | null
+  label: string
+  at: number
 }
 export const THINKING = 'thinking'
 

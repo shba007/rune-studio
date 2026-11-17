@@ -112,8 +112,8 @@ export function useAgent() {
   const timing = ref<TaskTiming | null>(null)
   const thinking = ref<ThinkingPayload | null>(null)
   const response = ref<string | null>(null)
-  const question = ref<ConfirmRequestPayload | null>(null)
   const liveRun = useLiveSteps()
+  const question = liveRun.question
   const steps = liveRun.steps
   const notice = ref<string | null>(null)
   const noticeKind = ref<'error' | 'info'>('error')
@@ -406,6 +406,11 @@ export function useAgent() {
     if (!waiting) return
     await call('confirm', { id: waiting.id, approved })
   }
+  async function choose(optionIndex: number) {
+    const waiting = question.value
+    if (waiting?.kind !== 'question') return
+    await call('choose', { id: waiting.id, optionIndex })
+  }
   const debugSetState = (next: AgentState) => call('debug_set_state', { state: next })
   const debugCapture = (monitor?: number) => call<CaptureReport>('debug_capture', { monitor })
   const debugClick = (args: { x: number; y: number; delayMs?: number; monitor?: number }) =>
@@ -553,6 +558,7 @@ export function useAgent() {
     timing,
     question,
     answer,
+    choose,
     thinking,
     response,
     steps,

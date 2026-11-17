@@ -941,6 +941,73 @@ pub fn confirm(app: AppHandle, id: String, approved: bool) -> AppResult<()> {
 }
 
 #[tauri::command]
+pub fn choose(app: AppHandle, id: String, option_index: usize) -> AppResult<()> {
+    if crate::safety::gate::choose(&app, &id, option_index) {
+        Ok(())
+    } else {
+        Err(AppError::Invalid(
+            "No matching question option is waiting".into(),
+        ))
+    }
+}
+
+#[cfg(debug_assertions)]
+#[tauri::command]
+pub async fn debug_sample_choice(app: AppHandle, task_id: u64) -> AppResult<()> {
+    use tauri::Listener;
+    crate::debug::require_idle(&app)?;
+    let snapshot = crate::live_run::live_run_snapshot();
+    if !snapshot.request.as_ref().is_some_and(|r| {
+        matches!(
+            r.phase,
+            crate::tasks::Phase::Done
+                | crate::tasks::Phase::Failed
+                | crate::tasks::Phase::Cancelled
+                | crate::tasks::Phase::Blocked
+        )
+    }) || !snapshot.steps.iter().any(|step| {
+        step.start.task_id == Some(task_id)
+            && step
+                .finish
+                .as_ref()
+                .is_some_and(|finish| finish.result.is_some())
+    }) || app.state::<AppState>().confirm.locked().is_some()
+    {
+        return Err(AppError::Invalid(
+            "Finish a current run with a tool result and no pending confirmation first".into(),
+        ));
+    }
+    let choices = crate::agent::protocol::parse_choices(&serde_json::json!({"options":[{"label":"Keep result","outcome":"Keep this result for reference."},{"label":"Review result","outcome":"Review this result before deciding what to do next."}],"suggested":0})).map_err(AppError::Invalid)?.unwrap();
+    let previous = events::agent_state(&app);
+    let cancel = crate::exec::CancelToken::default();
+    let stop = cancel.clone();
+    let listener = app.listen(events::STATE_CHANGED, move |event| {
+        if serde_json::from_str::<serde_json::Value>(event.payload())
+            .ok()
+            .is_some_and(|value| value["state"] == "stopped")
+        {
+            stop.cancel();
+        }
+    });
+    let outcome = crate::safety::gate::ask_choices(
+        &app,
+        &cancel,
+        "Sample",
+        "How would you like to use this result?",
+        &choices,
+        Some(task_id),
+    )
+    .await;
+    app.unlisten(listener);
+    if !matches!(outcome, crate::safety::gate::ChoiceAnswer::Stopped)
+        && events::agent_state(&app) == AgentState::AwaitingConfirm
+    {
+        events::set_agent_state(&app, previous);
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub fn debug_set_state(app: AppHandle, state: AgentState) -> AppResult<()> {
     crate::debug::require_idle(&app)?;
     events::preview_agent_state(&app, state);

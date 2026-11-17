@@ -443,7 +443,8 @@ mod tests {
             amount: 3
         }));
         assert!(is_harmless(&Action::AskUser {
-            question: "Delete it?".into()
+            question: "Delete it?".into(),
+            choices: None
         }));
         assert!(!is_harmless(&Action::Drag {
             from: (0.0, 0.0),

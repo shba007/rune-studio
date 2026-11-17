@@ -1359,15 +1359,22 @@ async fn run(
             continue;
         }
 
-        if let Action::AskUser { question } = &action {
+        if let Action::AskUser { question, choices } = &action {
             let asking = Instant::now();
-            let outcome = match gate::ask_question(app, &cancel, "Rune", question).await {
-                Verdict::Allow => "the user answered: yes".to_string(),
-                Verdict::Denied("declined") => "the user answered: no".to_string(),
-                Verdict::Denied(_) => {
-                    "the user did not answer in time, which counts as no".to_string()
-                }
-                Verdict::Stopped => return Outcome::Stopped,
+            let question_task_id = handoff.locked().board_id;
+            let answer = if let Some(choices) = choices {
+                gate::choice_text(
+                    gate::ask_choices(app, &cancel, "Rune", question, choices, question_task_id)
+                        .await,
+                )
+            } else {
+                gate::question_text(
+                    gate::ask_question_for_task(app, &cancel, "Rune", question, question_task_id)
+                        .await,
+                )
+            };
+            let Some(outcome) = answer else {
+                return Outcome::Stopped;
             };
             row.rec.gate_ms = millis(asking);
             row.rec.gate = Some("none".into());

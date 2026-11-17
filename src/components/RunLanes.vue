@@ -22,6 +22,7 @@ const props = withDefaults(
     selectedKey?: string | null
     showDetail?: boolean
     openStep?: (key: string) => unknown
+    waitingKey?: string
   }>(),
   { showDetail: true },
 )
@@ -71,6 +72,7 @@ function describe(step: LiveStep) {
     stepTitle(step).title,
     ms === null ? '' : durationText(ms),
     stepStatus(step),
+    props.waitingKey === stepKey(step) ? 'Waiting for your answer' : '',
     step.kind === 'tool' && step.result ? 'Result available' : '',
   ]
     .filter(Boolean)
@@ -100,6 +102,7 @@ function describe(step: LiveStep) {
               'block-running': block.step.ok === null,
               'block-failed': block.step.ok === false,
               'block-picked': selected && stepKey(selected) === stepKey(block.step),
+              'block-waiting': waitingKey === stepKey(block.step),
             }"
             :data-kind="block.step.kind"
             :style="{ left: `${block.left}%`, width: `${block.width}%` }"
@@ -247,6 +250,10 @@ function describe(step: LiveStep) {
 .block-picked {
   box-shadow: 0 0 0 1.5px var(--color-rune-ink);
   z-index: 1;
+}
+.block-waiting {
+  outline: 2px solid var(--color-attention);
+  outline-offset: -1px;
 }
 .legend-mark {
   width: 8px;

@@ -43,6 +43,8 @@ afterEach(() => {
 
 it('routes initial and existing-window Open selections to Current run above the same history', async () => {
   harness.liveRun = {
+    question: shallowRef(null),
+    choices: shallowRef([]),
     steps: shallowRef([]),
     snapshot: shallowRef(null),
     error: ref(''),

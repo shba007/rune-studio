@@ -77,7 +77,7 @@ fn visual(action: &Action, monitor: &Monitor) -> (String, Option<Point>, bool, &
             (String::new(), Some(Point { x: px, y: py }), false, "left")
         }
         Action::External { name, .. } => (name.clone(), None, false, "left"),
-        Action::AskUser { question } => (question.clone(), None, false, "left"),
+        Action::AskUser { question, .. } => (question.clone(), None, false, "left"),
         Action::TypeText { text } => (text.clone(), None, false, "left"),
         Action::PressKeys { keys } => (keys.join(" + "), None, false, "left"),
         Action::OpenApp { name } => (name.clone(), None, false, "left"),

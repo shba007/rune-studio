@@ -15,10 +15,42 @@ import RunLanes from './RunLanes.vue'
 import WorkRow from './WorkRow.vue'
 import AppIcon from './AppIcon.vue'
 import ToolResultView from './ToolResultView.vue'
+import ConfirmCard from './ConfirmCard.vue'
+import RuneButton from './RuneButton.vue'
+import { invoke } from '@tauri-apps/api/core'
+import type { Agent } from '@/composables/useAgent'
 const props = defineProps<{
   live: LiveStepsModel
   focus?: { key: string; serial: number } | null
+  confirmation?: Agent
 }>()
+const pending = computed(() =>
+  props.live.question.value?.kind === 'question' &&
+  tasks.value.some((task) => task.id === props.live.question.value?.taskId)
+    ? props.live.question.value
+    : null,
+)
+const waitingKey = computed(() =>
+  pending.value?.taskId != null && pending.value.step != null
+    ? `${pending.value.taskId}:${pending.value.step}`
+    : undefined,
+)
+const debugChoice = import.meta.env.DEV
+const sampleBusy = ref(false)
+const sampleError = ref('')
+async function sampleChoice() {
+  const taskId = selected.value?.taskId
+  if (taskId == null) return
+  sampleBusy.value = true
+  sampleError.value = ''
+  try {
+    await invoke('debug_sample_choice', { taskId })
+  } catch (cause) {
+    sampleError.value = String(cause)
+  } finally {
+    sampleBusy.value = false
+  }
+}
 const request = computed(() =>
   props.live.snapshot.value?.request?.phase === 'queued'
     ? null
@@ -33,6 +65,13 @@ const steps = computed(() =>
 )
 const picked = ref<string | null>(props.focus?.key ?? null)
 watch(
+  () => pending.value?.id,
+  () => {
+    if (waitingKey.value) picked.value = waitingKey.value
+  },
+  { immediate: true },
+)
+watch(
   () => props.focus,
   (value) => {
     if (value) picked.value = value.key
@@ -46,6 +85,11 @@ watch(
 )
 const selected = computed(
   () => steps.value.find((step) => stepKey(step) === picked.value) ?? steps.value.at(-1) ?? null,
+)
+const showQuestion = computed(
+  () =>
+    !!pending.value &&
+    (!waitingKey.value || (selected.value && stepKey(selected.value) === waitingKey.value)),
 )
 const now = useNow({ scheduler: (update) => useIntervalFn(update, 1000) })
 const elapsed = computed(() =>
@@ -79,7 +123,25 @@ const timing = (step: LiveStep) => {
         <p class="m-0 text-rune-body break-words">{{ request.text }}</p>
       </div>
       <span class="text-rune-caption text-rune-text-2">{{ request.phase }} · {{ elapsed }}</span>
+      <RuneButton
+        v-if="
+          debugChoice &&
+          ['done', 'failed', 'cancelled', 'blocked'].includes(request.phase) &&
+          live.steps.value.some(
+            (step) => step.taskId === selected?.taskId && step.kind === 'tool' && step.result,
+          ) &&
+          !live.question.value
+        "
+        variant="ghost"
+        size="sm"
+        :disabled="sampleBusy || selected?.taskId == null"
+        @click="sampleChoice"
+        >Sample choice</RuneButton
+      >
     </header>
+    <p v-if="sampleError" role="alert" class="m-0 text-rune-caption text-attention">
+      {{ sampleError }}
+    </p>
     <p
       v-if="live.snapshot.value?.droppedResults || live.snapshot.value?.droppedSteps"
       role="status"
@@ -93,6 +155,7 @@ const timing = (step: LiveStep) => {
       :steps="steps"
       :now="now.getTime()"
       :show-detail="false"
+      :waiting-key="waitingKey"
       :selected-key="selected ? stepKey(selected) : null"
       @select="picked = $event"
     />
@@ -101,23 +164,49 @@ const timing = (step: LiveStep) => {
         <section v-for="task in tasks" :key="task.id" class="mb-3">
           <h3 class="m-0 px-2 py-2 text-rune-caption text-rune-text-2">{{ task.text }}</h3>
           <WorkRow
-            class="[&>div>button]:min-w-0"
+            v-for="choice in live.choices.value.filter(
+              (choice) => choice.taskId === task.id && choice.step == null,
+            )"
+            :key="choice.id"
+            :title="`You chose ${choice.label}`"
+            data-testid="chosen-answer"
+          />
+          <template
             v-for="step in steps.filter((item) => item.taskId === task.id)"
             :key="stepKey(step)"
-            :title="short(step)"
-            :meta="[timing(step), stepStatus(step)].filter(Boolean).join(' · ')"
-            interactive
-            :selected="!!selected && stepKey(selected) === stepKey(step)"
-            :data-step-key="stepKey(step)"
-            @open="picked = stepKey(step)"
           >
-            <template #leading
-              ><AppIcon
-                :name="STEP_KIND[step.kind].icon"
-                size="sm"
-                :class="step.kind === 'tool' ? 'text-tool' : 'text-voice'"
-            /></template>
-          </WorkRow>
+            <WorkRow
+              class="[&>div>button]:min-w-0"
+              :title="short(step)"
+              :meta="[timing(step), stepStatus(step)].filter(Boolean).join(' · ')"
+              interactive
+              :selected="!!selected && stepKey(selected) === stepKey(step)"
+              :data-step-key="stepKey(step)"
+              :class="stepKey(step) === waitingKey ? 'ring-1 ring-attention' : ''"
+              @open="picked = stepKey(step)"
+            >
+              <template #leading
+                ><AppIcon
+                  :name="STEP_KIND[step.kind].icon"
+                  size="sm"
+                  :class="step.kind === 'tool' ? 'text-tool' : 'text-voice'"
+              /></template>
+            </WorkRow>
+            <p
+              v-if="stepKey(step) === waitingKey"
+              class="m-0 px-4 text-rune-caption text-attention"
+            >
+              Waiting for your answer
+            </p>
+            <WorkRow
+              v-for="choice in live.choices.value.filter(
+                (choice) => choice.taskId === task.id && choice.step === step.step,
+              )"
+              :key="choice.id"
+              :title="`You chose ${choice.label}`"
+              data-testid="chosen-answer"
+            />
+          </template>
         </section>
       </div>
       <article
@@ -161,7 +250,10 @@ const timing = (step: LiveStep) => {
         >
           {{ selected.error || 'Step failed' }}
         </p>
-        <div v-else-if="selected.kind === 'tool' && selected.result" aria-label="Live tool result">
+        <div
+          v-else-if="selected.kind === 'tool' && selected.result && !showQuestion"
+          aria-label="Live tool result"
+        >
           <p
             v-if="selected.result.structuredContentOmitted"
             class="text-rune-caption text-rune-text-2"
@@ -175,8 +267,17 @@ const timing = (step: LiveStep) => {
             :show-raw="false"
           />
         </div>
+        <ConfirmCard
+          v-if="showQuestion && confirmation"
+          :key="pending.id"
+          :agent="confirmation"
+          :compact="false"
+        />
       </article>
-      <p v-else class="text-rune-body text-rune-text-2">Steps appear here as they start.</p>
+      <div v-else>
+        <ConfirmCard v-if="showQuestion && confirmation" :agent="confirmation" :compact="false" />
+        <p v-else class="text-rune-body text-rune-text-2">Steps appear here as they start.</p>
+      </div>
     </div>
   </section>
 </template>

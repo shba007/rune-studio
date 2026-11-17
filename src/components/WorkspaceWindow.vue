@@ -322,6 +322,7 @@ onBeforeUnmount(() => {
           <CurrentRun
             v-if="section === 'tasks' && !previewTask && agent.liveRun"
             :live="agent.liveRun"
+            :confirmation="agent"
             :focus="liveFocus"
           />
           <TaskHistory

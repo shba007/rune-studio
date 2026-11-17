@@ -1,16 +1,50 @@
 <script setup lang="ts">
 import RuneButton from './RuneButton.vue'
 import { useIntervalFn } from '@vueuse/core'
-import { computed, onMounted, ref, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, useTemplateRef, watch, type Ref } from 'vue'
 
 import type { Agent } from '@/composables/useAgent'
+import type { ConfirmRequestPayload } from '@/types/protocol'
+import type { LiveStep } from '@/config/liveSteps'
+import ToolResultView from './ToolResultView.vue'
 
-const props = defineProps<{ agent: Agent }>()
+const props = withDefaults(
+  defineProps<{
+    agent: {
+      question: Ref<ConfirmRequestPayload | null>
+      answer: Agent['answer']
+      choose?: Agent['choose']
+      steps?: Ref<LiveStep[]>
+    }
+    compact?: boolean
+  }>(),
+  { compact: true },
+)
 const agent = props.agent
 
 const question = computed(() => agent.question.value)
 const asking = computed(() => question.value?.kind === 'question')
 const restarting = computed(() => question.value?.kind === 'restart')
+const options = computed(() =>
+  asking.value &&
+  question.value?.options &&
+  question.value.options.length >= 2 &&
+  question.value.options.length <= 4 &&
+  Number.isInteger(question.value.suggested) &&
+  question.value.suggested! >= 0 &&
+  question.value.suggested! < question.value.options.length
+    ? question.value.options
+    : null,
+)
+const content = computed(() =>
+  asking.value && question.value?.taskId != null
+    ? agent.steps?.value
+        .filter(
+          (step) => step.taskId === question.value?.taskId && step.kind === 'tool' && step.result,
+        )
+        .at(-1)?.result
+    : null,
+)
 const left = ref(0)
 watch(question, (asked) => (left.value = asked?.timeoutSecs ?? 0), { immediate: true })
 useIntervalFn(() => (left.value = Math.max(0, left.value - 1)), 1000)
@@ -20,7 +54,15 @@ const clock = computed(
 )
 
 const no = useTemplateRef<InstanceType<typeof RuneButton>>('no')
-onMounted(() => no.value?.$el.focus())
+const optionGroup = useTemplateRef<HTMLElement>('optionGroup')
+async function focusAnswer() {
+  await nextTick()
+  if (options.value)
+    optionGroup.value?.querySelector<HTMLButtonElement>('[data-suggested="true"]')?.focus()
+  else no.value?.$el.focus()
+}
+onMounted(focusAnswer)
+watch(() => question.value?.id, focusAnswer)
 </script>
 
 <template>
@@ -69,7 +111,34 @@ onMounted(() => no.value?.$el.focus())
       </li>
     </ul>
 
-    <div class="mt-1 flex gap-2">
+    <ToolResultView
+      v-if="content"
+      :text="content.text"
+      :schema="content.outputSchema"
+      :structured-content="content.structuredContent"
+      :compact="compact"
+      :show-raw="false"
+    />
+    <div v-if="options" ref="optionGroup" class="mt-1 flex flex-col gap-2">
+      <RuneButton
+        v-for="(option, index) in options"
+        :key="option.label"
+        size="sm"
+        :variant="index === question.suggested ? 'primary' : 'secondary'"
+        class="w-full !flex-col !items-start !rounded-rune-tile !text-left normal-case"
+        :data-suggested="index === question.suggested"
+        @click="agent.choose?.(index)"
+      >
+        <span
+          >{{ option.label }}
+          <span v-if="index === question.suggested" class="text-rune-caption"
+            >· Suggested</span
+          ></span
+        >
+        <span class="text-rune-caption normal-case">{{ option.outcome }}</span>
+      </RuneButton>
+    </div>
+    <div v-else class="mt-1 flex gap-2">
       <RuneButton size="sm" ref="no" class="flex-1" @click="agent.answer(false)">
         {{ restarting ? 'Keep stopped' : 'No' }}
       </RuneButton>

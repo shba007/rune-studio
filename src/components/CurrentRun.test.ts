@@ -4,6 +4,7 @@ import { expect, it, vi } from 'vite-plus/test'
 import type { LiveStepsModel, LiveRunSnapshot } from '@/composables/useLiveSteps'
 import type { LiveStep } from '@/config/liveSteps'
 import CurrentRun from './CurrentRun.vue'
+import type { Agent } from '@/composables/useAgent'
 function fixture(): LiveStepsModel {
   const steps: LiveStep[] = [
     {
@@ -68,6 +69,8 @@ function fixture(): LiveStepsModel {
     droppedSteps: 0,
   }
   return {
+    question: shallowRef(null),
+    choices: shallowRef([]),
     steps: shallowRef(steps),
     snapshot: shallowRef(snapshot),
     error: ref(''),
@@ -125,5 +128,58 @@ it('follows new steps until picked, accepts Open selection, and renders errors',
   }
   await wrapper.vm.$nextTick()
   expect(wrapper.find('[aria-label="Current run"]').exists()).toBe(true)
+  wrapper.unmount()
+})
+
+it('selects and marks a waiting step, shows its latest tool content, then records the choice', async () => {
+  const live = fixture()
+  const confirmation = {
+    question: live.question,
+    steps: live.steps,
+    answer: vi.fn<(approved: boolean) => Promise<void>>(async () => {}),
+    choose: vi.fn<(index: number) => Promise<void>>(async (index) => {
+      const question = live.question.value!
+      live.choices.value = [
+        {
+          id: question.id,
+          taskId: question.taskId,
+          step: question.step,
+          label: question.options![index]!.label,
+          at: 4000,
+        },
+      ]
+      live.question.value = null
+    }),
+  } as unknown as Agent
+  const wrapper = mount(CurrentRun, { props: { live, confirmation } })
+  live.question.value = {
+    id: 'q',
+    source: 'Rune',
+    text: 'Use this result?',
+    reason: '',
+    reasons: [],
+    risk: 'low',
+    kind: 'question',
+    timeoutSecs: 120,
+    taskId: 1,
+    step: 2,
+    options: [
+      { label: 'Keep', outcome: 'Keep result' },
+      { label: 'Review', outcome: 'Review result' },
+    ],
+    suggested: 0,
+  }
+  await wrapper.vm.$nextTick()
+  expect(wrapper.get('[aria-label="Selected live step"]').attributes('data-selected-step')).toBe(
+    '1:2',
+  )
+  expect(wrapper.get('.block-waiting').attributes('data-kind')).toBe('screen')
+  expect(wrapper.get('[data-step-key="1:2"]').classes()).toContain('ring-attention')
+  expect(wrapper.get('[role="alertdialog"] dt').text()).toBe('Count')
+  expect(wrapper.get('[role="alertdialog"] dd').text()).toBe('4')
+  await wrapper.get('[role="alertdialog"] button[data-suggested="true"]').trigger('click')
+  expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false)
+  expect(wrapper.get('[data-testid="chosen-answer"]').text()).toBe('You chose Keep')
+  expect(wrapper.find('.block-waiting').exists()).toBe(false)
   wrapper.unmount()
 })

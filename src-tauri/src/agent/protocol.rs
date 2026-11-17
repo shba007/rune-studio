@@ -11,6 +11,73 @@ use crate::{
 const MAX_WAIT_MS: u64 = 5_000;
 const MAX_SCROLL: u32 = 10;
 
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+pub struct UserOption {
+    pub label: String,
+    pub outcome: String,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UserChoices {
+    pub options: Vec<UserOption>,
+    pub suggested: usize,
+}
+pub fn parse_choices(arguments: &Value) -> Result<Option<UserChoices>, String> {
+    let Some(options) = arguments.get("options") else {
+        if arguments.get("suggested").is_some() {
+            return Err("ask_user: suggested requires options".into());
+        }
+        return Ok(None);
+    };
+    let options = options
+        .as_array()
+        .ok_or("ask_user: options must be an array")?;
+    if !(2..=4).contains(&options.len()) {
+        return Err("ask_user: options must contain 2 to 4 entries".into());
+    }
+    let mut parsed = Vec::new();
+    let mut labels = std::collections::HashSet::new();
+    for option in options {
+        let label = option["label"]
+            .as_str()
+            .ok_or("ask_user: each label must be a string")?
+            .trim();
+        if label.is_empty() || label.chars().count() > 48 || label.chars().any(char::is_control) {
+            return Err(
+                "ask_user: labels must be non-empty, single-line and at most 48 characters".into(),
+            );
+        }
+        if !labels.insert(label.to_lowercase()) {
+            return Err("ask_user: labels must be unique".into());
+        }
+        let outcome = option["outcome"]
+            .as_str()
+            .ok_or("ask_user: each outcome must be a string")?
+            .trim();
+        if outcome.is_empty()
+            || outcome.chars().count() > 160
+            || outcome.chars().any(char::is_control)
+        {
+            return Err(
+                "ask_user: outcomes must be non-empty, single-line and at most 160 characters"
+                    .into(),
+            );
+        }
+        parsed.push(UserOption {
+            label: label.into(),
+            outcome: outcome.into(),
+        });
+    }
+    let suggested = arguments["suggested"]
+        .as_u64()
+        .filter(|index| *index < options.len() as u64)
+        .ok_or("ask_user: suggested must be a valid zero-based option index")?
+        as usize;
+    Ok(Some(UserChoices {
+        options: parsed,
+        suggested,
+    }))
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {
     External {
@@ -41,6 +108,7 @@ pub enum Action {
     },
     AskUser {
         question: String,
+        choices: Option<UserChoices>,
     },
     TypeText {
         text: String,
@@ -142,7 +210,7 @@ impl Action {
                 to.0.round(),
                 to.1.round()
             ),
-            Action::AskUser { question } => format!(
+            Action::AskUser { question, .. } => format!(
                 "ask the user: {}",
                 question.chars().take(80).collect::<String>()
             ),
@@ -334,6 +402,7 @@ pub fn parse(name: &str, arguments: &Value) -> Result<Decision, String> {
             }
             Action::AskUser {
                 question: question.trim().to_string(),
+                choices: parse_choices(arguments)?,
             }
         }
         "type_text" => Action::TypeText {
@@ -518,7 +587,7 @@ pub fn tools() -> Value {
         tool(
             "ask_user",
             "Ask the user a yes/no question when you cannot tell what they want or something unexpected needs their decision. Do not ask what you can see on the screen.",
-            json!({ "question": { "type": "string", "description": "A short question that can be answered yes or no" } }),
+            json!({ "question": { "type": "string", "description": "A short question that can be answered yes or no" }, "options": { "type":"array", "minItems":2, "maxItems":4, "description":"Optional choices. Each short label states a one-line outcome; these answer a question and never approve an action.", "items":{"type":"object","properties":{"label":{"type":"string","maxLength":48},"outcome":{"type":"string","maxLength":160}},"required":["label","outcome"],"additionalProperties":false}}, "suggested":{"type":"integer","minimum":0,"maximum":3,"description":"Required with options: zero-based index of the suggested choice."} }),
             &["question"],
         ),
         tool(
@@ -925,10 +994,82 @@ mod tests {
         assert_eq!(
             ok.action,
             Action::AskUser {
-                question: "Delete the draft?".into()
+                question: "Delete the draft?".into(),
+                choices: None
             }
         );
         assert!(parse("ask_user", &json!({ "question": " " })).is_err());
         assert!(parse("ask_user", &json!({})).is_err());
+    }
+
+    #[test]
+    fn question_choices_are_bounded_trimmed_unique_and_have_a_valid_suggestion() {
+        let valid = json!({"question":"Choose?","options":[{"label":" Keep ","outcome":" Keep the result "},{"label":"Review","outcome":"Review before continuing"}],"suggested":1});
+        let parsed = parse("ask_user", &valid).unwrap();
+        assert!(matches!(
+            parsed.action,
+            Action::AskUser {
+                choices: Some(UserChoices { suggested: 1, .. }),
+                ..
+            }
+        ));
+        assert_eq!(
+            parse_choices(&valid).unwrap().unwrap().options[0].label,
+            "Keep"
+        );
+        for (value, reason) in [
+            (json!({"options":{},"suggested":0}), "array"),
+            (json!({"options":[],"suggested":0}), "2 to 4"),
+            (
+                json!({"options":[valid["options"][0].clone()],"suggested":0}),
+                "2 to 4",
+            ),
+            (
+                json!({"options":vec![valid["options"][0].clone();5],"suggested":0}),
+                "2 to 4",
+            ),
+            (json!({"suggested":0}), "requires options"),
+        ] {
+            assert!(parse_choices(&value).unwrap_err().contains(reason));
+        }
+        for (key, bad, reason) in [
+            ("label", json!(" "), "non-empty"),
+            ("label", json!("x".repeat(49)), "48"),
+            ("label", json!("bad\nlabel"), "single-line"),
+            ("label", json!(5), "string"),
+            ("label", json!(" review "), "unique"),
+            ("outcome", json!(""), "non-empty"),
+            ("outcome", json!("x".repeat(161)), "160"),
+            ("outcome", json!("bad\noutcome"), "single-line"),
+            ("outcome", json!(null), "string"),
+        ] {
+            let mut value = valid.clone();
+            value["options"][0][key] = bad;
+            assert!(parse_choices(&value).unwrap_err().contains(reason));
+        }
+        for bad in [json!(-1), json!(2), json!(0.5), json!("0"), json!(null)] {
+            let mut value = valid.clone();
+            value["suggested"] = bad;
+            assert!(parse_choices(&value).unwrap_err().contains("zero-based"));
+        }
+        let mut missing = valid;
+        missing.as_object_mut().unwrap().remove("suggested");
+        assert!(parse_choices(&missing).unwrap_err().contains("zero-based"));
+    }
+
+    #[test]
+    fn legacy_question_description_is_unchanged() {
+        let tools = tools();
+        let ask = tools
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["function"]["name"] == "ask_user")
+            .unwrap();
+        assert_eq!(
+            ask["function"]["description"],
+            "Ask the user a yes/no question when you cannot tell what they want or something unexpected needs their decision. Do not ask what you can see on the screen."
+        );
+        assert!(parse_choices(&json!({"question":"Ok?"})).unwrap().is_none());
     }
 }

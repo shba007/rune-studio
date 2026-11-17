@@ -24,10 +24,22 @@ pub struct Snapshot {
     pub steps: Vec<Step>,
     pub dropped_results: usize,
     pub dropped_steps: usize,
+    pub question: Option<crate::safety::gate::ConfirmRequest>,
+    pub choices: Vec<ChoiceRecord>,
+}
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChoiceRecord {
+    pub id: String,
+    pub task_id: Option<u64>,
+    pub step: Option<u32>,
+    pub label: String,
+    pub at: u64,
 }
 #[derive(Default)]
 struct Store {
     snapshot: Snapshot,
+    question_deadline: Option<u64>,
 }
 impl Store {
     fn sync(&mut self, board: &crate::tasks::Snapshot) {
@@ -157,7 +169,54 @@ pub fn clear_task(id: Option<u64>) {
 }
 #[tauri::command]
 pub fn live_run_snapshot() -> Snapshot {
-    STORE.locked().snapshot.clone()
+    let store = STORE.locked();
+    let mut snapshot = store.snapshot.clone();
+    if let (Some(question), Some(deadline)) = (&mut snapshot.question, store.question_deadline) {
+        question.timeout_secs = deadline.saturating_sub(now()).div_ceil(1000);
+    }
+    snapshot
+}
+
+pub fn context_step(task_id: Option<u64>) -> Option<u32> {
+    STORE
+        .locked()
+        .snapshot
+        .steps
+        .iter()
+        .rev()
+        .find(|step| step.start.task_id == task_id)
+        .map(|step| step.start.step)
+}
+pub fn question_opened(request: &crate::safety::gate::ConfirmRequest) {
+    let mut store = STORE.locked();
+    store.question_deadline = Some(now().saturating_add(request.timeout_secs.saturating_mul(1000)));
+    store.snapshot.question = Some(request.clone());
+    store.snapshot.revision += 1;
+}
+pub fn question_resolved(id: &str, label: Option<&str>) {
+    let mut store = STORE.locked();
+    if store
+        .snapshot
+        .question
+        .as_ref()
+        .is_some_and(|question| question.id == id)
+    {
+        let question = store.snapshot.question.take().unwrap();
+        store.question_deadline = None;
+        if let Some(label) = label {
+            store.snapshot.choices.push(ChoiceRecord {
+                id: id.into(),
+                task_id: question.task_id,
+                step: question.step,
+                label: label.into(),
+                at: now(),
+            });
+            if store.snapshot.choices.len() > MAX_STEPS {
+                store.snapshot.choices.remove(0);
+            }
+        }
+        store.snapshot.revision += 1;
+    }
 }
 
 #[cfg(test)]

@@ -404,6 +404,9 @@ pub fn run() {
             commands::steer,
             commands::toggle_listening,
             commands::confirm,
+            commands::choose,
+            #[cfg(debug_assertions)]
+            commands::debug_sample_choice,
             commands::analyze_screen,
             commands::run_workflow,
             commands::visual_analysis_targets,
