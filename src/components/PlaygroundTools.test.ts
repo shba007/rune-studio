@@ -34,7 +34,20 @@ beforeEach(() => {
     if (command === 'kit_discover')
       return {
         tools: [tool, { ...tool, name: 'rune-time__convert_time' }],
-        unavailable: ['write__file: plugin metadata is missing, conflicting or not read-only'],
+        blocked: [
+          {
+            name: 'write__file',
+            description: 'Write a file',
+            kind: 'writes',
+            reason: 'changes files or other state; the Playground runs it only after you confirm',
+          },
+          {
+            name: 'write__other',
+            description: 'Other',
+            kind: 'unavailable',
+            reason: 'plugin metadata is missing',
+          },
+        ],
       }
     if (command === 'kit_call_tool') return { text: '{"time":"12:30"}' }
     return null
@@ -54,7 +67,9 @@ it('groups all tools, keeps descriptions in the middle, and submits selected too
   expect(wrapper.get('[aria-label="Tool settings"]').find('form').exists()).toBe(true)
   expect(wrapper.get('[aria-label="Tool result"]').find('form').exists()).toBe(false)
   expect(wrapper.get('[aria-label="write"]').text()).toContain('file')
-  expect(wrapper.get('[title="write__file"]').text()).toContain('Unavailable')
+  expect(wrapper.get('[title="write__file"]').text()).toContain('Writes')
+  expect(wrapper.get('[title="write__other"]').text()).toContain('Not enabled')
+  expect(list.get('[title="rune-time__get_current_time"]').text()).toContain('Runnable')
   expect(wrapper.get('[aria-label="write"]').text()).not.toContain('plugin metadata')
   await wrapper.get('[aria-label="timezone"]').setValue('Asia/Kolkata')
   await wrapper.get('[aria-label="count"]').setValue('3')
@@ -100,8 +115,9 @@ it('allows inspecting not-selected and unavailable entries without running them'
   expect(harness.invoke.mock.calls.some(([command]) => command === 'kit_call_tool')).toBe(false)
   await wrapper.get('[title="write__file"]').trigger('click')
   expect(wrapper.get('[aria-label="Tool settings"] header').text()).toBe('write__file')
+  expect(wrapper.get('[aria-label="Tool settings"]').text()).toContain('Write a file')
   expect(wrapper.get('[aria-label="Tool settings"]').text()).toContain(
-    'write__file: plugin metadata is missing, conflicting or not read-only',
+    'Writes: changes files or other state; the Playground runs it only after you confirm.',
   )
   expect(wrapper.find('form').exists()).toBe(false)
   expect(wrapper.find('button[form="tool-arguments"]').exists()).toBe(false)
@@ -112,13 +128,23 @@ it('does not show an empty-discovery state when only unavailable entries exist',
   harness.invoke.mockImplementation(async (command) =>
     command === 'kit_settings'
       ? config
-      : { tools: [], unavailable: ['write__file: unsupported schema'] },
+      : {
+          tools: [],
+          blocked: [
+            {
+              name: 'write__file',
+              description: 'd',
+              kind: 'unavailable',
+              reason: 'unsupported schema',
+            },
+          ],
+        },
   )
   const wrapper = mount(PlaygroundTools)
   await flushPromises()
   expect(wrapper.text()).not.toContain('No tools discovered')
   expect(wrapper.get('[aria-label="Tool settings"]').text()).toContain(
-    'write__file: unsupported schema',
+    'Not enabled: unsupported schema.',
   )
   wrapper.unmount()
 })
@@ -131,7 +157,7 @@ it('sends a complex schema as raw JSON and shows the exact command error', async
         tools: [
           { ...tool, inputSchema: { type: 'object', properties: { values: { type: 'array' } } } },
         ],
-        unavailable: [],
+        blocked: [],
       }
     if (command === 'kit_call_tool') throw 'Kit tool error: refused'
     return null
@@ -191,7 +217,7 @@ it('marks schema tools and renders structured output with the text collapsed bel
             },
           },
         ],
-        unavailable: [],
+        blocked: [],
       }
     if (command === 'kit_call_tool')
       return { text: 'Original text', structuredContent: { total: 4 } }
@@ -207,5 +233,97 @@ it('marks schema tools and renders structured output with the text collapsed bel
   expect(result.get('dt').text()).toBe('Total items')
   expect(result.get('dd').text()).toBe('4')
   expect(result.get('details pre').text()).toBe('Original text')
+  wrapper.unmount()
+})
+function serveWriter() {
+  harness.invoke.mockImplementation(async (command) => {
+    if (command === 'kit_settings') return config
+    if (command === 'kit_discover')
+      return {
+        tools: [tool],
+        blocked: [
+          {
+            name: 'rune-filesystem__write_file',
+            description: 'Write a file',
+            kind: 'writes',
+            reason: 'changes files or other state',
+            inputSchema: {
+              type: 'object',
+              required: ['path', 'content'],
+              properties: { path: { type: 'string' }, content: { type: 'string' } },
+            },
+          },
+        ],
+      }
+    if (command === 'kit_call_write_tool') return { text: '{"ok":true}' }
+    return null
+  })
+}
+const writeCalls = () =>
+  harness.invoke.mock.calls.filter(([command]) => command === 'kit_call_write_tool')
+
+it('shows a write tool with a form, and nothing runs until the change is confirmed', async () => {
+  serveWriter()
+  const wrapper = mount(PlaygroundTools)
+  await flushPromises()
+  await wrapper.get('[title="rune-filesystem__write_file"]').trigger('click')
+  await wrapper.get('[aria-label="path"]').setValue('notes/a.txt')
+  await wrapper.get('[aria-label="content"]').setValue('hello')
+  expect(wrapper.get('button[form="tool-arguments"]').text()).toBe('Review change')
+  await wrapper.get('form').trigger('submit')
+  const card = wrapper.get('[role="alertdialog"]')
+  expect(card.text()).toContain('changes the real folder now')
+  expect(card.text()).toContain('"path": "notes/a.txt"')
+  expect(card.text()).toContain('"content": "hello"')
+  expect(writeCalls()).toHaveLength(0)
+  expect(harness.invoke.mock.calls.some(([command]) => command === 'kit_call_tool')).toBe(false)
+  wrapper.unmount()
+})
+
+it('cancel leaves the folder alone and confirm runs exactly the reviewed arguments', async () => {
+  serveWriter()
+  const wrapper = mount(PlaygroundTools)
+  await flushPromises()
+  await wrapper.get('[title="rune-filesystem__write_file"]').trigger('click')
+  await wrapper.get('[aria-label="path"]').setValue('a.txt')
+  await wrapper.get('[aria-label="content"]').setValue('one')
+  await wrapper.get('form').trigger('submit')
+  const buttons = () => wrapper.get('[role="alertdialog"]').findAll('button')
+  await buttons()
+    .find((item) => item.text() === 'Cancel')!
+    .trigger('click')
+  expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false)
+  expect(writeCalls()).toHaveLength(0)
+  await wrapper.get('form').trigger('submit')
+  await wrapper.get('[aria-label="content"]').setValue('two, edited after review')
+  await buttons()
+    .find((item) => item.text() === 'Confirm and run')!
+    .trigger('click')
+  await flushPromises()
+  expect(writeCalls()).toEqual([
+    [
+      'kit_call_write_tool',
+      {
+        name: 'rune-filesystem__write_file',
+        args: { path: 'a.txt', content: 'one' },
+        confirmed: true,
+      },
+    ],
+  ])
+  expect(wrapper.get('[aria-label="Tool result"]').text()).toContain('Succeeded')
+  wrapper.unmount()
+})
+
+it('closes the confirm card when another tool is chosen', async () => {
+  serveWriter()
+  const wrapper = mount(PlaygroundTools)
+  await flushPromises()
+  await wrapper.get('[title="rune-filesystem__write_file"]').trigger('click')
+  await wrapper.get('[aria-label="path"]').setValue('a.txt')
+  await wrapper.get('[aria-label="content"]').setValue('x')
+  await wrapper.get('form').trigger('submit')
+  expect(wrapper.find('[role="alertdialog"]').exists()).toBe(true)
+  await wrapper.get('[title="rune-time__get_current_time"]').trigger('click')
+  expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false)
   wrapper.unmount()
 })

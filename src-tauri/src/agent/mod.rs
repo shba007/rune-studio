@@ -868,6 +868,7 @@ async fn run(
     let mut watch = stuck::Watch::default();
     let mut wait_watch = stuck::WaitWatch::default();
     let mut control_watch = stuck::ControlWatch::default();
+    let mut repeat_watch = stuck::RepeatWatch::default();
     let mut elevated_watch = stuck::ElevatedWatch::default();
     let mut acted: Option<stuck::Acted> = None;
     let control_scope = format!("agent:{run_id}");
@@ -1171,7 +1172,11 @@ async fn run(
                 }
                 reply
             }
-            Err(err @ (ModelError::NoToolCall(_) | ModelError::BadArguments(_))) => {
+            Err(
+                err @ (ModelError::NoToolCall(_)
+                | ModelError::TokenLimit(_)
+                | ModelError::BadArguments(_)),
+            ) => {
                 invalid_in_a_row += 1;
                 trace.event(
                     run_id,
@@ -1182,6 +1187,7 @@ async fn run(
                     row.fail(&err.to_string());
                     return Outcome::Failed(match err {
                         ModelError::NoToolCall(_) => "The selected model couldn't provide an action after several attempts. Try again or select another model in Settings > Models & tools.".into(),
+                        ModelError::TokenLimit(_) => "The selected model's replies kept reaching the output limit before it chose an action. Raise the output limit for this model or select another model in Settings > Models & tools.".into(),
                         _ => err.to_string(),
                     });
                 }
@@ -1189,10 +1195,10 @@ async fn run(
                 row.rec.error = Some(err.to_string());
                 history.push(Entry {
                     action: "(no action)".into(),
-                    outcome: if matches!(err, ModelError::BadArguments(_)) {
-                        "your last tool call was not valid JSON: call the tool again with valid arguments".into()
-                    } else {
-                        "you must call a tool".into()
+                    outcome: match err {
+                        ModelError::BadArguments(_) => "your last tool call was not valid JSON: call the tool again with valid arguments".into(),
+                        ModelError::TokenLimit(_) => "your last reply was cut off before you called a tool: do not explain, call a tool now (to finish, call done)".into(),
+                        _ => "you must call a tool".into(),
                     },
                 });
                 continue;
@@ -1522,6 +1528,34 @@ async fn run(
         }
 
         if let Action::External { name, arguments } = &action {
+            let repeat_key = stuck::RepeatWatch::key(name, arguments);
+            match repeat_watch.before(&repeat_key) {
+                stuck::Repeat::Run => {}
+                stuck::Repeat::Warn => {
+                    let notice = format!(
+                        "{name} with these exact arguments has already failed twice and was not run again. Repeating it will not help: use a different tool or different arguments, or finish and say what could not be done."
+                    );
+                    trace.event(
+                        run_id,
+                        "repeated_failure_blocked",
+                        &serde_json::json!({"tool": name}).to_string(),
+                    );
+                    row.rec.result = Some("skipped".into());
+                    row.rec.error = Some(notice.clone());
+                    history.push(Entry {
+                        action: action.describe(),
+                        outcome: notice,
+                    });
+                    continue;
+                }
+                stuck::Repeat::Stop => {
+                    let message = format!(
+                        "Stopped: {name} kept failing with the same arguments and the model repeated it after being told not to."
+                    );
+                    row.fail(&message);
+                    return Outcome::Failed(message);
+                }
+            }
             let config = crate::kit::client::load(app);
             let name = name.clone();
             let args = arguments.clone();
@@ -1592,8 +1626,10 @@ async fn run(
             }
             let step_result = if row.rec.result.as_deref() == Some("ok") {
                 control_watch.record(None);
+                repeat_watch.reset();
                 Ok(())
             } else {
+                repeat_watch.failed(&repeat_key);
                 Err(ExecError::Input(outcome.clone()))
             };
             body::finish_step_with_result(
@@ -1610,6 +1646,7 @@ async fn run(
             acted = None;
             continue;
         }
+        repeat_watch.reset();
         let described = body::announce(
             app,
             step,

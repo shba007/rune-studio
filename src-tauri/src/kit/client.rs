@@ -76,8 +76,21 @@ pub struct Tool {
 pub struct Discovery {
     pub version: String,
     pub tools: Vec<Tool>,
-    pub unavailable: Vec<String>,
+    pub blocked: Vec<BlockedTool>,
 }
+/// A discovered tool that is listed but cannot run from Studio, with the reason.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockedTool {
+    pub name: String,
+    pub description: String,
+    pub kind: super::BlockKind,
+    pub reason: String,
+    /// Only for `Writes` tools: the Playground renders a form from it for a confirmed run.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_schema: Option<Value>,
+}
+const MAX_BLOCKED: usize = 500;
 fn read_config(path: &std::path::Path) -> Result<Config, String> {
     match std::fs::read(path) {
         Ok(bytes) => serde_json::from_slice(&bytes).map_err(|_| {
@@ -625,7 +638,8 @@ struct Gateway {
     endpoint: reqwest::Url,
     cancel: CancelToken,
     next: u64,
-    unavailable: Vec<String>,
+    blocked: Vec<BlockedTool>,
+    writes: Vec<Tool>,
     selected: Option<Vec<String>>,
     headers: Vec<(String, String)>,
 }
@@ -679,7 +693,8 @@ impl Gateway {
             endpoint: endpoint(&config.endpoint)?,
             cancel: cancel.clone(),
             next: 1,
-            unavailable: vec![],
+            blocked: vec![],
+            writes: vec![],
             selected: (!discovery).then(|| config.selected.clone()),
             headers: vec![],
         };
@@ -801,10 +816,12 @@ impl Gateway {
         let entries = result["tools"]
             .as_array()
             .ok_or("Kit discovery did not return tools")?;
+        self.blocked.clear();
+        self.writes.clear();
         let remote_names = if entries.iter().any(|entry| {
             entry["name"]
                 .as_str()
-                .is_some_and(|name| !super::approved_identity(name))
+                .is_some_and(|name| !super::trusted_namespace(name))
         }) {
             self.remote_names()
         } else {
@@ -822,38 +839,35 @@ impl Gateway {
             let remote = name.split_once("__").is_some_and(|(namespace, tool)| {
                 !tool.is_empty() && remote_names.contains(namespace)
             });
-            if !super::approved_identity(name) && !remote {
-                continue;
-            }
-            let reason = if super::headers::extract(&entry["inputSchema"], &json!({})).is_err() {
-                Some("invalid MCP header annotations")
-            } else if super::filesystem_identity(name)
-                && entry["inputSchema"]["x-rune-rules"]["limits"]["root_param"] != "allowed_dir"
-            {
-                Some("plugin does not declare the required allowed_dir boundary")
-            } else if !super::read_only_facts(entry) {
-                Some("plugin metadata is missing, conflicting or not read-only")
-            } else if !super::schema::supported(&entry["inputSchema"]) {
-                Some("plugin input schema contains unsupported constraints")
-            } else {
-                None
-            };
-            if let Some(reason) = reason {
-                if self.unavailable.len() < 16 {
-                    self.unavailable.push(format!(
-                        "{}: {reason}",
-                        name.chars().take(128).collect::<String>()
-                    ));
+            let description: String = entry["description"]
+                .as_str()
+                .unwrap_or("")
+                .chars()
+                .take(1024)
+                .collect();
+            if let Some(block) = super::classify(name, entry, remote) {
+                let writes = block.kind == super::BlockKind::Writes;
+                if writes {
+                    self.writes.push(Tool {
+                        name: name.into(),
+                        description: description.clone(),
+                        input_schema: entry["inputSchema"].clone(),
+                        output_schema: entry.get("outputSchema").cloned(),
+                    });
+                }
+                if self.blocked.len() < MAX_BLOCKED {
+                    self.blocked.push(BlockedTool {
+                        name: name.chars().take(128).collect(),
+                        description,
+                        kind: block.kind,
+                        reason: block.reason.into(),
+                        input_schema: writes.then(|| entry["inputSchema"].clone()),
+                    });
                 }
             } else {
                 tools.push(Tool {
                     name: name.into(),
-                    description: entry["description"]
-                        .as_str()
-                        .unwrap_or("")
-                        .chars()
-                        .take(1024)
-                        .collect(),
+                    description,
                     input_schema: entry["inputSchema"].clone(),
                     output_schema: entry.get("outputSchema").cloned(),
                 });
@@ -922,7 +936,7 @@ pub fn discover(config: &Config, cancel: &CancelToken) -> Result<Discovery, Stri
     Ok(Discovery {
         version,
         tools,
-        unavailable: gateway.unavailable.clone(),
+        blocked: gateway.blocked.clone(),
     })
 }
 #[tauri::command]
@@ -1022,10 +1036,47 @@ fn call_result(
     args: &Value,
     cancel: &CancelToken,
 ) -> Result<(Value, Option<Value>), String> {
+    call_checked(config, name, args, cancel, false)
+}
+
+/// Runs a tool that changes state, but only for a person pressing the confirm button in the
+/// Playground. The agent never reaches this: it calls `call`/`call_for_step`, which refuse
+/// anything that is not a selected, strictly read-only tool.
+#[tauri::command]
+pub async fn kit_call_write_tool(
+    app: AppHandle,
+    name: String,
+    args: Value,
+    confirmed: bool,
+) -> Result<ToolCallResult, String> {
+    if !confirmed {
+        return Err("Confirm the change before running a tool that writes".into());
+    }
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| e.to_string())?
+        .join("kit.json");
+    tauri::async_runtime::spawn_blocking(move || {
+        let config = read_config(&path)?;
+        call_checked(&config, &name, &args, &CancelToken::default(), true)
+            .map(|(result, _)| playground_result(result))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn call_checked(
+    config: &Config,
+    name: &str,
+    args: &Value,
+    cancel: &CancelToken,
+    confirmed_write: bool,
+) -> Result<(Value, Option<Value>), String> {
     if args.to_string().len() > 8192 {
         return Err("Kit arguments exceed 8 KB".into());
     }
-    if !config.enabled || !config.selected.iter().any(|n| n == name) {
+    if !config.enabled || (!confirmed_write && !config.selected.iter().any(|n| n == name)) {
         return Err("Tool is not selected or approved".into());
     }
     if super::filesystem_identity(name)
@@ -1034,11 +1085,20 @@ fn call_result(
         return Err("Filesystem root belongs to Tools settings, not tool arguments".into());
     }
     let (mut gateway, _) = Gateway::start(config, cancel, false)?;
-    let tool = gateway
-        .tools(config)?
-        .into_iter()
-        .find(|t| t.name == name)
-        .ok_or("Tool is unavailable or has unsafe/unsupported metadata")?;
+    let runnable = gateway.tools(config)?;
+    let tool = if confirmed_write {
+        gateway
+            .writes
+            .iter()
+            .find(|t| t.name == name)
+            .cloned()
+            .ok_or("Tool is not a write tool that can be confirmed here")?
+    } else {
+        runnable
+            .into_iter()
+            .find(|t| t.name == name)
+            .ok_or("Tool is unavailable or has unsafe/unsupported metadata")?
+    };
     super::schema::validate(&tool.input_schema, args)?;
     gateway.headers = super::headers::extract(&tool.input_schema, args)?;
     let result = gateway.request(
@@ -1590,6 +1650,14 @@ mod tests {
                             safe["outputSchema"] = json!({"type":"object","properties":{"count":{"type":"integer","title":"Count"},"password":{"type":"string"}}});
                         }
                         let mut tools = vec![safe.clone()];
+                        if mode == "writes" {
+                            let mut write = safe.clone();
+                            write["name"] = json!("time__set_clock");
+                            write["annotations"]["readOnlyHint"] = json!(false);
+                            write["inputSchema"]["x-rune-rules"] =
+                                json!({"read_only":false,"risk":"medium","effects":["write"]});
+                            tools.push(write);
+                        }
                         if mode == "remote" {
                             let mut unsafe_tool = safe.clone();
                             unsafe_tool["name"] = json!("external__unsafe");
@@ -1649,6 +1717,63 @@ mod tests {
             },
             thread,
         )
+    }
+
+    #[test]
+    fn write_tools_are_listed_with_a_schema_and_never_run_without_confirmation() {
+        let (config, handle) = server("writes", 2);
+        let discovery = discover(&config, &CancelToken::default()).unwrap();
+        handle.join().unwrap();
+        assert_eq!(discovery.tools.len(), 1);
+        let write = &discovery.blocked[0];
+        assert_eq!(write.name, "time__set_clock");
+        assert_eq!(write.kind, super::super::BlockKind::Writes);
+        assert!(write.input_schema.is_some());
+        let (config, handle) = server("writes", 0);
+        let args = json!({"timezone":"UTC"});
+        // Unconfirmed and unselected: refused before any connection is made.
+        assert_eq!(
+            call_checked(
+                &config,
+                "time__set_clock",
+                &args,
+                &CancelToken::default(),
+                false
+            )
+            .unwrap_err(),
+            "Tool is not selected or approved"
+        );
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn a_confirmed_write_runs_only_a_write_tool_and_ignores_the_selected_list() {
+        let (config, handle) = server("writes", 3);
+        let args = json!({"timezone":"UTC"});
+        assert!(!config.selected.iter().any(|n| n == "time__set_clock"));
+        let (result, _) = call_checked(
+            &config,
+            "time__set_clock",
+            &args,
+            &CancelToken::default(),
+            true,
+        )
+        .unwrap();
+        handle.join().unwrap();
+        assert_eq!(result["content"][0]["text"], "UTC");
+        let (config, handle) = server("writes", 2);
+        assert_eq!(
+            call_checked(
+                &config,
+                "time__get_current_time",
+                &args,
+                &CancelToken::default(),
+                true,
+            )
+            .unwrap_err(),
+            "Tool is not a write tool that can be confirmed here"
+        );
+        handle.join().unwrap();
     }
 
     #[test]

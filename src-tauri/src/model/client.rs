@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
 const MAX_ATTEMPTS: u32 = 3;
+const TOKEN_LIMIT_RETRY: u32 = 4096;
 const RETRY_WAITS: [Duration; 2] = [Duration::from_millis(500), Duration::from_millis(1500)];
 
 #[derive(Debug, thiserror::Error)]
@@ -27,6 +28,10 @@ pub enum ModelError {
     Reply(String),
     #[error("the model did not call a tool: {0}")]
     NoToolCall(String),
+    // The reply was cut off by the output limit, so a missing or broken tool call says
+    // nothing about what the model would have done with more room.
+    #[error("the model's reply reached the output limit before it called a tool: {0}")]
+    TokenLimit(String),
     #[error("the model's tool arguments were not valid JSON: {0}")]
     BadArguments(String),
 }
@@ -58,6 +63,7 @@ pub struct ChatClient<'a> {
     pub on_loading: Option<&'a (dyn Fn() + Send + Sync)>,
 }
 
+#[derive(Clone)]
 pub struct Request<'a> {
     pub system: &'a str,
     pub user_text: &'a str,
@@ -109,7 +115,10 @@ pub fn is_retryable(error: &ModelError) -> bool {
         ModelError::Status { status, .. } => matches!(status, 429 | 502 | 503 | 504),
         ModelError::Loading { .. } => true,
         ModelError::SwapRefused | ModelError::Deferred { .. } => false,
-        ModelError::Reply(_) | ModelError::NoToolCall(_) | ModelError::BadArguments(_) => false,
+        ModelError::Reply(_)
+        | ModelError::NoToolCall(_)
+        | ModelError::TokenLimit(_)
+        | ModelError::BadArguments(_) => false,
     }
 }
 
@@ -296,10 +305,11 @@ impl ChatClient<'_> {
         let mut wait_before = Duration::ZERO;
         let max_loading_attempts = 15;
         let mut loading_attempts = 0;
+        let mut raised: Option<Request<'_>> = None;
         loop {
             let (result, mut report) = self
                 .attempt_with_schema(
-                    request,
+                    raised.as_ref().unwrap_or(request),
                     on_thinking,
                     attempt,
                     wait_before,
@@ -330,6 +340,26 @@ impl ChatClient<'_> {
                     }
                     tokio::time::sleep(wait).await;
                     wait_before = wait;
+                }
+                // Temperature is 0, so repeating a cut-off request unchanged gives the same
+                // cut-off. Retry once with more room, only when that is actually more.
+                Err(ModelError::TokenLimit(_))
+                    if raised.is_none()
+                        && request.max_tokens.is_none_or(|n| n < TOKEN_LIMIT_RETRY)
+                        && self.output_limit.is_none_or(|n| n >= TOKEN_LIMIT_RETRY) =>
+                {
+                    log::warn!(
+                        "model reply reached the output limit; trying again with {TOKEN_LIMIT_RETRY} tokens"
+                    );
+                    if let (Some(sink), Some(report)) = (self.sink, report.as_mut()) {
+                        report.outcome = "retried";
+                        sink.record(report.clone());
+                    }
+                    let mut more = request.clone();
+                    more.max_tokens = Some(TOKEN_LIMIT_RETRY);
+                    raised = Some(more);
+                    attempt += 1;
+                    wait_before = Duration::ZERO;
                 }
                 Err(error) if attempt < MAX_ATTEMPTS && is_retryable(&error) => {
                     let wait = backoff(attempt);
@@ -868,12 +898,20 @@ fn reasoning_of(message: &Value) -> &str {
         .unwrap_or("")
 }
 
+fn cut_off(finish_reason: Option<&str>) -> bool {
+    finish_reason == Some("length")
+}
+
 pub fn parse_reply(value: &Value) -> Result<Reply, ModelError> {
     let message = &value["choices"][0]["message"];
+    let cut = cut_off(value["choices"][0]["finish_reason"].as_str());
     let Some(call) = message["tool_calls"].get(0) else {
-        return Err(ModelError::NoToolCall(snippet(
-            message["content"].as_str().unwrap_or(""),
-        )));
+        let text = snippet(message["content"].as_str().unwrap_or(""));
+        return Err(if cut {
+            ModelError::TokenLimit(text)
+        } else {
+            ModelError::NoToolCall(text)
+        });
     };
     let name = call["function"]["name"].as_str().unwrap_or("").to_string();
     let served_model = value
@@ -881,11 +919,12 @@ pub fn parse_reply(value: &Value) -> Result<Reply, ModelError> {
         .and_then(|v| v.as_str())
         .map(ToString::to_string);
     let swap_ms = value.get("swap_ms").and_then(|v| v.as_u64());
+    let arguments = match parse_arguments(&call["function"]["arguments"]) {
+        Err(ModelError::BadArguments(error)) if cut => return Err(ModelError::TokenLimit(error)),
+        other => other?,
+    };
     Ok(Reply {
-        call: ToolCall {
-            name,
-            arguments: parse_arguments(&call["function"]["arguments"])?,
-        },
+        call: ToolCall { name, arguments },
         completion_tokens: value["usage"]["completion_tokens"].as_u64(),
         thinking: reasoning_of(message).to_string(),
         served_model,
@@ -1039,10 +1078,21 @@ impl Stream {
     }
 
     fn finish(self, swap_ms: Option<u64>) -> Result<Reply, ModelError> {
+        let cut = cut_off(self.finish_reason.as_deref());
         let Some((name, arguments)) = self.calls.into_values().next() else {
-            return Err(ModelError::NoToolCall(snippet(&self.content)));
+            let text = snippet(&self.content);
+            return Err(if cut {
+                ModelError::TokenLimit(text)
+            } else {
+                ModelError::NoToolCall(text)
+            });
         };
-        let arguments = parse_arguments(&Value::String(arguments))?;
+        let arguments = match parse_arguments(&Value::String(arguments)) {
+            Err(ModelError::BadArguments(error)) if cut => {
+                return Err(ModelError::TokenLimit(error));
+            }
+            other => other?,
+        };
         Ok(Reply {
             call: ToolCall { name, arguments },
             completion_tokens: self.completion_tokens,
@@ -1653,6 +1703,200 @@ mod tests {
         assert_eq!(served.load(std::sync::atomic::Ordering::SeqCst), 2);
     }
 
+    // Like `serve`, but keeps each request body so a test can see what was asked for.
+    fn serve_recording(
+        answers: Vec<String>,
+    ) -> (String, std::sync::Arc<std::sync::Mutex<Vec<Value>>>) {
+        use std::{
+            io::{Read, Write},
+            net::TcpListener,
+            sync::{Arc, Mutex},
+        };
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let bodies = Arc::new(Mutex::new(Vec::new()));
+        let seen = bodies.clone();
+        std::thread::spawn(move || {
+            for body in answers {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut received = Vec::new();
+                let mut chunk = [0_u8; 4096];
+                let (header_end, length) = loop {
+                    let read = stream.read(&mut chunk).unwrap();
+                    received.extend_from_slice(&chunk[..read]);
+                    if let Some(end) = received.windows(4).position(|window| window == b"\r\n\r\n")
+                    {
+                        let head = String::from_utf8_lossy(&received[..end]).to_lowercase();
+                        let length = head
+                            .lines()
+                            .find_map(|line| line.strip_prefix("content-length:"))
+                            .and_then(|value| value.trim().parse::<usize>().ok())
+                            .unwrap_or(0);
+                        break (end + 4, length);
+                    }
+                    assert!(read > 0);
+                };
+                while received.len() < header_end + length {
+                    let read = stream.read(&mut chunk).unwrap();
+                    assert!(read > 0);
+                    received.extend_from_slice(&chunk[..read]);
+                }
+                seen.lock()
+                    .unwrap()
+                    .push(serde_json::from_slice(&received[header_end..]).unwrap());
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+        });
+        (url, bodies)
+    }
+
+    #[test]
+    fn a_reply_cut_off_by_the_output_limit_is_not_reported_as_a_refusal() {
+        let cut = |message: Value, reason: &str| json!({ "choices": [{ "finish_reason": reason, "message": message }] });
+        let prose = json!({ "content": "The screen shows the Settings app and I need to" });
+        assert!(matches!(
+            parse_reply(&cut(prose.clone(), "length")),
+            Err(ModelError::TokenLimit(text)) if text.contains("Settings app")
+        ));
+        for reason in ["stop", "tool_calls"] {
+            assert!(matches!(
+                parse_reply(&cut(prose.clone(), reason)),
+                Err(ModelError::NoToolCall(_))
+            ));
+        }
+        let broken = json!({ "tool_calls": [{ "function": { "name": "click", "arguments": "{\"x\": 1" } }] });
+        assert!(matches!(
+            parse_reply(&cut(broken.clone(), "length")),
+            Err(ModelError::TokenLimit(_))
+        ));
+        assert!(matches!(
+            parse_reply(&cut(broken, "stop")),
+            Err(ModelError::BadArguments(_))
+        ));
+        let whole = json!({ "tool_calls": [{ "function": { "name": "click", "arguments": "{\"x\": 1}" } }] });
+        assert_eq!(
+            parse_reply(&cut(whole, "length")).unwrap().call.name,
+            "click",
+            "a complete call is kept even when the limit was reached right after it"
+        );
+        assert!(!is_retryable(&ModelError::TokenLimit("cut".into())));
+    }
+
+    #[test]
+    fn a_streamed_reply_cut_off_by_the_output_limit_is_a_token_limit() {
+        let mut stream = Stream::default();
+        stream.feed(event(json!({ "content": "I would click it and then" })).as_bytes());
+        stream.feed(b"data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n");
+        assert!(matches!(
+            stream.finish(None),
+            Err(ModelError::TokenLimit(_))
+        ));
+        let mut stream = Stream::default();
+        stream.feed(event(json!({ "content": "I would click it" })).as_bytes());
+        stream.feed(b"data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n");
+        assert!(matches!(
+            stream.finish(None),
+            Err(ModelError::NoToolCall(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_cut_off_reply_is_asked_again_once_with_more_room() {
+        let cut = json!({ "choices": [{ "finish_reason": "length", "message": { "content": "I need to" } }] });
+        let ok = json!({ "choices": [{ "finish_reason": "tool_calls", "message": { "tool_calls": [{ "function": { "name": "click", "arguments": "{\"x\": 1}" } }] } }] });
+        let (url, bodies) = serve_recording(vec![cut.to_string(), ok.to_string()]);
+        let http = reqwest::Client::builder().no_proxy().build().unwrap();
+        let client = ChatClient {
+            app: None,
+            output_limit: None,
+            http: &http,
+            base_url: &url,
+            api_key: None,
+            model: "m",
+            profile: None,
+            sink: None,
+            no_swap: false,
+            on_loading: None,
+        };
+        let tools = json!([]);
+        let reply = client
+            .call_retrying(&a_click_request(&tools), &mut |_| {})
+            .await
+            .expect("the second request has room to answer");
+        assert_eq!(reply.call.name, "click");
+        let sent = bodies.lock().unwrap();
+        assert_eq!(sent.len(), 2);
+        assert_eq!(
+            sent[0]["max_tokens"], 2048,
+            "the default for an unknown model"
+        );
+        assert_eq!(sent[1]["max_tokens"], TOKEN_LIMIT_RETRY);
+    }
+
+    #[tokio::test]
+    async fn a_second_cut_off_is_reported_and_not_asked_a_third_time() {
+        let cut = json!({ "choices": [{ "finish_reason": "length", "message": { "content": "I need to" } }] });
+        let (url, bodies) = serve_recording(vec![cut.to_string(), cut.to_string()]);
+        let http = reqwest::Client::builder().no_proxy().build().unwrap();
+        let client = ChatClient {
+            app: None,
+            output_limit: None,
+            http: &http,
+            base_url: &url,
+            api_key: None,
+            model: "m",
+            profile: None,
+            sink: None,
+            no_swap: false,
+            on_loading: None,
+        };
+        let tools = json!([]);
+        let error = client
+            .call_retrying(&a_click_request(&tools), &mut |_| {})
+            .await
+            .err()
+            .expect("still cut off");
+        assert!(matches!(error, ModelError::TokenLimit(_)));
+        assert_eq!(bodies.lock().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn a_connection_output_limit_below_the_retry_size_is_not_retried() {
+        let cut = json!({ "choices": [{ "finish_reason": "length", "message": { "content": "I need to" } }] });
+        let (url, bodies) = serve_recording(vec![cut.to_string()]);
+        let http = reqwest::Client::builder().no_proxy().build().unwrap();
+        let client = ChatClient {
+            app: None,
+            output_limit: Some(1000),
+            http: &http,
+            base_url: &url,
+            api_key: None,
+            model: "m",
+            profile: None,
+            sink: None,
+            no_swap: false,
+            on_loading: None,
+        };
+        let tools = json!([]);
+        let error = client
+            .call_retrying(&a_click_request(&tools), &mut |_| {})
+            .await
+            .err()
+            .expect("cut off");
+        assert!(matches!(error, ModelError::TokenLimit(_)));
+        let sent = bodies.lock().unwrap();
+        assert_eq!(
+            sent.len(),
+            1,
+            "a larger request would be capped to the same size"
+        );
+        assert_eq!(sent[0]["max_tokens"], 1000);
+    }
+
     #[tokio::test]
     async fn every_attempt_is_reported_with_its_wait_and_a_retry_is_marked_retried() {
         use crate::model::attempts::Collect;
@@ -1919,7 +2163,7 @@ mod tests {
             off["chat_template_kwargs"],
             json!({ "enable_thinking": false })
         );
-        assert_eq!(off["max_tokens"], 512);
+        assert_eq!(off["max_tokens"], 2048);
         assert!(off.get("stream").is_none());
         assert!(off.get("reasoning_effort").is_none());
 

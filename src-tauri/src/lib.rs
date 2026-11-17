@@ -340,6 +340,7 @@ pub fn run() {
             kit::client::kit_save,
             kit::client::kit_discover,
             kit::client::kit_call_tool,
+            kit::client::kit_call_write_tool,
             kit::client::kit_configuration,
             kit::client::kit_update_configuration,
             kit::client::kit_token_set,

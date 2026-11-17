@@ -829,7 +829,7 @@ mod tests {
     }
 
     #[test]
-    fn the_analysis_asks_for_1500_tokens_and_every_other_call_still_asks_for_512() {
+    fn the_analysis_asks_for_1500_tokens_and_every_other_call_uses_the_agent_default() {
         let tools = Value::Null;
         let mut profile = crate::model::profile::resolve_profile("m", None, None);
         profile.tool_choice_required = crate::model::capabilities::TriState::Yes;
@@ -861,7 +861,7 @@ mod tests {
             background: false,
             http_timeout: None,
         };
-        assert_eq!(chat_body("m", &profile, &plain)["max_tokens"], 512);
+        assert_eq!(chat_body("m", &profile, &plain)["max_tokens"], 2_048);
         let thinking = Request {
             think: true,
             ..plain

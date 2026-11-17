@@ -150,7 +150,7 @@ export function installTauriMock() {
         case 'kit_registry':
           return []
         case 'kit_discover':
-          return { version: 'Mock only', tools: [], unavailable: [] }
+          return { version: 'Mock only', tools: [], blocked: [] }
         case 'kit_token_present':
           return false
         case 'kit_save':

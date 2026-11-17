@@ -417,17 +417,19 @@ async function save() {
 async function refresh() {
   busy.value = true
   try {
-    const result = await invoke<{ version: string; tools: Tool[]; unavailable?: string[] }>(
-      'kit_discover',
-      {
-        config: config.value,
-      },
-    )
+    const result = await invoke<{
+      version: string
+      tools: Tool[]
+      blocked?: { name: string; reason: string }[]
+    }>('kit_discover', {
+      config: config.value,
+    })
     tools.value = result.tools
     status.value = result.tools.length
       ? `${result.version}: ${result.tools.length} supported read-only tools available.`
       : `${result.version}: no supported tools. Check installed time/git plugins and filesystem 0.4.1+. File tools require a server-configured allowed_dir. Unsafe metadata or unsupported schemas remain unavailable.`
-    if (result.unavailable?.length) status.value += ` ${result.unavailable.join('; ')}`
+    if (result.blocked?.length)
+      status.value += ` ${result.blocked.length} more tools are listed but cannot run yet (see the Playground).`
   } catch (error) {
     tools.value = []
     status.value = String(error)

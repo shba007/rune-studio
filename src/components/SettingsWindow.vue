@@ -18,6 +18,7 @@ import { useSectionHistory } from '@/composables/useSectionHistory'
 import TitleBar from './TitleBar.vue'
 import SettingsTools from './SettingsTools.vue'
 import InferCatalogEditor from './InferCatalogEditor.vue'
+import ModelRuntimeSettings from './ModelRuntimeSettings.vue'
 import SettingsConnectionModels from './SettingsConnectionModels.vue'
 import SettingsVisualAnalysis from './SettingsVisualAnalysis.vue'
 import SettingsGoalContext from './SettingsGoalContext.vue'
@@ -187,6 +188,7 @@ onBeforeUnmount(() => {
               <SettingsConnectionModels :agent="agent" :draft="draft">
                 <SettingsGeneral :agent="agent" :draft="draft" view="models" />
               </SettingsConnectionModels>
+              <ModelRuntimeSettings :models="agent.backend.value?.models" />
               <InferCatalogEditor />
               <SettingsTools
                 :tool-calls="

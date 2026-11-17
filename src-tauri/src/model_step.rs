@@ -130,6 +130,7 @@ fn event_error(error: String) -> String {
         "the model server answered ",
         "the model's reply was not understood",
         "the model did not call a tool",
+        "the model's reply reached the output limit",
         "the model's tool arguments were not valid JSON",
     ] {
         if error.starts_with(category) {

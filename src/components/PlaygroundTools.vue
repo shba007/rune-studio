@@ -21,14 +21,21 @@ interface Config {
   endpoint: string
   selected: string[]
 }
+interface Blocked {
+  name: string
+  description: string
+  kind: 'writes' | 'unverified' | 'unavailable'
+  reason: string
+  inputSchema?: KitTool['inputSchema']
+}
 interface Discovery {
   tools: KitTool[]
-  unavailable: string[]
+  blocked?: Blocked[]
 }
 withDefaults(defineProps<{ sidebarOpen?: boolean }>(), { sidebarOpen: true })
 const selectedNames = ref<string[]>([])
 const tools = ref<KitTool[]>([])
-const unavailable = ref<string[]>([])
+const blocked = ref<Blocked[]>([])
 const selected = ref('')
 const loading = ref(false)
 const running = ref(false)
@@ -46,15 +53,26 @@ interface Entry {
   name: string
   label: string
   tool?: KitTool
-  reason?: string
+  blocked?: Blocked
 }
+const BADGES: Record<Blocked['kind'], string> = {
+  writes: 'Writes',
+  unverified: 'Unverified',
+  unavailable: 'Not enabled',
+}
+const badge = (entry: Entry) =>
+  entry.blocked
+    ? BADGES[entry.blocked.kind]
+    : selectedNames.value.includes(entry.name)
+      ? 'Runnable'
+      : 'Off'
 const groups = computed(() => {
   const entries: Omit<Entry, 'label'>[] = [
     ...tools.value.map((tool) => ({ id: 'tool:' + tool.name, name: tool.name, tool })),
-    ...unavailable.value.map((reason, index) => ({
-      id: 'unavailable:' + index,
-      name: reason.split(':')[0] || reason,
-      reason,
+    ...blocked.value.map((item) => ({
+      id: 'blocked:' + item.name,
+      name: item.name,
+      blocked: item,
     })),
   ]
   const byNamespace = new Map<string, Entry[]>()
@@ -71,11 +89,23 @@ const picked = computed(() =>
   groups.value.flatMap((group) => group.entries).find((entry) => entry.id === selected.value),
 )
 const chosen = computed(() => picked.value?.tool)
+// A write tool is shown with the same form, but only runs after an explicit confirmation.
+const writer = computed(() => {
+  const blocked = picked.value?.blocked
+  return blocked?.kind === 'writes' && blocked.inputSchema
+    ? { name: blocked.name, description: blocked.description, inputSchema: blocked.inputSchema }
+    : undefined
+})
+const formTool = computed(() => chosen.value ?? writer.value)
 const canRun = computed(
   () => !!chosen.value && selectedNames.value.includes(chosen.value.name) && !running.value,
 )
-const form = computed(() => toolForm(chosen.value?.inputSchema))
+const canReview = computed(() => !!writer.value && !running.value)
+const form = computed(() => toolForm(formTool.value?.inputSchema))
+const confirming = ref<{ name: string; args: Record<string, unknown> } | null>(null)
+const confirmingText = computed(() => JSON.stringify(confirming.value?.args ?? {}, null, 2))
 watch(selected, () => {
+  confirming.value = null
   values.value = {}
   raw.value = '{}'
   result.value = null
@@ -96,7 +126,7 @@ async function discover() {
   loading.value = true
   error.value = ''
   tools.value = []
-  unavailable.value = []
+  blocked.value = []
   selected.value = ''
   result.value = null
   try {
@@ -108,7 +138,7 @@ async function discover() {
     const discovery = await invoke<Discovery>('kit_discover', { config })
     selectedNames.value = config.selected
     tools.value = discovery.tools
-    unavailable.value = discovery.unavailable ?? []
+    blocked.value = discovery.blocked ?? []
     selected.value = groups.value.flatMap((group) => group.entries)[0]?.id ?? ''
   } catch (cause) {
     error.value = String(cause)
@@ -116,15 +146,28 @@ async function discover() {
     loading.value = false
   }
 }
-async function run() {
-  if (!chosen.value || !canRun.value) return
-  const name = chosen.value.name
+function review() {
+  if (!writer.value || !canReview.value) return
+  try {
+    const args = toolArguments(form.value, values.value, raw.value)
+    result.value = null
+    confirming.value = { name: writer.value.name, args }
+  } catch (cause) {
+    result.value = { ok: false, text: String(cause), ms: 0 }
+  }
+}
+async function run(confirmed?: { name: string; args: Record<string, unknown> }) {
+  if (!confirmed && (!chosen.value || !canRun.value)) return
+  const name = confirmed?.name ?? chosen.value!.name
   const started = performance.now()
   running.value = true
   result.value = null
+  confirming.value = null
   try {
-    const args = toolArguments(form.value, values.value, raw.value)
-    const output = await invoke<ToolCallResult>('kit_call_tool', { name, args })
+    const args = confirmed?.args ?? toolArguments(form.value, values.value, raw.value)
+    const output = confirmed
+      ? await invoke<ToolCallResult>('kit_call_write_tool', { name, args, confirmed: true })
+      : await invoke<ToolCallResult>('kit_call_tool', { name, args })
     result.value = {
       ok: true,
       text: toolResultText(output.text),
@@ -171,7 +214,7 @@ onMounted(discover)
             :selected="selected === entry.id"
             :disabled="running"
             :title="entry.name"
-            :class="entry.reason ? '!text-rune-text-3' : ''"
+            :class="entry.blocked ? '!text-rune-text-3' : ''"
             @click="selected = entry.id"
           >
             <AppIcon name="plug" />
@@ -181,11 +224,7 @@ onMounted(discover)
               class="text-rune-caption text-rune-text-3"
               >View</span
             >
-            <span
-              v-if="entry.reason || !selectedNames.includes(entry.name)"
-              class="text-rune-caption text-rune-text-3"
-              >{{ entry.reason ? 'Unavailable' : 'Off' }}</span
-            >
+            <span class="text-rune-caption text-rune-text-3">{{ badge(entry) }}</span>
           </RuneNavItem>
         </section>
       </div>
@@ -208,14 +247,24 @@ onMounted(discover)
         </p>
         <p v-if="error" role="alert" class="m-0 text-rune-body text-error">{{ error }}</p>
         <p
-          v-else-if="!loading && !tools.length && !unavailable.length"
+          v-else-if="!loading && !tools.length && !blocked.length"
           class="m-0 text-rune-body text-rune-text-2"
         >
           No tools discovered. Check Tools settings.
         </p>
-        <p v-if="picked?.reason" class="m-0 text-rune-body text-rune-text-2">{{ picked.reason }}</p>
+        <p v-if="picked?.blocked" class="m-0 text-rune-body text-rune-text-2">
+          {{ picked.blocked.description }}
+        </p>
+        <p v-if="picked?.blocked" role="status" class="m-0 text-rune-body text-attention">
+          {{ BADGES[picked.blocked.kind] }}: {{ picked.blocked.reason }}.
+        </p>
         <p v-if="chosen" class="m-0 text-rune-body text-rune-text-2">{{ chosen.description }}</p>
-        <form v-if="chosen" id="tool-arguments" class="flex flex-col gap-4" @submit.prevent="run">
+        <form
+          v-if="formTool"
+          id="tool-arguments"
+          class="flex flex-col gap-4"
+          @submit.prevent="writer ? review() : run()"
+        >
           <label v-if="form.raw" class="flex flex-col gap-2 text-rune-body">
             Arguments (JSON) *
             <textarea
@@ -259,7 +308,38 @@ onMounted(discover)
           </template>
         </form>
       </div>
-      <div v-if="chosen" class="shrink-0 px-6 pb-6">
+      <div v-if="writer" class="shrink-0 px-6 pb-6">
+        <div
+          v-if="confirming"
+          role="alertdialog"
+          aria-label="Confirm change"
+          class="mb-3 flex flex-col gap-3 rounded-rune-tile bg-rune-sunken p-3"
+        >
+          <p class="m-0 text-rune-body text-attention">
+            This changes the real folder now. Kit does not stage or undo it.
+          </p>
+          <p class="m-0 text-rune-caption text-rune-text-2">{{ confirming.name }}</p>
+          <pre
+            class="m-0 max-h-48 overflow-auto text-rune-caption break-words whitespace-pre-wrap"
+            >{{ confirmingText }}</pre>
+          <div class="flex gap-2">
+            <RuneButton variant="primary" size="sm" @click="run(confirming)"
+              >Confirm and run</RuneButton
+            >
+            <RuneButton variant="ghost" size="sm" @click="confirming = null">Cancel</RuneButton>
+          </div>
+        </div>
+        <RuneButton
+          v-else
+          type="submit"
+          form="tool-arguments"
+          variant="primary"
+          class="w-full"
+          :disabled="!canReview"
+          >{{ running ? 'Running…' : 'Review change' }}</RuneButton
+        >
+      </div>
+      <div v-else-if="chosen" class="shrink-0 px-6 pb-6">
         <p
           v-if="!selectedNames.includes(chosen.name)"
           class="mb-3 text-rune-caption text-rune-text-2"

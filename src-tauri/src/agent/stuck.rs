@@ -212,6 +212,124 @@ pub fn warning(unchanged: u32) -> Option<String> {
     (unchanged >= WARN_AFTER).then(|| crate::prompts::agent_stuck(unchanged))
 }
 
+/// The same tool call, with the same arguments, failing again and again. After two failures
+/// the third identical call is not run: the model is told once, and a repeat after that
+/// notice stops the step. Changed arguments are a different call.
+#[derive(Default)]
+pub struct RepeatWatch {
+    last: Option<String>,
+    failures: u32,
+    warned: bool,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Repeat {
+    Run,
+    Warn,
+    Stop,
+}
+
+const REPEAT_AFTER: u32 = 2;
+
+impl RepeatWatch {
+    pub fn key(name: &str, arguments: &serde_json::Value) -> String {
+        format!("{name} {arguments}")
+    }
+
+    pub fn before(&mut self, key: &str) -> Repeat {
+        if self.last.as_deref() != Some(key) || self.failures < REPEAT_AFTER {
+            return Repeat::Run;
+        }
+        if self.warned {
+            return Repeat::Stop;
+        }
+        self.warned = true;
+        Repeat::Warn
+    }
+
+    pub fn failed(&mut self, key: &str) {
+        if self.last.as_deref() == Some(key) {
+            self.failures += 1;
+        } else {
+            self.last = Some(key.to_string());
+            self.failures = 1;
+            self.warned = false;
+        }
+    }
+
+    pub fn reset(&mut self) {
+        *self = Self::default();
+    }
+}
+
+#[cfg(test)]
+mod repeat_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn key(path: &str) -> String {
+        RepeatWatch::key(
+            "kit__rune-filesystem__read_text_file",
+            &json!({ "path": path }),
+        )
+    }
+
+    #[test]
+    fn the_third_identical_failing_call_is_not_run_and_a_fourth_stops_the_step() {
+        let mut watch = RepeatWatch::default();
+        let call = key("[FILE] Expenses.txt");
+        assert_eq!(watch.before(&call), Repeat::Run);
+        watch.failed(&call);
+        assert_eq!(
+            watch.before(&call),
+            Repeat::Run,
+            "one failure is not a pattern"
+        );
+        watch.failed(&call);
+        assert_eq!(watch.before(&call), Repeat::Warn);
+        assert_eq!(
+            watch.before(&call),
+            Repeat::Stop,
+            "repeated after the notice"
+        );
+    }
+
+    #[test]
+    fn changed_arguments_are_a_different_call() {
+        let mut watch = RepeatWatch::default();
+        let bad = key("[FILE] Expenses.txt");
+        watch.failed(&bad);
+        watch.failed(&bad);
+        assert_eq!(watch.before(&bad), Repeat::Warn);
+        let fixed = key("Expenses.txt");
+        assert_eq!(watch.before(&fixed), Repeat::Run);
+        watch.failed(&fixed);
+        assert_eq!(
+            watch.before(&bad),
+            Repeat::Run,
+            "the earlier streak was replaced"
+        );
+    }
+
+    #[test]
+    fn a_success_or_another_kind_of_action_clears_the_streak() {
+        let mut watch = RepeatWatch::default();
+        let call = key("a.txt");
+        watch.failed(&call);
+        watch.failed(&call);
+        watch.reset();
+        assert_eq!(watch.before(&call), Repeat::Run);
+        let other = RepeatWatch::key("other_tool", &json!({ "path": "a.txt" }));
+        watch.failed(&call);
+        watch.failed(&call);
+        assert_eq!(
+            watch.before(&other),
+            Repeat::Run,
+            "the same arguments on another tool are not the same call"
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
