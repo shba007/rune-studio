@@ -169,6 +169,22 @@ pub fn max_pill_height(work_area_physical: f64, scale: f64) -> f64 {
 }
 
 fn resize_keeping_corner(app: &AppHandle, width: Option<f64>, height: f64) -> tauri::Result<()> {
+    // A phone window cannot be moved or resized; the app there is full screen.
+    #[cfg(mobile)]
+    {
+        let _ = (app, width, height);
+        return Ok(());
+    }
+    #[cfg(desktop)]
+    resize_keeping_corner_on_desktop(app, width, height)
+}
+
+#[cfg(desktop)]
+fn resize_keeping_corner_on_desktop(
+    app: &AppHandle,
+    width: Option<f64>,
+    height: f64,
+) -> tauri::Result<()> {
     let Some(window) = main_window(app) else {
         return Ok(());
     };

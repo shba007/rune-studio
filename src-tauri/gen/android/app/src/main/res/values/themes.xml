@@ -3,4 +3,12 @@
     <style name="Theme.rune_studio" parent="Theme.Material3.DayNight.NoActionBar">
         <!-- Customize your theme here. -->
     </style>
+
+    <!-- Rune opens over the current app: only the orb is drawn, the rest is see-through. -->
+    <style name="Theme.rune_studio.Overlay" parent="Theme.rune_studio">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowShowWallpaper">false</item>
+    </style>
 </resources>

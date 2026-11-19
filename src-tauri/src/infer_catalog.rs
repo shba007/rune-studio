@@ -633,6 +633,7 @@ pub(crate) fn configured_role(catalog: &serde_json::Value, role: &str) -> Option
         .map(str::to_owned)
 }
 
+#[cfg(all(windows, feature = "embedded-infer"))]
 pub(crate) async fn select_agent(state: &AppState, model: &str) -> Result<(), String> {
     let (settings, key) = settings::snapshot_with_api_key(&state.settings);
     select_agent_at(&settings.base_url, key.as_deref(), model).await

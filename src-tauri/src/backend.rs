@@ -178,7 +178,7 @@ mod tests {
             ] {
                 let (mut stream, _) = listener.accept().unwrap();
                 let mut request = [0; 2048];
-                stream.read(&mut request).unwrap();
+                assert!(stream.read(&mut request).unwrap() > 0);
                 write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).unwrap();
             }
         });

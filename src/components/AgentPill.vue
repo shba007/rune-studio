@@ -287,6 +287,11 @@ function onOrb() {
   if (hint.value.action === 'stop') void agent.stop()
   else void agent.toggleOpen()
 }
+
+/** On Android Rune opens over the current app; a tap on the see-through area sends it away. */
+function leaveOverlay() {
+  ;(window as { RuneHost?: { close(): void } }).RuneHost?.close()
+}
 </script>
 
 <template>
@@ -294,6 +299,7 @@ function onOrb() {
     class="flex h-full w-full items-end justify-end"
     :style="{ '--accent': darkAccent ?? 'var(--color-voice)' }"
     @pointerdown="agent.noteActivity()"
+    @pointerdown.self="leaveOverlay"
     @keydown="agent.noteActivity()"
   >
     <div

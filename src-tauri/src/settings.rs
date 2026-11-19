@@ -37,7 +37,7 @@ fn default_connection(base_url: &str) -> Connection {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelRoles {
     #[serde(default)]
@@ -52,19 +52,6 @@ pub struct ModelRoles {
     pub decision: String,
     #[serde(default)]
     pub advisor: String,
-}
-
-impl Default for ModelRoles {
-    fn default() -> Self {
-        Self {
-            agent: String::new(),
-            verifier: String::new(),
-            analysis: String::new(),
-            voice: String::new(),
-            decision: String::new(),
-            advisor: String::new(),
-        }
-    }
 }
 
 impl ModelRoles {

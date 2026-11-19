@@ -25,7 +25,8 @@
     "tauri:dev": "bash scripts/dev.sh",
     "tauri:build": "tauri build",
     "tauri:dev:mobile": "tauri android dev",
-    "tauri:build:mobile": "tauri android build"
+    "tauri:build:mobile": "tauri android build",
+    "android:build": "bash scripts/android.sh"
   },
   "dependencies": {
     "@dotenvx/dotenvx": "^2.38.0",
