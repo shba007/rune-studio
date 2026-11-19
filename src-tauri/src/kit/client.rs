@@ -977,6 +977,18 @@ async fn call_tool_from_settings(
     .map_err(|e| e.to_string())?
 }
 
+/// A read-only call whose result stays on this device, so it is returned
+/// whole: not redacted for a trace and not cut to the model's size limit.
+pub fn call_value(
+    config: &Config,
+    name: &str,
+    args: &Value,
+    cancel: &CancelToken,
+) -> Result<Value, String> {
+    call_result(config, name, args, cancel).map(|(result, _)| result)
+}
+
+#[cfg(test)]
 pub fn call(
     config: &Config,
     name: &str,

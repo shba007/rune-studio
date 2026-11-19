@@ -20,6 +20,7 @@ const block = (patch: Partial<FocusBlock> = {}): FocusBlock => ({
   finishedMs: null,
   outcome: null,
   taskId: null,
+  handedOffMs: null,
   ...patch,
 })
 
@@ -83,6 +84,7 @@ const meetingAt = (startMin: number, lengthMin = 30) => ({
   title: 'Meeting',
   startMs: startMin * 60_000,
   endMs: (startMin + lengthMin) * 60_000,
+  source: 'manual' as const,
 })
 
 it('computes free time like the backend: gap minus a five minute buffer', async () => {
@@ -119,4 +121,29 @@ it('turns a clock time into today, or tomorrow when it has passed', async () => 
   expect(startAt('25:00', now)).toBeNull()
   expect(startAt('noon', now)).toBeNull()
   expect(startAt('', now)).toBeNull()
+})
+const student = {
+  id: 'student',
+  label: 'Student',
+  summary: '',
+  defaultMinutes: 25,
+  capMinutes: 50,
+  bufferMinutes: 10,
+  wrapUpMinutes: 10,
+  extendMinutes: 5,
+  doneWhenLabel: 'What I will finish',
+}
+
+it('reads the buffer and the wrap-up time from the preset', async () => {
+  const { freeMs, wrapUpFor } = await import('./focus')
+  expect(freeMs([meetingAt(40)], 0, student)).toBe(30 * 60_000)
+  expect(wrapUpFor([meetingAt(40)], 29 * 60_000, student)).toBeUndefined()
+  expect(wrapUpFor([meetingAt(40)], 30 * 60_000, student)?.title).toBe('Meeting')
+})
+
+it('stops the length stepper at the preset cap', async () => {
+  const { stepMinutes } = await import('./focus')
+  expect(stepMinutes(45, 1, 50)).toBe(50)
+  expect(stepMinutes(50, 1, 50)).toBe(50)
+  expect(stepMinutes(5, -1, 50)).toBe(1)
 })

@@ -10,7 +10,7 @@ Return three options in this order:
 For each option:
 - title: a short imperative phrase naming the work, at most 80 characters ("Draft the intro section").
 - doneWhen: one observable line that tells the user the block is finished ("Intro is written and saved"). Never "work on it" or "make progress".
-- minutes: a whole number from 5 to 120. The best block is usually 25 to 50. Shorter is shorter than the best block and longer is longer. Use `defaultMinutes` as a starting point, not a rule. If `freeMinutes` is present, the user has only that long before their next commitment: no option may be longer than it.
+- minutes: a whole number from 5 up to `maxMinutes`. The best block is usually near `defaultMinutes`. Shorter is shorter than the best block and longer is longer. Use `defaultMinutes` as a starting point, not a rule. If `freeMinutes` is present, the user has only that long before their next commitment: no option may be longer than it.
 
 If `tasks` is present, they are the user's waiting tasks, most urgent first (`dueInMinutes` below zero means overdue, `minutesLeft` is the effort left). When the goal is vague, such as "get something done", base the best block on the first task. When the goal names its own work, follow the goal and ignore `tasks`.
 

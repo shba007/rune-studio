@@ -10,8 +10,8 @@ use serde_json::{Value, json};
 use tauri::{AppHandle, Manager};
 
 use crate::events::AppState;
-use crate::focus::Focus;
-use crate::focus_time::{self, MINUTE};
+use crate::focus::{Focus, Store};
+use crate::focus_time::{self, MINUTE, Preset};
 use crate::focus_urgency::Ranked;
 
 const GOAL_MAX: usize = 500;
@@ -121,12 +121,13 @@ fn tasks_context(urgent: &[Ranked], now: u64) -> Value {
         .collect()
 }
 
-/// Keeps every option inside the free time and drops the ones that become
-/// the same block once shortened.
-fn fit(options: Vec<Proposal>, free: Option<u64>) -> Vec<Proposal> {
+/// Keeps every option inside the preset's longest block and the free time,
+/// and drops the ones that become the same block once shortened.
+fn fit(options: Vec<Proposal>, free: Option<u64>, preset: &Preset) -> Vec<Proposal> {
     let mut fitted: Vec<Proposal> = Vec::new();
     for mut option in options {
-        let Some(minutes) = focus_time::fit_minutes(option.minutes, free) else {
+        let capped = option.minutes.min(preset.cap_minutes);
+        let Some(minutes) = focus_time::fit_minutes(capped, free) else {
             continue;
         };
         option.minutes = minutes;
@@ -140,7 +141,7 @@ fn fit(options: Vec<Proposal>, free: Option<u64>) -> Vec<Proposal> {
     fitted
 }
 
-fn fallback(goal: &str, why: &str, free: Option<u64>) -> Suggestion {
+fn fallback(goal: &str, why: &str, free: Option<u64>, preset: &Preset) -> Suggestion {
     let first_line = goal.lines().next().unwrap_or("");
     Suggestion {
         source: "fallback",
@@ -148,7 +149,7 @@ fn fallback(goal: &str, why: &str, free: Option<u64>) -> Suggestion {
         options: vec![Proposal {
             title: cut(first_line, TITLE_MAX),
             done_when: String::new(),
-            minutes: focus_time::fit_minutes(DEFAULT_MINUTES, free).unwrap_or(1),
+            minutes: focus_time::fit_minutes(preset.default_minutes, free).unwrap_or(1),
         }],
     }
 }
@@ -157,6 +158,7 @@ async fn ask(
     app: &AppHandle,
     goal: &str,
     free: Option<u64>,
+    preset: &Preset,
     urgent: &[Ranked],
     now: u64,
 ) -> Result<Value, String> {
@@ -178,7 +180,11 @@ async fn ask(
         no_swap: false,
         on_loading: None,
     };
-    let mut user = json!({"goal": goal, "defaultMinutes": DEFAULT_MINUTES});
+    let mut user = json!({
+        "goal": goal,
+        "defaultMinutes": preset.default_minutes,
+        "maxMinutes": preset.cap_minutes,
+    });
     if let Some(free) = free {
         user["freeMinutes"] = json!(free / MINUTE);
     }
@@ -208,9 +214,12 @@ pub async fn focus_suggest(app: AppHandle, goal: String) -> Result<Suggestion, S
         return Err(format!("Keep it to {GOAL_MAX} characters or fewer."));
     }
     let now = crate::focus::now_ms();
-    let free = app
-        .try_state::<Focus>()
-        .and_then(|focus| focus.free_ms(now));
+    let focus = app.try_state::<Focus>();
+    let preset = focus
+        .as_ref()
+        .and_then(|focus| focus.with(Store::preset).ok())
+        .unwrap_or_default();
+    let free = focus.as_ref().and_then(|focus| focus.free_ms(now));
     if free.is_some_and(|free| free < MINUTE) {
         return Err(
             "You have no free time before your next commitment. Remove it, or start a block yourself."
@@ -218,9 +227,13 @@ pub async fn focus_suggest(app: AppHandle, goal: String) -> Result<Suggestion, S
         );
     }
     let urgent = crate::focus::urgent_general_tasks(&app, now, 3);
-    let answer = match tokio::time::timeout(ASK_TIMEOUT, ask(&app, &goal, free, &urgent, now)).await
+    let answer = match tokio::time::timeout(
+        ASK_TIMEOUT,
+        ask(&app, &goal, free, &preset, &urgent, now),
+    )
+    .await
     {
-        Ok(Ok(value)) => parse(&value).map(|options| fit(options, free)),
+        Ok(Ok(value)) => parse(&value).map(|options| fit(options, free, &preset)),
         Ok(Err(error)) => Err(error),
         Err(_) => Err("the model took too long".into()),
     };
@@ -236,6 +249,7 @@ pub async fn focus_suggest(app: AppHandle, goal: String) -> Result<Suggestion, S
                 &goal,
                 "The model could not suggest a block, so this is a plain block.",
                 free,
+                &preset,
             )
         }
     })
@@ -311,6 +325,7 @@ mod tests {
             "  Write the quarterly update\nand send it",
             "No model.",
             None,
+            &Preset::default(),
         );
         assert_eq!(plain.source, "fallback");
         assert_eq!(plain.note.as_deref(), Some("No model."));
@@ -354,7 +369,7 @@ mod tests {
                 minutes: 75,
             },
         ];
-        let fitted = fit(options.clone(), Some(35 * MINUTE));
+        let fitted = fit(options.clone(), Some(35 * MINUTE), &Preset::default());
         let shape: Vec<_> = fitted
             .iter()
             .map(|o| (o.title.as_str(), o.minutes))
@@ -364,13 +379,46 @@ mod tests {
             [("Draft", 35), ("Outline", 20)],
             "both long drafts became one"
         );
-        assert_eq!(fit(options.clone(), None).len(), 3);
-        assert!(fit(options, Some(30_000)).is_empty());
+        assert_eq!(fit(options.clone(), None, &Preset::default()).len(), 3);
+        assert!(fit(options, Some(30_000), &Preset::default()).is_empty());
+    }
+
+    #[test]
+    fn a_preset_caps_every_suggested_block_and_sets_the_plain_block_length() {
+        let student = Preset::by_id("student").unwrap();
+        let founder = Preset::by_id("founder").unwrap();
+        let options = vec![
+            Proposal {
+                title: "Deep".into(),
+                done_when: String::new(),
+                minutes: 90,
+            },
+            Proposal {
+                title: "Deeper".into(),
+                done_when: String::new(),
+                minutes: 100,
+            },
+        ];
+        let minutes: Vec<_> = fit(options.clone(), None, &student)
+            .iter()
+            .map(|o| o.minutes)
+            .collect();
+        assert_eq!(minutes, [50, 50], "different blocks stay, each held to 50");
+        assert_eq!(fit(options, None, &founder)[0].minutes, 45);
+        assert_eq!(
+            fallback("Write", "x", None, &founder).options[0].minutes,
+            15
+        );
     }
 
     #[test]
     fn the_plain_block_fits_free_time_too() {
-        let plain = fallback("Write", "No model.", Some(12 * MINUTE + 30_000));
+        let plain = fallback(
+            "Write",
+            "No model.",
+            Some(12 * MINUTE + 30_000),
+            &Preset::default(),
+        );
         assert_eq!(plain.options[0].minutes, 12);
     }
 

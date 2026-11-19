@@ -4,6 +4,8 @@ import { useIntervalFn } from '@vueuse/core'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import {
+  DEFAULT_PRESET,
+  type CalendarReport,
   EMPTY_FOCUS,
   freeMs,
   isOver,
@@ -34,9 +36,10 @@ export function useFocus() {
   const active = computed(() => block.value !== null)
   const remaining = computed(() => (block.value ? remainingMs(block.value, now.value) : 0))
   const commitments = computed(() => snapshot.value.commitments)
-  const free = computed(() => freeMs(commitments.value, now.value))
+  const preset = computed(() => snapshot.value.preset ?? DEFAULT_PRESET)
+  const free = computed(() => freeMs(commitments.value, now.value, preset.value))
   const wrapUp = computed(() =>
-    block.value ? (wrapUpFor(commitments.value, now.value) ?? null) : null,
+    block.value ? (wrapUpFor(commitments.value, now.value, preset.value) ?? null) : null,
   )
   const over = computed(() => (block.value ? isOver(block.value, now.value) : false))
 
@@ -98,9 +101,28 @@ export function useFocus() {
   }
 
   const extend = () => call('focus_extend')
+  // The request goes through the normal intake, so the user still reviews and
+  // approves it there; this only sends it.
+  const handOff = () => call('focus_hand_off')
   const addCommitment = (title: string, startMs: number, minutes: number) =>
     call('focus_commitment_add', { title, startMs, minutes })
   const removeCommitment = (id: number) => call('focus_commitment_remove', { id })
+
+  // The calendar sync also runs by itself every 15 minutes; this is the
+  // "now" button. It reports instead of throwing: no calendar is normal.
+  const calendar = ref<CalendarReport | null>(null)
+  async function syncCalendar() {
+    if (pending.value) return
+    pending.value = true
+    try {
+      calendar.value = await invoke<CalendarReport>('focus_calendar_sync')
+    } catch (e) {
+      calendar.value = { state: 'unavailable', events: 0, message: String(e) }
+    } finally {
+      pending.value = false
+    }
+    await refresh()
+  }
 
   // Finishing keeps the card open on the start form, whose list of recent
   // blocks confirms what was just logged.
@@ -110,18 +132,45 @@ export function useFocus() {
     return finished
   }
 
+  // Hands-free: the global hotkey opens the card, and the microphone can fill
+  // in the goal. `hotkeyTick` lets the card move the keyboard focus each time
+  // the hotkey is pressed, even when the card is already open.
+  const hotkeyTick = ref(0)
+  const dictating = ref(false)
+  const dictated = ref<{ text: string; n: number } | null>(null)
+  async function setDictation(on: boolean) {
+    if (dictating.value === on) return true
+    error.value = ''
+    try {
+      await invoke('focus_dictation_set', { on })
+      dictating.value = on
+      return true
+    } catch (e) {
+      error.value = String(e)
+      return false
+    }
+  }
+
   const off: UnlistenFn[] = []
   let disposed = false
-  onMounted(async () => {
+  async function on<T>(name: string, run: (payload: T) => void) {
     try {
-      const stop = await listen<FocusSnapshot>('focus_state_changed', (event) => {
-        snapshot.value = event.payload
-      })
+      const stop = await listen<T>(name, (event) => run(event.payload))
       if (disposed) stop()
       else off.push(stop)
     } catch (e) {
       error.value = String(e)
     }
+  }
+  onMounted(async () => {
+    await on<FocusSnapshot>('focus_state_changed', (payload) => (snapshot.value = payload))
+    await on<unknown>('focus_hotkey', () => {
+      formOpen.value = true
+      hotkeyTick.value++
+    })
+    await on<string>('focus_dictated', (text) => {
+      dictated.value = { text, n: (dictated.value?.n ?? 0) + 1 }
+    })
     await refresh()
   })
   onBeforeUnmount(() => {
@@ -136,11 +185,19 @@ export function useFocus() {
     remaining,
     over,
     commitments,
+    preset,
     free,
     wrapUp,
     extend,
+    handOff,
     addCommitment,
     removeCommitment,
+    hotkeyTick,
+    dictating,
+    dictated,
+    setDictation,
+    calendar,
+    syncCalendar,
     now,
     error,
     pending,

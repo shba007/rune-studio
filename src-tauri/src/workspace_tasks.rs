@@ -1,3 +1,5 @@
+#[cfg(mobile)]
+use crate::platform::WindowShim as _;
 use crate::{
     events::AppState,
     intake,

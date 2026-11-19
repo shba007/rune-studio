@@ -143,6 +143,12 @@ pub async fn handle(app: &AppHandle, utterance: Vec<i16>) {
     match result {
         Ok(Some(listened)) => {
             if let Intent::Say(said) = &listened.intent
+                && crate::focus::take_dictation(app, said)
+            {
+                heard(app, said, "Added to your focus goal");
+                return;
+            }
+            if let Intent::Say(said) = &listened.intent
                 && !events::agent_state(app).is_running()
                 && events::agent_state(app) != AgentState::AwaitingConfirm
             {

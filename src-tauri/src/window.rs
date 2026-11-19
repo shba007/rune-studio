@@ -1,3 +1,5 @@
+#[cfg(mobile)]
+use crate::platform::WindowShim as _;
 use crate::sync::LockExt;
 use serde::Deserialize;
 use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, WebviewWindow};

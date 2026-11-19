@@ -2,7 +2,12 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, expect, it, vi } from 'vite-plus/test'
 
 import { closeFocusForm, openFocusForm, useFocus } from '@/composables/useFocus'
-import type { FocusBlock, FocusCommitment, FocusSnapshot } from '@/config/focus'
+import {
+  EMPTY_FOCUS,
+  type FocusBlock,
+  type FocusCommitment,
+  type FocusSnapshot,
+} from '@/config/focus'
 
 import FocusCard from './FocusCard.vue'
 
@@ -10,9 +15,18 @@ const api = vi.hoisted(() => ({
   invoke: vi.fn<(command: string, args?: Record<string, unknown>) => Promise<unknown>>(),
 }))
 vi.mock('@tauri-apps/api/core', () => ({ invoke: api.invoke }))
-vi.mock('@tauri-apps/api/event', () => ({
-  listen: vi.fn<() => Promise<() => void>>(async () => () => {}),
+const events = vi.hoisted(() => ({
+  handlers: new Map<string, (event: { payload: unknown }) => void>(),
 }))
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn<
+    (name: string, handler: (event: { payload: unknown }) => void) => Promise<() => void>
+  >(async (name, handler) => {
+    events.handlers.set(name, handler)
+    return () => events.handlers.delete(name)
+  }),
+}))
+const fire = (name: string, payload: unknown = null) => events.handlers.get(name)?.({ payload })
 
 const running = (patch: Partial<FocusBlock> = {}): FocusBlock => ({
   id: 1,
@@ -24,35 +38,45 @@ const running = (patch: Partial<FocusBlock> = {}): FocusBlock => ({
   finishedMs: null,
   outcome: null,
   taskId: null,
+  handedOffMs: null,
   ...patch,
 })
 const focusing = (block = running(), commitments: FocusCommitment[] = []): FocusSnapshot => ({
+  ...EMPTY_FOCUS,
   state: 'focusing',
   block,
   recent: [],
   commitments,
 })
 const idle = (recent: FocusBlock[] = [], commitments: FocusCommitment[] = []): FocusSnapshot => ({
+  ...EMPTY_FOCUS,
   state: 'idle',
   block: null,
   recent,
   commitments,
 })
 
-async function mountCard(initial: FocusSnapshot, reply?: (command: string) => FocusSnapshot) {
+async function mountCard(
+  initial: FocusSnapshot,
+  reply?: (command: string) => FocusSnapshot,
+  attachTo?: HTMLElement,
+) {
   api.invoke.mockReset().mockImplementation(async (command) => {
     if (command === 'focus_snapshot') return initial
     return reply?.(command) ?? initial
   })
   let focus!: ReturnType<typeof useFocus>
-  const wrapper = mount({
-    components: { FocusCard },
-    setup() {
-      focus = useFocus()
-      return { focus }
+  const wrapper = mount(
+    {
+      components: { FocusCard },
+      setup() {
+        focus = useFocus()
+        return { focus }
+      },
+      template: '<FocusCard :focus="focus" />',
     },
-    template: '<FocusCard :focus="focus" />',
-  })
+    { attachTo },
+  )
   await flushPromises()
   return { wrapper, focus }
 }
@@ -248,6 +272,7 @@ const meeting = (inMinutes: number, id = 1): FocusCommitment => ({
   title: 'Meeting',
   startMs: Date.now() + inMinutes * 60_000,
   endMs: Date.now() + (inMinutes + 30) * 60_000,
+  source: 'manual',
 })
 
 it('shows free time until the next commitment, buffer kept clear', async () => {
@@ -332,4 +357,239 @@ it('suggests from a new goal when the title was edited after a suggestion', asyn
   await flushPromises()
   const goals = calls('focus_suggest').map(([, args]) => (args as { goal: string }).goal)
   expect(goals.at(-1)).toBe('plan the offsite')
+})
+const studentPreset = {
+  id: 'student',
+  label: 'Student',
+  summary: 'Shorter blocks and time to get to class.',
+  defaultMinutes: 25,
+  capMinutes: 50,
+  bufferMinutes: 10,
+  wrapUpMinutes: 10,
+  extendMinutes: 5,
+  doneWhenLabel: 'What I will finish',
+}
+const asStudent = (snapshot: FocusSnapshot): FocusSnapshot => ({
+  ...snapshot,
+  preset: studentPreset,
+  presets: [studentPreset],
+})
+
+it('uses the preset wording, the length cap and the buffer', async () => {
+  const meeting: FocusCommitment = {
+    id: 1,
+    title: 'Class',
+    startMs: Date.now() + 90 * 60_000,
+    endMs: Date.now() + 120 * 60_000,
+    source: 'manual',
+  }
+  const { wrapper } = await mountCard(asStudent(idle([], [meeting])))
+  openFocusForm()
+  await flushPromises()
+  expect(wrapper.find('input[aria-label="What I will finish"]').exists()).toBe(true)
+  for (let i = 0; i < 8; i++) await button(wrapper, '+').trigger('click')
+  expect(wrapper.text()).toContain('50')
+  expect(button(wrapper, '+').attributes('disabled')).toBeDefined()
+  expect(wrapper.text()).toContain('Free: 1h 19m until Class')
+})
+
+it('names the done-when line with the preset wording while focusing', async () => {
+  const { wrapper } = await mountCard(asStudent(focusing()))
+  expect(wrapper.text()).toContain('What I will finish: tests pass')
+})
+it('marks a calendar meeting and gives it no remove button', async () => {
+  const synced: FocusCommitment = { ...meeting(60, 2), title: 'Design review', source: 'calendar' }
+  const { wrapper } = await mountCard(idle([], [meeting(40), synced]))
+  const list = wrapper.get('[aria-label="Upcoming commitments"]')
+  expect(list.text()).toContain('Design review')
+  expect(list.text()).toContain('calendar')
+  expect(list.find('button[aria-label="Remove Design review"]').exists()).toBe(false)
+  expect(list.find('button[aria-label="Remove Meeting"]').exists()).toBe(true)
+})
+
+it('syncs the calendar on request and says what was read', async () => {
+  const { wrapper } = await mountCard(idle(), () => idle())
+  api.invoke.mockImplementation(async (command) =>
+    command === 'focus_calendar_sync'
+      ? { state: 'synced', events: 2, message: 'Calendar read: 2 events in the next 48 hours.' }
+      : idle(),
+  )
+  await button(wrapper, 'Sync calendar').trigger('click')
+  await flushPromises()
+  expect(calls('focus_calendar_sync')).toHaveLength(1)
+  expect(wrapper.text()).toContain('Calendar read: 2 events in the next 48 hours.')
+})
+
+it('says why there is no calendar instead of failing', async () => {
+  const { wrapper } = await mountCard(idle())
+  api.invoke.mockImplementation(async (command) =>
+    command === 'focus_calendar_sync'
+      ? {
+          state: 'unavailable',
+          events: 0,
+          message: 'No calendar tool is selected. Add a calendar in Tools settings.',
+        }
+      : idle(),
+  )
+  await button(wrapper, 'Sync calendar').trigger('click')
+  await flushPromises()
+  expect(wrapper.get('[aria-label="Calendar sync"]').text()).toContain(
+    'No calendar tool is selected',
+  )
+})
+it('opens the start form and puts the cursor in the goal when the hotkey is pressed', async () => {
+  const { wrapper, focus } = await mountCard(idle(), undefined, document.body)
+  expect(focus.formOpen.value).toBe(false)
+  fire('focus_hotkey')
+  await flushPromises()
+  expect(focus.formOpen.value).toBe(true)
+  expect(document.activeElement).toBe(
+    wrapper.get('input[aria-label="What will you work on?"]').element,
+  )
+  wrapper.unmount()
+})
+
+it('puts the keyboard on Done when the hotkey is pressed during a block', async () => {
+  const wrapper = (await mountCard(focusing(), undefined, document.body)).wrapper
+  fire('focus_hotkey')
+  await flushPromises()
+  expect(document.activeElement?.textContent?.trim()).toBe('Done')
+  wrapper.unmount()
+})
+
+const mic = (wrapper: ReturnType<typeof mount>) =>
+  wrapper.get('button[aria-label="Say what you will work on"], button[aria-label="Stop listening"]')
+
+it('turns what is said into the goal, asks for a suggestion and stops listening', async () => {
+  const { wrapper } = await mountCard(idle(), () => idle())
+  api.invoke.mockImplementation(async (command) =>
+    command === 'focus_suggest'
+      ? { source: 'model', note: null, options: proposals }
+      : command === 'focus_snapshot'
+        ? idle()
+        : null,
+  )
+  openFocusForm()
+  await flushPromises()
+  await mic(wrapper).trigger('click')
+  await flushPromises()
+  expect(calls('focus_dictation_set')[0]![1]).toEqual({ on: true })
+  expect(mic(wrapper).attributes('aria-pressed')).toBe('true')
+  fire('focus_dictated', '  need to finish the report  ')
+  await flushPromises()
+  expect(calls('focus_dictation_set')[1]![1]).toEqual({ on: false })
+  expect(calls('focus_suggest')[0]![1]).toEqual({ goal: 'need to finish the report' })
+  expect(mic(wrapper).attributes('aria-pressed')).toBe('false')
+})
+
+it('ignores words that arrive when the card is not listening', async () => {
+  const { wrapper } = await mountCard(idle())
+  openFocusForm()
+  await flushPromises()
+  fire('focus_dictated', 'open notepad')
+  await flushPromises()
+  expect(calls('focus_suggest')).toHaveLength(0)
+  expect((wrapper.get('input').element as HTMLInputElement).value).toBe('')
+})
+
+it('shows why listening could not start and stays off', async () => {
+  const { wrapper } = await mountCard(idle())
+  api.invoke.mockImplementation(async (command) => {
+    if (command === 'focus_dictation_set') throw 'Configure a Voice model in the Infer catalog'
+    return command === 'focus_snapshot' ? idle() : null
+  })
+  openFocusForm()
+  await flushPromises()
+  await mic(wrapper).trigger('click')
+  await flushPromises()
+  expect(wrapper.get('[role=alert]').text()).toContain('Voice model')
+  expect(mic(wrapper).attributes('aria-pressed')).toBe('false')
+})
+
+it('stops listening when the form is closed', async () => {
+  const { wrapper, focus } = await mountCard(idle())
+  openFocusForm()
+  await flushPromises()
+  await mic(wrapper).trigger('click')
+  await flushPromises()
+  focus.closeForm()
+  await flushPromises()
+  expect(calls('focus_dictation_set').map(([, args]) => args)).toEqual([
+    { on: true },
+    { on: false },
+  ])
+})
+
+it('suggests with Ctrl+Enter and starts with plain Enter', async () => {
+  const { wrapper } = await mountCard(idle(), () => focusing())
+  api.invoke.mockImplementation(async (command) =>
+    command === 'focus_suggest'
+      ? { source: 'model', note: null, options: proposals }
+      : command === 'focus_snapshot'
+        ? idle()
+        : focusing(),
+  )
+  openFocusForm()
+  await flushPromises()
+  const title = wrapper.get('input[aria-label="What will you work on?"]')
+  await title.setValue('report')
+  await title.trigger('keydown', { key: 'Enter', ctrlKey: true })
+  await flushPromises()
+  expect(calls('focus_suggest')).toHaveLength(1)
+  expect(calls('focus_start')).toHaveLength(0)
+  await wrapper.get('form').trigger('submit')
+  await flushPromises()
+  expect(calls('focus_start')).toHaveLength(1)
+})
+
+it('finishes the block with Ctrl+Enter and extends with Ctrl+E when there is a reason to', async () => {
+  const over = running({ endsMs: Date.now() - 1_000 })
+  const { wrapper } = await mountCard(focusing(over), (command) =>
+    command === 'focus_finish' ? idle() : focusing(over),
+  )
+  await wrapper.get('[aria-label="Focus block"]').trigger('keydown', { key: 'e', ctrlKey: true })
+  await flushPromises()
+  expect(calls('focus_extend')).toHaveLength(1)
+  await wrapper
+    .get('[aria-label="Focus block"]')
+    .trigger('keydown', { key: 'Enter', ctrlKey: true })
+  await flushPromises()
+  expect(calls('focus_finish')[0]![1]).toEqual({ outcome: 'done' })
+})
+
+it('does not extend with Ctrl+E while plenty of time is left', async () => {
+  const { wrapper } = await mountCard(focusing())
+  await wrapper.get('[aria-label="Focus block"]').trigger('keydown', { key: 'e', ctrlKey: true })
+  await flushPromises()
+  expect(calls('focus_extend')).toHaveLength(0)
+})
+it('hands the running block to the agent once and then says it is with the agent', async () => {
+  const handed = running({ handedOffMs: Date.now() })
+  const { wrapper } = await mountCard(focusing(), (command) =>
+    command === 'focus_hand_off' ? focusing(handed) : focusing(),
+  )
+  expect(wrapper.find('[aria-label="Handed to the agent"]').exists()).toBe(false)
+  await button(wrapper, 'Hand to agent').trigger('click')
+  await flushPromises()
+  expect(calls('focus_hand_off')).toHaveLength(1)
+  expect(wrapper.get('[aria-label="Handed to the agent"]').text()).toContain('With the agent')
+  expect(button(wrapper, 'Hand to agent')).toBeUndefined()
+})
+
+it('shows why the hand-off was refused and keeps the button', async () => {
+  const { wrapper } = await mountCard(focusing())
+  api.invoke.mockImplementation(async (command) => {
+    if (command === 'focus_hand_off') throw 'Start tasks in your external agent host'
+    return focusing()
+  })
+  await button(wrapper, 'Hand to agent').trigger('click')
+  await flushPromises()
+  expect(wrapper.get('[role=alert]').text()).toContain('external agent host')
+  expect(button(wrapper, 'Hand to agent')).toBeDefined()
+})
+
+it('offers no hand-off for a block that is already with the agent', async () => {
+  const { wrapper } = await mountCard(focusing(running({ handedOffMs: Date.now() })))
+  expect(button(wrapper, 'Hand to agent')).toBeUndefined()
+  expect(wrapper.find('[aria-label="Handed to the agent"]').exists()).toBe(true)
 })

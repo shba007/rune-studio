@@ -1,12 +1,45 @@
 import { emit } from '@tauri-apps/api/event'
 
 import type { Habit } from '@/config/habits'
-import type { FocusBlock, FocusCommitment, FocusSnapshot } from '@/config/focus'
+import {
+  DEFAULT_PRESET,
+  type FocusBlock,
+  type FocusCommitment,
+  type FocusPreset,
+  type FocusSnapshot,
+} from '@/config/focus'
 
 // Browser mock of the Focus commands, mirroring src-tauri/src/focus.rs closely
 // enough to exercise the UI. Nothing is saved: a reload starts empty.
 const MINUTE = 60_000
-const BUFFER = 5 * MINUTE
+
+const PRESETS: FocusPreset[] = [
+  DEFAULT_PRESET,
+  {
+    id: 'student',
+    label: 'Student',
+    summary: 'Shorter blocks and time to get to class.',
+    defaultMinutes: 25,
+    capMinutes: 50,
+    bufferMinutes: 10,
+    wrapUpMinutes: 10,
+    extendMinutes: 5,
+    doneWhenLabel: 'What I will finish',
+  },
+  {
+    id: 'founder',
+    label: 'Founder',
+    summary: 'Short blocks between meetings.',
+    defaultMinutes: 15,
+    capMinutes: 45,
+    bufferMinutes: 5,
+    wrapUpMinutes: 5,
+    extendMinutes: 5,
+    doneWhenLabel: 'Outcome',
+  },
+]
+let preset: FocusPreset = DEFAULT_PRESET
+const buffer = () => preset.bufferMinutes * MINUTE
 
 let nextId = 1
 let running: FocusBlock | null = null
@@ -46,6 +79,8 @@ const snapshot = (): FocusSnapshot => ({
   commitments: commitments
     .filter((c) => c.endMs > Date.now())
     .sort((a, b) => a.startMs - b.startMs),
+  preset,
+  presets: PRESETS,
 })
 const announce = async () => {
   const next = snapshot()
@@ -54,7 +89,7 @@ const announce = async () => {
 }
 const free = () => {
   const next = snapshot().commitments[0]
-  return next ? Math.max(0, next.startMs - BUFFER - Date.now()) : null
+  return next ? Math.max(0, next.startMs - buffer() - Date.now()) : null
 }
 
 export async function mockFocus(command: string, args: Record<string, unknown>): Promise<unknown> {
@@ -79,6 +114,7 @@ export async function mockFocus(command: string, args: Record<string, unknown>):
         finishedMs: null,
         outcome: null,
         taskId: null,
+        handedOffMs: null,
       }
       return announce()
     }
@@ -101,6 +137,7 @@ export async function mockFocus(command: string, args: Record<string, unknown>):
         finishedMs: null,
         outcome: null,
         taskId: habit.id,
+        handedOffMs: null,
       }
       return announce()
     }
@@ -122,11 +159,40 @@ export async function mockFocus(command: string, args: Record<string, unknown>):
       await emit('workspace_tasks_changed')
       return announce()
     }
+    case 'focus_hand_off': {
+      if (!running) throw 'No focus block is running.'
+      if (running.handedOffMs !== null) throw 'This block is already with the agent.'
+      running = { ...running, handedOffMs: now }
+      return announce()
+    }
+    case 'focus_dictation_set':
+      // Browser mock: there is no microphone to open.
+      if (args.on) throw 'The microphone is not available in the browser preview.'
+      return null
+    case 'focus_calendar_sync': {
+      // Browser mock: a calendar with one meeting an hour from now.
+      commitments = commitments.filter((c) => c.source !== 'calendar')
+      commitments.push({
+        id: nextId++,
+        title: 'Design review',
+        startMs: now + 60 * MINUTE,
+        endMs: now + 90 * MINUTE,
+        source: 'calendar',
+      })
+      await announce()
+      return { state: 'synced', events: 1, message: 'Calendar read: 1 event in the next 48 hours.' }
+    }
+    case 'focus_preset_set': {
+      const chosen = PRESETS.find((p) => p.id === args.id)
+      if (!chosen) throw `Unknown focus preset "${text(args.id)}".`
+      preset = chosen
+      return announce()
+    }
     case 'focus_extend': {
       if (!running) throw 'No focus block is running.'
-      const end = Math.max(running.endsMs, now) + 5 * MINUTE
+      const end = Math.max(running.endsMs, now) + preset.extendMinutes * MINUTE
       const next = snapshot().commitments[0]
-      if (next && end > Math.max(next.startMs - BUFFER, now))
+      if (next && end > Math.max(next.startMs - buffer(), now))
         throw `No room to extend: "${next.title}" starts in ${Math.ceil((next.startMs - now) / MINUTE)} min.`
       running = { ...running, plannedMs: running.plannedMs + (end - running.endsMs), endsMs: end }
       return announce()
@@ -141,6 +207,7 @@ export async function mockFocus(command: string, args: Record<string, unknown>):
         title: text(args.title).trim(),
         startMs,
         endMs: startMs + minutes * MINUTE,
+        source: 'manual',
       })
       return announce()
     }

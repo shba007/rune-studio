@@ -2,6 +2,7 @@ use crate::sync::LockExt;
 use crate::workspace_tasks::WorkspaceTask;
 use std::{collections::HashSet, sync::Mutex};
 use tauri::{AppHandle, Manager};
+#[cfg(desktop)]
 use tauri_plugin_autostart::ManagerExt as AutostartExt;
 use tauri_plugin_notification::NotificationExt;
 
@@ -87,6 +88,7 @@ pub fn refresh(app: &AppHandle, tasks: &[WorkspaceTask], now: u64) {
     let text = tooltip(due.len(), next.as_ref().map(|(title, _)| title.as_str()));
     let mut last = TOOLTIP.locked();
     if *last != text {
+        #[cfg(desktop)]
         if let Some(tray) = app.tray_by_id(TRAY_ID) {
             let _ = tray.set_tooltip(Some(text.as_str()));
         }
@@ -96,18 +98,32 @@ pub fn refresh(app: &AppHandle, tasks: &[WorkspaceTask], now: u64) {
 
 #[tauri::command]
 pub fn alarms_autostart(app: AppHandle) -> Result<bool, String> {
+    #[cfg(mobile)]
+    {
+        let _ = app;
+        Ok(false)
+    }
+    #[cfg(desktop)]
     app.autolaunch().is_enabled().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn alarms_set_autostart(app: AppHandle, enabled: bool) -> Result<bool, String> {
-    let manager = app.autolaunch();
-    if enabled {
-        manager.enable().map_err(|e| e.to_string())?;
-    } else {
-        manager.disable().map_err(|e| e.to_string())?;
+    #[cfg(mobile)]
+    {
+        let _ = (app, enabled);
+        Err("Starting with the device is not available here.".into())
     }
-    manager.is_enabled().map_err(|e| e.to_string())
+    #[cfg(desktop)]
+    {
+        let manager = app.autolaunch();
+        if enabled {
+            manager.enable().map_err(|e| e.to_string())?;
+        } else {
+            manager.disable().map_err(|e| e.to_string())?;
+        }
+        manager.is_enabled().map_err(|e| e.to_string())
+    }
 }
 
 #[cfg(test)]

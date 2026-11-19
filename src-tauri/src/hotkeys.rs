@@ -1,12 +1,33 @@
 use std::str::FromStr;
 
 use tauri::AppHandle;
+#[cfg(desktop)]
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
 use crate::settings::Settings;
 
 #[cfg(windows)]
 mod windows_escape;
+
+/// A phone has no global hotkeys; this keeps the settings and state types the same.
+#[cfg(mobile)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Shortcut;
+
+#[cfg(mobile)]
+impl FromStr for Shortcut {
+    type Err = String;
+    fn from_str(_: &str) -> Result<Self, String> {
+        Ok(Shortcut)
+    }
+}
+
+#[cfg(mobile)]
+impl std::fmt::Display for Shortcut {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("shortcut")
+    }
+}
 
 pub const DEFAULT_TOGGLE: &str = "Alt+Q";
 pub const DEFAULT_STOP: &str = "Escape";
@@ -49,6 +70,12 @@ fn parse_or_default(text: &str, default: &str) -> Shortcut {
     })
 }
 
+#[cfg(mobile)]
+pub fn apply(_: &AppHandle, _: Option<&Hotkeys>, _: &Hotkeys) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(desktop)]
 pub fn apply(app: &AppHandle, previous: Option<&Hotkeys>, next: &Hotkeys) -> Result<(), String> {
     let shortcuts = app.global_shortcut();
     if let Some(previous) = previous {

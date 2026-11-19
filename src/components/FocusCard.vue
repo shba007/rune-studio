@@ -1,22 +1,21 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 
 import type { Focus } from '@/composables/useFocus'
 import {
   clock,
   clockTime,
-  DEFAULT_MINUTES,
   durationLabel,
   nextCommitment,
   startAt,
   loggedLine,
-  MAX_MINUTES,
   MIN_MINUTES,
   stepMinutes,
   variantLabel,
   type FocusSuggestion,
 } from '@/config/focus'
 
+import AppIcon from './AppIcon.vue'
 import RuneButton from './RuneButton.vue'
 import RuneIconButton from './RuneIconButton.vue'
 
@@ -24,7 +23,12 @@ const props = defineProps<{ focus: Focus }>()
 
 const title = ref('')
 const doneWhen = ref('')
-const minutes = ref(DEFAULT_MINUTES)
+const minutes = ref(props.focus.preset.value.defaultMinutes)
+// A new preset brings its own usual length; the field follows it.
+watch(
+  () => props.focus.preset.value.id,
+  () => (minutes.value = props.focus.preset.value.defaultMinutes),
+)
 const suggestion = ref<FocusSuggestion | null>(null)
 const choice = ref(0)
 const commitmentTitle = ref('')
@@ -52,6 +56,40 @@ async function addCommitment() {
 }
 
 const titleField = useTemplateRef<HTMLInputElement>('titleField')
+const doneButton = useTemplateRef<{ $el: HTMLElement }>('doneButton')
+
+// The global hotkey puts the keyboard where the next step is: the goal while
+// there is no block, the Done button while one is running.
+watch(
+  () => props.focus.hotkeyTick.value,
+  async () => {
+    await nextTick()
+    if (props.focus.active.value) doneButton.value?.$el.focus()
+    else titleField.value?.focus()
+  },
+)
+
+// One spoken sentence is one goal: it fills the field, asks for a suggestion,
+// and the microphone goes back to how it was.
+watch(
+  () => props.focus.dictated.value,
+  async (heard) => {
+    if (!heard || !props.focus.dictating.value) return
+    title.value = heard.text.trim().slice(0, 120)
+    await props.focus.setDictation(false)
+    await suggest()
+  },
+)
+// Dictation never outlives the form it fills.
+watch(
+  () => props.focus.formOpen.value && !props.focus.active.value,
+  (open) => {
+    if (!open && props.focus.dictating.value) void props.focus.setDictation(false)
+  },
+)
+onBeforeUnmount(() => {
+  if (props.focus.dictating.value) void props.focus.setDictation(false)
+})
 
 watch(
   () => props.focus.formOpen.value,
@@ -94,7 +132,7 @@ async function start() {
   if (await props.focus.start(title.value, doneWhen.value, minutes.value)) {
     title.value = ''
     doneWhen.value = ''
-    minutes.value = DEFAULT_MINUTES
+    minutes.value = props.focus.preset.value.defaultMinutes
     suggestion.value = null
     choice.value = 0
     goal.value = ''
@@ -110,6 +148,8 @@ const field =
     v-if="focus.active.value && focus.block.value"
     aria-label="Focus block"
     class="flex flex-col gap-rune-2 rounded-rune-panel bg-rune-surface p-rune-2 font-rune-reading text-rune-body text-rune-ink"
+    @keydown.ctrl.enter.prevent="focus.finish('done')"
+    @keydown.ctrl.e.prevent="focus.over.value || focus.wrapUp.value ? focus.extend() : undefined"
   >
     <header class="flex items-center justify-between">
       <span class="text-rune-caption text-rune-text-2 uppercase">{{
@@ -125,7 +165,15 @@ const field =
     </p>
     <p class="m-0 leading-relaxed">{{ focus.block.value.title }}</p>
     <p v-if="focus.block.value.doneWhen" class="m-0 text-rune-caption text-rune-text-2">
-      Done when: {{ focus.block.value.doneWhen }}
+      {{ focus.preset.value.doneWhenLabel }}: {{ focus.block.value.doneWhen }}
+    </p>
+    <p
+      v-if="focus.block.value.handedOffMs !== null"
+      role="status"
+      aria-label="Handed to the agent"
+      class="m-0 text-rune-caption text-rune-text-2"
+    >
+      With the agent. Review its plan in your requests; it will ask before anything it cannot undo.
     </p>
     <p v-if="focus.wrapUp.value" role="status" aria-label="Wrap up" class="m-0 text-rune-caption">
       Wrap up: {{ focus.wrapUp.value.title }} starts at {{ clockTime(focus.wrapUp.value.startMs) }}
@@ -141,11 +189,20 @@ const field =
     >
       Extend 5m
     </RuneButton>
+    <RuneButton
+      v-if="focus.block.value.handedOffMs === null"
+      variant="ghost"
+      :disabled="focus.pending.value"
+      @click="focus.handOff()"
+    >
+      Hand to agent
+    </RuneButton>
     <div class="flex gap-2">
       <RuneButton class="flex-1" :disabled="focus.pending.value" @click="focus.finish('stopped')">
         Stop
       </RuneButton>
       <RuneButton
+        ref="doneButton"
         variant="primary"
         class="flex-1"
         :disabled="focus.pending.value"
@@ -161,6 +218,7 @@ const field =
     aria-label="Start a focus block"
     class="flex flex-col gap-rune-2 rounded-rune-panel bg-rune-surface p-rune-2 font-rune-reading text-rune-body text-rune-ink"
     @submit.prevent="start"
+    @keydown.ctrl.enter.prevent="suggest"
   >
     <header class="flex items-center justify-between">
       <span class="text-rune-caption text-rune-text-2 uppercase">Focus</span>
@@ -168,23 +226,35 @@ const field =
         ×
       </RuneIconButton>
     </header>
-    <input
-      ref="titleField"
-      v-model="title"
-      type="text"
-      maxlength="120"
-      aria-label="What will you work on?"
-      placeholder="What will you work on?"
-      autocomplete="off"
-      spellcheck="false"
-      :class="field"
-    />
+    <div class="flex items-center gap-2">
+      <input
+        ref="titleField"
+        v-model="title"
+        type="text"
+        maxlength="120"
+        aria-label="What will you work on?"
+        placeholder="What will you work on?"
+        autocomplete="off"
+        spellcheck="false"
+        :class="field"
+      />
+      <RuneIconButton
+        :label="focus.dictating.value ? 'Stop listening' : 'Say what you will work on'"
+        :aria-pressed="focus.dictating.value"
+        variant="ghost"
+        size="sm"
+        :disabled="focus.pending.value"
+        @click="focus.setDictation(!focus.dictating.value)"
+      >
+        <AppIcon name="voice-input" size="sm" />
+      </RuneIconButton>
+    </div>
     <input
       v-model="doneWhen"
       type="text"
       maxlength="200"
-      aria-label="Done when"
-      placeholder="Done when… (optional)"
+      :aria-label="focus.preset.value.doneWhenLabel"
+      :placeholder="`${focus.preset.value.doneWhenLabel}… (optional)`"
       autocomplete="off"
       spellcheck="false"
       :class="field"
@@ -202,8 +272,8 @@ const field =
       <RuneIconButton
         label="5 minutes longer"
         size="sm"
-        :disabled="minutes >= MAX_MINUTES"
-        @click="minutes = stepMinutes(minutes, 1)"
+        :disabled="minutes >= focus.preset.value.capMinutes"
+        @click="minutes = stepMinutes(minutes, 1, focus.preset.value.capMinutes)"
       >
         +
       </RuneIconButton>
@@ -256,7 +326,9 @@ const field =
           class="flex items-center justify-between gap-2"
         >
           <span class="truncate">{{ clockTime(item.startMs) }} · {{ item.title }}</span>
+          <span v-if="item.source === 'calendar'" class="shrink-0 text-rune-text-3">calendar</span>
           <RuneIconButton
+            v-else
             variant="ghost"
             size="xs"
             :label="`Remove ${item.title}`"
@@ -267,6 +339,19 @@ const field =
           </RuneIconButton>
         </li>
       </ul>
+      <div class="mt-2 flex flex-wrap items-center gap-2">
+        <RuneButton size="sm" :disabled="focus.pending.value" @click="focus.syncCalendar()">
+          Sync calendar
+        </RuneButton>
+        <span
+          v-if="focus.calendar.value"
+          role="status"
+          aria-label="Calendar sync"
+          class="min-w-0 flex-1"
+        >
+          {{ focus.calendar.value.message }}
+        </span>
+      </div>
       <div class="mt-2 flex flex-col gap-2">
         <input
           v-model="commitmentTitle"

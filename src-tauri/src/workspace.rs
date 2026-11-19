@@ -1,3 +1,5 @@
+#[cfg(mobile)]
+use crate::platform::{BuilderShim as _, WindowShim as _};
 use serde_json::json;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 

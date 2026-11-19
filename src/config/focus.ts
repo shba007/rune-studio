@@ -8,6 +8,8 @@ export interface FocusBlock {
   finishedMs: number | null
   outcome: 'done' | 'stopped' | null
   taskId: string | null
+  /** When the block was handed to the agent; `null` if it never was. */
+  handedOffMs: number | null
 }
 
 /** A fixed time the user must be somewhere. */
@@ -16,6 +18,41 @@ export interface FocusCommitment {
   title: string
   startMs: number
   endMs: number
+  /** `manual` is typed in; `calendar` is synced and changed in the calendar. */
+  source: 'manual' | 'calendar'
+}
+
+/** What a calendar sync did. Mirrors `Report` in src-tauri/src/focus_calendar.rs. */
+export interface CalendarReport {
+  state: 'synced' | 'unavailable'
+  events: number
+  message: string
+}
+
+/** A focus preset. Mirrors `Preset` in src-tauri/src/focus_time.rs. */
+export interface FocusPreset {
+  id: string
+  label: string
+  summary: string
+  defaultMinutes: number
+  capMinutes: number
+  bufferMinutes: number
+  wrapUpMinutes: number
+  extendMinutes: number
+  doneWhenLabel: string
+}
+
+/** Used until the first snapshot arrives; the backend's default preset. */
+export const DEFAULT_PRESET: FocusPreset = {
+  id: 'engineer',
+  label: 'Engineer',
+  summary: 'Long, deep blocks; a short buffer.',
+  defaultMinutes: 25,
+  capMinutes: 120,
+  bufferMinutes: 5,
+  wrapUpMinutes: 5,
+  extendMinutes: 5,
+  doneWhenLabel: 'Done when',
 }
 
 export interface FocusSnapshot {
@@ -24,6 +61,8 @@ export interface FocusSnapshot {
   recent: FocusBlock[]
   /** Commitments that have not ended yet, soonest first. */
   commitments: FocusCommitment[]
+  preset: FocusPreset
+  presets: FocusPreset[]
 }
 
 export interface FocusProposal {
@@ -54,6 +93,8 @@ export const EMPTY_FOCUS: FocusSnapshot = {
   block: null,
   recent: [],
   commitments: [],
+  preset: DEFAULT_PRESET,
+  presets: [DEFAULT_PRESET],
 }
 
 export const DEFAULT_MINUTES = 25
@@ -78,8 +119,8 @@ export function clock(ms: number): string {
 /** Whole minutes left, rounded up, for the small badge on the orb. */
 export const badgeMinutes = (ms: number) => Math.ceil(Math.max(0, ms) / 60_000)
 
-export function stepMinutes(minutes: number, direction: 1 | -1): number {
-  return Math.min(MAX_MINUTES, Math.max(MIN_MINUTES, minutes + direction * STEP_MINUTES))
+export function stepMinutes(minutes: number, direction: 1 | -1, cap: number = MAX_MINUTES): number {
+  return Math.min(cap, Math.max(MIN_MINUTES, minutes + direction * STEP_MINUTES))
 }
 
 export function loggedLine(block: FocusBlock): string {
@@ -92,22 +133,28 @@ export function loggedLine(block: FocusBlock): string {
 // These mirror src-tauri/src/focus_time.rs so the card can count down without
 // asking the backend every second.
 const MINUTE = 60_000
-export const BUFFER_MS = 5 * MINUTE
-export const WRAP_UP_MS = 5 * MINUTE
 
 export const nextCommitment = (commitments: FocusCommitment[], now: number) =>
   commitments.find((c) => c.endMs > now)
 
 /** Free time before the next commitment, buffer included. `null` is unlimited. */
-export function freeMs(commitments: FocusCommitment[], now: number): number | null {
+export function freeMs(
+  commitments: FocusCommitment[],
+  now: number,
+  preset: FocusPreset = DEFAULT_PRESET,
+): number | null {
   const next = nextCommitment(commitments, now)
-  return next ? Math.max(0, next.startMs - BUFFER_MS - now) : null
+  return next ? Math.max(0, next.startMs - preset.bufferMinutes * MINUTE - now) : null
 }
 
 /** The commitment a running block should wrap up for. */
-export function wrapUpFor(commitments: FocusCommitment[], now: number) {
+export function wrapUpFor(
+  commitments: FocusCommitment[],
+  now: number,
+  preset: FocusPreset = DEFAULT_PRESET,
+) {
   const next = nextCommitment(commitments, now)
-  return next && next.startMs <= now + WRAP_UP_MS ? next : undefined
+  return next && next.startMs <= now + preset.wrapUpMinutes * MINUTE ? next : undefined
 }
 
 /** `52m`, `1h 5m` or `2h`. Rounds down: free time is never overstated. */

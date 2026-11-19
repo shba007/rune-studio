@@ -13,6 +13,7 @@ import SettingsReview from './SettingsReview.vue'
 import RecordingControls from './RecordingControls.vue'
 import SettingsGoalContext from './SettingsGoalContext.vue'
 import SettingsAlarms from './SettingsAlarms.vue'
+import SettingsFocus from './SettingsFocus.vue'
 import { useDomainPrefs } from '@/composables/useDomainPrefs'
 
 withDefaults(
@@ -106,6 +107,8 @@ const PREVIEW_STATES = DEBUG_STATES.map((value) => ({ value, label: value.replac
     </HubGroup>
 
     <SettingsAlarms v-if="view === 'all' || view === 'general'" />
+
+    <SettingsFocus v-if="view === 'all' || view === 'general'" />
 
     <HubGroup v-if="view === 'all' || view === 'general'" title="Safety &amp; behavior">
       <HubToggle

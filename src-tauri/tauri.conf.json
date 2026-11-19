@@ -46,6 +46,7 @@
       "icons/icon.ico"
     ],
     "android": {
+      "minSdkVersion": 26,
       "debugApplicationIdSuffix": ".debug"
     },
     "createUpdaterArtifacts": true,

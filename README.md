@@ -346,31 +346,24 @@ src-tauri/src/
   system_tests.rs, grounding_probe.rs   test-only (#[ignore]d)
   bin/rune-studio-cli.rs     console CLI (feature agent-bridge)
 docs/                        ARCHITECTURE.md, AGENT-GUIDE.md
-scripts/                     release, evaluation, wire-audit and onboarding test tools
+scripts/                     dev-mode launcher, evaluation and wire-audit tools
 ```
 
 ---
 
 ## Build and release pipeline
 
-| Workflow                          | Trigger             | Behavior                                                                                                                                                                                                                                                 |
-| --------------------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.github/workflows/integrate.yml` | develop pushes only | Frontend tests/typecheck/build/lint/format, Rust tests/Clippy/format and Rust release-helper checks. After successful trusted develop checks, prepare/update `release/update-version` targeting develop with title/commit `ci(release): update version`. |
-| `.github/workflows/release.yml`   | every main push     | Validate synchronized versions and extract the exact prepared CHANGELOG section, then publish the matching tag/release using the event-capable `GH_TOKEN`.                                                                                               |
-| `.github/workflows/deploy.yml`    | release published   | Verify release notes/tag, build Windows/Linux/macOS installers with agent-bridge, sign updater artifacts and upload the CLI to the existing release.                                                                                                     |
+| Workflow                          | Trigger                                  | Behavior                                                                                                                             |
+| --------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `.github/workflows/integrate.yml` | develop pushes                           | Build, lint and format, then bump the version and changelog with changelogen and open/update the `ci(release): update version` PR.   |
+| `.github/workflows/release.yml`   | main pushes with a `ci(release):` commit | Create the GitHub release and its notes with changelogen.                                                                            |
+| `.github/workflows/deploy.yml`    | release published                        | Build Windows/macOS/Linux installers (updater artifacts signed) and the Android APK/AAB, and attach them and the CLI to the release. |
 
-The owner merges the preparation PR into develop, then promotes develop to main
-with an ordinary **merge commit** preserving ancestry. No special title is required. Merging into develop
-alone does not publish. Do not squash/rebase the main promotion; release history
-must remain connected. Develop checks are never skipped just because a commit is a
-merge or release bump. Agents leave changes unstaged/uncommitted; GitHub Actions
-is authorized to prepare and push the dedicated release branch.
-
-See [release rules, dry runs, permissions and owner steps](docs/RELEASING.md).
-Bun runs the pinned changelogen adapter; Rust validates notes and synchronizes manifests.
-Existing `GH_TOKEN` needs Contents write access and must trigger downstream events.
-PR API operations use the job-scoped `GITHUB_TOKEN`. Updater
-signing uses `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
+The owner merges the release PR into develop, then promotes develop to main.
+Agents leave changes unstaged and uncommitted. Secrets: `GH_TOKEN` (Contents write,
+so the release event triggers deploy), `TAURI_SIGNING_PRIVATE_KEY` and
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` for the updater, and `ANDROID_KEY_ALIAS`,
+`ANDROID_KEY_PASSWORD`, `ANDROID_KEY_BASE64` for Android signing.
 
 ---
 

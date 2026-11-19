@@ -50,7 +50,6 @@ log = "0.4"
 tauri = { version = "2.12", features = ["tray-icon", "protocol-asset"] }
 tauri-plugin-log = "2.10"
 tauri-plugin-process = "2.4"
-tauri-plugin-global-shortcut = "2.4"
 dotenvy = "0.15"
 reqwest = { version = "0.13", default-features = false, features = ["json", "multipart", "rustls"] }
 keyring = "4.2"
@@ -64,7 +63,6 @@ rusqlite = { version = "0.40", default-features = false, features = ["bundled"] 
 tokio = { version = "1.54", features = ["time", "macros", "rt", "net", "sync"] }
 aes-gcm = "0.11.1"
 tauri-plugin-notification = "2.8.0"
-tauri-plugin-autostart = "2.7.0"
 rawler = "=0.8.0"
 png = "=0.18.1"
 tempfile = "3"
@@ -101,6 +99,8 @@ windows = { version = "0.62", features = [
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2.14"
 tauri-plugin-single-instance = "2.5"
+tauri-plugin-global-shortcut = "2.4"
+tauri-plugin-autostart = "2.7.0"
 
 [profile.dev.package.image]
 opt-level = 3

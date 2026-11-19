@@ -1,3 +1,5 @@
+#[cfg(mobile)]
+use crate::platform::{BuilderShim as _, WindowShim as _};
 use std::{
     sync::Mutex,
     time::{Duration, Instant},

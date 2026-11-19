@@ -6,28 +6,39 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{
+        Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
+#[cfg(desktop)]
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 use tauri_plugin_notification::NotificationExt;
 
-use crate::focus_time::{self, Commitment, EXTEND_MS, MINUTE};
+use crate::focus_time::{self, Commitment, MINUTE, PRESETS, Preset};
 use crate::focus_urgency::{self, Candidate, Ranked};
 use crate::sync::LockExt;
 
 pub const STATE_CHANGED: &str = "focus_state_changed";
 pub const TIME_UP: &str = "focus_time_up";
 pub const WRAP_UP: &str = "focus_wrap_up";
+/// Sent when the focus hotkey is pressed; the pill opens the Focus card.
+pub const HOTKEY_PRESSED: &str = "focus_hotkey";
+/// Sent with the words the user said while the Focus card was listening.
+pub const DICTATED: &str = "focus_dictated";
+/// Opens the Focus card from anywhere. Fixed for now; it is not in Settings.
+pub const HOTKEY: &str = "Alt+Shift+F";
 
 const MAX_MINUTES: u64 = 240;
 const MAX_TITLE: usize = 120;
 const MAX_DONE_WHEN: usize = 200;
 const RECENT: usize = 5;
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 4;
 const MAX_COMMITMENT_MINUTES: u64 = 720;
 const MAX_UPCOMING: usize = 20;
 
@@ -54,6 +65,8 @@ pub struct Block {
     /// `done` or `stopped`; `None` while the block is running.
     pub outcome: Option<String>,
     pub task_id: Option<String>,
+    /// When the block was handed to the agent; `None` if it never was.
+    pub handed_off_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -65,13 +78,17 @@ pub struct Snapshot {
     pub recent: Vec<Block>,
     /// Commitments that have not ended yet, soonest first.
     pub commitments: Vec<Commitment>,
+    /// The focus preset in use, and every preset to choose from.
+    pub preset: Preset,
+    pub presets: Vec<Preset>,
 }
 
 pub struct Store {
     db: Connection,
 }
 
-const COLUMNS: &str = "id, title, done_when, planned_ms, started_ms, ended_ms, outcome, task_id";
+const COLUMNS: &str =
+    "id, title, done_when, planned_ms, started_ms, ended_ms, outcome, task_id, handed_off_ms";
 
 fn block_from(row: &Row) -> rusqlite::Result<Block> {
     let planned_ms = row.get::<_, i64>(3)? as u64;
@@ -86,6 +103,7 @@ fn block_from(row: &Row) -> rusqlite::Result<Block> {
         finished_ms: row.get::<_, Option<i64>>(5)?.map(|v| v as u64),
         outcome: row.get(6)?,
         task_id: row.get(7)?,
+        handed_off_ms: row.get::<_, Option<i64>>(8)?.map(|v| v as u64),
     })
 }
 
@@ -132,8 +150,40 @@ impl Store {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT NOT NULL,
                 start_ms INTEGER NOT NULL,
-                end_ms INTEGER NOT NULL
+                end_ms INTEGER NOT NULL,
+                source TEXT NOT NULL DEFAULT 'manual',
+                external_id TEXT
+             );
+             CREATE TABLE IF NOT EXISTS focus_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
              );",
+        )
+        .map_err(err)?;
+        // Version 2 databases have no calendar columns yet.
+        let has_source = db
+            .prepare("SELECT 1 FROM pragma_table_info('commitments') WHERE name = 'source'")
+            .and_then(|mut q| q.exists([]))
+            .map_err(err)?;
+        if !has_source {
+            db.execute_batch(
+                "ALTER TABLE commitments ADD COLUMN source TEXT NOT NULL DEFAULT 'manual';
+                 ALTER TABLE commitments ADD COLUMN external_id TEXT;",
+            )
+            .map_err(err)?;
+        }
+        // Versions before 4 cannot record a hand-off to the agent.
+        let has_handoff = db
+            .prepare("SELECT 1 FROM pragma_table_info('focus_blocks') WHERE name = 'handed_off_ms'")
+            .and_then(|mut q| q.exists([]))
+            .map_err(err)?;
+        if !has_handoff {
+            db.execute_batch("ALTER TABLE focus_blocks ADD COLUMN handed_off_ms INTEGER;")
+                .map_err(err)?;
+        }
+        db.execute_batch(
+            "CREATE UNIQUE INDEX IF NOT EXISTS one_commitment_per_event
+                ON commitments (external_id) WHERE external_id IS NOT NULL;",
         )
         .map_err(err)?;
         db.pragma_update(None, "user_version", SCHEMA_VERSION)
@@ -290,7 +340,36 @@ impl Store {
             block,
             recent: self.recent(RECENT)?,
             commitments: self.upcoming(now)?,
+            preset: self.preset()?,
+            presets: PRESETS.to_vec(),
         })
+    }
+
+    /// The chosen preset; the default one until a choice is saved, and when a
+    /// saved id is no longer known.
+    pub fn preset(&self) -> Result<Preset, String> {
+        let id: Option<String> = self
+            .db
+            .query_row(
+                "SELECT value FROM focus_settings WHERE key = 'preset'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(err)?;
+        Ok(id.and_then(|id| Preset::by_id(&id)).unwrap_or_default())
+    }
+
+    pub fn set_preset(&self, id: &str) -> Result<Preset, String> {
+        let preset = Preset::by_id(id).ok_or_else(|| format!("Unknown focus preset \"{id}\"."))?;
+        self.db
+            .execute(
+                "INSERT INTO focus_settings (key, value) VALUES ('preset', ?1)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                [preset.id],
+            )
+            .map_err(err)?;
+        Ok(preset)
     }
 
     pub fn add_commitment(
@@ -315,7 +394,15 @@ impl Store {
         if end_ms <= now {
             return Err("That commitment is already over. Pick a time that has not passed.".into());
         }
-        if self.upcoming(now)?.len() >= MAX_UPCOMING {
+        let typed: i64 = self
+            .db
+            .query_row(
+                "SELECT COUNT(*) FROM commitments WHERE source = 'manual' AND end_ms > ?1",
+                [now as i64],
+                |row| row.get(0),
+            )
+            .map_err(err)?;
+        if typed as usize >= MAX_UPCOMING {
             return Err(format!(
                 "You already have {MAX_UPCOMING} upcoming commitments. Remove one first."
             ));
@@ -331,25 +418,86 @@ impl Store {
             title: title.to_string(),
             start_ms,
             end_ms,
+            source: "manual".into(),
         })
     }
 
     pub fn remove_commitment(&self, id: i64) -> Result<(), String> {
-        let removed = self
+        let source: Option<String> = self
             .db
+            .query_row("SELECT source FROM commitments WHERE id = ?1", [id], |r| {
+                r.get(0)
+            })
+            .optional()
+            .map_err(err)?;
+        match source.as_deref() {
+            None => return Err("That commitment is already gone.".into()),
+            Some("calendar") => {
+                return Err("This comes from your calendar. Change it there.".into());
+            }
+            Some(_) => {}
+        }
+        self.db
             .execute("DELETE FROM commitments WHERE id = ?1", [id])
             .map_err(err)?;
-        if removed == 0 {
-            return Err("That commitment is already gone.".into());
-        }
         Ok(())
+    }
+
+    /// Makes the calendar-sourced commitments match `events`: new ones are
+    /// added, changed ones updated in place (so a commitment keeps its id and
+    /// its wrap-up is not announced twice), and ones no longer in the calendar
+    /// removed. Typed-in commitments are never touched. Returns the number of
+    /// events now stored.
+    pub fn sync_calendar(&self, events: &[crate::focus_calendar::Event]) -> Result<usize, String> {
+        let tx = self.db.unchecked_transaction().map_err(err)?;
+        for event in events {
+            tx.execute(
+                "INSERT INTO commitments (title, start_ms, end_ms, source, external_id)
+                 VALUES (?1, ?2, ?3, 'calendar', ?4)
+                 ON CONFLICT(external_id) WHERE external_id IS NOT NULL DO UPDATE SET
+                    title = excluded.title,
+                    start_ms = excluded.start_ms,
+                    end_ms = excluded.end_ms",
+                params![
+                    event.title,
+                    event.start_ms as i64,
+                    event.end_ms as i64,
+                    event.id
+                ],
+            )
+            .map_err(err)?;
+        }
+        let keep: Vec<&str> = events.iter().map(|e| e.id.as_str()).collect();
+        let mut stale = Vec::new();
+        {
+            let mut query = tx
+                .prepare("SELECT id, external_id FROM commitments WHERE source = 'calendar'")
+                .map_err(err)?;
+            let rows = query
+                .query_map([], |row| {
+                    Ok((row.get::<_, i64>(0)?, row.get::<_, Option<String>>(1)?))
+                })
+                .map_err(err)?;
+            for row in rows {
+                let (id, external) = row.map_err(err)?;
+                if !external.as_deref().is_some_and(|e| keep.contains(&e)) {
+                    stale.push(id);
+                }
+            }
+        }
+        for id in stale {
+            tx.execute("DELETE FROM commitments WHERE id = ?1", [id])
+                .map_err(err)?;
+        }
+        tx.commit().map_err(err)?;
+        Ok(events.len())
     }
 
     pub fn upcoming(&self, now: u64) -> Result<Vec<Commitment>, String> {
         let mut query = self
             .db
             .prepare(
-                "SELECT id, title, start_ms, end_ms FROM commitments
+                "SELECT id, title, start_ms, end_ms, source FROM commitments
                  WHERE end_ms > ?1 ORDER BY start_ms, id LIMIT ?2",
             )
             .map_err(err)?;
@@ -360,6 +508,7 @@ impl Store {
                     title: row.get(1)?,
                     start_ms: row.get::<_, i64>(2)? as u64,
                     end_ms: row.get::<_, i64>(3)? as u64,
+                    source: row.get(4)?,
                 })
             })
             .map_err(err)?
@@ -367,17 +516,39 @@ impl Store {
             .map_err(err)
     }
 
-    /// Adds five minutes to the running block, counted from now when it has
-    /// already run out. Refused when that would run into the next commitment
+    /// Notes that the running block was handed to the agent. Refused when it
+    /// already was, so one block never starts two requests.
+    pub fn mark_handed_off(&self, now: u64) -> Result<Block, String> {
+        let running = self
+            .active()?
+            .ok_or_else(|| "No focus block is running.".to_string())?;
+        if running.handed_off_ms.is_some() {
+            return Err("This block is already with the agent.".into());
+        }
+        self.db
+            .execute(
+                "UPDATE focus_blocks SET handed_off_ms = ?1 WHERE id = ?2",
+                params![now as i64, running.id],
+            )
+            .map_err(err)?;
+        Ok(Block {
+            handed_off_ms: Some(now),
+            ..running
+        })
+    }
+
+    /// Adds the preset's extension (five minutes by default) to the running
+    /// block, counted from now when it has already run out. Refused when that would run into the next commitment
     /// or its buffer.
     pub fn extend(&self, now: u64) -> Result<Block, String> {
         let running = self
             .active()?
             .ok_or_else(|| "No focus block is running.".to_string())?;
+        let preset = self.preset()?;
         let from = running.ends_ms.max(now);
-        let new_end = from + EXTEND_MS;
+        let new_end = from + preset.extend_ms();
         let commitments = self.upcoming(now)?;
-        if let Some(limit) = focus_time::focus_limit(&commitments, now)
+        if let Some(limit) = focus_time::focus_limit(&preset, &commitments, now)
             && new_end > limit
             && let Some(next) = focus_time::next(&commitments, now)
         {
@@ -427,9 +598,9 @@ impl Focus {
     /// Free time before the next commitment, or `None` when unlimited (or when
     /// the store is unavailable, where nothing can be checked anyway).
     pub fn free_ms(&self, now: u64) -> Option<u64> {
-        self.with(|store| store.upcoming(now))
+        self.with(|store| Ok((store.preset()?, store.upcoming(now)?)))
             .ok()
-            .and_then(|commitments| focus_time::free_ms(&commitments, now))
+            .and_then(|(preset, commitments)| focus_time::free_ms(&preset, &commitments, now))
     }
 
     /// Time put into a task since `since_ms`; zero when it cannot be read.
@@ -524,6 +695,131 @@ pub fn focus_commitment_remove(
 }
 
 #[tauri::command]
+pub fn focus_preset_set(
+    app: AppHandle,
+    focus: State<Focus>,
+    id: String,
+) -> Result<Snapshot, String> {
+    let snapshot = focus.with(|store| {
+        store.set_preset(&id)?;
+        store.snapshot()
+    })?;
+    announce(&app, &snapshot);
+    Ok(snapshot)
+}
+
+// Hands-free (cycle 8). While the Focus card is listening, what the voice
+// pipeline hears becomes the goal instead of a new agent task.
+static DICTATING: AtomicBool = AtomicBool::new(false);
+/// Whether the microphone was opened for dictation, so only then is it closed
+/// again; a microphone the user opened for the agent stays theirs.
+static OPENED_MIC: AtomicBool = AtomicBool::new(false);
+
+pub fn dictating() -> bool {
+    DICTATING.load(Ordering::SeqCst)
+}
+
+#[cfg(desktop)]
+pub fn hotkey() -> Shortcut {
+    use std::str::FromStr;
+    Shortcut::from_str(HOTKEY).expect("the focus hotkey must parse")
+}
+
+/// Registers the focus hotkey. It can fail when another program owns the
+/// combination; Focus still works from the pill, so that is only logged.
+#[cfg(desktop)]
+fn register_hotkey(app: &AppHandle) {
+    if let Err(error) = app.global_shortcut().register(hotkey()) {
+        log::warn!("could not register the focus hotkey {HOTKEY}: {error}");
+    }
+}
+
+/// The focus hotkey was pressed: bring the pill up and open the Focus card.
+#[cfg_attr(mobile, allow(dead_code))]
+pub fn on_hotkey(app: &AppHandle) {
+    crate::window::summon(app);
+    let _ = app.emit(HOTKEY_PRESSED, ());
+}
+
+/// Called by the voice pipeline with an utterance. When the Focus card is
+/// listening, the words go to it and the caller must not submit them as a task.
+pub fn take_dictation(app: &AppHandle, text: &str) -> bool {
+    if !dictating() {
+        return false;
+    }
+    let _ = app.emit(DICTATED, text);
+    true
+}
+
+#[tauri::command]
+pub async fn focus_dictation_set(
+    app: AppHandle,
+    state: State<'_, crate::events::AppState>,
+    on: bool,
+) -> Result<(), String> {
+    if on {
+        let mic_was_open = state.mic.locked().is_some();
+        if !mic_was_open {
+            crate::commands::toggle_listening(app.clone(), state)
+                .await
+                .map_err(|error| error.to_string())?;
+            OPENED_MIC.store(true, Ordering::SeqCst);
+        }
+        DICTATING.store(true, Ordering::SeqCst);
+    } else {
+        DICTATING.store(false, Ordering::SeqCst);
+        if OPENED_MIC.swap(false, Ordering::SeqCst) {
+            crate::commands::close_microphone(&app);
+        }
+    }
+    Ok(())
+}
+
+/// What the agent is asked to do for a focus block. The done-when line is the
+/// success check: the agent is told to report against it, not to decide by
+/// itself that it is finished.
+pub fn handoff_request(block: &Block) -> String {
+    let minutes = block.planned_ms / MINUTE;
+    let check = if block.done_when.is_empty() {
+        "No done-when was given: say what you finished and what is left.".to_string()
+    } else {
+        format!(
+            "Done when: {}. Tell me whether that is true when you stop, and why if it is not.",
+            block.done_when
+        )
+    };
+    format!(
+        "{}\n\n{check}\n\nThis is a {minutes} minute focus block I am handing to you. \
+         Ask me before anything you are unsure about or cannot undo.",
+        block.title
+    )
+}
+
+/// Hands the running block to the agent as an ordinary request. It enters the
+/// same intake path as anything typed in the composer, so planning, the safety
+/// gate and every approval apply unchanged; nothing here runs a tool.
+#[tauri::command]
+pub fn focus_hand_off(app: AppHandle, focus: State<Focus>) -> Result<Snapshot, String> {
+    let block = focus
+        .with(Store::active)?
+        .ok_or("No focus block is running.")?;
+    if block.handed_off_ms.is_some() {
+        return Err("This block is already with the agent.".into());
+    }
+    crate::intake::submit(&app, &handoff_request(&block), false)?;
+    let snapshot = focus.with(|store| {
+        // The request is already in; a failure to note it only means the
+        // button stays, so it is logged rather than undone.
+        if let Err(error) = store.mark_handed_off(now_ms()) {
+            log::warn!("could not note the hand-off: {error}");
+        }
+        store.snapshot()
+    })?;
+    announce(&app, &snapshot);
+    Ok(snapshot)
+}
+
+#[tauri::command]
 pub fn focus_extend(app: AppHandle, focus: State<Focus>) -> Result<Snapshot, String> {
     let snapshot = focus.with(|store| {
         store.extend(now_ms())?;
@@ -590,8 +886,9 @@ pub fn focus_start_task(
             estimate_minutes: task.estimate_minutes,
             credited_ms: credited,
         });
-        let free = focus_time::free_ms(&store.upcoming(now)?, now);
-        let minutes = focus_time::fit_minutes(left.clamp(5, 25), free)
+        let preset = store.preset()?;
+        let free = focus_time::free_ms(&preset, &store.upcoming(now)?, now);
+        let minutes = focus_time::fit_minutes(left.clamp(5, preset.default_minutes), free)
             .ok_or("You have no free time before your next commitment.")?;
         let title: String = task.title.chars().take(MAX_TITLE).collect();
         store.start_for(&title, "", minutes, now, Some(&task.id))?;
@@ -617,6 +914,9 @@ pub fn start(app: &AppHandle) {
         }
     };
     app.manage(Focus::open(&dir));
+    crate::focus_calendar::start(app);
+    #[cfg(desktop)]
+    register_hotkey(app);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         // Each warning is shown once: per block end time (an extension makes a
@@ -626,15 +926,15 @@ pub fn start(app: &AppHandle) {
         loop {
             tokio::time::sleep(Duration::from_secs(1)).await;
             let now = now_ms();
-            let Some((block, commitments)) = app
+            let Some((block, commitments, preset)) = app
                 .state::<Focus>()
-                .with(|store| Ok((store.active()?, store.upcoming(now)?)))
+                .with(|store| Ok((store.active()?, store.upcoming(now)?, store.preset()?)))
                 .ok()
-                .and_then(|(block, commitments)| Some((block?, commitments)))
+                .and_then(|(block, commitments, preset)| Some((block?, commitments, preset)))
             else {
                 continue;
             };
-            if let Some(next) = focus_time::wrap_up(&commitments, now)
+            if let Some(next) = focus_time::wrap_up(&preset, &commitments, now)
                 && wrap_told != Some((block.id, next.id))
             {
                 wrap_told = Some((block.id, next.id));
@@ -975,5 +1275,293 @@ mod tests {
             "today only"
         );
         assert_eq!(store.credited_for("other", 0).unwrap(), 0);
+    }
+
+    #[test]
+    fn the_default_preset_is_used_until_one_is_chosen_and_the_choice_is_kept() {
+        let store = Store::memory();
+        assert_eq!(store.preset().unwrap().id, "engineer");
+        assert_eq!(store.set_preset("student").unwrap().id, "student");
+        assert_eq!(store.preset().unwrap().id, "student");
+        assert_eq!(store.snapshot_at(0).unwrap().preset.id, "student");
+        assert_eq!(store.snapshot_at(0).unwrap().presets.len(), 3);
+        store.set_preset("founder").unwrap();
+        assert_eq!(store.preset().unwrap().id, "founder", "replaced, not added");
+    }
+
+    #[test]
+    fn an_unknown_preset_is_refused_and_changes_nothing() {
+        let store = Store::memory();
+        store.set_preset("student").unwrap();
+        assert!(store.set_preset("wizard").unwrap_err().contains("wizard"));
+        assert_eq!(store.preset().unwrap().id, "student");
+    }
+
+    #[test]
+    fn the_preset_decides_how_much_room_a_commitment_needs_around_it() {
+        let store = Store::memory();
+        store.add_commitment("Class", 40 * MIN, 30, 0).unwrap();
+        let free = |store: &Store| {
+            focus_time::free_ms(&store.preset().unwrap(), &store.upcoming(0).unwrap(), 0)
+        };
+        assert_eq!(free(&store), Some(35 * MIN));
+        store.set_preset("student").unwrap();
+        assert_eq!(free(&store), Some(30 * MIN), "ten minutes to get to class");
+    }
+
+    #[test]
+    fn extending_adds_the_presets_step() {
+        let store = Store::memory();
+        store.set_preset("student").unwrap();
+        store.start("Read", "", 25, 0).unwrap();
+        let block = store.extend(0).unwrap();
+        assert_eq!(block.planned_ms, 30 * MIN);
+    }
+
+    fn ev(id: &str, title: &str, start_min: u64, end_min: u64) -> crate::focus_calendar::Event {
+        crate::focus_calendar::Event {
+            id: id.into(),
+            title: title.into(),
+            start_ms: start_min * MIN,
+            end_ms: end_min * MIN,
+        }
+    }
+
+    #[test]
+    fn synced_events_become_calendar_commitments_next_to_typed_ones() {
+        let store = Store::memory();
+        store.add_commitment("Dentist", 300 * MIN, 30, 0).unwrap();
+        assert_eq!(
+            store.sync_calendar(&[ev("a", "Standup", 60, 75)]).unwrap(),
+            1
+        );
+        let list = store.upcoming(0).unwrap();
+        let shape: Vec<_> = list
+            .iter()
+            .map(|c| (c.title.as_str(), c.source.as_str()))
+            .collect();
+        assert_eq!(shape, [("Standup", "calendar"), ("Dentist", "manual")]);
+    }
+
+    #[test]
+    fn a_sync_updates_in_place_adds_and_removes_but_never_touches_typed_commitments() {
+        let store = Store::memory();
+        store.add_commitment("Dentist", 300 * MIN, 30, 0).unwrap();
+        store
+            .sync_calendar(&[ev("a", "Standup", 60, 75), ev("b", "Review", 120, 150)])
+            .unwrap();
+        let before = store.upcoming(0).unwrap();
+        let standup_id = before[0].id;
+        store
+            .sync_calendar(&[
+                ev("a", "Standup (moved)", 90, 105),
+                ev("c", "Lunch", 200, 230),
+            ])
+            .unwrap();
+        let after = store.upcoming(0).unwrap();
+        let titles: Vec<_> = after.iter().map(|c| c.title.as_str()).collect();
+        assert_eq!(
+            titles,
+            ["Standup (moved)", "Lunch", "Dentist"],
+            "Review is gone"
+        );
+        assert_eq!(
+            after[0].id, standup_id,
+            "the same commitment, so no second wrap-up warning"
+        );
+        assert_eq!(after[0].start_ms, 90 * MIN);
+    }
+
+    #[test]
+    fn an_empty_calendar_clears_only_the_synced_commitments() {
+        let store = Store::memory();
+        store.add_commitment("Dentist", 300 * MIN, 30, 0).unwrap();
+        store.sync_calendar(&[ev("a", "Standup", 60, 75)]).unwrap();
+        store.sync_calendar(&[]).unwrap();
+        let list = store.upcoming(0).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].title, "Dentist");
+    }
+
+    #[test]
+    fn a_calendar_commitment_cannot_be_removed_here() {
+        let store = Store::memory();
+        store.sync_calendar(&[ev("a", "Standup", 60, 75)]).unwrap();
+        let id = store.upcoming(0).unwrap()[0].id;
+        assert!(
+            store
+                .remove_commitment(id)
+                .unwrap_err()
+                .contains("calendar")
+        );
+        assert_eq!(store.upcoming(0).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn calendar_events_do_not_use_up_the_room_for_typed_commitments() {
+        let store = Store::memory();
+        let events: Vec<_> = (0..MAX_UPCOMING as u64)
+            .map(|i| ev(&format!("e{i}"), "Meeting", 60 + i * 10, 65 + i * 10))
+            .collect();
+        store.sync_calendar(&events).unwrap();
+        assert!(store.add_commitment("Dentist", 900 * MIN, 30, 0).is_ok());
+    }
+
+    #[test]
+    fn free_time_counts_a_calendar_meeting_like_a_typed_one() {
+        let store = Store::memory();
+        store.sync_calendar(&[ev("a", "Standup", 40, 70)]).unwrap();
+        let preset = store.preset().unwrap();
+        assert_eq!(
+            focus_time::free_ms(&preset, &store.upcoming(0).unwrap(), 0),
+            Some(35 * MIN)
+        );
+    }
+
+    #[test]
+    fn a_version_2_database_gains_the_calendar_columns_and_keeps_its_commitments() {
+        let path = std::env::temp_dir().join(format!("focus-v2-{}.sqlite3", now_ms()));
+        {
+            let db = Connection::open(&path).unwrap();
+            db.execute_batch(
+                "CREATE TABLE commitments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    start_ms INTEGER NOT NULL,
+                    end_ms INTEGER NOT NULL
+                 );
+                 INSERT INTO commitments (title, start_ms, end_ms) VALUES ('Old', 100000, 200000);
+                 PRAGMA user_version = 2;",
+            )
+            .unwrap();
+        }
+        let store = Store::open(&path).unwrap();
+        let list = store.upcoming(0).unwrap();
+        assert_eq!(
+            (list[0].title.as_str(), list[0].source.as_str()),
+            ("Old", "manual")
+        );
+        assert_eq!(
+            store.sync_calendar(&[ev("a", "Standup", 60, 75)]).unwrap(),
+            1
+        );
+        drop(store);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn the_focus_hotkey_parses_and_does_not_collide_with_the_other_hotkeys() {
+        use std::str::FromStr;
+        let focus = hotkey();
+        assert_ne!(
+            focus,
+            Shortcut::from_str(crate::hotkeys::DEFAULT_TOGGLE).unwrap()
+        );
+        assert_ne!(
+            focus,
+            Shortcut::from_str(crate::hotkeys::DEFAULT_STOP).unwrap()
+        );
+    }
+
+    #[test]
+    fn dictation_is_off_until_the_card_asks_for_it() {
+        assert!(!dictating());
+        DICTATING.store(true, Ordering::SeqCst);
+        assert!(dictating());
+        DICTATING.store(false, Ordering::SeqCst);
+        assert!(!dictating());
+    }
+
+    fn block_with(done_when: &str) -> Block {
+        Block {
+            id: 1,
+            title: "Write the release notes".into(),
+            done_when: done_when.into(),
+            planned_ms: 25 * MIN,
+            started_ms: 0,
+            ends_ms: 25 * MIN,
+            finished_ms: None,
+            outcome: None,
+            task_id: None,
+            handed_off_ms: None,
+        }
+    }
+
+    #[test]
+    fn the_request_to_the_agent_carries_the_title_the_check_and_a_duty_to_ask() {
+        let text = handoff_request(&block_with("every change has a line"));
+        assert!(text.starts_with("Write the release notes"));
+        assert!(text.contains("Done when: every change has a line."));
+        assert!(text.contains("25 minute focus block"));
+        assert!(text.contains("Ask me before anything"));
+        assert!(text.chars().count() <= 4000, "intake refuses more");
+    }
+
+    #[test]
+    fn without_a_done_when_the_agent_is_asked_to_say_what_it_finished() {
+        let text = handoff_request(&block_with(""));
+        assert!(!text.contains("Done when:"));
+        assert!(text.contains("say what you finished"));
+    }
+
+    #[test]
+    fn the_longest_block_still_fits_what_intake_accepts() {
+        let mut block = block_with(&"x".repeat(MAX_DONE_WHEN));
+        block.title = "t".repeat(MAX_TITLE);
+        assert!(handoff_request(&block).chars().count() <= 4000);
+    }
+
+    #[test]
+    fn a_block_is_handed_over_once() {
+        let store = Store::memory();
+        assert!(
+            store
+                .mark_handed_off(1)
+                .unwrap_err()
+                .contains("No focus block")
+        );
+        store.start("Draft", "", 25, 0).unwrap();
+        assert_eq!(store.active().unwrap().unwrap().handed_off_ms, None);
+        let marked = store.mark_handed_off(5).unwrap();
+        assert_eq!(marked.handed_off_ms, Some(5));
+        assert_eq!(
+            store.snapshot_at(6).unwrap().block.unwrap().handed_off_ms,
+            Some(5)
+        );
+        assert!(store.mark_handed_off(9).unwrap_err().contains("already"));
+    }
+
+    #[test]
+    fn the_hand_off_is_kept_in_the_log_after_the_block_ends() {
+        let store = Store::memory();
+        store.start("Draft", "", 25, 0).unwrap();
+        store.mark_handed_off(5).unwrap();
+        store.finish("done", 10).unwrap();
+        assert_eq!(store.recent(1).unwrap()[0].handed_off_ms, Some(5));
+    }
+
+    #[test]
+    fn a_version_3_database_gains_the_hand_off_column_and_keeps_its_blocks() {
+        let path = std::env::temp_dir().join(format!("focus-v3-{}.sqlite3", now_ms()));
+        {
+            let db = Connection::open(&path).unwrap();
+            db.execute_batch(
+                "CREATE TABLE focus_blocks (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  title TEXT NOT NULL, done_when TEXT NOT NULL DEFAULT '',
+                  planned_ms INTEGER NOT NULL, started_ms INTEGER NOT NULL,
+                  ended_ms INTEGER, outcome TEXT CHECK (outcome IN ('done','stopped')), task_id TEXT);
+                 INSERT INTO focus_blocks (title, planned_ms, started_ms, ended_ms, outcome)
+                  VALUES ('Old block', 60000, 0, 60000, 'done');
+                 PRAGMA user_version = 3;",
+            )
+            .unwrap();
+        }
+        let store = Store::open(&path).unwrap();
+        let recent = store.recent(5).unwrap();
+        assert_eq!(recent[0].title, "Old block");
+        assert_eq!(recent[0].handed_off_ms, None);
+        drop(store);
+        let _ = std::fs::remove_file(&path);
     }
 }

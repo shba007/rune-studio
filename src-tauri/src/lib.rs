@@ -21,6 +21,7 @@ mod eval;
 mod events;
 mod exec;
 mod focus;
+mod focus_calendar;
 mod focus_suggest;
 mod focus_time;
 mod focus_urgency;
@@ -43,6 +44,8 @@ mod observe;
 mod onboarding;
 mod overlay;
 mod personalities;
+#[cfg(mobile)]
+mod platform;
 mod playground;
 mod portfolio;
 mod preview;
@@ -70,14 +73,17 @@ mod grounding_probe;
 #[cfg(all(test, windows))]
 mod system_tests;
 
+#[cfg_attr(mobile, allow(unused_imports))]
 use crate::sync::LockExt;
 use std::sync::Mutex;
 
+use tauri::{Emitter, Manager};
+#[cfg(desktop)]
 use tauri::{
-    Emitter, Manager,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
 };
+#[cfg(desktop)]
 use tauri_plugin_global_shortcut::ShortcutState;
 use tauri_plugin_notification::NotificationExt;
 
@@ -111,29 +117,37 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     }
 
+    // Start with Windows and global hotkeys have no meaning on a phone.
+    #[cfg(desktop)]
+    {
+        builder = builder
+            .plugin(tauri_plugin_autostart::init(
+                tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+                None,
+            ))
+            .plugin(
+                tauri_plugin_global_shortcut::Builder::new()
+                    .with_handler(|app, shortcut, event| {
+                        if event.state() != ShortcutState::Pressed {
+                            return;
+                        }
+                        let hotkeys = app.state::<AppState>().hotkeys.locked().clone();
+                        if shortcut == &hotkeys.toggle {
+                            window::summon(app);
+                        } else if shortcut == &hotkeys.stop {
+                            commands::stop(app.clone());
+                        } else if shortcut == &focus::hotkey() {
+                            focus::on_hotkey(app);
+                        }
+                    })
+                    .build(),
+            );
+    }
+
     builder
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            None,
-        ))
-        .plugin(
-            tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, shortcut, event| {
-                    if event.state() != ShortcutState::Pressed {
-                        return;
-                    }
-                    let hotkeys = app.state::<AppState>().hotkeys.locked().clone();
-                    if shortcut == &hotkeys.toggle {
-                        window::summon(app);
-                    } else if shortcut == &hotkeys.stop {
-                        commands::stop(app.clone());
-                    }
-                })
-                .build(),
-        )
         .on_window_event(|window, event| {
             if window.label() == window::MAIN
                 && matches!(
@@ -269,6 +283,8 @@ pub fn run() {
             video::start_motion_recorder(app.handle());
             workspace_tasks::start(app.handle());
             focus::start(app.handle());
+            // The floating pill is a desktop idea; a phone shows the app full screen.
+            #[cfg(desktop)]
             if let Some(pill) = app.get_webview_window(window::MAIN) {
                 window::protect(&pill)?;
                 window::set_mode(app.handle(), window::Mode::Ambient)?;
@@ -294,6 +310,8 @@ pub fn run() {
                     .show();
             }
 
+            #[cfg(desktop)]
+            {
             let show = MenuItem::with_id(app, "show", "Show / hide", true, None::<&str>)?;
             let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
             let preview = MenuItem::with_id(app, "artifacts", "Workspace…", true, None::<&str>)?;
@@ -315,6 +333,7 @@ pub fn run() {
                 tray = tray.icon(icon.clone());
             }
             tray.build(app)?;
+            }
 
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             if show_onboarding {
@@ -479,6 +498,10 @@ pub fn run() {
             focus::focus_start,
             focus::focus_finish,
             focus::focus_extend,
+            focus::focus_preset_set,
+            focus::focus_dictation_set,
+            focus::focus_hand_off,
+            focus_calendar::focus_calendar_sync,
             focus::focus_start_task,
             habits::habits_state,
             habits::habit_check_in,

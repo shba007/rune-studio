@@ -1,3 +1,5 @@
+#[cfg(mobile)]
+use crate::platform::{BuilderShim as _, WindowShim as _};
 use crate::{
     events::AppState,
     model::capabilities::{ModelCapabilities, OperationStatus, OperationSupport},

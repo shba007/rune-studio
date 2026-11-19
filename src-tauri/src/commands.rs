@@ -240,16 +240,24 @@ pub async fn embedded_model_download(
 
 #[tauri::command]
 pub async fn pick_folder(app: AppHandle) -> Result<Option<String>, String> {
-    use tauri_plugin_dialog::DialogExt;
-    tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
-            .file()
-            .blocking_pick_folder()
-            .and_then(|path| path.into_path().ok())
-            .map(|path| path.display().to_string())
-    })
-    .await
-    .map_err(|error| error.to_string())
+    #[cfg(mobile)]
+    {
+        let _ = app;
+        Err("Choosing a folder is not available on this device.".into())
+    }
+    #[cfg(desktop)]
+    {
+        use tauri_plugin_dialog::DialogExt;
+        tauri::async_runtime::spawn_blocking(move || {
+            app.dialog()
+                .file()
+                .blocking_pick_folder()
+                .and_then(|path| path.into_path().ok())
+                .map(|path| path.display().to_string())
+        })
+        .await
+        .map_err(|error| error.to_string())
+    }
 }
 
 #[tauri::command]
