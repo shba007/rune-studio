@@ -11,6 +11,8 @@ export type PillCard =
   | 'feedback'
   | 'update'
   | 'reminder'
+  | 'focus'
+  | 'habits'
 
 export interface PillCardState {
   question: boolean
@@ -25,6 +27,8 @@ export interface PillCardState {
   review: boolean
   feedback: boolean
   update: boolean
+  focus: boolean
+  habits: boolean
 }
 
 export interface PillCards {
@@ -42,6 +46,8 @@ export function pillCards(state: PillCardState): PillCards {
   else if (state.taskPanel) cards.push('taskPanel')
   else if (state.board) cards.push('board')
 
+  if (state.focus) cards.unshift('focus')
+
   const blocked = state.analysis || state.decision || state.decisionInKnowledge || state.working
   if (blocked) return { cards, more: 0 }
 
@@ -54,8 +60,10 @@ export function pillCards(state: PillCardState): PillCards {
 
   if (quiet.length) {
     cards.push(quiet[0]!)
+    if (state.habits) cards.push('habits')
     return { cards, more: quiet.length - 1 }
   }
   cards.push('reminder')
+  if (state.habits) cards.push('habits')
   return { cards, more: 0 }
 }

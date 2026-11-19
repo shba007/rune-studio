@@ -381,3 +381,56 @@ it('disables the picker and shows the server-owned folder reason for external Ki
   expect(api.invoke.mock.calls.some(([command]) => command === 'pick_folder')).toBe(false)
   wrapper.unmount()
 })
+it('keeps agent file changes off until turned on, and saves the choice with the selected write tools', async () => {
+  api.invoke.mockReset()
+  api.invoke.mockImplementation(async (command: string) => {
+    if (command === 'kit_settings')
+      return { enabled: true, endpoint: 'http://127.0.0.1:47601/mcp', selected: [] }
+    if (command === 'kit_discover')
+      return {
+        version: 'Kit',
+        tools: [],
+        blocked: [
+          {
+            name: 'rune-filesystem__write_file',
+            description: 'Write a file',
+            kind: 'writes',
+            reason: 'changes files',
+          },
+          { name: 'x__other', description: 'o', kind: 'unavailable', reason: 'no' },
+        ],
+      }
+    if (command === 'kit_token_present') return false
+  })
+  const wrapper = mount(SettingsTools)
+  await flushPromises()
+  expect(wrapper.text()).not.toContain('Let the agent change files')
+  await wrapper
+    .findAll('button')
+    .find((button) => button.text() === 'Refresh / discover')!
+    .trigger('click')
+  await flushPromises()
+  expect(wrapper.text()).toContain('Let the agent change files')
+  expect(wrapper.text()).toContain('rune-filesystem__write_file')
+  expect(wrapper.text()).not.toContain('x__other')
+  const switches = () => wrapper.findAll('[role="switch"]')
+  const saves = () => api.invoke.mock.calls.filter(([command]) => command === 'kit_save')
+  const before = saves().length
+  const write = switches().find(
+    (item) => item.attributes('aria-label') === 'rune-filesystem__write_file',
+  )!
+  expect(write.attributes('disabled')).toBeDefined()
+  await switches()
+    .find((item) => item.attributes('aria-label') === 'Let the agent change files')!
+    .trigger('click')
+  await flushPromises()
+  await switches()
+    .find((item) => item.attributes('aria-label') === 'rune-filesystem__write_file')!
+    .trigger('click')
+  await flushPromises()
+  const last = saves().at(-1)![1] as { config: { agentWrites: boolean; selected: string[] } }
+  expect(saves().length).toBeGreaterThan(before)
+  expect(last.config.agentWrites).toBe(true)
+  expect(last.config.selected).toContain('rune-filesystem__write_file')
+  wrapper.unmount()
+})

@@ -14,6 +14,7 @@ import {
   type LiveStep,
 } from '@/config/liveSteps'
 import RunLanes from './RunLanes.vue'
+import RunStagedChanges from './RunStagedChanges.vue'
 import WorkRow from './WorkRow.vue'
 import AppIcon from './AppIcon.vue'
 import ToolResultView from './ToolResultView.vue'
@@ -169,6 +170,7 @@ const timing = (step: LiveStep) => {
       :selected-key="selected ? stepKey(selected) : null"
       @select="picked = $event"
     />
+    <RunStagedChanges :steps="steps" />
     <div class="grid min-w-0 gap-4 md:grid-cols-[minmax(180px,1fr)_minmax(0,2fr)]">
       <div class="max-h-[36rem] min-w-0 overflow-y-auto" aria-label="Current run steps">
         <section v-for="task in lanes" :key="task.id" class="mb-3">

@@ -220,6 +220,10 @@ pub struct RepeatWatch {
     last: Option<String>,
     failures: u32,
     warned: bool,
+    // The same call succeeding again and again changes nothing, so it is also a loop.
+    done: Option<String>,
+    successes: u32,
+    done_warned: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -237,6 +241,13 @@ impl RepeatWatch {
     }
 
     pub fn before(&mut self, key: &str) -> Repeat {
+        if self.done.as_deref() == Some(key) && self.successes >= REPEAT_AFTER {
+            if self.done_warned {
+                return Repeat::Stop;
+            }
+            self.done_warned = true;
+            return Repeat::Warn;
+        }
         if self.last.as_deref() != Some(key) || self.failures < REPEAT_AFTER {
             return Repeat::Run;
         }
@@ -245,6 +256,24 @@ impl RepeatWatch {
         }
         self.warned = true;
         Repeat::Warn
+    }
+
+    /// True when `key` is being blocked because it already succeeded, not because it failed.
+    pub fn repeats_success(&self, key: &str) -> bool {
+        self.done.as_deref() == Some(key) && self.successes >= REPEAT_AFTER
+    }
+
+    pub fn succeeded(&mut self, key: &str) {
+        self.last = None;
+        self.failures = 0;
+        self.warned = false;
+        if self.done.as_deref() == Some(key) {
+            self.successes += 1;
+        } else {
+            self.done = Some(key.to_string());
+            self.successes = 1;
+            self.done_warned = false;
+        }
     }
 
     pub fn failed(&mut self, key: &str) {
@@ -309,6 +338,27 @@ mod repeat_tests {
             Repeat::Run,
             "the earlier streak was replaced"
         );
+    }
+
+    #[test]
+    fn the_same_call_succeeding_again_and_again_is_blocked_then_stops_the_step() {
+        let mut watch = RepeatWatch::default();
+        let call = key("/");
+        for _ in 0..2 {
+            assert_eq!(watch.before(&call), Repeat::Run);
+            watch.succeeded(&call);
+        }
+        assert!(watch.repeats_success(&call));
+        assert_eq!(watch.before(&call), Repeat::Warn);
+        assert_eq!(watch.before(&call), Repeat::Stop);
+        // A different call, or another kind of action, starts over.
+        let other = key("/docs");
+        assert_eq!(watch.before(&other), Repeat::Run);
+        watch.succeeded(&other);
+        assert_eq!(watch.before(&call), Repeat::Run);
+        watch.succeeded(&call);
+        watch.reset();
+        assert_eq!(watch.before(&call), Repeat::Run);
     }
 
     #[test]

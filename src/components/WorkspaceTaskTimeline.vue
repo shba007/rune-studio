@@ -279,6 +279,8 @@ function menu(row: Row) {
     const state = occurrence?.state ?? ''
     if (occurrence?.runId) items.push({ id: 'review', label: 'Review execution' })
     if (['pending', 'in_progress'].includes(state)) {
+      if (task.executionMode === 'manual')
+        items.push({ id: 'focus', label: 'Start focus', disabled: busy })
       items.push({ id: 'done', label: 'Mark done', disabled: busy })
       items.push({ id: 'skip', label: 'Skip', disabled: busy })
     }
@@ -303,11 +305,21 @@ function menu(row: Row) {
   return items
 }
 
+async function startFocus(task: WorkspaceTask) {
+  error.value = ''
+  try {
+    await invoke('focus_start_task', { taskId: task.id })
+  } catch (e) {
+    error.value = String(e)
+  }
+}
+
 function act(row: Row, id: string) {
   const task = row.task
   const run = row.run
   if (id === 'review') emit('open', task ? task.occurrences.at(-1)!.runId! : run!.id)
   else if (id === 'schedule' && task) emit('schedule', task)
+  else if (id === 'focus' && task) void startFocus(task)
   else if (id === 'organize' && run) emit('organize', run)
   else if (id === 'copy' && run) void copy(run)
   else if (id === 'delete' && run) emit('remove', run.id)

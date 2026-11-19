@@ -52,6 +52,9 @@ pub struct Config {
     pub enabled: bool,
     pub endpoint: String,
     pub selected: Vec<String>,
+    /// Lets the agent call selected write tools, but only while Kit stages the plugin's changes.
+    #[serde(default)]
+    pub agent_writes: bool,
 }
 impl Default for Config {
     fn default() -> Self {
@@ -59,6 +62,7 @@ impl Default for Config {
             enabled: false,
             endpoint: default_endpoint(),
             selected: vec![],
+            agent_writes: false,
         }
     }
 }
@@ -1036,7 +1040,44 @@ fn call_result(
     args: &Value,
     cancel: &CancelToken,
 ) -> Result<(Value, Option<Value>), String> {
-    call_checked(config, name, args, cancel, false)
+    call_checked(config, name, args, cancel, Access::Read)
+        .map(|(result, schema, _)| (result, schema))
+}
+
+/// Who is calling, which decides whether a tool that writes may run at all.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Access {
+    /// A selected, strictly read-only tool (background tasks and the old agent path).
+    Read,
+    /// A person pressed Confirm in the Playground.
+    Confirmed,
+    /// The agent. It may call a selected write tool only when `agent_writes` is on and the caller
+    /// has just verified that Kit stages the plugin; otherwise only read-only tools run.
+    Agent { staged: bool },
+}
+
+const STAGED_NOTE: &str = "
+[Staged for the user's review, not applied yet. The file has not changed. Do not say it did; the user applies or undoes the change in Tools settings.]";
+
+/// The agent's tool call: read-only tools as before, and selected write tools only when the plugin
+/// is staged (`staged`, verified by the caller just before) and `agent_writes` is on.
+pub fn call_for_agent(
+    config: &Config,
+    name: &str,
+    args: &Value,
+    cancel: &CancelToken,
+    staged: bool,
+) -> Result<StepToolResult, String> {
+    let (result, output_schema, wrote) =
+        call_checked(config, name, args, cancel, Access::Agent { staged })?;
+    let mut output = playground_result(result);
+    if wrote {
+        output.text.push_str(STAGED_NOTE);
+    }
+    Ok(StepToolResult {
+        output,
+        output_schema,
+    })
 }
 
 /// Runs a tool that changes state, but only for a person pressing the confirm button in the
@@ -1059,8 +1100,14 @@ pub async fn kit_call_write_tool(
         .join("kit.json");
     tauri::async_runtime::spawn_blocking(move || {
         let config = read_config(&path)?;
-        call_checked(&config, &name, &args, &CancelToken::default(), true)
-            .map(|(result, _)| playground_result(result))
+        call_checked(
+            &config,
+            &name,
+            &args,
+            &CancelToken::default(),
+            Access::Confirmed,
+        )
+        .map(|(result, _, _)| playground_result(result))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1071,12 +1118,14 @@ fn call_checked(
     name: &str,
     args: &Value,
     cancel: &CancelToken,
-    confirmed_write: bool,
-) -> Result<(Value, Option<Value>), String> {
+    access: Access,
+) -> Result<(Value, Option<Value>, bool), String> {
     if args.to_string().len() > 8192 {
         return Err("Kit arguments exceed 8 KB".into());
     }
-    if !config.enabled || (!confirmed_write && !config.selected.iter().any(|n| n == name)) {
+    if !config.enabled
+        || (access != Access::Confirmed && !config.selected.iter().any(|n| n == name))
+    {
         return Err("Tool is not selected or approved".into());
     }
     if super::filesystem_identity(name)
@@ -1086,22 +1135,40 @@ fn call_checked(
     }
     // A confirmed write must see every tool to find the one the person confirmed, so it lists
     // without Kit's allow-list, then limits the call itself to exactly that tool.
-    let (mut gateway, _) = Gateway::start(config, cancel, confirmed_write)?;
+    let (mut gateway, _) = Gateway::start(config, cancel, access != Access::Read)?;
     let runnable = gateway.tools(config)?;
-    let tool = if confirmed_write {
-        let found = gateway
-            .writes
-            .iter()
-            .find(|t| t.name == name)
-            .cloned()
-            .ok_or("Tool is not a write tool that can be confirmed here")?;
-        gateway.selected = Some(vec![name.to_string()]);
-        found
-    } else {
-        runnable
+    let mut wrote = false;
+    let tool = match access {
+        Access::Read => runnable
             .into_iter()
             .find(|t| t.name == name)
-            .ok_or("Tool is unavailable or has unsafe/unsupported metadata")?
+            .ok_or("Tool is unavailable or has unsafe/unsupported metadata")?,
+        Access::Confirmed => {
+            let found = gateway
+                .writes
+                .iter()
+                .find(|t| t.name == name)
+                .cloned()
+                .ok_or("Tool is not a write tool that can be confirmed here")?;
+            gateway.selected = Some(vec![name.to_string()]);
+            wrote = true;
+            found
+        }
+        Access::Agent { staged } => {
+            if let Some(found) = runnable.into_iter().find(|t| t.name == name) {
+                gateway.selected = Some(config.selected.clone());
+                found
+            } else if let Some(found) = gateway.writes.iter().find(|t| t.name == name).cloned() {
+                if !(config.agent_writes && staged) {
+                    return Err("refused: the agent may change files only when \"Let the agent write\" is on and Kit is staging this folder".into());
+                }
+                gateway.selected = Some(vec![name.to_string()]);
+                wrote = true;
+                found
+            } else {
+                return Err("Tool is unavailable or has unsafe/unsupported metadata".into());
+            }
+        }
     };
     super::schema::validate(&tool.input_schema, args)?;
     gateway.headers = super::headers::extract(&tool.input_schema, args)?;
@@ -1127,7 +1194,7 @@ fn call_checked(
     }) {
         return Err(format!("MCP error: {}", bounded(&result)));
     }
-    Ok((result, tool.output_schema))
+    Ok((result, tool.output_schema, wrote))
 }
 fn bounded(value: &Value) -> String {
     let mut safe = value.clone();
@@ -1335,6 +1402,7 @@ mod tests {
             enabled: true,
             endpoint: "http://127.0.0.1:1/mcp".into(),
             selected: vec!["time__convert_time".into()],
+            agent_writes: false,
         };
         std::fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
         let result = call_tool_from_settings(
@@ -1730,6 +1798,7 @@ mod tests {
                 enabled: true,
                 endpoint,
                 selected: vec!["time__get_current_time".into()],
+                agent_writes: false,
             },
             thread,
         )
@@ -1754,7 +1823,7 @@ mod tests {
                 "time__set_clock",
                 &args,
                 &CancelToken::default(),
-                false
+                Access::Read
             )
             .unwrap_err(),
             "Tool is not selected or approved"
@@ -1767,12 +1836,12 @@ mod tests {
         let (config, handle) = server("writes", 3);
         let args = json!({"timezone":"UTC"});
         assert!(!config.selected.iter().any(|n| n == "time__set_clock"));
-        let (result, _) = call_checked(
+        let (result, _, _) = call_checked(
             &config,
             "time__set_clock",
             &args,
             &CancelToken::default(),
-            true,
+            Access::Confirmed,
         )
         .unwrap();
         handle.join().unwrap();
@@ -1784,12 +1853,66 @@ mod tests {
                 "time__get_current_time",
                 &args,
                 &CancelToken::default(),
-                true,
+                Access::Confirmed,
             )
             .unwrap_err(),
             "Tool is not a write tool that can be confirmed here"
         );
         handle.join().unwrap();
+    }
+
+    fn agent_config(config: &mut Config, agent_writes: bool) {
+        config.selected = vec!["time__get_current_time".into(), "time__set_clock".into()];
+        config.agent_writes = agent_writes;
+    }
+
+    #[test]
+    fn the_agent_writes_only_when_enabled_selected_and_staged_and_is_told_it_is_not_applied() {
+        let args = json!({"timezone":"UTC"});
+        let cancel = CancelToken::default();
+        // Staged, enabled and selected: runs, and the model is told nothing changed yet.
+        let (mut config, handle) = server("writes", 3);
+        agent_config(&mut config, true);
+        let output = call_for_agent(&config, "time__set_clock", &args, &cancel, true).unwrap();
+        handle.join().unwrap();
+        assert!(output.output.text.contains("Staged for the user's review"));
+        assert!(output.output.text.contains("not applied yet"));
+        // Enabled and selected but Kit is not staging the plugin: refused before any call.
+        let (mut config, handle) = server("writes", 2);
+        agent_config(&mut config, true);
+        let error = call_for_agent(&config, "time__set_clock", &args, &cancel, false).unwrap_err();
+        handle.join().unwrap();
+        assert!(error.starts_with("refused:"), "{error}");
+        // Staged and selected but the setting is off: refused.
+        let (mut config, handle) = server("writes", 2);
+        agent_config(&mut config, false);
+        let error = call_for_agent(&config, "time__set_clock", &args, &cancel, true).unwrap_err();
+        handle.join().unwrap();
+        assert!(error.starts_with("refused:"), "{error}");
+        // Not selected: refused without connecting, even when everything else allows it.
+        let (mut config, handle) = server("writes", 0);
+        config.agent_writes = true;
+        assert_eq!(
+            call_for_agent(&config, "time__set_clock", &args, &cancel, true).unwrap_err(),
+            "Tool is not selected or approved"
+        );
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn a_read_only_tool_called_by_the_agent_is_unchanged_and_carries_no_staged_note() {
+        let (config, handle) = server("writes", 3);
+        let args = json!({"timezone":"UTC"});
+        let output = call_for_agent(
+            &config,
+            "time__get_current_time",
+            &args,
+            &CancelToken::default(),
+            true,
+        )
+        .unwrap();
+        handle.join().unwrap();
+        assert!(!output.output.text.contains("Staged"));
     }
 
     #[test]
@@ -1932,6 +2055,7 @@ mod tests {
             enabled: true,
             endpoint,
             selected: vec![tool.clone()],
+            agent_writes: false,
         };
         let found = discover(&config, &CancelToken::default()).unwrap();
         println!(

@@ -18,6 +18,12 @@ export const COMPOSER_COMMANDS = [
   },
   { id: 'settings', command: '/settings', description: 'Open Rune settings', icon: 'tune' },
   {
+    id: 'focus',
+    command: '/focus',
+    description: 'Start a focus block with a timer',
+    icon: 'wait',
+  },
+  {
     id: 'schedule',
     command: '/schedule',
     description: 'Remind me later, e.g. /schedule in 10 minutes drink water',

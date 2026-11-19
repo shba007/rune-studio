@@ -34,8 +34,15 @@ watch(local, (value) => {
   if (!monthlyDay.value && value) monthlyDay.value = Number(value.slice(8, 10))
 })
 const zone = ref(props.task?.schedule?.zone ?? '')
+const estimate = ref<number | ''>(props.task?.estimateMinutes ?? '')
+const estimateMinutes = computed(() =>
+  typeof estimate.value === 'number' && estimate.value > 0 ? Math.round(estimate.value) : null,
+)
 const rune = computed(
   () => (props.task ? props.task.executionMode : executionMode.value) === 'agent',
+)
+const manual = computed(
+  () => (props.task ? props.task.executionMode : executionMode.value) === 'manual',
 )
 const runsAutomatically = computed(() => scheduled.value && rune.value && dueAction.value === 'run')
 const dueActions: { value: 'remind' | 'run'; label: string }[] = [
@@ -102,9 +109,18 @@ async function submit() {
       : null
     const action = runsAutomatically.value ? 'run' : 'remind'
     if (props.task) {
+      let revision = props.task.revision
+      if (manual.value && estimateMinutes.value !== (props.task.estimateMinutes ?? null)) {
+        await invoke('workspace_task_estimate', {
+          id: props.task.id,
+          revision,
+          minutes: estimateMinutes.value,
+        })
+        revision += 1
+      }
       await invoke('workspace_task_schedule', {
         id: props.task.id,
-        revision: props.task.revision,
+        revision,
         schedule,
       })
       if (
@@ -113,7 +129,7 @@ async function submit() {
       )
         await invoke('workspace_task_due_action', {
           id: props.task.id,
-          revision: props.task.revision + 1,
+          revision: revision + 1,
           action,
         })
       id = props.task.id
@@ -132,6 +148,7 @@ async function submit() {
         class: parentGoal.value?.class ?? privacy.value,
         schedule,
         dueAction: action,
+        estimateMinutes: manual.value ? estimateMinutes.value : null,
       })
     emit('saved', 'task', id)
   } catch (e) {
@@ -204,6 +221,21 @@ async function submit() {
         </HubRow>
       </div>
       <div class="flex flex-col gap-0.5">
+        <HubRow
+          v-if="manual && !legacyRunId"
+          label="Time you expect it to take"
+          hint="Optional. Rune uses it to rank what needs your focus first."
+        >
+          <input
+            v-model.number="estimate"
+            type="number"
+            min="1"
+            max="1440"
+            aria-label="Estimated minutes"
+            placeholder="minutes"
+            :class="[field, 'h-10 w-28']"
+          />
+        </HubRow>
         <HubRow label="Schedule this task">
           <RuneSwitch v-model="scheduled" label="Schedule this task" />
         </HubRow>

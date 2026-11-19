@@ -2,6 +2,7 @@
 import RuneButton from './RuneButton.vue'
 import LiveStepRows from './LiveStepRows.vue'
 import RunLanes from './RunLanes.vue'
+import RunStagedChanges from './RunStagedChanges.vue'
 import type { LiveStep } from '@/config/liveSteps'
 import RuneIconButton from './RuneIconButton.vue'
 import { useIntervalFn, useNow, usePreferredReducedMotion } from '@vueuse/core'
@@ -234,6 +235,7 @@ function stepLabel(phase: TaskPhase) {
       :steps="liveSteps ?? []"
       :now="now.getTime()"
     />
+    <RunStagedChanges :steps="liveSteps ?? []" />
     <div
       v-if="tasks.length"
       ref="carousel"

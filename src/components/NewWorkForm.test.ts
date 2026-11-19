@@ -89,3 +89,62 @@ it('never offers automatic running for manual work', async () => {
     expect.objectContaining({ dueAction: 'remind' }),
   )
 })
+it('saves the time you expect a manual task to take', async () => {
+  const wrapper = mount(NewWorkForm, { props: { goals: [] } })
+  await flushPromises()
+  await wrapper.get('textarea').setValue('Write the report')
+  await wrapper.get('input[aria-label="Estimated minutes"]').setValue('90')
+  await wrapper.get('form').trigger('submit')
+  await flushPromises()
+  expect(invoke).toHaveBeenCalledWith(
+    'workspace_task_create',
+    expect.objectContaining({ title: 'Write the report', estimateMinutes: 90 }),
+  )
+})
+
+it('leaves the estimate empty by default and hides it for Rune tasks', async () => {
+  const wrapper = mount(NewWorkForm, { props: { goals: [] } })
+  await flushPromises()
+  await wrapper.get('textarea').setValue('Go jogging')
+  await wrapper.get('form').trigger('submit')
+  await flushPromises()
+  expect(invoke).toHaveBeenCalledWith(
+    'workspace_task_create',
+    expect.objectContaining({ estimateMinutes: null }),
+  )
+  await wrapper.get('button[aria-label="Who will do this task?"]').trigger('click')
+  await wrapper
+    .findAll('[role="option"]')
+    .find((option) => option.text().startsWith('Rune'))!
+    .trigger('click')
+  expect(wrapper.find('input[aria-label="Estimated minutes"]').exists()).toBe(false)
+})
+
+it('changes the estimate of an existing task before its schedule, on the right revision', async () => {
+  const task = {
+    id: 'task-1',
+    revision: 4,
+    title: 'Write the report',
+    parentGoalId: null,
+    class: 'general',
+    createdMs: 0,
+    schedule: null,
+    paused: false,
+    executionMode: 'manual',
+    estimateMinutes: 30,
+    occurrences: [],
+    error: null,
+    completedSteps: 0,
+    totalSteps: 0,
+  }
+  const wrapper = mount(NewWorkForm, { props: { goals: [], task: task as never } })
+  await flushPromises()
+  await wrapper.get('input[aria-label="Estimated minutes"]').setValue('45')
+  await wrapper.get('form').trigger('submit')
+  await flushPromises()
+  const calls = invoke.mock.calls.filter(([c]) => c !== 'workspace_task_zone')
+  expect(calls).toEqual([
+    ['workspace_task_estimate', { id: 'task-1', revision: 4, minutes: 45 }],
+    ['workspace_task_schedule', { id: 'task-1', revision: 5, schedule: null }],
+  ])
+})

@@ -758,11 +758,32 @@ async fn run(
                     discovery.tools.iter().map(|t| &t.name).collect::<Vec<_>>(),
                     kit_config.selected
                 );
+                // Write tools are offered only when the person turned agent writes on, selected the
+                // tool, and Kit is staging that plugin right now (checked again at call time).
+                let mut writers = Vec::new();
+                if kit_config.agent_writes {
+                    for blocked in &discovery.blocked {
+                        if blocked.kind == crate::kit::BlockKind::Writes
+                            && kit_config.selected.contains(&blocked.name)
+                            && let Some(schema) = &blocked.input_schema
+                            && plugin_is_staged(app, &kit_config.endpoint, &blocked.name).await
+                        {
+                            writers.push((
+                                blocked.name.clone(),
+                                blocked.description.clone(),
+                                schema.clone(),
+                            ));
+                        }
+                    }
+                }
                 if let Some(list) = tools.as_array_mut() {
                     for tool in discovery.tools {
                         if kit_config.selected.contains(&tool.name) {
                             list.push(serde_json::json!({"type":"function","function":{"name":format!("kit__{}",tool.name),"description":tool.description,"parameters":tool.input_schema}}));
                         }
+                    }
+                    for (name, description, schema) in writers {
+                        list.push(serde_json::json!({"type":"function","function":{"name":format!("kit__{name}"),"description":format!("{description} The change is staged for the user to review; it is not applied until they apply it."),"parameters":schema}}));
                     }
                 }
             }
@@ -1532,9 +1553,15 @@ async fn run(
             match repeat_watch.before(&repeat_key) {
                 stuck::Repeat::Run => {}
                 stuck::Repeat::Warn => {
-                    let notice = format!(
-                        "{name} with these exact arguments has already failed twice and was not run again. Repeating it will not help: use a different tool or different arguments, or finish and say what could not be done."
-                    );
+                    let notice = if repeat_watch.repeats_success(&repeat_key) {
+                        format!(
+                            "{name} with these exact arguments already succeeded twice with the same result and was not run again. Repeating it changes nothing: use what it returned, take a different step, or finish with done."
+                        )
+                    } else {
+                        format!(
+                            "{name} with these exact arguments has already failed twice and was not run again. Repeating it will not help: use a different tool or different arguments, or finish and say what could not be done."
+                        )
+                    };
                     trace.event(
                         run_id,
                         "repeated_failure_blocked",
@@ -1550,13 +1577,14 @@ async fn run(
                 }
                 stuck::Repeat::Stop => {
                     let message = format!(
-                        "Stopped: {name} kept failing with the same arguments and the model repeated it after being told not to."
+                        "Stopped: {name} was repeated with the same arguments and the model did it again after being told not to."
                     );
                     row.fail(&message);
                     return Outcome::Failed(message);
                 }
             }
             let config = crate::kit::client::load(app);
+            let staged = plugin_is_staged(app, &config.endpoint, name).await;
             let name = name.clone();
             let args = arguments.clone();
             let token = cancel.clone();
@@ -1572,7 +1600,7 @@ async fn run(
             events::set_agent_state(app, AgentState::Acting);
             let started = Instant::now();
             let result = tauri::async_runtime::spawn_blocking(move || {
-                crate::kit::client::call_for_step(&config, &name, &args, &token)
+                crate::kit::client::call_for_agent(&config, &name, &args, &token, staged)
             })
             .await;
             row.rec.act_ms = millis(started);
@@ -1626,7 +1654,7 @@ async fn run(
             }
             let step_result = if row.rec.result.as_deref() == Some("ok") {
                 control_watch.record(None);
-                repeat_watch.reset();
+                repeat_watch.succeeded(&repeat_key);
                 Ok(())
             } else {
                 repeat_watch.failed(&repeat_key);
@@ -2165,4 +2193,15 @@ mod live {
         assert!(row.error.is_none());
         assert!(row.evidence.unwrap().contains("swap_refused"));
     }
+}
+
+/// Whether Kit is staging the plugin that owns `tool` (the part of its name before `__`).
+/// Anything that cannot be confirmed counts as not staged, so a write is refused.
+async fn plugin_is_staged(app: &AppHandle, endpoint: &str, tool: &str) -> bool {
+    let plugin = tool.split_once("__").map_or(tool, |(plugin, _)| plugin);
+    let manager = app.state::<crate::embedded_kit::EmbeddedKitManager>();
+    manager
+        .plugin_staged(endpoint.to_string(), plugin.to_string())
+        .await
+        .unwrap_or(false)
 }

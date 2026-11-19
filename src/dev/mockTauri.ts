@@ -1,6 +1,8 @@
 import { mockIPC } from '@tauri-apps/api/mocks'
 import { emit } from '@tauri-apps/api/event'
 
+import { isFocusCommand, isHabitCommand, mockFocus } from './mockFocus'
+
 import {
   drawnShot,
   previewCalls,
@@ -136,6 +138,7 @@ export function installTauriMock() {
   mockIPC(
     (command, args) => {
       const given = (args ?? {}) as Record<string, unknown>
+      if (isFocusCommand(command) || isHabitCommand(command)) return mockFocus(command, given)
       switch (command) {
         // Browser mock only: no native folder is opened or saved by Kit.
         case 'kit_settings':
@@ -251,6 +254,7 @@ export function installTauriMock() {
           return null
         }
         case 'decisions_state':
+          if (new URLSearchParams(location.search).get('demo') === 'focus') return []
           return [
             {
               id: 'goal-fit',
@@ -449,6 +453,9 @@ export function installTauriMock() {
             },
           }
         case 'analysis_state':
+          // ?demo=focus: a quiet pill, so the Focus and habit cards show on their own.
+          if (new URLSearchParams(location.search).get('demo') === 'focus')
+            return { ...analysisFixture(), status: 'idle', findings: [], answer: '' }
           return new URLSearchParams(location.search).get('demo') === 'analysis'
             ? {
                 ...analysisFixture(),

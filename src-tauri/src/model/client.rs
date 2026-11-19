@@ -902,10 +902,45 @@ fn cut_off(finish_reason: Option<&str>) -> bool {
     finish_reason == Some("length")
 }
 
+/// Some small models print the arguments of `done` as a JSON block in their reply instead of
+/// calling the tool. When the reply holds exactly that object (`summary`, `success` and at most
+/// `reason`) and no tool was called, it is the model finishing, so it is treated as a `done` call;
+/// that call still goes through the same finish checks as any other. Anything else is not salvaged.
+pub(crate) fn salvage_done(content: &str) -> Option<Value> {
+    let mut start = 0;
+    while let Some(offset) = content[start..].find('{') {
+        let at = start + offset;
+        let mut values = serde_json::Deserializer::from_str(&content[at..]).into_iter::<Value>();
+        if let Some(Ok(Value::Object(object))) = values.next()
+            && object.get("summary").is_some_and(Value::is_string)
+            && object.get("success").is_some_and(Value::is_boolean)
+            && object
+                .keys()
+                .all(|k| matches!(k.as_str(), "summary" | "success" | "reason"))
+        {
+            return Some(Value::Object(object));
+        }
+        start = at + 1;
+    }
+    None
+}
+
 pub fn parse_reply(value: &Value) -> Result<Reply, ModelError> {
     let message = &value["choices"][0]["message"];
     let cut = cut_off(value["choices"][0]["finish_reason"].as_str());
     let Some(call) = message["tool_calls"].get(0) else {
+        if let Some(arguments) = salvage_done(message["content"].as_str().unwrap_or("")) {
+            return Ok(Reply {
+                call: ToolCall {
+                    name: "done".into(),
+                    arguments,
+                },
+                completion_tokens: value["usage"]["completion_tokens"].as_u64(),
+                thinking: reasoning_of(message).to_string(),
+                served_model: value["model"].as_str().map(str::to_owned),
+                swap_ms: value["swap_ms"].as_u64(),
+            });
+        }
         let text = snippet(message["content"].as_str().unwrap_or(""));
         return Err(if cut {
             ModelError::TokenLimit(text)
@@ -1080,6 +1115,18 @@ impl Stream {
     fn finish(self, swap_ms: Option<u64>) -> Result<Reply, ModelError> {
         let cut = cut_off(self.finish_reason.as_deref());
         let Some((name, arguments)) = self.calls.into_values().next() else {
+            if let Some(arguments) = salvage_done(&self.content) {
+                return Ok(Reply {
+                    call: ToolCall {
+                        name: "done".into(),
+                        arguments,
+                    },
+                    completion_tokens: self.completion_tokens,
+                    thinking: self.thinking,
+                    served_model: self.model,
+                    swap_ms,
+                });
+            }
             let text = snippet(&self.content);
             return Err(if cut {
                 ModelError::TokenLimit(text)
@@ -1106,6 +1153,49 @@ impl Stream {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_done_object_printed_instead_of_called_is_accepted_and_nothing_else_is() {
+        let said = "Step 4: it is staged.
+
+```json
+{
+  \"summary\": \"Created notes.md\",
+  \"success\": true,
+  \"reason\": \"staged\"
+}
+```
+
+Done. {\"summary\": \"again\", \"success\": true}";
+        let reply = parse_reply(&json!({"choices":[{"finish_reason":"stop","message":{"content":said}}],"usage":{"completion_tokens":9}})).unwrap();
+        assert_eq!(reply.call.name, "done");
+        assert_eq!(reply.call.arguments["summary"], "Created notes.md");
+        assert_eq!(reply.completion_tokens, Some(9));
+        for not_done in [
+            "[\"enter\"]",
+            "{\"summary\":\"x\"}",
+            "{\"summary\":\"x\",\"success\":\"yes\"}",
+            "{\"summary\":\"x\",\"success\":true,\"extra\":1}",
+            "{\"x\":1} {not json",
+            "I will click the button.",
+        ] {
+            let error = parse_reply(
+                &json!({"choices":[{"finish_reason":"stop","message":{"content":not_done}}]}),
+            )
+            .err()
+            .unwrap();
+            assert!(matches!(error, ModelError::NoToolCall(_)), "{not_done}");
+        }
+    }
+
+    #[test]
+    fn a_real_tool_call_always_wins_over_a_done_object_in_the_reply() {
+        let reply = parse_reply(&json!({"choices":[{"message":{
+            "content": "{\"summary\":\"x\",\"success\":true}",
+            "tool_calls":[{"function":{"name":"click","arguments":"{\"x\":1,\"y\":2}"}}]}}]}))
+        .unwrap();
+        assert_eq!(reply.call.name, "click");
+    }
 
     #[tokio::test]
     async fn classification_fails_closed_when_contract_is_not_advertised() {

@@ -14,6 +14,7 @@ interface Config {
   enabled: boolean
   endpoint: string
   selected: string[]
+  agentWrites?: boolean
 }
 interface Tool {
   name: string
@@ -122,6 +123,8 @@ async function chooseFolder() {
 }
 const config = ref<Config>({ enabled: false, endpoint: 'http://127.0.0.1:47601/mcp', selected: [] })
 const tools = ref<Tool[]>([])
+// Tools that change files. The agent may use the ones selected here, only while Kit stages them.
+const writeTools = ref<Tool[]>([])
 const status = ref(
   'Not connected. rune-kit 0.6.0 or newer with a compatible MCP protocol is required.',
 )
@@ -420,11 +423,14 @@ async function refresh() {
     const result = await invoke<{
       version: string
       tools: Tool[]
-      blocked?: { name: string; reason: string }[]
+      blocked?: { name: string; description: string; kind: string; reason: string }[]
     }>('kit_discover', {
       config: config.value,
     })
     tools.value = result.tools
+    writeTools.value = (result.blocked ?? [])
+      .filter((item) => item.kind === 'writes')
+      .map((item) => ({ name: item.name, description: item.description, inputSchema: null }))
     status.value = result.tools.length
       ? `${result.version}: ${result.tools.length} supported read-only tools available.`
       : `${result.version}: no supported tools. Check installed time/git plugins and filesystem 0.4.1+. File tools require a server-configured allowed_dir. Unsafe metadata or unsupported schemas remain unavailable.`
@@ -449,6 +455,10 @@ onMounted(async () => {
 })
 function setEnabled(value: boolean) {
   config.value.enabled = value
+  void save()
+}
+function setAgentWrites(value: boolean) {
+  config.value.agentWrites = value
   void save()
 }
 function setSelected(name: string, value: boolean) {
@@ -639,6 +649,23 @@ function setSelected(name: string, value: boolean) {
         :model-value="config.selected.includes(tool.name)"
         :label="tool.name"
         :hint="tool.description"
+        @update:model-value="setSelected(tool.name, $event)"
+      />
+    </HubGroup>
+    <HubGroup v-if="writeTools.length" title="Agent file changes">
+      <HubToggle
+        :model-value="config.agentWrites === true"
+        label="Let the agent change files"
+        hint="Off by default. When on, the agent can use the write tools selected below, but only while Kit stages the folder: changes wait for your review in Tools settings and are never applied directly."
+        @update:model-value="setAgentWrites($event)"
+      />
+      <HubToggle
+        v-for="tool in writeTools"
+        :key="tool.name"
+        :model-value="config.selected.includes(tool.name)"
+        :label="tool.name"
+        :hint="tool.description"
+        :disabled="config.agentWrites !== true"
         @update:model-value="setSelected(tool.name, $event)"
       />
     </HubGroup>

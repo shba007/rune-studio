@@ -14,6 +14,8 @@ import RuneNavItem from './RuneNavItem.vue'
 import RuneChoice from './RuneChoice.vue'
 import AppIcon from './AppIcon.vue'
 import ToolResultView from './ToolResultView.vue'
+import StagedChanges from './StagedChanges.vue'
+import { wasStaged } from '@/config/stagedChanges'
 import type { ResultValue } from '@/config/toolResult'
 
 interface Config {
@@ -393,12 +395,18 @@ onMounted(discover)
         <p v-if="running" role="status" class="text-rune-body text-rune-text-2">Running…</p>
         <div v-else-if="result" class="max-h-full w-full max-w-3xl overflow-auto p-6">
           <p
-            v-if="result.ok && result.structuredContent?.staged === true"
+            v-if="result.ok && wasStaged(result.structuredContent)"
             role="status"
             class="text-rune-body text-attention"
           >
-            Staged, not applied yet. Review and apply it in Tools settings.
+            Staged, not applied yet.
           </p>
+          <StagedChanges
+            v-if="result.ok && wasStaged(result.structuredContent) && formTool"
+            :key="formTool.name + result.ms"
+            class="mb-4"
+            :tool="formTool.name"
+          />
           <p role="status" class="text-rune-caption text-rune-text-2">
             {{ result.ok ? 'Succeeded' : 'Failed' }} · {{ result.ms }} ms
           </p>

@@ -5,6 +5,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { computed, nextTick, ref, useId, watch } from 'vue'
 
 import type { Agent } from '@/composables/useAgent'
+import { openFocusForm } from '@/composables/useFocus'
 import type { TaskBoardModel } from '@/composables/useTaskBoard'
 
 import AppIcon from './AppIcon.vue'
@@ -99,6 +100,12 @@ async function runCommand(item: ComposerCommand) {
     command.value = '/schedule '
     await nextTick()
     field.value?.focus()
+    return
+  }
+  if (item.id === 'focus') {
+    openFocusForm()
+    command.value = ''
+    menuDismissed.value = true
     return
   }
   commandPending.value = true

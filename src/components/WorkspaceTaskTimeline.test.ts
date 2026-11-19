@@ -1,13 +1,15 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
-import { expect, it, vi } from 'vite-plus/test'
+import { beforeEach, expect, it, vi } from 'vite-plus/test'
 import WorkspaceTaskTimeline from './WorkspaceTaskTimeline.vue'
 import TaskPreview from './TaskPreview.vue'
 import type { WorkspaceTasksModel } from '@/composables/useWorkspaceTasks'
 import type { PreviewRun } from '@/config/preview'
 import type { WorkspaceTask } from '@/types/workspace'
-vi.mock('@tauri-apps/api/core', () => ({ invoke: async () => ({}) }))
+const invoke = vi.hoisted(() => vi.fn<(command: string, args?: unknown) => Promise<unknown>>())
+vi.mock('@tauri-apps/api/core', () => ({ invoke }))
 
+beforeEach(() => invoke.mockReset().mockImplementation(async () => ({})))
 const now = Date.now()
 const run = (id: string, task: string, outcome: string | null, startedMs: number): PreviewRun => ({
   id,
@@ -141,4 +143,59 @@ it('lists tasks as a table with a preview in each row and opens the player from 
   wrapper.findComponent(TaskPreview).vm.$emit('open')
   expect(wrapper.emitted('open')).toEqual([['run-a']])
   wrapper.unmount()
+})
+const waitingTask = (mode: 'manual' | 'agent', state = 'pending') =>
+  ({
+    id: 'task-9',
+    revision: 1,
+    title: 'Pay the invoice',
+    parentGoalId: null,
+    class: 'general',
+    createdMs: now,
+    schedule: null,
+    paused: false,
+    executionMode: mode,
+    occurrences: [{ id: 'o1', dueMs: now + 3_600_000, state, runId: null, reported: false }],
+    error: null,
+    completedSteps: 0,
+    totalSteps: 0,
+  }) as unknown as WorkspaceTask
+
+const menuOf = async (task: WorkspaceTask) => {
+  const { wrapper } = mountTimeline([], [task])
+  await flushPromises()
+  await wrapper.get('button[aria-haspopup="menu"]').trigger('click')
+  return wrapper
+}
+
+it('offers Start focus for a manual task that is waiting on you and starts a block for it', async () => {
+  const wrapper = await menuOf(waitingTask('manual'))
+  const item = wrapper.findAll('[role="menuitem"]').find((i) => i.text() === 'Start focus')!
+  await item.trigger('click')
+  await flushPromises()
+  expect(invoke).toHaveBeenCalledWith('focus_start_task', { taskId: 'task-9' })
+  wrapper.unmount()
+})
+
+it('shows why a focus block could not start for the task', async () => {
+  invoke.mockImplementation(async (command) => {
+    if (command === 'focus_start_task') throw 'You have no free time before your next commitment.'
+    return {}
+  })
+  const wrapper = await menuOf(waitingTask('manual'))
+  await wrapper
+    .findAll('[role="menuitem"]')
+    .find((i) => i.text() === 'Start focus')!
+    .trigger('click')
+  await flushPromises()
+  expect(wrapper.text()).toContain('no free time')
+  wrapper.unmount()
+})
+
+it('does not offer Start focus for Rune tasks or finished work', async () => {
+  for (const task of [waitingTask('agent'), waitingTask('manual', 'completed')]) {
+    const wrapper = await menuOf(task)
+    expect(wrapper.findAll('[role="menuitem"]').map((i) => i.text())).not.toContain('Start focus')
+    wrapper.unmount()
+  }
 })

@@ -140,12 +140,22 @@ pub struct WorkspaceTask {
     pub instructions: Option<String>,
     #[serde(default = "remind_action")]
     pub due_action: String,
+    /// How many minutes the user expects the work to take. Optional; Focus
+    /// mode uses it to rank tasks by urgency.
+    #[serde(default)]
+    pub estimate_minutes: Option<u32>,
 }
 fn agent_mode() -> String {
     "agent".into()
 }
 fn remind_action() -> String {
     "remind".into()
+}
+fn check_estimate(minutes: Option<u32>) -> Result<(), String> {
+    match minutes {
+        Some(0) | Some(1441..) => Err("An estimate is 1 to 1,440 minutes".into()),
+        _ => Ok(()),
+    }
 }
 fn check_due_action(action: &str, mode: &str, scheduled: bool) -> Result<(), String> {
     match action {
@@ -361,6 +371,7 @@ pub fn workspace_task_import(
         legacy_task_id: Some(root),
         instructions,
         due_action: remind_action(),
+        estimate_minutes: None,
     };
     save(&app, &mut task)?;
     Ok(task.id)
@@ -406,6 +417,7 @@ pub fn workspace_task_schedule(
     save(&app, &mut task)
 }
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn workspace_task_create(
     app: AppHandle,
     title: String,
@@ -414,8 +426,10 @@ pub fn workspace_task_create(
     schedule: Option<ScheduleInput>,
     execution_mode: Option<String>,
     due_action: Option<String>,
+    estimate_minutes: Option<u32>,
 ) -> Result<String, String> {
     let _guard = MUTATION.locked();
+    check_estimate(estimate_minutes)?;
     if title.trim().is_empty() || title.chars().count() > 4000 {
         return Err("Enter a task of 1 to 4,000 characters".into());
     }
@@ -429,6 +443,7 @@ pub fn workspace_task_create(
     check_due_action(&due_action, &mode, schedule.is_some())?;
     let mut task = WorkspaceTask {
         due_action,
+        estimate_minutes,
         execution_mode: mode,
         id: format!("worktask-{}", intake::uid()?),
         revision: 0,
@@ -477,6 +492,7 @@ pub(crate) fn create_proposed(
     let schedule = approval.schedule.map(make_schedule).transpose()?;
     let mut task = WorkspaceTask {
         due_action: remind_action(),
+        estimate_minutes: None,
         id,
         revision: 0,
         title: approval.title.trim().into(),
@@ -671,6 +687,34 @@ pub fn workspace_task_due_action(
     save(&app, &mut task)
 }
 #[tauri::command]
+pub fn workspace_task_estimate(
+    app: AppHandle,
+    id: String,
+    revision: u64,
+    minutes: Option<u32>,
+) -> Result<(), String> {
+    let _guard = MUTATION.locked();
+    check_estimate(minutes)?;
+    let mut task = checked(&app, &id, revision)?;
+    task.estimate_minutes = minutes;
+    save(&app, &mut task)
+}
+/// The tasks the user does themselves that are waiting on them, for Focus
+/// mode. Agent tasks are left out: Rune does those, not the user.
+pub fn waiting_manual_tasks(app: &AppHandle) -> Result<Vec<WorkspaceTask>, String> {
+    Ok(load(app)?
+        .into_iter()
+        .filter(|task| {
+            !task.paused
+                && task.execution_mode == "manual"
+                && task
+                    .occurrences
+                    .last()
+                    .is_some_and(|o| matches!(o.state.as_str(), "pending" | "in_progress"))
+        })
+        .collect())
+}
+#[tauri::command]
 pub fn workspace_task_zone() -> Result<String, String> {
     crate::task_calendar::current_zone()
 }
@@ -844,6 +888,57 @@ pub fn start(app: &AppHandle) {
         }
     });
 }
+/// A daily habit is something the user does themselves every day.
+pub fn is_daily_habit(task: &WorkspaceTask) -> bool {
+    task.execution_mode == "manual" && task.schedule.as_ref().is_some_and(|s| s.repeat == "daily")
+}
+/// A habit that was not checked in before its next day came round is skipped,
+/// so a fresh occurrence can start. Without this an unchecked habit would stay
+/// pending forever and never roll over to the next day.
+fn roll_missed_habit(task: &mut WorkspaceTask, at: u64) -> bool {
+    if task.paused || !is_daily_habit(task) {
+        return false;
+    }
+    let next_due = task.schedule.as_ref().is_some_and(|s| s.next_ms <= at);
+    match task.occurrences.last_mut() {
+        Some(o) if next_due && o.state == "pending" => {
+            o.state = "skipped".into();
+            o.completed_ms = Some(at);
+            true
+        }
+        _ => false,
+    }
+}
+fn complete_occurrence(task: &mut WorkspaceTask, at: u64) -> Result<(), String> {
+    let current = task
+        .occurrences
+        .last_mut()
+        .ok_or("There is nothing to check in yet.")?;
+    if !matches!(current.state.as_str(), "pending" | "in_progress") {
+        return Err("This habit is already checked in for today.".into());
+    }
+    current.state = "completed".into();
+    current.reported = true;
+    current.completed_ms = Some(at);
+    Ok(())
+}
+/// Marks the current occurrence of a task done, as the user's own check-in.
+pub fn complete_current(app: &AppHandle, id: &str) -> Result<(), String> {
+    let _guard = MUTATION.locked();
+    let mut task = load(app)?
+        .into_iter()
+        .find(|t| t.id == id)
+        .ok_or("This habit is unavailable.")?;
+    complete_occurrence(&mut task, now())?;
+    save(app, &mut task)
+}
+/// The user's daily habits that are running, for Focus mode.
+pub fn daily_habits(app: &AppHandle) -> Result<Vec<WorkspaceTask>, String> {
+    Ok(load(app)?
+        .into_iter()
+        .filter(|task| !task.paused && is_daily_habit(task))
+        .collect())
+}
 fn materialize_due(task: &mut WorkspaceTask, at: u64) -> Result<bool, String> {
     let waiting = task.occurrences.last().is_some_and(|o| {
         matches!(
@@ -935,6 +1030,7 @@ fn tick(app: &AppHandle) -> Result<Vec<WorkspaceTask>, String> {
                 changed = true;
             }
         }
+        changed |= roll_missed_habit(&mut task, now());
         changed |= materialize_due(&mut task, now())?;
         if changed {
             save(app, &mut task)?;
@@ -1032,5 +1128,68 @@ mod tests {
             task.occurrences = vec![o];
             assert!(!materialize_due(&mut task, 500).unwrap(), "{state}");
         }
+    }
+
+    fn daily(state: &str, next_ms: u64) -> WorkspaceTask {
+        serde_json::from_value(serde_json::json!({
+            "id":"worktask-h", "revision":1, "title":"Read", "parentGoalId":null,
+            "class":"general", "createdMs":0, "paused":false, "error":null,
+            "executionMode":"manual",
+            "schedule":{"local":"2026-11-19T07:00", "zone":"UTC", "repeat":"daily",
+                "nextLocal":"2026-11-20T07:00", "nextMs":next_ms, "anchorDay":19},
+            "occurrences":[{"id":"o1","dueMs":100,"state":state,"runId":null,
+                "reported":false,"completedMs":null}]
+        }))
+        .unwrap()
+    }
+    #[test]
+    fn a_daily_habit_not_checked_in_is_skipped_when_the_next_day_comes_round() {
+        let mut task = daily("pending", 1_000);
+        assert!(
+            !roll_missed_habit(&mut task, 999),
+            "the next day has not come yet"
+        );
+        assert_eq!(task.occurrences[0].state, "pending");
+        assert!(roll_missed_habit(&mut task, 1_000));
+        assert_eq!(task.occurrences[0].state, "skipped");
+        assert!(
+            materialize_due(&mut task, 1_000).unwrap(),
+            "so a fresh one starts"
+        );
+        assert_eq!(task.occurrences.len(), 2);
+        assert_eq!(task.occurrences[1].state, "pending");
+    }
+    #[test]
+    fn only_a_pending_daily_habit_is_rolled_over() {
+        let mut done = daily("completed", 1_000);
+        assert!(!roll_missed_habit(&mut done, 5_000));
+        let mut started = daily("in_progress", 1_000);
+        assert!(
+            !roll_missed_habit(&mut started, 5_000),
+            "one being worked on is left alone"
+        );
+        let mut paused = daily("pending", 1_000);
+        paused.paused = true;
+        assert!(!roll_missed_habit(&mut paused, 5_000));
+        let mut once = daily("pending", 1_000);
+        once.schedule.as_mut().unwrap().repeat = "once".into();
+        assert!(
+            !roll_missed_habit(&mut once, 5_000),
+            "a one-time reminder is not a habit"
+        );
+    }
+    #[test]
+    fn checking_in_completes_the_current_occurrence_once() {
+        let mut task = daily("pending", 9_000);
+        complete_occurrence(&mut task, 500).unwrap();
+        let o = &task.occurrences[0];
+        assert_eq!(
+            (o.state.as_str(), o.completed_ms, o.reported),
+            ("completed", Some(500), true)
+        );
+        let again = complete_occurrence(&mut task, 600).unwrap_err();
+        assert!(again.contains("already checked in"), "{again}");
+        task.occurrences.clear();
+        assert!(complete_occurrence(&mut task, 700).is_err());
     }
 }

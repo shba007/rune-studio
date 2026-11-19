@@ -15,6 +15,8 @@ const idle: PillCardState = {
   review: false,
   feedback: false,
   update: false,
+  focus: false,
+  habits: false,
 }
 const show = (patch: Partial<PillCardState>) => pillCards({ ...idle, ...patch })
 
@@ -78,4 +80,19 @@ it('keeps a finished board beside a quiet card', () => {
 
 it('falls back to the reminder only when nothing quiet is waiting', () => {
   expect(show({})).toEqual({ cards: ['reminder'], more: 0 })
+})
+it('puts the focus card first and keeps it while other work is running', () => {
+  expect(show({ focus: true }).cards).toEqual(['focus', 'reminder'])
+  expect(show({ focus: true, board: true, working: true }).cards).toEqual(['focus', 'board'])
+  expect(show({ focus: true, decision: true }).cards).toEqual(['focus', 'decision'])
+})
+
+it('shows only the confirm card while a question is open, even during a focus block', () => {
+  expect(show({ question: true, focus: true })).toEqual({ cards: ['confirm'], more: 0 })
+})
+it("shows today's habits last, after the reminder, only when nothing is blocking", () => {
+  expect(show({ habits: true }).cards).toEqual(['reminder', 'habits'])
+  expect(show({ habits: true, update: true }).cards).toEqual(['update', 'habits'])
+  expect(show({ habits: true, working: true, board: true }).cards).toEqual(['board'])
+  expect(show({ habits: true, question: true }).cards).toEqual(['confirm'])
 })

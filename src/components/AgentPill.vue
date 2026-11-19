@@ -38,8 +38,27 @@ import { useModelActivity } from '@/composables/useModelActivity'
 import { requestProgress, visibleGoal } from '@/config/taskProgress'
 import { pillCards, type PillCard } from '@/config/pillCards'
 import { orbHint } from '@/config/orbHint'
+import { useFocus } from '@/composables/useFocus'
+import { badgeMinutes } from '@/config/focus'
+import FocusCard from './FocusCard.vue'
+import HabitChips from './HabitChips.vue'
+import { useHabits } from '@/composables/useHabits'
 
 const agent = useAgent()
+const focus = useFocus()
+const habits = useHabits()
+const focusShown = computed(() => focus.active.value || focus.formOpen.value)
+// Starting a block, or a block running out, brings the pill up.
+watch(
+  [focusShown, focus.over, () => !!focus.wrapUp.value],
+  ([shown, over, wrap], [wasShown, wasOver, wasWrap]) => {
+    if (
+      ((shown && !wasShown) || (over && !wasOver) || (wrap && !wasWrap)) &&
+      agent.mode.value === 'ambient'
+    )
+      void agent.setMode('open')
+  },
+)
 const modelActivity = useModelActivity()
 const activeModels = modelActivity.models
 const modelTooltip = computed(() =>
@@ -181,6 +200,8 @@ const plan = computed(() =>
     review: !!agent.reviewOffer.value && agent.reviewStage.value === 'review',
     feedback: !!agent.reviewOffer.value && agent.reviewStage.value !== 'review',
     update: !!promptVisible.value && !!updater.latest.value,
+    focus: focusShown.value,
+    habits: habits.chips.value.length > 0,
   }),
 )
 const dueTasks = useWorkspaceTasks().due
@@ -256,7 +277,9 @@ const orbTitle = computed(() =>
 )
 const showMindset = computed(
   () =>
-    !agent.settings.value?.externalAgent && ['ok', 'checking'].includes(agent.health.value.tone),
+    !focus.active.value &&
+    !agent.settings.value?.externalAgent &&
+    ['ok', 'checking'].includes(agent.health.value.tone),
 )
 
 function onOrb() {
@@ -292,6 +315,13 @@ function onOrb() {
         :aria-label="`Active mindset: ${mindset.name}`"
         ><MindsetSymbol :mark="mindset.mark" class="size-3"
       /></span>
+      <span
+        v-if="focus.active.value"
+        role="timer"
+        :aria-label="focus.over.value ? 'Focus block is over' : 'Time left in this focus block'"
+        class="pointer-events-none absolute bottom-1 left-1/2 z-20 grid h-4 -translate-x-1/2 place-items-center rounded-full bg-black/85 px-1.5 text-[10px] leading-none font-semibold text-rune-ink tabular-nums"
+        >{{ focus.over.value ? 'Done?' : `${badgeMinutes(focus.remaining.value)}m` }}</span
+      >
       <svg v-if="updating" viewBox="0 0 64 64" class="update-ring" aria-hidden="true">
         <circle cx="32" cy="32" r="30" fill="none" class="update-track" />
         <circle
@@ -405,6 +435,8 @@ function onOrb() {
                     :live-steps="agent.steps.value"
                     :open-step="(key) => agent.openWorkspace('tasks', key)"
                   />
+                  <FocusCard v-if="shows('focus')" :focus="focus" />
+                  <HabitChips v-if="shows('habits')" :habits="habits" />
                   <TaskReminder v-if="shows('reminder')" :agent="agent" />
                   <DecisionInbox v-if="shows('decision')" compact :model="decisions" />
                   <button

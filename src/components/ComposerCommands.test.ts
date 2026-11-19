@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { expect, it, vi } from 'vite-plus/test'
 import type { Agent } from '@/composables/useAgent'
 import type { TaskBoardModel } from '@/composables/useTaskBoard'
+import { closeFocusForm, useFocus } from '@/composables/useFocus'
 import Composer from './Composer.vue'
 import AppIcon from './AppIcon.vue'
 const invoke = vi.hoisted(() => vi.fn<(command: string, args?: unknown) => Promise<string>>())
@@ -60,7 +61,7 @@ it('suggests local commands and opens Goals using keyboard selection without pla
   const { wrapper, openWorkspace, submit } = show()
   const field = wrapper.get('textarea')
   await field.setValue('/')
-  expect(wrapper.findAll('[role="option"]')).toHaveLength(5)
+  expect(wrapper.findAll('[role="option"]')).toHaveLength(6)
   await field.trigger('keydown', { key: 'Enter' })
   await flushPromises()
   expect(openWorkspace).toHaveBeenCalledWith('goals')
@@ -235,5 +236,19 @@ it('asks the model when the local parser cannot read the time', async () => {
   await flushPromises()
   expect(wrapper.get('[role="alert"]').text()).toContain('already passed')
   expect(creates()).toHaveLength(1)
+  wrapper.unmount()
+})
+it('opens the focus form from /focus without planning a task', async () => {
+  closeFocusForm()
+  const { wrapper, submit } = show()
+  const field = wrapper.get('textarea')
+  await field.setValue('/focus')
+  await wrapper.get('[aria-label="Run command"]').trigger('click')
+  await flushPromises()
+  const shared = useFocus()
+  expect(shared.formOpen.value).toBe(true)
+  expect(submit).not.toHaveBeenCalled()
+  expect(field.element.value).toBe('')
+  closeFocusForm()
   wrapper.unmount()
 })

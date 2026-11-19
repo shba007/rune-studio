@@ -20,7 +20,12 @@ mod error;
 mod eval;
 mod events;
 mod exec;
+mod focus;
+mod focus_suggest;
+mod focus_time;
+mod focus_urgency;
 mod goal_domains;
+mod habits;
 mod hotkeys;
 mod hub;
 mod infer_catalog;
@@ -263,6 +268,7 @@ pub fn run() {
             review::start_watcher(app.handle());
             video::start_motion_recorder(app.handle());
             workspace_tasks::start(app.handle());
+            focus::start(app.handle());
             if let Some(pill) = app.get_webview_window(window::MAIN) {
                 window::protect(&pill)?;
                 window::set_mode(app.handle(), window::Mode::Ambient)?;
@@ -469,7 +475,18 @@ pub fn run() {
             crate::intake::workspace_new_goal,
             crate::intake::workspace_goal_modes,
             crate::intake::goal_measurement,
+            focus::focus_snapshot,
+            focus::focus_start,
+            focus::focus_finish,
+            focus::focus_extend,
+            focus::focus_start_task,
+            habits::habits_state,
+            habits::habit_check_in,
+            focus::focus_commitment_add,
+            focus::focus_commitment_remove,
+            focus_suggest::focus_suggest,
             workspace_tasks::workspace_tasks_state,
+            workspace_tasks::workspace_task_estimate,
             workspace_tasks::workspace_task_create,
             workspace_tasks::workspace_task_zone,
             workspace_tasks::workspace_task_snooze,
