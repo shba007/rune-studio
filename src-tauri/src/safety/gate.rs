@@ -278,20 +278,6 @@ pub struct CheckResult {
     pub decision: &'static str,
 }
 
-#[allow(dead_code)]
-pub async fn check(
-    app: &AppHandle,
-    cancel: &CancelToken,
-    source: &str,
-    action: &Action,
-    reason: &str,
-    stated: Option<Risk>,
-) -> Verdict {
-    check_detailed(app, cancel, source, action, reason, stated)
-        .await
-        .verdict
-}
-
 pub async fn check_detailed(
     app: &AppHandle,
     cancel: &CancelToken,

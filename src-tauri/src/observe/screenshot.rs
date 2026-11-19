@@ -65,7 +65,6 @@ impl Frame {
             .map_err(|e| ObserveError::Encode(e.to_string()))
     }
 
-    #[allow(dead_code)]
     pub fn data_uri(&self) -> String {
         format!("data:image/jpeg;base64,{}", BASE64.encode(&self.jpeg))
     }
@@ -180,7 +179,6 @@ pub fn monitor(id: Option<u32>) -> Result<Monitor, ObserveError> {
     resolve(id).map(|(_, monitor)| monitor)
 }
 
-#[allow(dead_code)]
 pub fn monitor_at(px: i32, py: i32) -> Result<Monitor, ObserveError> {
     let monitor =
         XMonitor::from_point(px, py).map_err(|err| ObserveError::Display(err.to_string()))?;
