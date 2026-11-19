@@ -1,11 +1,3 @@
-//! Calendar sync (cycle 7 of the Focus mode plan). A read-only Kit tool
-//! (`get_upcoming_events`, from the `rune-calendar` plugin) lists the next
-//! 48 hours of events with recurrences already expanded. Studio mirrors them
-//! as commitments so free time, suggestions and wrap-up know about meetings
-//! without typing them in. Nothing is ever written back to the calendar.
-//!
-//! The contract the plugin must meet is in `docs/focus-calendar-tool.md`.
-
 use std::{collections::HashSet, time::Duration};
 
 use serde::Serialize;
@@ -31,7 +23,6 @@ pub struct Event {
     pub end_ms: u64,
 }
 
-/// What a sync did, for the card: `synced`, or `unavailable` with the reason.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Report {
@@ -40,9 +31,6 @@ pub struct Report {
     pub message: String,
 }
 
-/// Reads the tool's answer: `structuredContent.events`, or the same JSON as the
-/// text of the first content item. Entries that are not usable (no id or title,
-/// bad times, all-day, already over, further than 48 hours away) are dropped.
 pub fn parse(result: &Value, now: u64) -> Result<Vec<Event>, String> {
     let from_text: Option<Value> = result
         .get("content")
@@ -103,9 +91,6 @@ fn unavailable(message: impl Into<String>) -> Report {
     }
 }
 
-/// One sync. Reasons it cannot run are returned, not raised: most people have
-/// no calendar tool, and that is normal. A failed read leaves the commitments
-/// as they were, so a flaky tool never empties the list.
 pub async fn sync(app: &AppHandle) -> Report {
     let config = crate::kit::client::load(app);
     if !config.enabled || !config.selected.iter().any(|name| name == TOOL) {
@@ -156,7 +141,6 @@ pub async fn focus_calendar_sync(
     Ok(sync(&app).await)
 }
 
-/// Syncs shortly after launch and then every 15 minutes.
 pub fn start(app: &AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {

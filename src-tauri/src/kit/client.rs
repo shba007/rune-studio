@@ -52,7 +52,6 @@ pub struct Config {
     pub enabled: bool,
     pub endpoint: String,
     pub selected: Vec<String>,
-    /// Lets the agent call selected write tools, but only while Kit stages the plugin's changes.
     #[serde(default)]
     pub agent_writes: bool,
 }
@@ -82,7 +81,6 @@ pub struct Discovery {
     pub tools: Vec<Tool>,
     pub blocked: Vec<BlockedTool>,
 }
-/// A discovered tool that is listed but cannot run from Studio, with the reason.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BlockedTool {
@@ -90,7 +88,6 @@ pub struct BlockedTool {
     pub description: String,
     pub kind: super::BlockKind,
     pub reason: String,
-    /// Only for `Writes` tools: the Playground renders a form from it for a confirmed run.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub input_schema: Option<Value>,
 }
@@ -977,8 +974,6 @@ async fn call_tool_from_settings(
     .map_err(|e| e.to_string())?
 }
 
-/// A read-only call whose result stays on this device, so it is returned
-/// whole: not redacted for a trace and not cut to the model's size limit.
 pub fn call_value(
     config: &Config,
     name: &str,
@@ -1056,23 +1051,16 @@ fn call_result(
         .map(|(result, schema, _)| (result, schema))
 }
 
-/// Who is calling, which decides whether a tool that writes may run at all.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Access {
-    /// A selected, strictly read-only tool (background tasks and the old agent path).
     Read,
-    /// A person pressed Confirm in the Playground.
     Confirmed,
-    /// The agent. It may call a selected write tool only when `agent_writes` is on and the caller
-    /// has just verified that Kit stages the plugin; otherwise only read-only tools run.
     Agent { staged: bool },
 }
 
 const STAGED_NOTE: &str = "
 [Staged for the user's review, not applied yet. The file has not changed. Do not say it did; the user applies or undoes the change in Tools settings.]";
 
-/// The agent's tool call: read-only tools as before, and selected write tools only when the plugin
-/// is staged (`staged`, verified by the caller just before) and `agent_writes` is on.
 pub fn call_for_agent(
     config: &Config,
     name: &str,
@@ -1092,9 +1080,6 @@ pub fn call_for_agent(
     })
 }
 
-/// Runs a tool that changes state, but only for a person pressing the confirm button in the
-/// Playground. The agent never reaches this: it calls `call`/`call_for_step`, which refuse
-/// anything that is not a selected, strictly read-only tool.
 #[tauri::command]
 pub async fn kit_call_write_tool(
     app: AppHandle,
@@ -1145,8 +1130,6 @@ fn call_checked(
     {
         return Err("Filesystem root belongs to Tools settings, not tool arguments".into());
     }
-    // A confirmed write must see every tool to find the one the person confirmed, so it lists
-    // without Kit's allow-list, then limits the call itself to exactly that tool.
     let (mut gateway, _) = Gateway::start(config, cancel, access != Access::Read)?;
     let runnable = gateway.tools(config)?;
     let mut wrote = false;
@@ -1828,7 +1811,6 @@ mod tests {
         assert!(write.input_schema.is_some());
         let (config, handle) = server("writes", 0);
         let args = json!({"timezone":"UTC"});
-        // Unconfirmed and unselected: refused before any connection is made.
         assert_eq!(
             call_checked(
                 &config,
@@ -1882,26 +1864,22 @@ mod tests {
     fn the_agent_writes_only_when_enabled_selected_and_staged_and_is_told_it_is_not_applied() {
         let args = json!({"timezone":"UTC"});
         let cancel = CancelToken::default();
-        // Staged, enabled and selected: runs, and the model is told nothing changed yet.
         let (mut config, handle) = server("writes", 3);
         agent_config(&mut config, true);
         let output = call_for_agent(&config, "time__set_clock", &args, &cancel, true).unwrap();
         handle.join().unwrap();
         assert!(output.output.text.contains("Staged for the user's review"));
         assert!(output.output.text.contains("not applied yet"));
-        // Enabled and selected but Kit is not staging the plugin: refused before any call.
         let (mut config, handle) = server("writes", 2);
         agent_config(&mut config, true);
         let error = call_for_agent(&config, "time__set_clock", &args, &cancel, false).unwrap_err();
         handle.join().unwrap();
         assert!(error.starts_with("refused:"), "{error}");
-        // Staged and selected but the setting is off: refused.
         let (mut config, handle) = server("writes", 2);
         agent_config(&mut config, false);
         let error = call_for_agent(&config, "time__set_clock", &args, &cancel, true).unwrap_err();
         handle.join().unwrap();
         assert!(error.starts_with("refused:"), "{error}");
-        // Not selected: refused without connecting, even when everything else allows it.
         let (mut config, handle) = server("writes", 0);
         config.agent_writes = true;
         assert_eq!(

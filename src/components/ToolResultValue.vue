@@ -73,8 +73,6 @@ const columns = computed(() => [...new Set(rows.value?.flatMap((row) => Object.k
       </div>
     </dl>
   </div>
-  <!-- A single unbroken token (a timestamp, an id, a path) wraps where the line ends
-       instead of at its first hyphen. -->
   <p
     v-else
     class="m-0 text-rune-body whitespace-pre-wrap"

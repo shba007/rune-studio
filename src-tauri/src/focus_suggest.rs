@@ -1,8 +1,3 @@
-//! "Suggest a block" (cycle 2 of the Focus mode plan): turns a rough goal into
-//! one suggested focus block plus a shorter and a longer alternative, through
-//! the embedded Infer. With no model the user still gets a plain block, so the
-//! timer never depends on a model being up.
-
 use std::time::Duration;
 
 use serde::Serialize;
@@ -33,11 +28,8 @@ pub struct Proposal {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Suggestion {
-    /// `model` when Infer answered, `fallback` for the plain local block.
     pub source: &'static str,
-    /// Why the plain block was used, when it was.
     pub note: Option<String>,
-    /// The suggested block first, then a shorter and a longer one.
     pub options: Vec<Proposal>,
 }
 
@@ -60,9 +52,6 @@ fn cut(text: &str, max: usize) -> String {
         .to_string()
 }
 
-/// Checks what the model sent. Entries without a title are dropped and the
-/// rest are clamped to what a focus block accepts, so Accept never fails on
-/// the model's numbers.
 fn parse(value: &Value) -> Result<Vec<Proposal>, String> {
     let list = value
         .get("options")
@@ -106,8 +95,6 @@ fn parse(value: &Value) -> Result<Vec<Proposal>, String> {
     Ok(options)
 }
 
-/// The waiting tasks the model may steer toward, most urgent first. Negative
-/// `dueInMinutes` means overdue.
 fn tasks_context(urgent: &[Ranked], now: u64) -> Value {
     urgent
         .iter()
@@ -121,8 +108,6 @@ fn tasks_context(urgent: &[Ranked], now: u64) -> Value {
         .collect()
 }
 
-/// Keeps every option inside the preset's longest block and the free time,
-/// and drops the ones that become the same block once shortened.
 fn fit(options: Vec<Proposal>, free: Option<u64>, preset: &Preset) -> Vec<Proposal> {
     let mut fitted: Vec<Proposal> = Vec::new();
     for mut option in options {

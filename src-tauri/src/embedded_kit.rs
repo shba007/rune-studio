@@ -25,7 +25,6 @@ impl PluginFolders for rune_kit::server::EmbeddedServer {
     }
 }
 
-/// The plugin whose folder Studio manages. Its writes are staged by Kit, never applied directly.
 #[cfg(any(feature = "embedded-kit", test))]
 const FILE_PLUGIN: &str = "rune-filesystem";
 fn folder_key(key: &str) -> Result<(), String> {
@@ -61,8 +60,6 @@ fn save_folder(
         return Err(NOT_EMBEDDED.into());
     }
     server.set(plugin, key, value)?;
-    // A folder without staging would let a write tool change real files at once, so a folder
-    // that cannot be staged is reported instead of being left usable.
     server.set_staged(plugin, true).map_err(|error| {
         format!(
             "The folder was saved, but Kit could not stage changes to it ({error}). Do not run tools that write until this is fixed."
@@ -186,7 +183,6 @@ impl EmbeddedKitManager {
         {
             let bind: std::net::IpAddr = "127.0.0.1".parse().unwrap();
             let port = 47601;
-            // Attempt to bind to default port 47601, or fallback to ephemeral port 0 if 47601 is in use
             let server = match rune_kit::server::start_default_embedded(bind, port).await {
                 Ok(srv) => srv,
                 Err(err) => {
@@ -194,7 +190,6 @@ impl EmbeddedKitManager {
                     rune_kit::server::start_default_embedded(bind, 0).await?
                 }
             };
-            // Staging is per server run and not saved by Kit, so a saved folder is staged again.
             if let Err(error) = restage(&server) {
                 log::warn!("Could not stage {FILE_PLUGIN}: {error}");
             }

@@ -1,16 +1,4 @@
 #!/usr/bin/env bash
-# `bun run tauri:dev` runs this. While Studio runs it is linked to your local code-kit
-# and code-infer (and local plugins from code-tools); when it closes, everything is put
-# back, so no tracked file changes and the next normal build uses the pinned versions.
-#
-#   Cargo redirect    .cargo/config.toml (git-ignored), removed on exit
-#   Cargo.lock files  backed up, restored on exit
-#   Kit plugin store  an isolated copy at ../.dev/kit-data, used only through
-#                     RUNE_KIT_DATA_DIR for this run; ~/.rune/tools is never touched
-#
-# Without code-kit, code-infer and code-tools beside code-studio it just runs Studio
-# against the pinned versions. Set RUNE_DEV_PLUGINS="rune-time rune-git" to build other
-# plugins than the default (rune-filesystem); set it empty to build none.
 set -uo pipefail
 
 studio="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -87,7 +75,6 @@ if [ "$linked" = false ]; then
   exit $?
 fi
 
-# A crashed earlier run may have left the link on; the backups it kept are still valid.
 trap unlink EXIT
 trap 'exit 130' INT TERM
 link

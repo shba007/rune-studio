@@ -212,15 +212,11 @@ pub fn warning(unchanged: u32) -> Option<String> {
     (unchanged >= WARN_AFTER).then(|| crate::prompts::agent_stuck(unchanged))
 }
 
-/// The same tool call, with the same arguments, failing again and again. After two failures
-/// the third identical call is not run: the model is told once, and a repeat after that
-/// notice stops the step. Changed arguments are a different call.
 #[derive(Default)]
 pub struct RepeatWatch {
     last: Option<String>,
     failures: u32,
     warned: bool,
-    // The same call succeeding again and again changes nothing, so it is also a loop.
     done: Option<String>,
     successes: u32,
     done_warned: bool,
@@ -258,7 +254,6 @@ impl RepeatWatch {
         Repeat::Warn
     }
 
-    /// True when `key` is being blocked because it already succeeded, not because it failed.
     pub fn repeats_success(&self, key: &str) -> bool {
         self.done.as_deref() == Some(key) && self.successes >= REPEAT_AFTER
     }
@@ -351,7 +346,6 @@ mod repeat_tests {
         assert!(watch.repeats_success(&call));
         assert_eq!(watch.before(&call), Repeat::Warn);
         assert_eq!(watch.before(&call), Repeat::Stop);
-        // A different call, or another kind of action, starts over.
         let other = key("/docs");
         assert_eq!(watch.before(&other), Repeat::Run);
         watch.succeeded(&other);

@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# `bun run android:build` builds the debug APK for a phone (arm64) and, when a device is
-# connected over adb, installs and starts it. Pass `--no-install` to only build.
-#
-# Needs the Android SDK with an NDK (Android Studio installs both). It looks for them in
-# ANDROID_HOME / NDK_HOME, then in the default Windows and macOS locations.
 set -euo pipefail
 
 studio="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -27,7 +22,6 @@ export CC_aarch64_linux_android="$(native "$bin")/aarch64-linux-android$api-clan
 export AR_aarch64_linux_android="$(native "$bin")/llvm-ar$([ -f "$bin/llvm-ar.exe" ] && echo .exe)"
 export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$CC_aarch64_linux_android"
 
-# On Windows Gradle starts Bun as bun.bat, which a normal Bun install does not have.
 if command -v cygpath >/dev/null 2>&1 && ! command -v bun.bat >/dev/null 2>&1; then
   shim="$(mktemp -d)"
   printf '@echo off\r\n"%s" %%*\r\n' "$(native "$(command -v bun)")" >"$shim/bun.bat"

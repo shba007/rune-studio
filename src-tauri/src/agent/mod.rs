@@ -758,8 +758,6 @@ async fn run(
                     discovery.tools.iter().map(|t| &t.name).collect::<Vec<_>>(),
                     kit_config.selected
                 );
-                // Write tools are offered only when the person turned agent writes on, selected the
-                // tool, and Kit is staging that plugin right now (checked again at call time).
                 let mut writers = Vec::new();
                 if kit_config.agent_writes {
                     for blocked in &discovery.blocked {
@@ -2195,8 +2193,6 @@ mod live {
     }
 }
 
-/// Whether Kit is staging the plugin that owns `tool` (the part of its name before `__`).
-/// Anything that cannot be confirmed counts as not staged, so a write is refused.
 async fn plugin_is_staged(app: &AppHandle, endpoint: &str, tool: &str) -> bool {
     let plugin = tool.split_once("__").map_or(tool, |(plugin, _)| plugin);
     let manager = app.state::<crate::embedded_kit::EmbeddedKitManager>();

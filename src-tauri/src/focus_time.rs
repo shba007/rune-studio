@@ -1,30 +1,18 @@
-//! Free time (cycle 3 of the Focus mode plan): how long the user can focus
-//! before their next commitment. Pure functions over a sorted list, so the
-//! store, the suggestion and the wrap-up warning all agree.
-
 use serde::Serialize;
 
 pub const MINUTE: u64 = 60_000;
 
-/// A focus preset (cycle 6): the numbers and words that fit how someone works.
-/// Everything the earlier cycles fixed at five minutes is read from here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Preset {
     pub id: &'static str,
     pub label: &'static str,
     pub summary: &'static str,
-    /// Length suggested when nothing else is known, and the longest block that
-    /// is put in front of the user without asking.
     pub default_minutes: u64,
     pub cap_minutes: u64,
-    /// Kept clear before a commitment so the user can arrive without rushing.
     pub buffer_minutes: u64,
-    /// How long before a commitment the running block is told to wrap up.
     pub wrap_up_minutes: u64,
-    /// What "Extend" adds.
     pub extend_minutes: u64,
-    /// What the done-when line is called.
     pub done_when_label: &'static str,
 }
 
@@ -85,7 +73,6 @@ impl Default for Preset {
     }
 }
 
-/// A fixed time the user must be somewhere. Entered by hand for now.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Commitment {
@@ -93,30 +80,21 @@ pub struct Commitment {
     pub title: String,
     pub start_ms: u64,
     pub end_ms: u64,
-    /// `manual` (typed in) or `calendar` (synced; changed in the calendar).
     pub source: String,
 }
 
-/// The first commitment that has not ended yet. `commitments` is ordered by
-/// start time.
 pub fn next(commitments: &[Commitment], now: u64) -> Option<&Commitment> {
     commitments.iter().find(|c| c.end_ms > now)
 }
 
-/// The latest moment a block may end: the next commitment's start minus the
-/// buffer. `None` when nothing is coming up. Already inside a commitment, or
-/// inside its buffer, it is `now`.
 pub fn focus_limit(preset: &Preset, commitments: &[Commitment], now: u64) -> Option<u64> {
     next(commitments, now).map(|c| c.start_ms.saturating_sub(preset.buffer_ms()).max(now))
 }
 
-/// Free time before the next commitment, buffer included; `None` is unlimited.
 pub fn free_ms(preset: &Preset, commitments: &[Commitment], now: u64) -> Option<u64> {
     focus_limit(preset, commitments, now).map(|limit| limit - now)
 }
 
-/// The commitment a running block should wrap up for, once it is within
-/// the preset's wrap-up time of starting (or has started).
 pub fn wrap_up<'a>(
     preset: &Preset,
     commitments: &'a [Commitment],
@@ -125,8 +103,6 @@ pub fn wrap_up<'a>(
     next(commitments, now).filter(|c| c.start_ms <= now + preset.wrap_up_ms())
 }
 
-/// Keeps a suggested length inside the free time. `None` means no room for
-/// even one minute.
 pub fn fit_minutes(minutes: u64, free: Option<u64>) -> Option<u64> {
     match free {
         None => Some(minutes),

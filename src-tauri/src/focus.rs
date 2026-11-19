@@ -1,8 +1,3 @@
-//! Focus blocks: a time-boxed stretch of the user's attention (cycle 1 of the
-//! Focus mode plan). A block has a title, an optional "done when" line and a
-//! length. It is kept in its own `focus.sqlite3`, separate from the trace, and
-//! counts down against the wall clock, so it survives closing the app.
-
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -27,11 +22,8 @@ use crate::sync::LockExt;
 pub const STATE_CHANGED: &str = "focus_state_changed";
 pub const TIME_UP: &str = "focus_time_up";
 pub const WRAP_UP: &str = "focus_wrap_up";
-/// Sent when the focus hotkey is pressed; the pill opens the Focus card.
 pub const HOTKEY_PRESSED: &str = "focus_hotkey";
-/// Sent with the words the user said while the Focus card was listening.
 pub const DICTATED: &str = "focus_dictated";
-/// Opens the Focus card from anywhere. Fixed for now; it is not in Settings.
 pub const HOTKEY: &str = "Alt+Shift+F";
 
 const MAX_MINUTES: u64 = 240;
@@ -62,23 +54,18 @@ pub struct Block {
     pub started_ms: u64,
     pub ends_ms: u64,
     pub finished_ms: Option<u64>,
-    /// `done` or `stopped`; `None` while the block is running.
     pub outcome: Option<String>,
     pub task_id: Option<String>,
-    /// When the block was handed to the agent; `None` if it never was.
     pub handed_off_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
-    /// `idle` or `focusing`.
     pub state: &'static str,
     pub block: Option<Block>,
     pub recent: Vec<Block>,
-    /// Commitments that have not ended yet, soonest first.
     pub commitments: Vec<Commitment>,
-    /// The focus preset in use, and every preset to choose from.
     pub preset: Preset,
     pub presets: Vec<Preset>,
 }
@@ -160,7 +147,6 @@ impl Store {
              );",
         )
         .map_err(err)?;
-        // Version 2 databases have no calendar columns yet.
         let has_source = db
             .prepare("SELECT 1 FROM pragma_table_info('commitments') WHERE name = 'source'")
             .and_then(|mut q| q.exists([]))
@@ -172,7 +158,6 @@ impl Store {
             )
             .map_err(err)?;
         }
-        // Versions before 4 cannot record a hand-off to the agent.
         let has_handoff = db
             .prepare("SELECT 1 FROM pragma_table_info('focus_blocks') WHERE name = 'handed_off_ms'")
             .and_then(|mut q| q.exists([]))
@@ -212,8 +197,6 @@ impl Store {
         self.start_for(title, done_when, minutes, now, None)
     }
 
-    /// Starts a block, optionally for a task, so its time can be credited to
-    /// that task.
     pub fn start_for(
         &self,
         title: &str,
@@ -258,8 +241,6 @@ impl Store {
             .ok_or_else(|| "The focus block was not saved.".into())
     }
 
-    /// Time spent on each task in finished blocks. A block counts for at most
-    /// its planned length, so one left running overnight does not credit hours.
     pub fn credited_ms(&self) -> Result<HashMap<String, u64>, String> {
         let mut query = self
             .db
@@ -280,7 +261,6 @@ impl Store {
             .map_err(err)
     }
 
-    /// Time spent on one task in blocks started at or after `since_ms`.
     pub fn credited_for(&self, task_id: &str, since_ms: u64) -> Result<u64, String> {
         self.db
             .query_row(
@@ -293,7 +273,6 @@ impl Store {
             .map_err(err)
     }
 
-    /// Ends the running block as `done` or `stopped`.
     pub fn finish(&self, outcome: &str, now: u64) -> Result<Block, String> {
         if !matches!(outcome, "done" | "stopped") {
             return Err("A focus block ends as done or stopped.".into());
@@ -345,8 +324,6 @@ impl Store {
         })
     }
 
-    /// The chosen preset; the default one until a choice is saved, and when a
-    /// saved id is no longer known.
     pub fn preset(&self) -> Result<Preset, String> {
         let id: Option<String> = self
             .db
@@ -443,11 +420,6 @@ impl Store {
         Ok(())
     }
 
-    /// Makes the calendar-sourced commitments match `events`: new ones are
-    /// added, changed ones updated in place (so a commitment keeps its id and
-    /// its wrap-up is not announced twice), and ones no longer in the calendar
-    /// removed. Typed-in commitments are never touched. Returns the number of
-    /// events now stored.
     pub fn sync_calendar(&self, events: &[crate::focus_calendar::Event]) -> Result<usize, String> {
         let tx = self.db.unchecked_transaction().map_err(err)?;
         for event in events {
@@ -516,8 +488,6 @@ impl Store {
             .map_err(err)
     }
 
-    /// Notes that the running block was handed to the agent. Refused when it
-    /// already was, so one block never starts two requests.
     pub fn mark_handed_off(&self, now: u64) -> Result<Block, String> {
         let running = self
             .active()?
@@ -537,9 +507,6 @@ impl Store {
         })
     }
 
-    /// Adds the preset's extension (five minutes by default) to the running
-    /// block, counted from now when it has already run out. Refused when that would run into the next commitment
-    /// or its buffer.
     pub fn extend(&self, now: u64) -> Result<Block, String> {
         let running = self
             .active()?
@@ -580,8 +547,6 @@ impl Store {
     }
 }
 
-/// Managed state. Keeps the reason when the database could not be opened, so
-/// the commands can tell the user instead of failing silently.
 pub struct Focus {
     store: Result<Mutex<Store>, String>,
 }
@@ -595,15 +560,12 @@ impl Focus {
         Self { store }
     }
 
-    /// Free time before the next commitment, or `None` when unlimited (or when
-    /// the store is unavailable, where nothing can be checked anyway).
     pub fn free_ms(&self, now: u64) -> Option<u64> {
         self.with(|store| Ok((store.preset()?, store.upcoming(now)?)))
             .ok()
             .and_then(|(preset, commitments)| focus_time::free_ms(&preset, &commitments, now))
     }
 
-    /// Time put into a task since `since_ms`; zero when it cannot be read.
     pub fn credited_for(&self, task_id: &str, since_ms: u64) -> u64 {
         self.with(|store| store.credited_for(task_id, since_ms))
             .unwrap_or(0)
@@ -708,11 +670,7 @@ pub fn focus_preset_set(
     Ok(snapshot)
 }
 
-// Hands-free (cycle 8). While the Focus card is listening, what the voice
-// pipeline hears becomes the goal instead of a new agent task.
 static DICTATING: AtomicBool = AtomicBool::new(false);
-/// Whether the microphone was opened for dictation, so only then is it closed
-/// again; a microphone the user opened for the agent stays theirs.
 static OPENED_MIC: AtomicBool = AtomicBool::new(false);
 
 pub fn dictating() -> bool {
@@ -725,8 +683,6 @@ pub fn hotkey() -> Shortcut {
     Shortcut::from_str(HOTKEY).expect("the focus hotkey must parse")
 }
 
-/// Registers the focus hotkey. It can fail when another program owns the
-/// combination; Focus still works from the pill, so that is only logged.
 #[cfg(desktop)]
 fn register_hotkey(app: &AppHandle) {
     if let Err(error) = app.global_shortcut().register(hotkey()) {
@@ -734,15 +690,12 @@ fn register_hotkey(app: &AppHandle) {
     }
 }
 
-/// The focus hotkey was pressed: bring the pill up and open the Focus card.
 #[cfg_attr(mobile, allow(dead_code))]
 pub fn on_hotkey(app: &AppHandle) {
     crate::window::summon(app);
     let _ = app.emit(HOTKEY_PRESSED, ());
 }
 
-/// Called by the voice pipeline with an utterance. When the Focus card is
-/// listening, the words go to it and the caller must not submit them as a task.
 pub fn take_dictation(app: &AppHandle, text: &str) -> bool {
     if !dictating() {
         return false;
@@ -775,9 +728,6 @@ pub async fn focus_dictation_set(
     Ok(())
 }
 
-/// What the agent is asked to do for a focus block. The done-when line is the
-/// success check: the agent is told to report against it, not to decide by
-/// itself that it is finished.
 pub fn handoff_request(block: &Block) -> String {
     let minutes = block.planned_ms / MINUTE;
     let check = if block.done_when.is_empty() {
@@ -795,9 +745,6 @@ pub fn handoff_request(block: &Block) -> String {
     )
 }
 
-/// Hands the running block to the agent as an ordinary request. It enters the
-/// same intake path as anything typed in the composer, so planning, the safety
-/// gate and every approval apply unchanged; nothing here runs a tool.
 #[tauri::command]
 pub fn focus_hand_off(app: AppHandle, focus: State<Focus>) -> Result<Snapshot, String> {
     let block = focus
@@ -808,8 +755,6 @@ pub fn focus_hand_off(app: AppHandle, focus: State<Focus>) -> Result<Snapshot, S
     }
     crate::intake::submit(&app, &handoff_request(&block), false)?;
     let snapshot = focus.with(|store| {
-        // The request is already in; a failure to note it only means the
-        // button stays, so it is logged rather than undone.
         if let Err(error) = store.mark_handed_off(now_ms()) {
             log::warn!("could not note the hand-off: {error}");
         }
@@ -829,9 +774,6 @@ pub fn focus_extend(app: AppHandle, focus: State<Focus>) -> Result<Snapshot, Str
     Ok(snapshot)
 }
 
-/// The most urgent waiting tasks that are safe to show a model: only General
-/// ones, because a Health or Finance title must not leave the device by way
-/// of a suggestion.
 pub fn urgent_general_tasks(app: &AppHandle, now: u64, limit: usize) -> Vec<Ranked> {
     let Ok(tasks) = crate::workspace_tasks::waiting_manual_tasks(app) else {
         return Vec::new();
@@ -843,7 +785,6 @@ pub fn urgent_general_tasks(app: &AppHandle, now: u64, limit: usize) -> Vec<Rank
     let candidates: Vec<Candidate> = tasks
         .into_iter()
         .filter(|task| task.class == crate::life::DataClass::General)
-        // A habit repeats every day; it is not a deadline to rank.
         .filter(|task| !crate::workspace_tasks::is_daily_habit(task))
         .filter_map(|task| {
             Some(Candidate {
@@ -858,8 +799,6 @@ pub fn urgent_general_tasks(app: &AppHandle, now: u64, limit: usize) -> Vec<Rank
     focus_urgency::rank(&candidates, now, limit)
 }
 
-/// Starts a block for a waiting task: its title, a length that fits both the
-/// effort left and the free time, and the task linked for credit.
 #[tauri::command]
 pub fn focus_start_task(
     app: AppHandle,
@@ -872,7 +811,6 @@ pub fn focus_start_task(
         .ok_or("This task is not waiting on you any more.")?;
     let now = now_ms();
     let snapshot = focus.with(|store| {
-        // A daily habit starts again each day, so only today's time counts.
         let since = if crate::workspace_tasks::is_daily_habit(&task) {
             task.occurrences.last().and_then(|o| o.due_ms).unwrap_or(0)
         } else {
@@ -898,10 +836,6 @@ pub fn focus_start_task(
     Ok(snapshot)
 }
 
-/// Opens the store and watches the running block. It emits `focus_time_up` when
-/// the block runs out and `focus_wrap_up` when a commitment is about to start,
-/// each with a notification, once. The block stays running until the user marks
-/// it done or stopped.
 pub fn start(app: &AppHandle) {
     let dir = match app.path().app_data_dir() {
         Ok(dir) => dir,
@@ -919,8 +853,6 @@ pub fn start(app: &AppHandle) {
     register_hotkey(app);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        // Each warning is shown once: per block end time (an extension makes a
-        // new end) and per block and commitment.
         let mut over_told: Option<(i64, u64)> = None;
         let mut wrap_told: Option<(i64, i64)> = None;
         loop {

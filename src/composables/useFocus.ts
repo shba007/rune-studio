@@ -15,8 +15,6 @@ import {
   type FocusSuggestion,
 } from '@/config/focus'
 
-// The Focus card is opened from the composer (`/focus`) and from the pill, so
-// whether the start form is showing is shared rather than owned by one view.
 const formOpen = ref(false)
 export const openFocusForm = () => {
   formOpen.value = true
@@ -43,8 +41,6 @@ export function useFocus() {
   )
   const over = computed(() => (block.value ? isOver(block.value, now.value) : false))
 
-  // The countdown is computed from the block's end time, so it stays right
-  // after a restart and needs no event per second.
   const ticker = useIntervalFn(() => (now.value = Date.now()), 1000, { immediate: false })
   watch(
     () => active.value || formOpen.value,
@@ -101,15 +97,11 @@ export function useFocus() {
   }
 
   const extend = () => call('focus_extend')
-  // The request goes through the normal intake, so the user still reviews and
-  // approves it there; this only sends it.
   const handOff = () => call('focus_hand_off')
   const addCommitment = (title: string, startMs: number, minutes: number) =>
     call('focus_commitment_add', { title, startMs, minutes })
   const removeCommitment = (id: number) => call('focus_commitment_remove', { id })
 
-  // The calendar sync also runs by itself every 15 minutes; this is the
-  // "now" button. It reports instead of throwing: no calendar is normal.
   const calendar = ref<CalendarReport | null>(null)
   async function syncCalendar() {
     if (pending.value) return
@@ -124,17 +116,12 @@ export function useFocus() {
     await refresh()
   }
 
-  // Finishing keeps the card open on the start form, whose list of recent
-  // blocks confirms what was just logged.
   async function finish(outcome: 'done' | 'stopped') {
     const finished = await call('focus_finish', { outcome })
     if (finished) formOpen.value = true
     return finished
   }
 
-  // Hands-free: the global hotkey opens the card, and the microphone can fill
-  // in the goal. `hotkeyTick` lets the card move the keyboard focus each time
-  // the hotkey is pressed, even when the card is already open.
   const hotkeyTick = ref(0)
   const dictating = ref(false)
   const dictated = ref<{ text: string; n: number } | null>(null)

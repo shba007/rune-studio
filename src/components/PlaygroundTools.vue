@@ -41,7 +41,6 @@ withDefaults(defineProps<{ sidebarOpen?: boolean }>(), { sidebarOpen: true })
 const selectedNames = ref<string[]>([])
 const tools = ref<KitTool[]>([])
 const blocked = ref<Blocked[]>([])
-// Plugins whose changes Kit stages for review instead of applying at once.
 const staged = ref<string[]>([])
 const selected = ref('')
 const loading = ref(false)
@@ -96,7 +95,6 @@ const picked = computed(() =>
   groups.value.flatMap((group) => group.entries).find((entry) => entry.id === selected.value),
 )
 const chosen = computed(() => picked.value?.tool)
-// A write tool is shown with the same form, but only runs after an explicit confirmation.
 const writer = computed(() => {
   const blocked = picked.value?.blocked
   return blocked?.kind === 'writes' && blocked.inputSchema
@@ -141,9 +139,7 @@ async function stagedPlugins(config: Config & Endpoint, items: Blocked[]) {
     try {
       if (await invoke<boolean>('kit_plugin_staged', { endpoint: config.endpoint, plugin }))
         staged.push(plugin)
-    } catch {
-      // Not embedded, or unknown: treat as not staged, which shows the stronger warning.
-    }
+    } catch {}
   }
   return staged
 }

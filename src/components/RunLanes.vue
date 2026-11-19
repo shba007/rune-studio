@@ -58,7 +58,6 @@ const selectedDuration = computed(() => {
 const selectedTitle = computed(() =>
   selected.value ? stepTitle(selected.value) : { title: '', server: null },
 )
-// Kind, server and model. Status is on the title line already, so it is not repeated here.
 const selectedMeta = computed(() =>
   selected.value
     ? [STEP_KIND[selected.value.kind].label, selectedTitle.value.server, selected.value.model]

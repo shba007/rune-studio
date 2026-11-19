@@ -1,8 +1,3 @@
-//! Daily habits (cycle 5 of the Focus mode plan). A habit is a manual task
-//! that repeats daily; nothing new is stored for it. A habit with a target
-//! length is timed: focus blocks started for it add up toward the target, and
-//! reaching it checks the habit in. Any other habit is a plain check-in.
-
 use serde::Serialize;
 use tauri::{AppHandle, State};
 
@@ -15,14 +10,10 @@ use crate::workspace_tasks::{self, WorkspaceTask};
 pub struct Habit {
     pub id: String,
     pub title: String,
-    /// Minutes to put in each day. `None` is a plain check-in.
     pub target_minutes: Option<u32>,
-    /// State of the current occurrence: `pending`, `in_progress`, `completed`
-    /// or `skipped`.
     pub state: String,
     pub due_ms: Option<u64>,
     pub completed_ms: Option<u64>,
-    /// Time put in during the current occurrence.
     pub credited_ms: u64,
 }
 
@@ -39,13 +30,10 @@ fn view(task: &WorkspaceTask, credited_ms: u64) -> Option<Habit> {
     })
 }
 
-/// Whether the time put in so far reaches a timed habit's target.
 pub fn target_met(target_minutes: Option<u32>, credited_ms: u64) -> bool {
     target_minutes.is_some_and(|target| credited_ms >= u64::from(target) * MINUTE)
 }
 
-/// The user's habits with how today stands. The app decides which of them
-/// count as today's, since "today" is the user's local day.
 #[tauri::command]
 pub fn habits_state(app: AppHandle, focus: State<Focus>) -> Result<Vec<Habit>, String> {
     let mut habits = Vec::new();
@@ -57,7 +45,6 @@ pub fn habits_state(app: AppHandle, focus: State<Focus>) -> Result<Vec<Habit>, S
     Ok(habits)
 }
 
-/// Checks a plain habit in for today.
 #[tauri::command]
 pub fn habit_check_in(app: AppHandle, id: String) -> Result<(), String> {
     let is_habit = workspace_tasks::daily_habits(&app)?
@@ -69,8 +56,6 @@ pub fn habit_check_in(app: AppHandle, id: String) -> Result<(), String> {
     workspace_tasks::complete_current(&app, &id)
 }
 
-/// Called when a focus block for a task ends: a timed habit whose time today
-/// has reached its target is checked in.
 pub fn complete_if_target_met(app: &AppHandle, focus: &Focus, task_id: &str) -> Result<(), String> {
     let Some(task) = workspace_tasks::daily_habits(app)?
         .into_iter()

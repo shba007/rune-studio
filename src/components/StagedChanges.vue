@@ -37,7 +37,6 @@ const failed = ref(false)
 const busy = ref(false)
 const loaded = ref(false)
 
-// A backup exists for a file applied from this card, so Undo can be offered for exactly those.
 const undoable = computed(() =>
   recoveries.value.filter((item) => applied.value.includes(item.path)),
 )

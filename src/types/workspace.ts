@@ -20,7 +20,6 @@ export interface TaskOccurrence {
 export interface WorkspaceTask {
   executionMode?: 'manual' | 'agent' | 'analysis'
   dueAction?: 'remind' | 'run'
-  /** Minutes the user expects a manual task to take. */
   estimateMinutes?: number | null
   id: string
   revision: number

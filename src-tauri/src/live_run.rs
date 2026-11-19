@@ -152,7 +152,6 @@ impl Store {
             }
         }
         while self.snapshot.steps.len() > MAX_STEPS {
-            // Preserve result-bearing steps while metadata-only entries can be removed.
             let index = self
                 .snapshot
                 .steps
@@ -383,7 +382,7 @@ mod tests {
         model.purpose = Some("Decide");
         store.start(&model, 10);
         store.start(&action, 20);
-        let mut done = finish(99, String::new()); // ID wins over the numeric field.
+        let mut done = finish(99, String::new());
         done.step_id = model.step_id.clone();
         done.request_id = Some(1);
         done.result = None;

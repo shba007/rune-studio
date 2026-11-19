@@ -1,4 +1,3 @@
-//! Run-only model telemetry. The client and its retry policy remain unchanged.
 use crate::{
     events,
     model::{
@@ -123,8 +122,6 @@ impl<'a> ModelStep<'a> {
         });
     }
 }
-// Some client errors contain a server body or a reply excerpt. Keep the failure
-// category on the timeline, while the original error still follows its old path.
 fn event_error(error: String) -> String {
     for category in [
         "the model server answered ",
@@ -188,7 +185,6 @@ impl AttemptSink for ModelStep<'_> {
                 usage.estimated = estimated;
             }
         }
-        // Forward the exact report; telemetry does not change saved trace content.
         if let Some(sink) = self.sink {
             sink.record(attempt);
         }

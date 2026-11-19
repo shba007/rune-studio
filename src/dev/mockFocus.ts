@@ -9,8 +9,6 @@ import {
   type FocusSnapshot,
 } from '@/config/focus'
 
-// Browser mock of the Focus commands, mirroring src-tauri/src/focus.rs closely
-// enough to exercise the UI. Nothing is saved: a reload starts empty.
 const MINUTE = 60_000
 
 const PRESETS: FocusPreset[] = [
@@ -46,7 +44,6 @@ let running: FocusBlock | null = null
 const finished: FocusBlock[] = []
 let commitments: FocusCommitment[] = []
 
-// Two sample habits: a plain check-in and a timed one with a 30 minute target.
 const habits: Habit[] = [
   {
     id: 'habit-water',
@@ -150,7 +147,6 @@ export async function mockFocus(command: string, args: Record<string, unknown>):
       }
       finished.push(block)
       running = null
-      // A timed habit whose time today reaches its target is checked in.
       const habit = habits.find((h) => h.id === block.taskId)
       if (habit?.targetMinutes && credited(habit.id) >= habit.targetMinutes * MINUTE) {
         habit.state = 'completed'
@@ -166,11 +162,9 @@ export async function mockFocus(command: string, args: Record<string, unknown>):
       return announce()
     }
     case 'focus_dictation_set':
-      // Browser mock: there is no microphone to open.
       if (args.on) throw 'The microphone is not available in the browser preview.'
       return null
     case 'focus_calendar_sync': {
-      // Browser mock: a calendar with one meeting an hour from now.
       commitments = commitments.filter((c) => c.source !== 'calendar')
       commitments.push({
         id: nextId++,

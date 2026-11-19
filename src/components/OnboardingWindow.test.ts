@@ -194,13 +194,11 @@ it('renders starter MCP server installation and interactive test prompts', async
     return undefined
   })
 
-  // Start at step 2, check setup to advance to step 3
   localStorage.setItem('rune-onboarding-step', '2')
   const wrapper = mount(OnboardingWindow)
   await wrapper.get('footer button.setup-button').trigger('click')
   await flushPromises()
 
-  // Verify step 3 elements
   expect(wrapper.text()).toContain('Start with a small task')
   expect(wrapper.text()).toContain('Starter MCP Server: Web Research')
   expect(wrapper.text()).toContain('rune-fetch')
@@ -212,7 +210,6 @@ it('renders starter MCP server installation and interactive test prompts', async
   expect(wrapper.text()).toContain("Create a meeting notes file on my desktop with today's date.")
   expect(wrapper.text()).toContain('Open the browser and search for the latest weather.')
 
-  // Install starter MCP
   const installButton = wrapper.find('.mcp-install-btn')
   expect(installButton.exists()).toBe(true)
   await installButton.trigger('click')
@@ -232,7 +229,6 @@ it('renders starter MCP server installation and interactive test prompts', async
     config: expect.objectContaining({ enabled: true, selected: ['fetch__fetch'] }),
   })
 
-  // Click prompt card to copy
   const promptCard = wrapper.findAll('.setup-prompt-card')[1]!
   await promptCard.trigger('click')
   expect(writeText).toHaveBeenCalledWith(

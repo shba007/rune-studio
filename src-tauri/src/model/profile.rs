@@ -86,8 +86,6 @@ pub struct RoleMaxTokens {
 impl Default for RoleMaxTokens {
     fn default() -> Self {
         Self {
-            // A model without a thinking switch often explains before it calls a tool.
-            // 512 cut those replies off (the screen-action and notes runs of Nov 2026).
             agent: 2048,
             agent_thinking: 3000,
             verifier: 512,

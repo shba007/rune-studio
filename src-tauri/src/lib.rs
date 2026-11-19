@@ -117,7 +117,6 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     }
 
-    // Start with Windows and global hotkeys have no meaning on a phone.
     #[cfg(desktop)]
     {
         builder = builder
@@ -283,7 +282,6 @@ pub fn run() {
             video::start_motion_recorder(app.handle());
             workspace_tasks::start(app.handle());
             focus::start(app.handle());
-            // The floating pill is a desktop idea; a phone shows the app full screen.
             #[cfg(desktop)]
             if let Some(pill) = app.get_webview_window(window::MAIN) {
                 window::protect(&pill)?;

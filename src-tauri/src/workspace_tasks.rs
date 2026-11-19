@@ -142,8 +142,6 @@ pub struct WorkspaceTask {
     pub instructions: Option<String>,
     #[serde(default = "remind_action")]
     pub due_action: String,
-    /// How many minutes the user expects the work to take. Optional; Focus
-    /// mode uses it to rank tasks by urgency.
     #[serde(default)]
     pub estimate_minutes: Option<u32>,
 }
@@ -701,8 +699,6 @@ pub fn workspace_task_estimate(
     task.estimate_minutes = minutes;
     save(&app, &mut task)
 }
-/// The tasks the user does themselves that are waiting on them, for Focus
-/// mode. Agent tasks are left out: Rune does those, not the user.
 pub fn waiting_manual_tasks(app: &AppHandle) -> Result<Vec<WorkspaceTask>, String> {
     Ok(load(app)?
         .into_iter()
@@ -890,13 +886,9 @@ pub fn start(app: &AppHandle) {
         }
     });
 }
-/// A daily habit is something the user does themselves every day.
 pub fn is_daily_habit(task: &WorkspaceTask) -> bool {
     task.execution_mode == "manual" && task.schedule.as_ref().is_some_and(|s| s.repeat == "daily")
 }
-/// A habit that was not checked in before its next day came round is skipped,
-/// so a fresh occurrence can start. Without this an unchecked habit would stay
-/// pending forever and never roll over to the next day.
 fn roll_missed_habit(task: &mut WorkspaceTask, at: u64) -> bool {
     if task.paused || !is_daily_habit(task) {
         return false;
@@ -924,7 +916,6 @@ fn complete_occurrence(task: &mut WorkspaceTask, at: u64) -> Result<(), String> 
     current.completed_ms = Some(at);
     Ok(())
 }
-/// Marks the current occurrence of a task done, as the user's own check-in.
 pub fn complete_current(app: &AppHandle, id: &str) -> Result<(), String> {
     let _guard = MUTATION.locked();
     let mut task = load(app)?
@@ -934,7 +925,6 @@ pub fn complete_current(app: &AppHandle, id: &str) -> Result<(), String> {
     complete_occurrence(&mut task, now())?;
     save(app, &mut task)
 }
-/// The user's daily habits that are running, for Focus mode.
 pub fn daily_habits(app: &AppHandle) -> Result<Vec<WorkspaceTask>, String> {
     Ok(load(app)?
         .into_iter()

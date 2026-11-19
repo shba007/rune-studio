@@ -654,7 +654,6 @@ pub async fn run(app: &AppHandle, workflow_id: &str, input: Value) -> Result<(),
             id: id.clone(),
             scope_id: None,
             task: analysis.question.clone(),
-            // Keep the stored source identifier so existing saved analyses remain readable.
             source: "screen-insight".into(),
             started_utc: crate::trace::now_utc(),
             plan_json: None,

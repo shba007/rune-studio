@@ -24,7 +24,6 @@ const props = defineProps<{ focus: Focus }>()
 const title = ref('')
 const doneWhen = ref('')
 const minutes = ref(props.focus.preset.value.defaultMinutes)
-// A new preset brings its own usual length; the field follows it.
 watch(
   () => props.focus.preset.value.id,
   () => (minutes.value = props.focus.preset.value.defaultMinutes),
@@ -58,8 +57,6 @@ async function addCommitment() {
 const titleField = useTemplateRef<HTMLInputElement>('titleField')
 const doneButton = useTemplateRef<{ $el: HTMLElement }>('doneButton')
 
-// The global hotkey puts the keyboard where the next step is: the goal while
-// there is no block, the Done button while one is running.
 watch(
   () => props.focus.hotkeyTick.value,
   async () => {
@@ -69,8 +66,6 @@ watch(
   },
 )
 
-// One spoken sentence is one goal: it fills the field, asks for a suggestion,
-// and the microphone goes back to how it was.
 watch(
   () => props.focus.dictated.value,
   async (heard) => {
@@ -80,7 +75,6 @@ watch(
     await suggest()
   },
 )
-// Dictation never outlives the form it fills.
 watch(
   () => props.focus.formOpen.value && !props.focus.active.value,
   (open) => {
@@ -110,9 +104,6 @@ function apply(index: number) {
   minutes.value = option.minutes
 }
 
-// What the user typed before a suggestion replaced it. Suggesting again, with
-// the suggestion untouched, starts from this goal rather than from the previous
-// suggestion's title.
 const goal = ref('')
 
 async function suggest() {

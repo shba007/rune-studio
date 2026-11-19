@@ -11,8 +11,6 @@ class MainActivity : TauriActivity() {
     super.onCreate(savedInstanceState)
   }
 
-  // The window is transparent, so a tap outside the orb should send Rune away and show
-  // the app underneath again.
   override fun onWebViewCreate(webView: WebView) {
     webView.addJavascriptInterface(
       object {

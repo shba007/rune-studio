@@ -1,17 +1,7 @@
-//! Urgency (cycle 4 of the Focus mode plan): which waiting task needs the
-//! user's attention first. A task is urgent when the effort left on it is a
-//! large share of the time left before it is due.
-//!
-//! urgency = minutes of effort left / minutes until due
-
 use crate::focus_time::MINUTE;
 
-/// Used for a task that has no estimate of its own.
 pub const DEFAULT_ESTIMATE_MINUTES: u64 = 30;
-/// Effort left never drops below this, so a task whose estimate has been used
-/// up still shows (it may only need finishing) but ranks low.
 const MIN_LEFT_MINUTES: u64 = 5;
-/// Time left never drops below this, so overdue and near-due tasks stay finite.
 const MIN_UNTIL_DUE_MINUTES: f64 = 1.0;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -20,7 +10,6 @@ pub struct Candidate {
     pub title: String,
     pub due_ms: u64,
     pub estimate_minutes: Option<u32>,
-    /// Time already spent on it in finished focus blocks.
     pub credited_ms: u64,
 }
 
@@ -34,7 +23,6 @@ pub struct Ranked {
     pub overdue: bool,
 }
 
-/// Effort left on a candidate, in minutes.
 pub fn minutes_left(candidate: &Candidate) -> u64 {
     let estimate = candidate
         .estimate_minutes
@@ -44,8 +32,6 @@ pub fn minutes_left(candidate: &Candidate) -> u64 {
         .max(MIN_LEFT_MINUTES)
 }
 
-/// The most urgent tasks first, at most `limit`. Equal urgency goes to the
-/// task that is due sooner.
 pub fn rank(candidates: &[Candidate], now: u64, limit: usize) -> Vec<Ranked> {
     let mut ranked: Vec<Ranked> = candidates
         .iter()
@@ -107,7 +93,6 @@ mod tests {
 
     #[test]
     fn a_big_task_due_soon_outranks_a_small_task_due_later() {
-        // 120 min of work due in 3 h is 0.67; 30 min due tomorrow is 0.02.
         let list = [
             task("small", 24 * 60, Some(30), 0),
             task("big", 180, Some(120), 0),

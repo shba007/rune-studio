@@ -27,8 +27,6 @@ const field = (key: string, schema: unknown): SchemaField => ({
   hint: record(schema) && typeof schema.description === 'string' ? schema.description : undefined,
 })
 
-// A schema's property order does not survive transport (JSON objects arrive with sorted
-// keys), but its `required` array does. Fields listed there come first, in that order.
 function ordered(schema: Record<string, unknown>, keys: string[]): string[] {
   const required = Array.isArray(schema.required) ? schema.required.map(String) : []
   const rank = (key: string) => {

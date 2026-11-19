@@ -1,11 +1,4 @@
 #!/usr/bin/env bash
-# Builds the evaluation app, runs a suite of desktop tasks with it and writes a report.
-#
-#   bash scripts/eval/run.sh [--suite <file>] [--out <dir>] [--repeats <n>]
-#                            [--fast-checks on|off|suite] [--no-build] [--dry-run]
-#
-# --dry-run validates the suite and prints the plan without building or starting anything.
-# Needs node (22+), and cargo unless --no-build is given.
 set -uo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -34,8 +27,6 @@ case "$repeats" in '' | *[!0-9]*) echo "--repeats must be a whole number" >&2; e
 [ -f "$suite" ] || { echo "No suite at $suite" >&2; exit 1; }
 command -v node >/dev/null 2>&1 || { echo 'node is required to read the suite. Install Node 22+.' >&2; exit 1; }
 
-# Validates the suite and prints the plan. With a fourth argument it also writes the
-# suite the app will read, with the chosen repeats and fast-checks setting applied.
 plan() {
   node - "$(native "$suite")" "$repeats" "$fast_checks" "${1:-}" <<'JS'
 const fs = require('fs')

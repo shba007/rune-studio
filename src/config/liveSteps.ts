@@ -30,8 +30,6 @@ export const STEP_KIND: Record<LiveStep['kind'], { label: string; icon: IconName
   screen: { label: 'Screen action', icon: 'mouse' },
 }
 
-// A Kit tool is named "<server>__<tool>" (the agent loop adds a "kit__" prefix). The card
-// shows the tool on the title line and the server beside the kind, like the Playground.
 export function stepTitle(step: LiveStep): { title: string; server: string | null } {
   const text = step.text || step.tool
   if (step.kind !== 'tool') return { title: text, server: null }

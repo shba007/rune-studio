@@ -140,7 +140,6 @@ export function installTauriMock() {
       const given = (args ?? {}) as Record<string, unknown>
       if (isFocusCommand(command) || isHabitCommand(command)) return mockFocus(command, given)
       switch (command) {
-        // Browser mock only: no native folder is opened or saved by Kit.
         case 'kit_settings':
           return { enabled: false, endpoint: 'http://127.0.0.1:47601/mcp', selected: [] }
         case 'kit_packages':
@@ -453,7 +452,6 @@ export function installTauriMock() {
             },
           }
         case 'analysis_state':
-          // ?demo=focus: a quiet pill, so the Focus and habit cards show on their own.
           if (new URLSearchParams(location.search).get('demo') === 'focus')
             return { ...analysisFixture(), status: 'idle', findings: [], answer: '' }
           return new URLSearchParams(location.search).get('demo') === 'analysis'

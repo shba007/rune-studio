@@ -28,8 +28,6 @@ pub enum ModelError {
     Reply(String),
     #[error("the model did not call a tool: {0}")]
     NoToolCall(String),
-    // The reply was cut off by the output limit, so a missing or broken tool call says
-    // nothing about what the model would have done with more room.
     #[error("the model's reply reached the output limit before it called a tool: {0}")]
     TokenLimit(String),
     #[error("the model's tool arguments were not valid JSON: {0}")]
@@ -341,8 +339,6 @@ impl ChatClient<'_> {
                     tokio::time::sleep(wait).await;
                     wait_before = wait;
                 }
-                // Temperature is 0, so repeating a cut-off request unchanged gives the same
-                // cut-off. Retry once with more room, only when that is actually more.
                 Err(ModelError::TokenLimit(_))
                     if raised.is_none()
                         && request.max_tokens.is_none_or(|n| n < TOKEN_LIMIT_RETRY)
@@ -902,10 +898,6 @@ fn cut_off(finish_reason: Option<&str>) -> bool {
     finish_reason == Some("length")
 }
 
-/// Some small models print the arguments of `done` as a JSON block in their reply instead of
-/// calling the tool. When the reply holds exactly that object (`summary`, `success` and at most
-/// `reason`) and no tool was called, it is the model finishing, so it is treated as a `done` call;
-/// that call still goes through the same finish checks as any other. Anything else is not salvaged.
 pub(crate) fn salvage_done(content: &str) -> Option<Value> {
     let mut start = 0;
     while let Some(offset) = content[start..].find('{') {
@@ -1793,7 +1785,6 @@ Done. {\"summary\": \"again\", \"success\": true}";
         assert_eq!(served.load(std::sync::atomic::Ordering::SeqCst), 2);
     }
 
-    // Like `serve`, but keeps each request body so a test can see what was asked for.
     fn serve_recording(
         answers: Vec<String>,
     ) -> (String, std::sync::Arc<std::sync::Mutex<Vec<Value>>>) {

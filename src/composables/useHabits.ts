@@ -23,8 +23,6 @@ export function useHabits() {
     }
   }
 
-  // The day can change while the pill stays open, so the chips are re-read and
-  // re-dated every minute.
   useIntervalFn(() => {
     now.value = Date.now()
     void refresh()

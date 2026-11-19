@@ -1,7 +1,5 @@
 use serde_json::Value;
 
-/// A tool's plugin namespace is the part before `__`. Only the built-in Rune plugins (and Kit's
-/// own remote servers) may be run from Studio; anything else is listed but stays blocked.
 fn namespace(name: &str) -> &str {
     name.split_once("__")
         .map_or(name, |(namespace, _)| namespace)
@@ -12,15 +10,11 @@ pub fn trusted_namespace(name: &str) -> bool {
     namespace.starts_with("rune-") || matches!(namespace, "time" | "git" | "filesystem")
 }
 
-/// Why a discovered tool is listed but cannot be run from Studio yet.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum BlockKind {
-    /// Changes files or other state. Only a confirmed Playground run may call it; the agent never can.
     Writes,
-    /// Reads only, but the plugin does not yet claim verified read-only confinement.
     Unverified,
-    /// Metadata is missing, malformed, unsupported or from an untrusted source.
     Unavailable,
 }
 
@@ -34,8 +28,6 @@ const fn block(kind: BlockKind, reason: &'static str) -> Option<Block> {
     Some(Block { kind, reason })
 }
 
-/// `None` means the tool may run (when selected). Every discovered tool gets an answer, so
-/// the tool list can show all of them and say why each blocked one is blocked.
 pub fn classify(name: &str, entry: &Value, remote: bool) -> Option<Block> {
     if !remote && !trusted_namespace(name) {
         return block(BlockKind::Unavailable, "not a built-in Rune plugin");

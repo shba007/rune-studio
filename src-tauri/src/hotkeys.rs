@@ -9,7 +9,6 @@ use crate::settings::Settings;
 #[cfg(windows)]
 mod windows_escape;
 
-/// A phone has no global hotkeys; this keeps the settings and state types the same.
 #[cfg(mobile)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Shortcut;

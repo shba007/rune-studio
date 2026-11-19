@@ -7,8 +7,6 @@ import android.service.voice.VoiceInteractionSession
 import android.service.voice.VoiceInteractionSessionService
 import android.speech.RecognitionService
 
-// Registers Rune as the phone's assistant, so the assist gesture (power button or action
-// button long-press) opens it over the current app instead of as a full-screen app.
 class RuneVoiceInteractionService : VoiceInteractionService()
 
 class RuneSessionService : VoiceInteractionSessionService() {
@@ -25,8 +23,6 @@ class RuneSession(private val service: RuneSessionService) : VoiceInteractionSes
   }
 }
 
-// Android requires an assistant to name a recognition service; Rune does its own
-// listening, so this one never recognises anything.
 class RuneRecognitionService : RecognitionService() {
   override fun onStartListening(intent: Intent?, listener: Callback?) {}
   override fun onCancel(listener: Callback?) {}

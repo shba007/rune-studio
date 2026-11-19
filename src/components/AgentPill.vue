@@ -48,7 +48,6 @@ const agent = useAgent()
 const focus = useFocus()
 const habits = useHabits()
 const focusShown = computed(() => focus.active.value || focus.formOpen.value)
-// Starting a block, or a block running out, brings the pill up.
 watch(
   [focusShown, focus.over, () => !!focus.wrapUp.value],
   ([shown, over, wrap], [wasShown, wasOver, wasWrap]) => {
@@ -288,7 +287,6 @@ function onOrb() {
   else void agent.toggleOpen()
 }
 
-/** On Android Rune opens over the current app; a tap on the see-through area sends it away. */
 function leaveOverlay() {
   ;(window as { RuneHost?: { close(): void } }).RuneHost?.close()
 }

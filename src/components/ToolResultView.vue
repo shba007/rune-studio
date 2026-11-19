@@ -30,7 +30,6 @@ const view = computed(() =>
     <template v-else>
       <ToolResultValue v-for="(value, index) in content" :key="index" :value="value" />
     </template>
-    <!-- The test bench keeps the exact text one click away; the pill shows the view only. -->
     <details v-if="!compact && showRaw" class="text-rune-caption text-rune-text-2">
       <summary class="cursor-pointer">Raw JSON</summary>
       <pre
@@ -41,8 +40,6 @@ const view = computed(() =>
 </template>
 
 <style scoped>
-/* Compact: the surrounding card is already the container, so the view draws no box of its
-   own and uses the card's caption size throughout. */
 .compact-result :deep(dl),
 .compact-result :deep(div:has(> table)) {
   padding: 0;
@@ -52,7 +49,7 @@ const view = computed(() =>
 .compact-result :deep(dl) {
   gap: 0.375rem;
 }
-/* Label beside value, so a small result fits without scrolling. */
+
 .compact-result :deep(dl > div) {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
@@ -60,7 +57,7 @@ const view = computed(() =>
   padding: 0;
   border-width: 0;
 }
-/* A value that is itself a group, list or table gets the full width under its label. */
+
 .compact-result :deep(dl > div:has(> dd > dl)),
 .compact-result :deep(dl > div:has(> dd ol)),
 .compact-result :deep(dl > div:has(> dd table)) {

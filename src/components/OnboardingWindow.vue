@@ -135,9 +135,7 @@ async function checkStarterMcp() {
         await selectStarterTools(kitConfig, starter)
       }
     }
-  } catch {
-    // Kit server may not be reachable or configured yet
-  }
+  } catch {}
 }
 
 async function installStarterMcp(starter: Starter) {
@@ -179,9 +177,7 @@ async function copyPrompt(text: string) {
     copyTimer = setTimeout(() => {
       copiedPrompt.value = ''
     }, 2000)
-  } catch {
-    // Clipboard permission denied or unsupported
-  }
+  } catch {}
 }
 
 onMounted(async () => {

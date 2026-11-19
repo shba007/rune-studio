@@ -6,8 +6,6 @@ import { stagedPlugins } from '@/config/stagedChanges'
 
 import StagedChanges from './StagedChanges.vue'
 
-// Surfaces changes a run staged at the level of the run, so nobody has to open the right step
-// to find the Apply button. It stays after the run ends, until the change is applied.
 const props = defineProps<{ steps: LiveStep[] }>()
 const staged = computed(() => stagedPlugins(props.steps))
 </script>

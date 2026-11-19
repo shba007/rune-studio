@@ -1,7 +1,3 @@
-// Typed editing of one model's runtime settings in Infer's catalog: the context window and the
-// default sampling. Infer owns the catalog and validates it; this only reads the fields it
-// edits and writes them back without disturbing anything else in the model entry.
-
 export type CatalogModel = Record<string, unknown> & { id: string; name: string }
 export type Catalog = {
   models: CatalogModel[]
@@ -69,8 +65,6 @@ function number(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : Number.NaN
 }
 
-// One message per invalid field, keyed by the draft field. The sampling ranges match Infer's
-// own validation (Infer still has the last word); the context floor is Studio's sanity bound.
 export function validateRuntime(
   draft: RuntimeDraft,
   limit: number | null,
@@ -101,8 +95,6 @@ export function validateRuntime(
   return errors
 }
 
-// Returns a new catalog. Only `local.context_length` and the sampling keys this panel owns are
-// touched; an empty field removes its key so Infer's default applies (never a stored 0).
 export function applyRuntime(catalog: Catalog, id: string, draft: RuntimeDraft): Catalog {
   const models = catalog.models.map((model) => {
     if (model.id !== id) return model

@@ -1,7 +1,3 @@
-//! Stand-ins for window calls that exist only on desktop. On a phone there is no
-//! always-on-top, minimized or frameless window to ask for, so these do nothing and
-//! the shared window code compiles unchanged. Desktop uses Tauri's own methods.
-
 use tauri::{Manager, Runtime, WebviewWindow, WebviewWindowBuilder};
 
 pub trait BuilderShim: Sized {

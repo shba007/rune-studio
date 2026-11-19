@@ -123,7 +123,6 @@ async function chooseFolder() {
 }
 const config = ref<Config>({ enabled: false, endpoint: 'http://127.0.0.1:47601/mcp', selected: [] })
 const tools = ref<Tool[]>([])
-// Tools that change files. The agent may use the ones selected here, only while Kit stages them.
 const writeTools = ref<Tool[]>([])
 const status = ref(
   'Not connected. rune-kit 0.6.0 or newer with a compatible MCP protocol is required.',
